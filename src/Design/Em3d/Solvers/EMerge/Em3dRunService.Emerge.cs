@@ -179,16 +179,18 @@ public static partial class Em3dRunService
             // the answer can be EMerge's iterative solver, the remedy the question offers first.
             string? tooBig = null;
             EmergeStageTracker tracker = null!;
-            var check = new EmergeMeshCheck(run.Memory, log, settings, tier, eigen, scattering, from, emerge.Emerge?.Iterative == true, physical);
+            var check = new EmergeMeshCheck(run.Memory, log, settings, tier, eigen, scattering, from, emerge.Emerge?.Iterative == true, physical,
+                                            analysisAvailable: emerge.Emerge?.DirectSolver == EmergeProbe.SpartaSolverClass);
+            void After()
+            {
+                tooBig = check.Refusal;
+                tookIterative ??= check.TookIterative;
+                if (tooBig is not null) throw new OperationCanceledException();
+            }
             tracker = new EmergeStageTracker(control, eigen)
             {
-                OnMeshed = mesh =>
-                {
-                    check.Admit(mesh, tracker);
-                    tooBig = check.Refusal;
-                    tookIterative ??= check.TookIterative;
-                    if (tooBig is not null) throw new OperationCanceledException();
-                },
+                OnMeshed = mesh => { check.Admit(mesh, tracker); After(); },
+                OnAnalyzed = analysis => { check.AdmitAnalysis(analysis, tracker); After(); },
             };
             bool meshOnly = control?.MeshOnly == true;
             var psi = EmergeRun.StartInfo(emerge.Path, dir,
@@ -263,9 +265,16 @@ public static partial class Em3dRunService
     /// (<see cref="EmergeMemory.SolverFor"/>), through the run's gate, which may ask; when the answer chose EMerge's iterative
     /// solver, the tracker answers the waiting driver with it and <see cref="TookIterative"/> is the Note that says so.
     /// </summary>
+    /// <remarks>brief-emi-12 — a run EMerge solves with SPARTA (<paramref name="analysisAvailable"/>: the probe found SPARTA is
+    /// EMerge's pick) is not judged on the mesh: its unknowns cannot tell two meshes of one size apart, and SPARTA's own symbolic
+    /// analysis of the first system, which the driver reports before anything is factorised, can. The tracker answers "solve
+    /// analyze" at the mesh and <see cref="AdmitAnalysis"/> judges the run there.</remarks>
     internal sealed class EmergeMeshCheck(MemoryGate memory, RunLog log, EmergeSettings settings, EmergeSpeedTier tier, bool eigenmode,
-                                          bool scattering, long? gpuFrom, bool iterativeAvailable, long physicalBytes)
+                                          bool scattering, long? gpuFrom, bool iterativeAvailable, long physicalBytes,
+                                          bool analysisAvailable = false)
     {
+        private EmergeMeshCounts? _mesh;
+
         /// <summary>The gate's refusal, when it refused: the run stops.</summary>
         public string? Refusal { get; private set; }
 
@@ -277,9 +286,29 @@ public static partial class Em3dRunService
 
         public void Admit(EmergeMeshCounts mesh, EmergeStageTracker tracker)
         {
+            _mesh = mesh;
             long unknowns = EmergeMemory.Unknowns(mesh.Edges, mesh.Triangles, settings.ElementOrder);
             var solve = EmergeMemory.SolverFor(unknowns, tier, eigenmode, settings.Iterative || memory.UseIterative, gpuFrom, scattering);
-            Verdict = EmergeMemory.Verdict(mesh, settings, solve, physicalBytes, iterativeAvailable, eigenmode, scattering);
+            if (analysisAvailable && EmergeMemory.PricedFromAnalysis(solve))
+            {
+                tracker.AskAtAnalysis = true;           // judged at SPARTA's analysis, before anything is factorised
+                return;
+            }
+            Judge(solve, null, tracker);
+        }
+
+        /// <summary>brief-emi-12 — the check held for SPARTA's analysis of the run's first system.</summary>
+        public void AdmitAnalysis(EmergeAnalysis analysis, EmergeStageTracker tracker)
+        {
+            if (_mesh is not { } mesh) return;
+            long unknowns = EmergeMemory.Unknowns(mesh.Edges, mesh.Triangles, settings.ElementOrder);
+            Judge(EmergeMemory.SolverFor(unknowns, tier, eigenmode, false, gpuFrom, scattering), analysis, tracker);
+        }
+
+        private void Judge(EmergeLinearSolve solve, EmergeAnalysis? analysis, EmergeStageTracker tracker)
+        {
+            var mesh = _mesh!;
+            Verdict = EmergeMemory.Verdict(mesh, settings, solve, physicalBytes, iterativeAvailable, eigenmode, scattering, analysis);
             Refusal = memory.Admit(Verdict, log);
             if (Refusal is not null || solve == EmergeLinearSolve.Corvid || !memory.UseIterative || eigenmode || scattering) return;
             tracker.Iterative = EmergeSettings.IterativeTolerance;
@@ -369,6 +398,7 @@ public static partial class Em3dRunService
                               "reference per port, so the whole matrix was renormalised to each port's Z0.");
             if (wave.Count > 0)
             {
+                ModeTargetVerdicts(facts, log);
                 log.Notes.Add(WavePortReferences.Note("EMerge", "EMerge's own mode solve, along the port's voltage path", wave, modeZ));
                 log.Notes.AddRange(WavePortReferences.ShiftNotes(wave));
                 SecondModeVerdicts(facts, problem, log);
@@ -452,6 +482,30 @@ public static partial class Em3dRunService
     /// brief-emw-2 R-emw2-3a — what the driver's second-mode check found, as Palace's run says it: a face that keeps a second mode
     /// at the sweep's top is a warning, a check that could not be made a note, and a clean one a note.
     /// </summary>
+    /// <summary>
+    /// brief-emi-13 R-emi13-2 — whether each targeted wave port carries the mode it was aimed at: a warning naming both indices and
+    /// the mode's type when the mode taken is further from the target than <see cref="Em3dWavePortTarget.WarnFraction"/>, and a note
+    /// otherwise.
+    /// </summary>
+    internal static void ModeTargetVerdicts(EmergeRunFacts facts, RunLog log)
+    {
+        foreach (var t in facts.ModeTargets)
+        {
+            if (t.Error is { } e) { log.Notes.Add($"Port {t.Port}'s mode could not be read back to check it against its target: {e}."); continue; }
+            if (t.Miss is not { } miss) continue;
+            string type = t.Type is { Length: > 0 } ty ? $"a {ty} mode" : "a mode of unreported type";
+            string pct = (miss * 100).ToString("0.#", CultureInfo.InvariantCulture);
+            if (miss > Em3dWavePortTarget.WarnFraction)
+                log.Warnings.Add($"Port {t.Port}'s wave port took {type} of effective index {Fmt(t.Neff!.Value)} at {Fmt(t.FrequencyHz / 1e9)} GHz, " +
+                                 $"{pct} % from the {Fmt(t.TargetNeff)} kernel A predicts for the line on its face: EMerge found no mode nearer " +
+                                 "it, so the port may carry another mode than the line's (a parallel-plate mode under ground metal at the face, " +
+                                 "or a mode of the substrate). Check the port's mode impedance in the notes against the line's.");
+            else
+                log.Notes.Add($"Port {t.Port}'s wave port took {type} of effective index {Fmt(t.Neff!.Value)} at {Fmt(t.FrequencyHz / 1e9)} GHz, " +
+                              $"{pct} % from its target, {Fmt(t.TargetNeff)}.");
+        }
+    }
+
     private static void SecondModeVerdicts(EmergeRunFacts facts, Em3dProblem problem, RunLog log)
     {
         string top = Fmt(problem.Frequency.StopHz / 1e9);

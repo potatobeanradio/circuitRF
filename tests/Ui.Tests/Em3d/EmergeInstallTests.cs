@@ -140,12 +140,13 @@ public sealed class EmergeInstallTests : IDisposable
     [Fact]
     public void AnUntestedVersionRuns_WithAWarningNamingTheTestedOnes()
     {
-        string python = FakePython("other", Answer.Replace("\"3.0.0b2\"", "\"3.0.1\""));
+        // an untested version the driver is written for (EMerge 3.0.8 and later: an older one is refused, EmergeIterativeTests)
+        string python = FakePython("other", Answer.Replace("\"3.0.0b2\"", "\"3.0.9\""));
         var d = Discovery(python, null);
         var readiness = d.Check(new HashSet<SolverCapability>());
         Assert.True(readiness.Proceeds, readiness.Refusal);
         Assert.False(readiness.Installation!.Validated);
-        Assert.Contains("3.0.1", readiness.Warning);
+        Assert.Contains("3.0.9", readiness.Warning);
         Assert.Contains("tested: " + SolverDiscovery.Emerge.ValidatedVersions[0].Release, readiness.Warning);
         Assert.EndsWith(readiness.Warning!, d.DescribeForSettings(readiness.Installation, []));
     }

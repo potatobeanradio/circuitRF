@@ -32838,3 +32838,91 @@ CORVID converged everywhere: at most 7 iterations on the Cavity and the Coupled 
 Both solvers' adaptive sweeps took the same sample count and error; the Cavity's 3.1e-6 is the rational fit between samples
 near its resonances, from samples within 1.1e-7. The gate (`EmergeIterativeTests`, benchmark) runs the Launch and the
 Coupled Microstrip end to end through the setting: 4.8e-8 and 1.1e-7.
+
+### EMI-12 follow-up — a SPARTA run is checked at SPARTA's analysis, within 1.3× (2026-11-19)
+
+EMI-12 left SPARTA (1.39×) and the GPU (1.37×) outside the brief's 1.3× because a line in the unknowns cannot tell the Launch
+and the thin sheet line from the Cavity. **SPARTA's symbolic analysis can.** `sparta.analyze()` runs before any factorisation and
+its `Solver.info` reports `factor_bytes` and `front_bytes`: 4.1-4.4 kB of factor per unknown on the sheet line and the Launch
+against 2.7-3.2 kB on the Cavity and the Coupled Microstrip, the same excess the peaks show. Re-measured with driver 12 on every
+SPARTA problem (point sweeps twice, plus the adaptive sweeps), the peak fits 320 MB + 5.2 kB per unknown + 1.50 × (factor + fronts)
+within 1.08× (GPU: 330 MB + 7.4 kB + 2.34×, within 1.14×, its analysis reporting about half the CPU's fronts). The lines are set
+10 % above the fit for SPARTA's run-to-run spread, so every measurement reads 1.10-1.19× (GPU 1.10-1.25×):
+`EmergeMemory.PeakBytesFromAnalysis`, held by `EmergeIterativeTests` against each run's own recorded analysis.
+
+- **The driver reports every SPARTA analysis** (`"stage": "analyzed"`, hooked on `emerge._emerge.solvers.sparta.sparta.analyze`),
+  and the check moved there for a run whose probe found SPARTA is EMerge's pick: the tracker answers `solve analyze` at the mesh
+  and the verdict is made at the analysis, where the driver waits. Nothing has been factorised at that point and the first system
+  is assembled already, so the CORVID remedy taken there **restarts the sweep on CORVID** (`SwitchToIterative`,
+  `restart_iterative`), as a GPU sweep moved to the CPU restarts: on the Cavity its S matched a run started on CORVID to 4.9e-14.
+- The unknowns-only lines stay for `explain`/`em --dry-run`, the remedies' estimates and a SPARTA that reports no analysis; refitted
+  on the new runs to 430 MB + 18.2 kB (SPARTA) and 330 MB + 17.7 kB (GPU). Driven SuperLU stays at 1.48×: SciPy's factorisation makes
+  no analysis a run could read first, and a driven run reaches it only on an install with no faster solver.
+- **Kernel A's section solve now refuses past 6,000 segments** (`Em3dWallCalibration.Section.MaxSegments`) before it allocates. A
+  section with PEC side walls overflowed the dense matrix's allocation (found by EMI-13's port targets); a smaller blow-up would have
+  tried to allocate several GB instead.
+
+### EMerge older than 3.0.8 is refused, with how to upgrade (2026-11-19)
+
+The 3.0.10 re-pin left an older EMerge "running, untested". Checked against a 3.0.0 install, that was not safe: every wave-port
+run stopped with `AttributeError: 'Microwave3D' object has no attribute '_port_modes'` (3.0.0 has `_wave_port_modes`), and a
+lumped-port run went on without the driver's old 3.0.0 repairs (the duplicate-mode guard, the thin-conductor split on a refined
+mesh) and with 3.0.0's thin sheets twice as conductive. So `SolverDiscovery`'s readiness refuses an EMerge below
+`EmergeSolver.MinimumVersion` (3.0.8) — every caller that asks it (a run, `explain`, `check`, the dry run, Settings, a comparison)
+gives the one sentence, and EMerge tests skip with it. The sentence says how to upgrade: circuitRF's own install through
+Settings ▸ Solvers' **Update to EMerge 3.0.10…** (already offered for an install off the tested list) or
+`circuitrf solver install emerge --yes`; a Python of the user's own with `pip install --upgrade "emerge[corvid]==3.0.10"` there.
+A version between 3.0.8 and the tested 3.0.10 still runs with the untested warning (`EmergeInstallTests` now fakes 3.0.9 for it).
+
+## EMI-13 — which mode an EMerge wave port carries (2026-11-19)
+
+**R-emi13-1 — the line's mode, aimed at.** `Em3dWavePortTarget` takes the face's cross-section the way a wall port's calibration
+does (`Em3dWallCalibration.Section`, now taking line conductors by name), solves it with kernel A in complex permittivity with every
+other metal grounded, and gives n_eff = c0·Re√(L′C′) and Z_c at the sweep's top. The driver's `TargetedWavePort` (a `WavePort`
+subclass) orders candidates by |Re β/k0 − n_eff| and does not take its first mode search as complete until a candidate within 5 %
+is among them, so EMerge's own retry loop widens the search from the top of the spectrum. **A WavePort subclass rather than
+`ModalPort(target_neff=…)`**: ModalPort holds propagating modes only and drops the evanescent-mode absorption that lets a wave port
+sit near a discontinuity. Hollow guides keep the largest-β² rule; a terminal group keeps `presolveNeff`. The two do not share a
+computation: a group's presolve sits deliberately at 0.9 of a one-material face's TEM index, which is exactly what kernel A would
+return there.
+- **Kernel A could not take a face with PEC side walls.** The wall calibration models such a wall as a 1 µm conductor the box's
+  height tall, and kernel A's mesher sizes a conductor's cells from its width: 82,298 segments on a 3.5 mm box, and an
+  `OverflowException` allocating the dense matrix (a slightly smaller section would have tried to allocate several GB). Two fixes:
+  `Section.MaxSegments` (6,000) refuses before allocating, for wall ports too; and the target's section takes the box's side faces
+  open (every other metal is grounded already; walls several substrate heights out barely move the index). Metal standing on a PEC
+  floor (a via on the face) is dropped from the target's section, being at ground potential already. A wide side-wall block was tried
+  for the wall calibration and read no capacitance; reverted.
+
+**R-emi13-2 — what was taken.** The driver reports each targeted port's mode at the sweep's top (`modeTargets`: its index, its
+type); past `Em3dWavePortTarget.WarnFraction` the run warns naming both indices and the type, within it a note. **The brief's 10 % was
+moved to 5 %** on the measurements below: the parallel-plate mode sits inside 10 % of the line's target, the line's own mode within 3 %. The second-
+mode check lists a targeted port's own mode first, so its warning names the right "first mode". Targets measured: the top-ground
+line 1.313 (Z_c 57.7 Ω) against the mode taken 1.308 (0.4 %); the silicon line 3.962 (26.8 Ω) against the reference's 4.04 and
+27.05 + j13.2 Ω, the mode taken 4.083 (3 %). The parallel-plate mode HEAD took sat at 1.397, 6.4 % above the line's target.
+
+**Gate 1, the top-ground coplanar line** (1 mm line, 250 µm gaps, top grounds on 0.508 mm of εr 3, stitched by via rows inside, the
+grounds stopping short of the PEC side walls so they float on the face; wave ports over each whole face; EMerge Draft, 1-6 GHz):
+- **HEAD** took the parallel-plate mode: Z_PV 17.1-18.1 Ω, |S21| −13.7 / −21.7 / −18.1 dB, |S11| ≈ 0 dB at 50 Ω.
+- **Targeted**: the line's mode (Z_PV 34 Ω), |S21| −0.25 to −1.9 dB. **The brief's 2 % / 0.1 dB / −30 dB are not reached, and not
+  because of the choice**: with the grounds floating on the face, the face carries three quasi-TEM modes (n_eff 1.397, 1.359, 1.308),
+  and none is the line's mode with its grounds tied down, which is what the stitched line carries a little way in. The port takes
+  the nearest, and the mismatch between it and the line is a reflection (−6 to −13 dB at 50 Ω). Drawing the port only over the line
+  and gaps did not help (EMerge's port edges do not tie metal to the floor). **With a via under each ground at the face** the face
+  carries the line's mode alone: mode-normalised |S11| −19.7 to −27.7 dB, |S21| −0.06 to −0.22 dB (Draft); the docs tell users to
+  place such vias. HEAD's rule picks the same mode there.
+- **Gate 2, the silicon line at 5 GHz, on EMerge**: HEAD already takes the slow-wave mode here (the −0.76 dB recorded was Palace's);
+  with and without the target the answers are identical, mode-normalised |S11| −29.2 dB on an 800-tetrahedron Draft mesh.
+
+**R-emi13-3 — the degenerate pair.** `C3dPorts` resolves a two-mode square guide (TE10, TE01) and a guide with b = a/2 (TE10, then
+TE01, degenerate with TE20), marking the pair `Em3dHollowMode.Degenerate`; the lowering asks the driver to align it. **EMerge's own
+`align_modes()` was tried first and failed**: its inner product samples the face through Gmsh's parametric grid, and on the 22.86 mm
+square guide it read zero along one axis for every candidate, so the alignment fixed an evanescent mode (β = −j200) as the second and
+the driver's own check refused the run. The driver's `AlignedPairWavePort` instead rotates the two top-β² candidates with EMerge's
+own construction, weighed by integrals along circuitRF's polarity LINES, before the modes are fixed; `hollow_mode_signs` still checks
+and signs each. Gate 3, empty 22.86 mm square guide 30 mm long, 7.5-9 GHz, Standard: cross terms 1.1e-4, |S31 − e^(−jβL)| and
+|S42 − e^(−jβL)| 5.7e-4 to 9.0e-4 (Draft 1.1-1.9e-3). A square guide of ONE mode stays refused on every solver; a hollow port of two
+modes runs on EMerge only, so Palace and openEMS still refuse both shapes through `Em3dModePorts.SolverRefusal`. HZN-20's two-mode
+guide is unchanged. The `.hzn` reading has no round guide (its hollow ports are rectangular openings), so a TE11 pair is not covered.
+A square two-mode Hertzon guide now converts; the census was not re-run.
+
+Tests that moved: `HznMultiModeWavePortTests`' square-refusal assertion (now: not refused).

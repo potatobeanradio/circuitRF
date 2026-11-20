@@ -26,9 +26,10 @@ public sealed class EmergeIterativeTests(ITestOutputHelper output) : IDisposable
     // ── Gate 1. The memory lines hold every measurement ─────────────────────────────────────────
 
     /// <summary>Each solver's line is at or above every run measured on it and at most its <see cref="EmergeMemory.Ceiling"/>
-    /// times the larger run of each problem: 1.3 for CORVID and the eigensolver, the least one line can do for the direct solvers
-    /// (the Launch needs a fifth more per unknown than the Cavity there; EmergeMemory says why). Every solver a run can use has
-    /// measurements at three sizes or more, from about 50,000 unknowns, each run at least twice.</summary>
+    /// times the larger run of each problem: 1.3 for CORVID and the eigensolver. A SPARTA run, CPU or GPU, is judged from SPARTA's
+    /// own analysis of its first system, and that estimate holds every run within 1.3; its unknowns-only line, which explain quotes,
+    /// cannot (EmergeMemory says why). Every solver a run can use has measurements at three sizes or more, from about 50,000
+    /// unknowns, each run at least twice.</summary>
     [Fact]
     public void EachLine_HoldsEveryMeasurement_AtOrAbove_AndWithin1Point3()
     {
@@ -37,6 +38,7 @@ public sealed class EmergeIterativeTests(ITestOutputHelper output) : IDisposable
             Assert.True(group.Count() >= 3, $"{group.Key}: {group.Count()} sizes");
             Assert.InRange(group.Min(p => p.Unknowns), 50_000, 60_000);
             Assert.True(EmergeMemory.Ceiling(group.Key) is >= 1.3 and < 1.5);
+            Assert.Equal(1.3, EmergeMemory.AnalysisCeiling);
             foreach (var p in group)
             {
                 Assert.True(p.PeakMegabytes.Count >= 2, $"{group.Key} {p.Problem}: run once");
@@ -46,6 +48,14 @@ public sealed class EmergeIterativeTests(ITestOutputHelper output) : IDisposable
                                  $"estimate {MachineMemory.Format(estimate)} ({ratio:0.00}x)");
                 Assert.True(estimate >= p.LargestBytes, $"{group.Key} {p.Problem}: estimate below a measurement");
                 Assert.True(ratio <= EmergeMemory.Ceiling(group.Key), $"{group.Key} {p.Problem}: {ratio:0.000}x the largest");
+                // what a SPARTA run is judged on: SPARTA's own analysis of its first system, within 1.3
+                Assert.Equal(EmergeMemory.PricedFromAnalysis(group.Key), p.AnalysisMegabytes is not null);
+                if (p.AnalysisMegabytes is not { } analysisMb) continue;
+                long fromAnalysis = EmergeMemory.PeakBytesFromAnalysis(p.Unknowns, analysisMb * 1_000_000L, group.Key);
+                double r2 = (double)fromAnalysis / p.LargestBytes;
+                output.WriteLine($"    from SPARTA's analysis ({analysisMb} MB of factor and fronts): {MachineMemory.Format(fromAnalysis)} ({r2:0.00}x)");
+                Assert.True(fromAnalysis >= p.LargestBytes, $"{group.Key} {p.Problem}: the analysis estimate is below a measurement");
+                Assert.True(r2 <= EmergeMemory.AnalysisCeiling, $"{group.Key} {p.Problem}: {r2:0.000}x from the analysis");
             }
         }
         Assert.Equal(Enum.GetValues<EmergeLinearSolve>().Length, EmergeMemory.Measurements.Select(m => m.Solve).Distinct().Count());
@@ -112,22 +122,91 @@ public sealed class EmergeIterativeTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain(eigen.Remedies, r => r.Iterative);
     }
 
-    /// <summary>The stand-in: prints the driver's mesh line, waits for its answer as the driver does, then writes run.json.</summary>
-    private PalaceRun.ProcessRun RunStandIn(EmergeMeshCounts mesh, Em3dRunService.EmergeMeshCheck check)
+    /// <summary>
+    /// A SPARTA run is judged at SPARTA's analysis, not at the mesh: the stand-in is told "solve analyze", reports an analysis, and is
+    /// answered there. An analysis predicting a factor too large for the machine is offered CORVID and the answer carries it; one
+    /// that fits is told to solve, and its unknowns-only estimate (which would have asked) is not what decided it.
+    /// </summary>
+    [NonWindowsFact("the stand-in driver is a shell script")]
+    public void ASpartaRun_IsJudgedAtItsAnalysis_AndOfferedCorvidThere()
+    {
+        const long physical = 20_000_000_000;
+        var mesh = new EmergeMeshCounts(100_000, 300_000, 400_000);
+        Em3dMemoryVerdict? asked = null;
+        var gate = new Em3dRunService.MemoryGate(v => { asked = v; v.Choice.Remedy = v.Applicable[0]; return true; });
+        var check = new Em3dRunService.EmergeMeshCheck(gate, new Em3dRunService.RunLog(), EmergeSettings.Default, EmergeSpeedTier.Fast,
+                                                       false, false, null, true, physical, analysisAvailable: true);
+        Assert.Equal(0, RunStandIn(mesh, check, (13_000_000_000, 13_000_000_000)).ExitCode);
+        Assert.Equal(["solve analyze", "iterative 1E-06"], File.ReadAllLines(Path.Combine(_root, "answer.txt")));
+        Assert.NotNull(asked);
+        Assert.Contains("whose analysis predicts a 13.0 GB factor and 13.0 GB of fronts", asked!.Text, StringComparison.Ordinal);
+        Assert.True(asked.Applicable[0].Iterative);
+        Assert.True(EmergeResults.ReadFacts(_root).Iterative);
+
+        // the same mesh with a small analysis: no question, though the unknowns-only line puts it past this machine
+        Assert.True(EmergeMemory.PeakBytes(1_400_000, EmergeLinearSolve.Sparta) > physical);
+        var quiet = new Em3dRunService.EmergeMeshCheck(new Em3dRunService.MemoryGate(_ => throw new InvalidOperationException("asked")),
+                                                       new Em3dRunService.RunLog(), EmergeSettings.Default, EmergeSpeedTier.Fast,
+                                                       false, false, null, true, physical, analysisAvailable: true);
+        Assert.Equal(0, RunStandIn(mesh, quiet, (2_000_000_000, 2_000_000_000)).ExitCode);
+        Assert.Equal(["solve analyze", "solve"], File.ReadAllLines(Path.Combine(_root, "answer.txt")));
+    }
+
+    /// <summary>The stand-in: prints the driver's mesh line, waits for its answer as the driver does (and, told "solve analyze", prints
+    /// an analysis and waits again), then writes run.json.</summary>
+    private PalaceRun.ProcessRun RunStandIn(EmergeMeshCounts mesh, Em3dRunService.EmergeMeshCheck check, (long Factor, long Front)? analysis = null)
     {
         Directory.CreateDirectory(_root);
         string script = Path.Combine(_root, "driver.sh");
+        string analyzed = analysis is { } a
+            ? $"echo '{{\"driver\": 12, \"factorBytes\": {a.Factor}, \"frontBytes\": {a.Front}, \"n\": 1300000, \"stage\": \"analyzed\"}}'\n"
+            : "";
         File.WriteAllText(script, "#!/bin/sh\n" +
             $"echo '{{\"driver\": 12, \"edges\": {mesh.Edges}, \"stage\": \"meshed\", \"tets\": {mesh.Tetrahedra}, \"triangles\": {mesh.Triangles}}}'\n" +
             "read answer\necho \"$answer\" > answer.txt\n" +
+            "if [ \"$answer\" = \"solve analyze\" ]; then\n" + analyzed + "read answer\necho \"$answer\" >> answer.txt\nfi\n" +
             "case \"$answer\" in iterative*) s=CORVID;; stop) exit 3;; *) s=SPARTA;; esac\n" +
             "printf '{\"sparseSolver\": \"%s\", \"iterations\": {\"solves\": 4, \"most\": 9, \"mean\": 7.5}}' \"$s\" > run.json\n");
         File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         EmergeStageTracker tracker = null!;
-        tracker = new EmergeStageTracker(null, eigenmode: false) { OnMeshed = m => check.Admit(m, tracker) };
+        tracker = new EmergeStageTracker(null, eigenmode: false)
+        {
+            OnMeshed = m => check.Admit(m, tracker),
+            OnAnalyzed = x => check.AdmitAnalysis(x, tracker),
+        };
         var psi = EmergeRun.StartInfo(script, _root, new Dictionary<string, string>(), ask: true);
         Assert.Equal(EmergeRun.AskArgument, psi.ArgumentList[^1]);
         return EmergeRun.Solve(psi, null, CancellationToken.None, tracker, 0);
+    }
+
+    // ── An EMerge the driver is not written for ─────────────────────────────────────────────────
+
+    /// <summary>EMerge before 3.0.8 runs nothing, and the refusal says how to upgrade: circuitRF's own install from Settings or the
+    /// CLI, a Python of the user's own with pip. Versions order numerically, a pre-release before its release.</summary>
+    [Fact]
+    public void AnEMergeOlderThan308_IsRefused_WithHowToUpgrade()
+    {
+        Assert.True(EmergeSolver.IsBefore("3.0.0b2", "3.0.0"));
+        Assert.True(EmergeSolver.IsBefore("3.0.0", "3.0.8"));
+        Assert.True(EmergeSolver.IsBefore("3.0.8", "3.0.10"));
+        Assert.False(EmergeSolver.IsBefore("3.0.10", "3.0.8"));
+        Assert.False(EmergeSolver.IsBefore("3.0.8", "3.0.8"));
+
+        SolverInstallation At(string version, SolverHowFound how)
+            => new(SolverTool.Emerge, "/x/env/bin/python", version, null, "", how, "", version);
+        Assert.Null(EmergeSolver.TooOldRefusal(At("3.0.10", SolverHowFound.Installed)));
+        Assert.Null(EmergeSolver.TooOldRefusal(At("3.0.8", SolverHowFound.Settings)));
+
+        string own = EmergeSolver.TooOldRefusal(At("3.0.0", SolverHowFound.Installed))!;
+        output.WriteLine(own);
+        Assert.StartsWith("EMerge 3.0.0 is older than 3.0.8", own);
+        Assert.Contains("Settings ▸ Solvers, where the EMerge row offers Update to EMerge 3.0.10…", own, StringComparison.Ordinal);
+        Assert.Contains("`circuitrf solver install emerge --yes`", own, StringComparison.Ordinal);
+
+        string theirs = EmergeSolver.TooOldRefusal(At("3.0.0b2", SolverHowFound.Settings))!;
+        output.WriteLine(theirs);
+        Assert.Contains("`\"/x/env/bin/python\" -m pip install --upgrade \"emerge[corvid]==3.0.10\"`", theirs, StringComparison.Ordinal);
+        Assert.Contains("Install EMerge…", theirs, StringComparison.Ordinal);
     }
 
     // ── Gate 4. The setting round-trips, and explain prices both solvers ────────────────────────

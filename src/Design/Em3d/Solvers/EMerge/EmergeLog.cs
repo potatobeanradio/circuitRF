@@ -34,6 +34,15 @@ public sealed record EmergeGpuStalled(int Samples, bool Unusable = false) : Emer
 /// <summary>The driver's <c>{"stage": "meshed", …}</c> line: the mesh's exact counts, before any solve.</summary>
 public sealed record EmergeMeshCounts(long Tetrahedra, long Edges, long Triangles) : EmergeLogEvent;
 
+/// <summary>brief-emi-12 — the driver's <c>{"stage": "analyzed", …}</c> line: SPARTA's symbolic analysis of a system it is about to
+/// factorise — its order and its own estimate of the factor's and the fronts' bytes — before anything is factorised. The sizes
+/// are null when the SPARTA that ran reports none.</summary>
+public sealed record EmergeAnalysis(long? Order, long? FactorBytes, long? FrontBytes) : EmergeLogEvent
+{
+    /// <summary>The factor and fronts together, the part of the peak SPARTA's analysis predicts; null when it reported neither.</summary>
+    public long? FactorAndFrontBytes => FactorBytes is { } f && FrontBytes is { } r ? f + r : null;
+}
+
 /// <summary>Designer round 36 — a step of the minutes before and after Gmsh, which EMerge names only in passing: the driver's
 /// <c>{"stage": "geometry"}</c>, and EMerge's boundary-condition and mesh-data lines.</summary>
 public sealed record EmergeSetupStep(string Words) : EmergeLogEvent;
@@ -127,6 +136,11 @@ public static class EmergeLog
             if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var st) && st.GetString() == "gpu-stalled")
                 return new EmergeGpuStalled(r.TryGetProperty("samples", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt32() : 0,
                                             r.TryGetProperty("unusable", out var u) && u.ValueKind == JsonValueKind.True);
+            if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var an) && an.GetString() == "analyzed")
+            {
+                long? L(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : null;
+                return new EmergeAnalysis(L("n"), L("factorBytes"), L("frontBytes"));
+            }
             return r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var stage) && stage.GetString() == "meshed"
                    && r.TryGetProperty("tets", out var tets) && r.TryGetProperty("edges", out var edges)
                    && r.TryGetProperty("triangles", out var tris)
@@ -259,9 +273,20 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
     /// </summary>
     public TextWriter? Input { get; set; }
 
-    /// <summary>brief-emi-12 — set by <see cref="OnMeshed"/> to solve this run with EMerge's iterative solver (the memory check's
-    /// remedy): the answer carries the tolerance.</summary>
+    /// <summary>brief-emi-12 — set by <see cref="OnMeshed"/> (or <see cref="OnAnalyzed"/>) to solve this run with EMerge's iterative
+    /// solver (the memory check's remedy): the answer carries the tolerance.</summary>
     public double? Iterative { get; set; }
+
+    /// <summary>brief-emi-12 — set by <see cref="OnMeshed"/> to hold the memory check until SPARTA's analysis of the first system: the
+    /// answer at the mesh is "solve analyze", and <see cref="OnAnalyzed"/> answers the driver there.</summary>
+    public bool AskAtAnalysis { get; set; }
+
+    /// <summary>brief-emi-12 — called with SPARTA's first analysis when the check was held for it, on the run's thread. Throwing
+    /// <see cref="OperationCanceledException"/> stops the run.</summary>
+    public Action<EmergeAnalysis>? OnAnalyzed { get; init; }
+
+    /// <summary>SPARTA's first analysis, as the driver reported it.</summary>
+    public EmergeAnalysis? Analysis { get; private set; }
 
     private int _jobs, _batchDone;
     private bool _solving, _adaptive, _meshing;
@@ -275,17 +300,17 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
 
     /// <summary>The one line the waiting driver reads, then its input closed. A driver that has already gone (a refusal it
     /// raised itself) leaves the pipe broken, which is no error here.</summary>
-    private void Answer(string line)
+    private void Answer(string line, bool last = true)
     {
         if (Input is not { } input) return;
-        Input = null;
+        if (last) Input = null;
         try
         {
             input.Write(line + "\n");
             input.Flush();
-            input.Close();
+            if (last) input.Close();
         }
-        catch (Exception e) when (e is IOException or ObjectDisposedException) { }
+        catch (Exception e) when (e is IOException or ObjectDisposedException) { Input = null; }
     }
 
     public void Line(string line)
@@ -310,12 +335,25 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
                 Counts = c;
                 Tetrahedra = c.Tetrahedra;
                 string answer = EmergeRun.StopAnswer;
+                bool held = false;
                 try
                 {
                     OnMeshed?.Invoke(c);
-                    answer = Iterative is { } tol ? EmergeRun.IterativeAnswer(tol) : EmergeRun.SolveAnswer;
+                    held = AskAtAnalysis && Iterative is null;
+                    answer = Iterative is { } tol ? EmergeRun.IterativeAnswer(tol) : held ? EmergeRun.SolveAtAnalysisAnswer : EmergeRun.SolveAnswer;
                 }
-                finally { Answer(answer); }
+                finally { Answer(answer, last: !held); }
+                break;
+            case EmergeAnalysis a:
+                Analysis ??= a;
+                if (Input is null || !AskAtAnalysis) break;
+                string reply = EmergeRun.StopAnswer;
+                try
+                {
+                    OnAnalyzed?.Invoke(a);
+                    reply = Iterative is { } tol2 ? EmergeRun.IterativeAnswer(tol2) : EmergeRun.SolveAnswer;
+                }
+                finally { Answer(reply); }
                 break;
             case EmergeGpuStalled g:
                 // brief-emw-3 — the sweep starts again, on the CPU: what the user sees while it does

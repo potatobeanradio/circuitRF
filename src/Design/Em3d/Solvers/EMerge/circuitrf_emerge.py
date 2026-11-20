@@ -24,7 +24,9 @@ where a problem is solved is the machine's, and problem.json is what the run's p
 (brief-emi-12) ask: once the mesh is made and its "meshed" line printed, the driver reads ONE line from its standard input
 before it solves: "solve" goes on as problem.json says, "iterative <tolerance>" solves this run with EMerge's iterative solver
 (CORVID) to that relative residual whatever problem.json's settings say, "stop" (or end of input) exits with code 3 and solves
-nothing. circuitRF
+nothing. "solve analyze" goes on and asks again at SPARTA's analysis of the first system it solves (its predicted factor and
+fronts, the "analyzed" line), before anything is factorised: "solve", "iterative <tolerance>" (the sweep starts again on CORVID)
+or "stop". Every SPARTA analysis is reported on an "analyzed" line, asked about or not. circuitRF
 checks the run's memory on the mesh's counts in between, so a run it asks about waits for the answer instead of solving.
 
 (brief-emi-12) settings.linearSolver "iterative" (with settings.iterativeTolerance; both absent on a direct run) solves a driven problem with CORVID (model.set_solver(em.solvers.Corvid)):
@@ -97,7 +99,8 @@ C0 = 299792458
 PORT_TRIANGLES = 50
 MODES = ("mesh", "solve")
 ASK = "ask"
-ANSWERS = ("solve", "iterative", "stop")      # "iterative" is followed by the tolerance
+ANSWERS = ("solve", "iterative", "stop")      # "iterative" is followed by the tolerance, "solve" may be by ANALYZE
+ANALYZE = "analyze"
 STOPPED = 3            # the exit code of a run told to stop at the question
 RUN_FILE = "run.json"
 # brief-emi-12 -- the frequencies whose matrices EMerge assembles before it solves them. Its default is every frequency of the
@@ -195,16 +198,12 @@ def main(argv):
     report(stage="meshed", tets=counts["tets"], edges=counts["edges"], triangles=counts["triangles"])
     settings = problem["settings"]
     tolerance = settings.get("iterativeTolerance") if settings.get("linearSolver") == "iterative" else None
+    analyze_wait = False
     if ask:
         # brief-emi-12 -- circuitRF's answer to its memory check on the counts above: nothing is solved until it comes.
-        answer = sys.stdin.readline().split()
-        if not answer or answer[0] not in ANSWERS or answer[0] == "stop":
-            sys.exit(STOPPED)
-        if answer[0] == "iterative":
-            try:
-                tolerance = float(answer[1])
-            except (IndexError, ValueError):
-                fail("the answer 'iterative' takes the tolerance, not '%s'" % " ".join(answer))
+        word, told = read_answer()
+        tolerance = told if word == "iterative" else tolerance
+        analyze_wait = word == ANALYZE
     iterative = tolerance is not None
     keep_x64_solver_off()
     # A CPU run is EMerge's own pick: SPARTA's CPU path where it is installed, since EMerge 3.0.8 its first choice, and the faster
@@ -218,11 +217,20 @@ def main(argv):
     logger.add(heard.sink, level="INFO", format="{message}", catch=False)
     if (unguarded := guard_solves(sim, model, heard)) is not None:
         warnings.append(unguarded)
+    heard.analysis_wait = analyze_wait and not iterative
+    watch_analyses(heard)
     try:
         if iterative:
             heard.iterative = float(tolerance)
             use_iterative(sim, heard.iterative)
-        outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
+        try:
+            outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
+        except SwitchToIterative as switch:
+            # brief-emi-12 -- the answer at SPARTA's analysis: nothing was factorised, so the sweep starts again on CORVID
+            on_gpu = heard.on_gpu = False
+            restart_iterative(sim, switch.tolerance)
+            heard.iterative = switch.tolerance
+            outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
     except Refused as e:
         report(error=str(e), refused=True, **({"cause": e.cause} if e.cause else {}))
         sys.exit(2)
@@ -233,6 +241,8 @@ def main(argv):
     device = None if heard.solver is None else ("gpu" if on_gpu and heard.solver == GPU_SOLVER_NAME else "cpu")
     run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, device=device, gpuFrom=gpu_from,
                meshSeconds=round(meshed - started, 3), solveSeconds=round(time.time() - meshed, 3), **counts)
+    if heard.analyses:
+        run["analysis"] = heard.analyses[0]
     if heard.iterations:
         run["iterations"] = {"solves": len(heard.iterations), "most": max(heard.iterations),
                              "mean": round(sum(heard.iterations) / len(heard.iterations), 1)}
@@ -314,6 +324,71 @@ def use_iterative(sim, tolerance):
     threads = os.environ.get("RAYON_NUM_THREADS")
     if threads and threads.isdigit() and int(threads) > 0:
         solver.set_nthreads(int(threads))
+
+
+def read_answer():
+    """One answer from circuitRF on standard input: (word, tolerance). "stop" or end of input exits with STOPPED; "iterative"
+    carries its tolerance; "solve analyze" is the word ANALYZE."""
+    answer = sys.stdin.readline().split()
+    if not answer or answer[0] not in ANSWERS or answer[0] == "stop":
+        sys.exit(STOPPED)
+    if answer[0] == "iterative":
+        try:
+            return "iterative", float(answer[1])
+        except (IndexError, ValueError):
+            fail("the answer 'iterative' takes the tolerance, not '%s'" % " ".join(answer))
+    return (ANALYZE if answer[1:] == [ANALYZE] else "solve"), None
+
+
+class SwitchToIterative(Exception):
+    """Raised from SPARTA's analysis when circuitRF's answer there is the iterative solver: nothing has been factorised yet."""
+
+    def __init__(self, tolerance):
+        super().__init__("switch to the iterative solver")
+        self.tolerance = tolerance
+
+
+def watch_analyses(heard):
+    """brief-emi-12 -- every SPARTA analysis reported on an "analyzed" line: the system's size and SPARTA's own estimate of its
+    factor and fronts, from the symbolic analysis it makes before factorising. The first is asked about when circuitRF said
+    "solve analyze": nothing is factorised until the answer comes."""
+    try:
+        import emerge._emerge.solvers.sparta as es
+        module = es.sparta
+    except (ImportError, AttributeError):
+        return
+    original = module.analyze
+
+    def analyze(*a, **k):
+        symbolic = original(*a, **k)
+        try:
+            info = symbolic.info
+            entry = {"n": int(info["n"]), "factorBytes": int(info["factor_bytes"]), "frontBytes": int(info["front_bytes"]),
+                     "maxFront": int(info["max_front"]), "gpuBytes": int(info.get("gpu_bytes") or 0)}
+        except Exception:      # an older SPARTA with no info: reported as unknown, and still asked about
+            entry = {}
+        heard.analyses.append(entry)
+        report(stage="analyzed", **entry)
+        if heard.analysis_wait:
+            heard.analysis_wait = False
+            word, tolerance = read_answer()
+            if word == "iterative":
+                raise SwitchToIterative(tolerance)
+        return symbolic
+
+    module.analyze = analyze
+
+
+def restart_iterative(sim, tolerance):
+    """The sweep from the beginning on CORVID, after SPARTA's analysis of its first system: the solve routine and the dataset
+    reset, as a GPU sweep moved to the CPU is (watched)."""
+    routine = sim.mw.solveroutine
+    routine.forced_solver = []
+    if hasattr(routine, "set_device"):
+        routine.set_device("CPU")
+    routine.reset()
+    sim.mw._state.data.reset()
+    use_iterative(sim, tolerance)
 
 
 # The refusal's cause, on its JSON line: circuitRF forwards it as the iterative solver's refusal.
@@ -420,6 +495,8 @@ class Heard:
         self.stalled = None
         self.iterative = None      # the tolerance of a run solved by CORVID
         self.iterations = []
+        self.analyses = []         # SPARTA's analysis of each system it factorised, as reported
+        self.analysis_wait = False
 
     def sink(self, message):
         import re
@@ -711,6 +788,92 @@ RING_CELLS_ACROSS = 8
 
 # brief-cxp-3 — how far, as a fraction of the gap, a coaxial port's voltage lines stop short of each conductor (RadialLumpedPort).
 RING_LINE_INSET = 0.02
+
+
+# brief-emi-13 R-emi13-1 -- how near the target a candidate must be before the first mode search stops widening: the share R-emi13-2
+# warns past (Em3dWavePortTarget.WarnFraction). Beyond it EMerge's own search goes on (more modes, further down in beta^2) and the
+# nearest is taken anyway. 5 %: the line's mode measured within 3 %, the parallel-plate mode a top-ground face carries 6.4 % off.
+TARGET_FRACTION = 0.05
+
+
+def targeted_wave_port_class():
+    """
+    brief-emi-13 R-emi13-1 -- EMerge's WavePort aimed at an effective index. EMerge orders a WavePort's candidates by beta^2, largest
+    first, and fixes its modes from the top of that list at the sweep's top; this subclass orders them by the distance of their
+    index from the target (ModalPort's own rule with target_neff), and does not take the first mode search as complete until a
+    candidate within TARGET_FRACTION of the target is among them, so EMerge's search widens from the top of the spectrum until it
+    finds the line's mode. Everything else is WavePort's: evanescent modes kept and absorbed, the modes followed to every frequency.
+    A ModalPort(target_neff=...) was the other way to aim it, and was not taken: it holds propagating modes only, and drops the
+    absorption of evanescent ones that lets a wave port sit near a discontinuity (src/Design/RESOLVED.md, EMI-13).
+    """
+    import numpy as np
+    from emerge._emerge.physics.microwave.bcs.port_bcs import WavePort
+
+    class TargetedWavePort(WavePort):
+        def __init__(self, face, port_number, target_neff, **kw):
+            super().__init__(face, port_number, **kw)
+            self.target_neff = target_neff
+
+        def _candidate_key(self, mode, k0):
+            return abs(np.real(mode.beta) / k0 - self.target_neff)
+
+        def _has_mode_set(self, k0):
+            if not super()._has_mode_set(k0):
+                return False
+            return any(abs(np.real(m.beta) / k0 - self.target_neff) <= TARGET_FRACTION * self.target_neff
+                       for m in self.available_modes.get(k0, []))
+
+    return TargetedWavePort
+
+
+def aligned_pair_wave_port_class():
+    """
+    brief-emi-13 R-emi13-3 -- EMerge's WavePort for a hollow guide whose two modes share a cutoff. An eigen solve returns any basis of
+    such a pair, so which field each port mode carries is undefined until it is chosen: here the two candidates of the largest beta^2
+    (the pair) are rotated, orthogonally, so that mode k is the combination with the largest integral along mode k's polarity line
+    and none along the other's, before the modes are fixed. It is EMerge's own rotation (_align_degenerate_modes) with circuitRF's
+    polarity LINES for its alignment vectors: EMerge's version weighs each candidate by an inner product sampled over the port face,
+    which read zero along one axis for every candidate of a 22.86 mm square guide (src/Design/RESOLVED.md, EMI-13), and then fixed an
+    evanescent mode as the second.
+    """
+    import numpy as np
+    from emerge._emerge.physics.microwave.bcs.port_bcs import WavePort
+
+    class AlignedPairWavePort(WavePort):
+        def __init__(self, face, port_number, lines, make_mode, **kw):
+            super().__init__(face, port_number, **kw)
+            self._lines = lines
+            self._make_mode = make_mode
+
+        def _fix_mode_set(self, k0):
+            cands = sorted(self.available_modes.get(k0, []), key=lambda m: -np.real(m.beta ** 2))
+            if len(cands) >= 2 and abs(cands[0].beta ** 2 - cands[1].beta ** 2) < 1e-3 * self._ermur_max * k0 ** 2:
+                pair = cands[:2]
+                A = np.array([[np.real(complex(line.line_integral(m.E_function))) for m in pair] for line in self._lines])
+                r1 = A[0] / np.linalg.norm(A[0])
+                r2 = np.array([-r1[1], r1[0]])
+                if A[1] @ r2 < 0:
+                    r2 = -r2
+                R = np.column_stack([r1, r2])
+                F = np.array([m.modefield * m.E_function.constant for m in pair]).T
+                new = []
+                for k in range(2):
+                    mode = self._make_mode(self, F @ R[:, k], pair[k].beta, k0, pair[k].freq, pair[k].modetype)
+                    mode.Z0 = pair[k].Z0
+                    new.append(mode)
+                self.available_modes[k0] = new + cands[2:]
+                self._pair = new
+            super()._fix_mode_set(k0)
+
+        def _candidate_key(self, mode, k0):
+            # the rotated pair first, in mode order; everything else by beta^2 as a WavePort orders it
+            pair = getattr(self, "_pair", None) or []
+            for k, m in enumerate(pair):
+                if m is mode:
+                    return -1e300 + k
+            return -np.real(mode.beta ** 2)
+
+    return AlignedPairWavePort
 
 
 def radial_lumped_port_class():
@@ -1190,7 +1353,19 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface, join=0.0):
             # brief-hzn-11 R-hzn11-3 — a hollow guide carries no TEM mode: its lowest, of any type (TE10 in an empty rectangle;
             # a loaded face's lowest is a hybrid one). EMerge's WavePort fixes the mode with the largest beta at the sweep's top.
             # brief-hzn-20 — a guide of several modes: one wave port carrying them all
-            bc = sim.mw.bc.WavePort(region, numbers[w["number"]], modetype=None, number_of_modes=len(w.get("hollowModes", [None])))
+            if w.get("align"):
+                # brief-emi-13 R-emi13-3 -- a degenerate pair (a square guide's TE10 and TE01) rotated onto the modes' polarity lines
+                # before the modes are fixed; hollow_mode_signs still checks and signs each
+                aligned = aligned_pair_wave_port_class()
+                bc = sim.mw.bc._construct_bc(aligned)(region, numbers[w["number"]], mode_lines(w), sim.mw._make_port_mode,
+                                                      number_of_modes=len(w["hollowModes"]), modetype=None)
+            else:
+                bc = sim.mw.bc.WavePort(region, numbers[w["number"]], modetype=None, number_of_modes=len(w.get("hollowModes", [None])))
+        elif "targetNeff" in w:
+            # brief-emi-13 R-emi13-1 -- the line's own mode, the one nearest the index kernel A predicts for the face, rather than the
+            # largest beta^2 (a parallel-plate mode under top-layer ground, a wrong mode over conducting silicon)
+            targeted = targeted_wave_port_class()
+            bc = sim.mw.bc._construct_bc(targeted)(region, numbers[w["number"]], float(w["targetNeff"]), modetype="TEM")
         else:
             bc = sim.mw.bc.WavePort(region, numbers[w["number"]], modetype="TEM")
         # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
@@ -1349,6 +1524,7 @@ def sweep(problem, folder, sim, model, heard, freqs, adaptive, groups, stalled):
         out["gpuStalled"] = stalled
     if waves:
         out["secondModes"] = second_modes(sim, waves, float(np.max(freqs)))
+        out["modeTargets"] = mode_targets(sim, waves, float(np.max(freqs)))
     if groups:
         out["terminalModes"] = [{"port": w["number"], "modes": len(w["terminals"]),
                                  "presolved": not w["mixed"]} for w, _ in groups]
@@ -1565,6 +1741,24 @@ def hollow_mode_data(sim, w, bc, freqs):
     return z, g
 
 
+def mode_targets(sim, waves, top):
+    """brief-emi-13 R-emi13-2 -- each targeted wave port's mode as the sweep took it at the sweep's top: its index Re(beta)/k0 against
+    the target, and its type, for circuitRF's check that the port carries the line's mode."""
+    import numpy as np
+    k0 = 2 * np.pi * top / C0
+    out = []
+    for w, bc in waves:
+        if "targetNeff" not in w:
+            continue
+        try:
+            mode = bc.get_modes(k0)[0]
+            out.append({"port": w["number"], "targetNeff": w["targetNeff"], "neff": float(np.real(mode.beta) / k0),
+                        "type": getattr(mode, "modetype", None), "frequencyHz": top})
+        except Exception as e:
+            out.append({"port": w["number"], "targetNeff": w["targetNeff"], "error": "%s: %s" % (type(e).__name__, e)})
+    return out
+
+
 def second_modes(sim, waves, top):
     """R-emw2-3a — whether each wave port's face carries a second mode at the sweep's top: a mode solve asking for two, with
     the port's TEM-only filter lifted for it (a box mode is TE or TM). EMerge keeps only modes that carry power, so a second
@@ -1580,8 +1774,11 @@ def second_modes(sim, waves, top):
             bc.forced_modetype = None
             # brief-emw-3: a terminal face asks for its own modes and the next; a face of one material around its presolve shift
             sim.mw.modal_analysis(bc, own + (4 if "presolveNeff" in w else 1), direct=False, TEM=False, freq=top,
-                                  target_neff=w.get("presolveNeff"))
-            modes = sorted(bc.available_modes.get(k0, []), key=lambda m: -complex(m.beta).real)
+                                  target_neff=w.get("presolveNeff", w.get("targetNeff")))
+            # brief-emi-13 -- a targeted port's own mode first (nearest its target), so a mode above it is the "second"
+            modes = sorted(bc.available_modes.get(k0, []),
+                           key=(lambda m: abs(complex(m.beta).real / k0 - w["targetNeff"])) if "targetNeff" in w
+                           else (lambda m: -complex(m.beta).real))
         except Exception as e:
             out.append({"port": w["number"], "frequencyHz": top, "error": "%s: %s" % (type(e).__name__, e)})
             continue

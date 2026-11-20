@@ -88,13 +88,14 @@ public sealed class HznMultiModeWavePortTests : IDisposable
         Assert.Equal("[[1,2],[3,4]]", new JsonArray([.. waves.Select(w => new JsonArray([.. w!["hollowModes"]!.AsArray().Select(m => m!["number"]!.DeepClone())]))]).ToJsonString());
     }
 
-    /// <summary>R-hzn20-1 — a square opening (TE10 and TE01 degenerate) and three modes are each refused by name; a sweep point below
-    /// the second mode's cutoff is refused naming that mode.</summary>
+    /// <summary>R-hzn20-1 — three modes are refused by name; a sweep point below the second mode's cutoff is refused naming that mode.
+    /// brief-emi-13 R-emi13-3: a square opening (TE10 and TE01 degenerate) is no longer refused — its pair is aligned on EMerge
+    /// (EmergeModeSelectionTests).</summary>
     [Fact]
-    public void ASquareOpening_ThreeModes_AndAPointBelowTheSecondCutoff_AreRefused()
+    public void ThreeModes_AndAPointBelowTheSecondCutoff_AreRefused_AndASquareOpeningIsNot()
     {
         var square = Translate(Edited(d => d["variables"]!["wb"] = "22.86mm"));
-        Assert.Contains(square.Refusals, r => r.Why.Contains("is square") && r.Why.Contains("degenerate"));
+        Assert.DoesNotContain(square.Refusals, r => r.Why.Contains("is square"));
         var three = Translate(Edited(d => { foreach (var x in d["excitations"]!.AsArray()) x!["props"]!["NumberOfModes"] = "3"; }));
         Assert.Contains(three.Refusals, r => r.Why.Contains("at most two modes"));
         var low = Problem(Edited(d => d["setups"]![0]!["sweeps"]![0]!["props"]!["Start"] = "9GHz"));

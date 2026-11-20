@@ -33,6 +33,10 @@ public static class EmergeRun
     /// <summary>brief-emi-12 — the answers <see cref="AskArgument"/> waits for.</summary>
     public const string SolveAnswer = "solve", StopAnswer = "stop";
 
+    /// <summary>brief-emi-12 — the answer at the mesh that goes on and asks again at SPARTA's analysis of the first system, before
+    /// anything is factorised: SPARTA's own estimate of its factor is what the check prices a direct solve from.</summary>
+    public const string SolveAtAnalysisAnswer = "solve analyze";
+
     /// <summary>brief-emi-12 — the answer that solves this run with EMerge's iterative solver, to <paramref name="tolerance"/>.</summary>
     public static string IterativeAnswer(double tolerance)
         => "iterative " + tolerance.ToString("R", System.Globalization.CultureInfo.InvariantCulture);

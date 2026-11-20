@@ -1394,10 +1394,17 @@ requested point from them, adding frequencies until its estimated error on |S| i
 progress line shows that error against the tolerance. **A sweep that reaches `MaxSamples` first has not
 converged**: its result is still written, with a warning, and the 3D view marks it not converged.
 
+**EMerge 3.0.8 or later** is needed: an older one, an install from before circuitRF moved to 3.0.10 for instance, is
+refused before anything is built, and the refusal says how to upgrade it. circuitRF's own install updates from
+{{anchor: settings.html#em3d|Settings ▸ Solvers}} (**Update to EMerge 3.0.10…**) or with `circuitrf solver install emerge --yes`;
+an EMerge in a Python environment of your own upgrades there with
+`<that python> -m pip install --upgrade "emerge[corvid]==3.0.10"`.
+
 Before solving, the run checks the mesh's size against this computer's memory, as Palace's run does: a
 warning past three quarters of it, and a question (or `--force`) past one and a half times it. A refused run
-stops before the solve. The estimate is for the solver the run will use
-([EM Solvers ▸ EMerge's memory](em-solvers.html#emerge-memory) has the figures), and EMerge waits while it is asked.
+stops before the solve. The estimate is for the solver the run will use, and on SPARTA it is taken from SPARTA's own analysis
+of the first system, just before it factorises; EMerge waits while it is asked
+([EM Solvers ▸ EMerge's memory](em-solvers.html#emerge-memory) has the figures).
 
 <a id="emerge-iterative"></a>**The iterative solver** (`"LinearSolver": "Iterative"`). By default EMerge factorises each
 system with its direct solver, SPARTA. *Iterative* uses CORVID instead: it factorises only the first-order part of the
@@ -1688,6 +1695,18 @@ several terminals ([below](#wave-port-terminals-emerge)):
   renormalisation, and the run's notes say how far it moved.
 - **The run asks each face for a second mode** at the top of the sweep and warns when one propagates,
   as Palace's run does.
+- <a id="wave-port-mode-emerge"></a>**Which mode the port carries.** A face can carry more than one mode, and the one with
+  the largest propagation constant is not always the line's: ground metal on the top layer at the face carries a
+  parallel-plate mode between it and the floor that sits above a microstrip's or a coplanar line's own. So circuitRF works
+  out the line's effective index on that face first, from a quasi-static solve of its cross-section with every other metal
+  grounded, and the port carries the mode nearest it. The run's notes give that index and where it came from, and
+  `circuitrf explain` shows it in the port's row. A run that took a mode more than 5 % from it warns, naming both indices
+  and the mode's type. A face whose cross-section cannot be solved that way (a port on a top or bottom face, a dielectric
+  that does not span the face, no ground beneath it) keeps the largest propagation constant, and its notes say why. On a
+  grounded coplanar line drawn from a board, with top grounds stitched to the floor by vias behind the face, the port now
+  takes the line's mode (|S21| through 15 mm within 2 dB, where it was −14 to −22 dB), but the grounds float on the face
+  itself and the face cannot carry the line's mode with its grounds tied down. **Put a via under each top ground at the
+  port's face** for a matched port: on the same line, |S11| fell to −20 to −28 dB.
 - **A hollow waveguide** runs on EMerge and on Palace: its mode is the guide's lowest, of any type, and its
   sign is set by a polarity line across the narrow side. One of [two modes](#hollow-two-modes) runs on EMerge only.
 
@@ -2058,8 +2077,12 @@ draws both polarity lines: TE10's across the narrow side at the broad side's cen
 narrow side's centre, TE20's across the narrow side at a quarter of the broad side.
 
 - **Each mode is normalised to itself**, so the port's Reference is Mode and the Touchstone file states `R 1`.
-- **Refused by name:** more than two modes, a square opening, a narrow side equal to half the broad side (the second mode
-  would be degenerate), and a sweep point below either mode's cutoff.
+- **A square opening, or a narrow side equal to half the broad side**, gives the port two modes of one cutoff (TE10 and
+  TE01, or TE01 and TE20), which a mode solve returns in any combination. EMerge turns the pair so that each mode lies along
+  its own polarity line, and the second mode is TE01. On an empty 22.86 mm square guide 30 mm long, each mode reached the
+  same mode at the far port with every cross term below 2e-4, and S31 and S42 followed e^(−jβL) to 1e-3. A square opening
+  with a port of **one** mode is still refused: the port cannot carry the other mode of its cutoff.
+- **Refused by name:** more than two modes, a square opening with one mode, and a sweep point below either mode's cutoff.
 - **EMerge** runs it as one wave port of two modes, each absorbed with its own propagation constant. The run checks each
   mode is the one named before it reads S, and refuses rather than reports a matrix whose rows belong to other modes.
   Palace and openEMS refuse a port of two modes by name.

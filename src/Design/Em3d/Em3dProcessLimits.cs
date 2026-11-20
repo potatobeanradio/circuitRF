@@ -189,11 +189,24 @@ public static class DiskFloor
         try
         {
             string full = Path.GetFullPath(path);
-            return DriveInfo.GetDrives().Select(d => d.RootDirectory.FullName)
+            return DriveInfo.GetDrives().Select(MountPoint).OfType<string>()
                 .Where(m => full == m || full.StartsWith(m.EndsWith('/') ? m : m + "/", StringComparison.Ordinal))
                 .OrderByDescending(m => m.Length).FirstOrDefault();
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return null; }
+
+        // A mount's name can come back padded with NULs on macOS ('/Volumes/Drive\0\0…', seen once in a run of the EMerge
+        // benchmarks), and RootDirectory then throws: the name is read up to its first NUL instead.
+        static string? MountPoint(DriveInfo d)
+        {
+            try { return d.RootDirectory.FullName; }
+            catch (ArgumentException)
+            {
+                string name = d.Name;
+                int nul = name.IndexOf('\0');
+                return nul > 0 ? name[..nul] : null;
+            }
+        }
     }
 
     private static string? Existing(string path)

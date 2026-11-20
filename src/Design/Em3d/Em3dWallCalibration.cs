@@ -617,8 +617,11 @@ public sealed class Em3dWallCalibration
         public string Label { get; set; } = "";
 
         /// <param name="otherLines">Other groups' lines on this face: left out of this group's section (and so its standards).</param>
+        /// <param name="lineNames">brief-emi-13 — the lines' conductors, one per port, when the ports are not wall ports (a wave
+        /// port's positive object); null reads each port's <see cref="Em3dWallPort.Conductor"/>.</param>
         public static Section? Take(Em3dProblem problem, string face, int axis, double at, int inward, double gap, double endRun,
-                                    IReadOnlyList<Em3dPort> ports, IReadOnlySet<string>? otherLines = null)
+                                    IReadOnlyList<Em3dPort> ports, IReadOnlySet<string>? otherLines = null,
+                                    IReadOnlyList<string>? lineNames = null)
         {
             Section No(string why) => new()
             {
@@ -630,7 +633,8 @@ public sealed class Em3dWallCalibration
             double slabLo = Math.Min(at, at + inward * endRun), slabHi = Math.Max(at, at + inward * endRun);
             int lat = 1 - axis;
             var pieces = new List<Piece>();
-            var lineOf = ports.Select((p, i) => (p.Wall!.Conductor, i)).ToDictionary(x => x.Conductor, x => x.i);
+            var names = lineNames ?? [.. ports.Select(p => p.Wall!.Conductor)];
+            var lineOf = names.Select((n, i) => (n, i)).ToDictionary(x => x.n, x => x.i);
 
             List<(double Lo, double Hi)>? Uniform(string name, Func<double, List<(double, double)>> slice, out string? why)
             {
@@ -694,9 +698,9 @@ public sealed class Em3dWallCalibration
             }
             if (problem.CylinderSheets.Count > 0 || problem.LumpedElements.Count > 0 && problem.LumpedElements.Any(l => Near(l.Min, l.Max)))
                 return No($"A lumped element or a cylinder sheet lies in the {face} face's end run; keep the wall ports' first {Mm(endRun)} mm clear.");
-            foreach (var p in ports)
-                if (!pieces.Any(q => q.Line == lineOf[p.Wall!.Conductor]))
-                    return No($"Port {p.Number}'s line '{p.Wall!.Conductor}' does not run straight through the {face} face's end run.");
+            for (int i = 0; i < ports.Count; i++)
+                if (!pieces.Any(q => q.Line == lineOf[names[i]]))
+                    return No($"Port {ports[i].Number}'s line '{names[i]}' does not run straight through the {face} face's end run.");
             return new Section
             {
                 Face = face, Axis = axis, Inward = inward, At = at, Gap = gap, Pieces = pieces, Materials = problem.Materials,
@@ -810,6 +814,9 @@ public sealed class Em3dWallCalibration
             return _media[fHz] = Solve(fHz);
         }
 
+        /// <summary>The most segments a section's 2D solve takes: 6,000 is a 576 MB complex matrix, held about three times.</summary>
+        internal const int MaxSegments = 6000;
+
         private ModalMedium? Solve(double fHz)
         {
             int lat = 1 - Axis;
@@ -850,6 +857,8 @@ public sealed class Em3dWallCalibration
             double t = 1e-6, height = Box.Max.Z - zGround;
             if (Box.Faces.ZMax == Em3dBoundaryKind.Pec) conductors.Add(Rect("lid", latLo, latHi, height, height + t));
             var (sideLo, sideHi) = lat == 0 ? (Box.Faces.XMin, Box.Faces.XMax) : (Box.Faces.YMin, Box.Faces.YMax);
+            // brief-emi-13 — a PEC side wall is a 1 µm conductor the box's height tall, and kernel A's mesher sizes a conductor's cells
+            // from its WIDTH: on a 3.5 mm box it cut the wall into 0.17 µm cells, 82,298 segments, which MaxSegments now refuses.
             if (sideLo == Em3dBoundaryKind.Pec) conductors.Add(Rect("side-lo", latLo - t, latLo, 0, height));
             if (sideHi == Em3dBoundaryKind.Pec) conductors.Add(Rect("side-hi", latHi, latHi + t, 0, height));
 
@@ -861,7 +870,19 @@ public sealed class Em3dWallCalibration
             int cells = (int)Math.Clamp(Math.Ceiling(6 * widest / narrow), lines.Count > 1 ? 48 : 6, 160);
             var problem = new EmProblem(conductors, layers, new EmGroundPlane(0, 5.8e7), [], 1e-3);
             RlgcModel rlgc;
-            try { rlgc = RlgcExtractor.Extract(problem, BoundaryMesher.Mesh(problem, new EmMeshSettings(MinCellsAcrossWidth: cells))); }
+            try
+            {
+                var mesh = BoundaryMesher.Mesh(problem, new EmMeshSettings(MinCellsAcrossWidth: cells));
+                // brief-emi-13 — kernel A's solve is a dense complex matrix over the segments, three times over: a section that meshes
+                // past MaxSegments is refused before anything is allocated, rather than overflowing (or swapping) on the allocation.
+                if (mesh.Mesh.Segments.Count > MaxSegments)
+                {
+                    MediumRefusal = $"The {Face} face's cross-section meshes to {mesh.Mesh.Segments.Count:N0} segments, past the " +
+                                    $"{MaxSegments:N0} kernel A solves for a port's section.";
+                    return null;
+                }
+                rlgc = RlgcExtractor.Extract(problem, mesh);
+            }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException)
             {
                 MediumRefusal = $"The {Face} face's cross-section could not be solved for its capacitance: {e.Message}";

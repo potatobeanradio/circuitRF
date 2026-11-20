@@ -70,11 +70,13 @@ public static class EmergeMemory
     /// to it as one fixed part and one part per unknown can be: <see cref="Ceiling"/> is the most it reads over the larger run
     /// of a problem, held by a test.</para>
     ///
-    /// <para><b>The direct solvers cannot all be held to 1.3 times.</b> The 3D Wave Ports Launch and a thin sheet line need 20
-    /// to 40 % more per unknown on SPARTA and SuperLU than the Cavity or the Coupled Microstrip (the Launch run five times on the
-    /// first driver), and nothing in the mesh's counts tells them apart before the solve: a line that holds them reads the
-    /// Cavity at 54,000 unknowns 1.39 times high. CORVID factorises only the first-order part, where the difference is small.
-    /// An adaptive sweep peaks up to 7 % above a point sweep on the same mesh, so both are among the measurements.</para>
+    /// <para><b>The unknowns alone cannot hold a direct solver to 1.3 times.</b> The 3D Wave Ports Launch and a thin sheet line
+    /// need 20 to 40 % more per unknown on SPARTA and SuperLU than the Cavity or the Coupled Microstrip, and nothing in the mesh's
+    /// counts tells them apart: a line in the unknowns that holds them reads the Cavity at 54,000 unknowns 1.42 times high. So a
+    /// SPARTA run is judged at SPARTA's own analysis of its first system instead (<see cref="PeakBytesFromAnalysis"/>), which does
+    /// tell them apart, within 1.3; this line is what <c>explain</c> quotes before there is a mesh. CORVID factorises only the
+    /// first-order part, where the difference is small. An adaptive sweep peaks up to 7 % above a point sweep on the same mesh, so
+    /// both are among the measurements.</para>
     ///
     /// <para><b>SPARTA on the GPU</b> is measured the same way: on Apple silicon the GPU's memory is the machine's, and its
     /// buffers are charged to the footprint of the process that allocated them, so the figure is everything the run takes from
@@ -98,30 +100,37 @@ public static class EmergeMemory
         _                           => (EigenFixed, EigenPerUnknown),
     };
 
-    /// <summary>The most each line reads over the larger measured run of a problem (<see cref="Measurements"/>): 1.3 for
-    /// CORVID and the eigensolver, as the brief asked; the direct solvers' the least one line can do (the summary above).</summary>
+    /// <summary>The most each unknowns-only line reads over the larger measured run of a problem (<see cref="Measurements"/>): 1.3
+    /// for CORVID and the eigensolver. SPARTA's and the GPU's are what one line in the unknowns alone can do, and are not what a
+    /// run is judged on: a SPARTA run is priced from its analysis (<see cref="PeakBytesFromAnalysis"/>, within
+    /// <see cref="AnalysisCeiling"/>), and its unknowns line is the figure <c>explain</c> quotes before there is a mesh. Driven
+    /// SuperLU's 1.48 stands: SciPy's factorisation makes no analysis a run could read first, and a driven run reaches it only on an
+    /// install with no faster solver.</summary>
     public static double Ceiling(EmergeLinearSolve solve) => solve switch
     {
-        EmergeLinearSolve.Sparta    => 1.40,
+        EmergeLinearSolve.Sparta    => 1.42,
         EmergeLinearSolve.SpartaGpu => 1.37,
         EmergeLinearSolve.SuperLu   => 1.48,
         _                           => 1.30,
     };
 
-    private const long SpartaFixed = 420_000_000, SpartaPerUnknown = 18_200;
-    private const long GpuFixed    = 360_000_000, GpuPerUnknown    = 17_400;
+    private const long SpartaFixed = 430_000_000, SpartaPerUnknown = 18_200;
+    private const long GpuFixed    = 330_000_000, GpuPerUnknown    = 17_700;
     private const long CorvidFixed = 300_000_000, CorvidPerUnknown = 12_000;
     private const long SuperLuFixed = 0,          SuperLuPerUnknown = 24_400;
     private const long EigenFixed  = 300_000_000, EigenPerUnknown  = 19_600;
 
-    /// <summary>One measured problem: its unknowns at order 2, its solver and each run's peak footprint, MB.</summary>
-    public sealed record Measurement(string Problem, long Unknowns, EmergeLinearSolve Solve, IReadOnlyList<int> PeakMegabytes)
+    /// <summary>One measured problem: its unknowns at order 2, its solver and each run's peak footprint, MB; for a SPARTA run, the
+    /// factor and fronts SPARTA's analysis predicted for its first system, MB.</summary>
+    public sealed record Measurement(string Problem, long Unknowns, EmergeLinearSolve Solve, IReadOnlyList<int> PeakMegabytes,
+                                     int? AnalysisMegabytes = null)
     {
         /// <summary>The larger run's peak, bytes.</summary>
         public long LargestBytes => PeakMegabytes.Max() * 1_000_000L;
     }
 
-    private static Measurement M(string problem, long unknowns, EmergeLinearSolve solve, int[] mb) => new(problem, unknowns, solve, mb);
+    private static Measurement M(string problem, long unknowns, EmergeLinearSolve solve, int[] mb, int? analysisMb = null)
+        => new(problem, unknowns, solve, mb, analysisMb);
 
     /// <summary>
     /// brief-emi-12 R-emi12-1 — every measurement the lines are fitted to: EMerge 3.0.10 on an Apple M4 (10 cores, 16 GB), the
@@ -134,22 +143,22 @@ public static class EmergeMemory
     /// </summary>
     public static IReadOnlyList<Measurement> Measurements { get; } =
     [
-        M("Cavity, driven, Draft", 54090, EmergeLinearSolve.Sparta, [1001, 1007]),
-        M("5 µm line as a 1 µm sheet", 75602, EmergeLinearSolve.Sparta, [1760, 1795]),
-        M("Launch, Draft", 92108, EmergeLinearSolve.Sparta, [1789, 1736]),
-        M("Cavity, driven, Standard", 108668, EmergeLinearSolve.Sparta, [1693, 1719]),
-        M("Launch, Standard", 151670, EmergeLinearSolve.Sparta, [2888, 3083, 3081, 3064]),
-        M("Cavity, driven, 0.1 λ", 255076, EmergeLinearSolve.Sparta, [3676, 3611]),
-        M("Coupled Microstrip, Standard", 337980, EmergeLinearSolve.Sparta, [4854, 4804, 4969, 4961]),
-        M("Cavity, driven, 0.085 λ", 361012, EmergeLinearSolve.Sparta, [5361, 4808]),
-        M("Coupled Microstrip, 0.12 λ", 363540, EmergeLinearSolve.Sparta, [5411, 5411]),
-        M("Cavity, driven, 0.075 λ", 493846, EmergeLinearSolve.Sparta, [6645, 6530, 6682, 6934]),
-        M("Cavity, driven, Draft", 54090, EmergeLinearSolve.SpartaGpu, [954, 946]),
-        M("Launch, Draft", 92108, EmergeLinearSolve.SpartaGpu, [1802, 1817]),
-        M("Launch, Standard", 151670, EmergeLinearSolve.SpartaGpu, [2860, 2992]),
-        M("Cavity, driven, 0.1 λ", 255076, EmergeLinearSolve.SpartaGpu, [3512, 3404]),
-        M("Coupled Microstrip, Standard", 337980, EmergeLinearSolve.SpartaGpu, [4889, 4586]),
-        M("Cavity, driven, 0.075 λ", 493846, EmergeLinearSolve.SpartaGpu, [6310, 6582]),
+        M("Cavity, driven, Draft", 54090, EmergeLinearSolve.Sparta, [1000, 998], 292),
+        M("5 µm line as a 1 µm sheet", 75602, EmergeLinearSolve.Sparta, [1745, 1754, 1804], 729),
+        M("Launch, Draft", 92108, EmergeLinearSolve.Sparta, [1753, 1816], 700),
+        M("Cavity, driven, Standard", 108668, EmergeLinearSolve.Sparta, [1674, 1698], 606),
+        M("Launch, Standard", 151670, EmergeLinearSolve.Sparta, [3068, 3076, 3132], 1358),
+        M("Cavity, driven, 0.1 λ", 255076, EmergeLinearSolve.Sparta, [3726, 3491], 1587),
+        M("Coupled Microstrip, Standard", 337980, EmergeLinearSolve.Sparta, [4862, 4746, 4970], 1930),
+        M("Cavity, driven, 0.085 λ", 361012, EmergeLinearSolve.Sparta, [5408, 5326], 2328),
+        M("Coupled Microstrip, 0.12 λ", 363540, EmergeLinearSolve.Sparta, [5430, 5450], 2227),
+        M("Cavity, driven, 0.075 λ", 493846, EmergeLinearSolve.Sparta, [7125, 6690, 6945], 3043),
+        M("Cavity, driven, Draft", 54090, EmergeLinearSolve.SpartaGpu, [943, 942], 146),
+        M("Launch, Draft", 92108, EmergeLinearSolve.SpartaGpu, [1819, 1822], 350),
+        M("Launch, Standard", 151670, EmergeLinearSolve.SpartaGpu, [2515, 3013], 679),
+        M("Cavity, driven, 0.1 λ", 255076, EmergeLinearSolve.SpartaGpu, [3629, 3628], 793),
+        M("Coupled Microstrip, Standard", 337980, EmergeLinearSolve.SpartaGpu, [5080, 5007], 965),
+        M("Cavity, driven, 0.075 λ", 493846, EmergeLinearSolve.SpartaGpu, [6634, 6588], 1522),
         M("Cavity, driven, Draft", 54090, EmergeLinearSolve.Corvid, [733, 737]),
         M("5 µm line as a 1 µm sheet", 75602, EmergeLinearSolve.Corvid, [1082, 1072]),
         M("Launch, Draft", 92108, EmergeLinearSolve.Corvid, [1301, 1298]),
@@ -168,6 +177,36 @@ public static class EmergeMemory
         M("Cavity, eigenmode, Draft", 109924, EmergeLinearSolve.SuperLuEigenmode, [2106, 2105]),
         M("Cavity, eigenmode, Standard", 205224, EmergeLinearSolve.SuperLuEigenmode, [3465, 3838]),
     ];
+
+    /// <summary>
+    /// brief-emi-12 — a SPARTA run's peak from SPARTA's own symbolic analysis of its first system (the driver's "analyzed" line, made
+    /// before anything is factorised): a fixed part, a part per unknown and a share of the factor and fronts SPARTA predicts. This is
+    /// what the check prices a direct SPARTA solve from, because the unknowns alone cannot tell two meshes of one size apart: the
+    /// Launch and a thin sheet line need 20 to 40 % more per unknown than the Cavity, and SPARTA's analysis says so (its factor
+    /// reads 4.1-4.4 kB per unknown on them against 2.7-3.2 kB). Measured within <see cref="AnalysisCeiling"/> of every run
+    /// (<see cref="Measurements"/>, held by a test).
+    /// </summary>
+    public static long PeakBytesFromAnalysis(long unknowns, long factorAndFrontBytes, EmergeLinearSolve solve)
+    {
+        var (fixedBytes, perUnknown, share) = solve == EmergeLinearSolve.SpartaGpu
+            ? (GpuAnalysisFixed, GpuAnalysisPerUnknown, GpuAnalysisShare)
+            : (SpartaAnalysisFixed, SpartaAnalysisPerUnknown, SpartaAnalysisShare);
+        return fixedBytes + perUnknown * unknowns + (long)Math.Round(share * factorAndFrontBytes);
+    }
+
+    /// <summary>Whether <paramref name="solve"/> is priced from SPARTA's analysis when one is reported.</summary>
+    public static bool PricedFromAnalysis(EmergeLinearSolve solve) => solve is EmergeLinearSolve.Sparta or EmergeLinearSolve.SpartaGpu;
+
+    /// <summary>The most the analysis-based estimate reads over the larger measured run of a problem: the brief's 1.3.</summary>
+    public const double AnalysisCeiling = 1.30;
+
+    // Fitted to the measurements (minimax over each problem's larger run: SPARTA 320 MB + 5.2 kB per unknown + 1.50 × factor and
+    // fronts within 1.08×, the GPU 330 MB + 7.4 kB + 2.34× within 1.14×), then set 10 % above the fit, the run-to-run spread SPARTA's
+    // parallel factorisation shows: every measurement then reads 1.10-1.19× (the GPU's 1.10-1.25×).
+    private const long SpartaAnalysisFixed = 352_000_000, SpartaAnalysisPerUnknown = 5_720;
+    private const double SpartaAnalysisShare = 1.65;
+    private const long GpuAnalysisFixed = 363_000_000, GpuAnalysisPerUnknown = 8_140;
+    private const double GpuAnalysisShare = 2.574;
 
     /// <summary>The solver as a sentence names it.</summary>
     public static string Describe(EmergeLinearSolve solve) => solve switch
@@ -194,10 +233,12 @@ public static class EmergeMemory
     /// </summary>
     public static Em3dMemoryVerdict Verdict(EmergeMeshCounts mesh, EmergeSettings settings, EmergeLinearSolve solve,
                                             long physicalBytes, bool iterativeAvailable = false, bool eigenmode = false,
-                                            bool scattering = false)
+                                            bool scattering = false, EmergeAnalysis? analysis = null)
     {
         long unknowns = Unknowns(mesh.Edges, mesh.Triangles, settings.ElementOrder);
-        long estimate = PeakBytes(unknowns, solve);
+        // brief-emi-12 — a SPARTA run with its analysis in hand is priced from it; otherwise, from the unknowns
+        bool fromAnalysis = PricedFromAnalysis(solve) && analysis?.FactorAndFrontBytes is not null;
+        long estimate = fromAnalysis ? PeakBytesFromAnalysis(unknowns, analysis!.FactorAndFrontBytes!.Value, solve) : PeakBytes(unknowns, solve);
         var remedies = new List<Em3dMemoryRemedy>();
         // EMerge's eigensolver does not use CORVID, and a scattering run is solved directly: neither is offered it.
         if (solve != EmergeLinearSolve.Corvid && iterativeAvailable && !eigenmode && !scattering)
@@ -207,7 +248,9 @@ public static class EmergeMemory
                              PeakBytes(Unknowns(mesh.Edges, mesh.Triangles, 1), solve)));
         return Em3dMemoryVerdict.Evaluate(estimate, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes ?? long.MaxValue)],
             basis: $"EMerge made {mesh.Tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra, " +
-                   $"{unknowns.ToString("N0", CultureInfo.InvariantCulture)} unknowns, for {Describe(solve)}.",
+                   $"{unknowns.ToString("N0", CultureInfo.InvariantCulture)} unknowns, for {Describe(solve)}" +
+                   (fromAnalysis ? $", whose analysis predicts a {MachineMemory.Format(analysis!.FactorBytes!.Value)} factor and " +
+                                   $"{MachineMemory.Format(analysis.FrontBytes!.Value)} of fronts." : "."),
             solver: "EMerge");
     }
 }

@@ -2455,10 +2455,16 @@ setup's <em>Cores</em> setting as its thread count; how much each choice of solv
 requested point from them, adding frequencies until its estimated error on |S| is below its tolerance. The
 progress line shows that error against the tolerance. <strong>A sweep that reaches <code>MaxSamples</code> first has not
 converged</strong>: its result is still written, with a warning, and the 3D view marks it not converged.</p>
+<p><strong>EMerge 3.0.8 or later</strong> is needed: an older one, an install from before circuitRF moved to 3.0.10 for instance, is
+refused before anything is built, and the refusal says how to upgrade it. circuitRF's own install updates from
+<a href="settings.html#em3d">Settings ▸ Solvers</a> (<strong>Update to EMerge 3.0.10…</strong>) or with <code>circuitrf solver install emerge --yes</code>;
+an EMerge in a Python environment of your own upgrades there with
+<code>&lt;that python&gt; -m pip install --upgrade &quot;emerge[corvid]==3.0.10&quot;</code>.</p>
 <p>Before solving, the run checks the mesh's size against this computer's memory, as Palace's run does: a
 warning past three quarters of it, and a question (or <code>--force</code>) past one and a half times it. A refused run
-stops before the solve. The estimate is for the solver the run will use
-(<a href="em-solvers.html#emerge-memory">EM Solvers ▸ EMerge's memory</a> has the figures), and EMerge waits while it is asked.</p>
+stops before the solve. The estimate is for the solver the run will use, and on SPARTA it is taken from SPARTA's own analysis
+of the first system, just before it factorises; EMerge waits while it is asked
+(<a href="em-solvers.html#emerge-memory">EM Solvers ▸ EMerge's memory</a> has the figures).</p>
 <p><a id="emerge-iterative"></a><strong>The iterative solver</strong> (<code>&quot;LinearSolver&quot;: &quot;Iterative&quot;</code>). By default EMerge factorises each
 system with its direct solver, SPARTA. <em>Iterative</em> uses CORVID instead: it factorises only the first-order part of the
 system, about a fifth of the unknowns, and solves the rest iteratively to a relative residual of 1e-6 (EMerge's own
@@ -2798,6 +2804,18 @@ coax's PTFE for example, the impedance is the same at every frequency.</li>
 renormalisation, and the run's notes say how far it moved.</li>
 <li><strong>The run asks each face for a second mode</strong> at the top of the sweep and warns when one propagates,
 as Palace's run does.</li>
+<li><a id="wave-port-mode-emerge"></a><strong>Which mode the port carries.</strong> A face can carry more than one mode, and the one with
+the largest propagation constant is not always the line's: ground metal on the top layer at the face carries a
+parallel-plate mode between it and the floor that sits above a microstrip's or a coplanar line's own. So circuitRF works
+out the line's effective index on that face first, from a quasi-static solve of its cross-section with every other metal
+grounded, and the port carries the mode nearest it. The run's notes give that index and where it came from, and
+<code>circuitrf explain</code> shows it in the port's row. A run that took a mode more than 5 % from it warns, naming both indices
+and the mode's type. A face whose cross-section cannot be solved that way (a port on a top or bottom face, a dielectric
+that does not span the face, no ground beneath it) keeps the largest propagation constant, and its notes say why. On a
+grounded coplanar line drawn from a board, with top grounds stitched to the floor by vias behind the face, the port now
+takes the line's mode (|S21| through 15 mm within 2 dB, where it was −14 to −22 dB), but the grounds float on the face
+itself and the face cannot carry the line's mode with its grounds tied down. <strong>Put a via under each top ground at the
+port's face</strong> for a matched port: on the same line, |S11| fell to −20 to −28 dB.</li>
 <li><strong>A hollow waveguide</strong> runs on EMerge and on Palace: its mode is the guide's lowest, of any type, and its
 sign is set by a polarity line across the narrow side. One of <a href="#hollow-two-modes">two modes</a> runs on EMerge only.</li>
 </ul>
@@ -3153,8 +3171,12 @@ draws both polarity lines: TE10's across the narrow side at the broad side's cen
 narrow side's centre, TE20's across the narrow side at a quarter of the broad side.</p>
 <ul>
 <li><strong>Each mode is normalised to itself</strong>, so the port's Reference is Mode and the Touchstone file states <code>R 1</code>.</li>
-<li><strong>Refused by name:</strong> more than two modes, a square opening, a narrow side equal to half the broad side (the second mode
-would be degenerate), and a sweep point below either mode's cutoff.</li>
+<li><strong>A square opening, or a narrow side equal to half the broad side</strong>, gives the port two modes of one cutoff (TE10 and
+TE01, or TE01 and TE20), which a mode solve returns in any combination. EMerge turns the pair so that each mode lies along
+its own polarity line, and the second mode is TE01. On an empty 22.86 mm square guide 30 mm long, each mode reached the
+same mode at the far port with every cross term below 2e-4, and S31 and S42 followed e^(−jβL) to 1e-3. A square opening
+with a port of <strong>one</strong> mode is still refused: the port cannot carry the other mode of its cutoff.</li>
+<li><strong>Refused by name:</strong> more than two modes, a square opening with one mode, and a sweep point below either mode's cutoff.</li>
 <li><strong>EMerge</strong> runs it as one wave port of two modes, each absorbed with its own propagation constant. The run checks each
 mode is the one named before it reads S, and refuses rather than reports a matrix whose rows belong to other modes.
 Palace and openEMS refuse a port of two modes by name.</li>

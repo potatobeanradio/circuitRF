@@ -49,7 +49,13 @@ public sealed record Em3dFloquet(int Mode, int Modes, double Er);
 /// in cutoff order, named <paramref name="Name"/> (<c>TE10</c>, <c>TE01</c>, <c>TE20</c>), cut off where the guide's
 /// <paramref name="CutoffLengthM"/> is half a wavelength in its fill (the broad side for TE10, the narrow side for TE01, half the broad
 /// side for TE20).</summary>
-public sealed record Em3dHollowMode(int Mode, int Modes, string Name, double CutoffLengthM);
+public sealed record Em3dHollowMode(int Mode, int Modes, string Name, double CutoffLengthM)
+{
+    /// <summary>brief-emi-13 R-emi13-3 — the port's two modes share one cutoff (a square opening; or a narrow side half the broad
+    /// side, where TE01 and TE20 do): the solver aligns them to their polarity lines, since a mode solve returns any combination of a
+    /// degenerate pair.</summary>
+    public bool Degenerate { get; init; }
+}
 
 /// <summary>How the frequency points are spaced between start and stop.</summary>
 public enum Em3dSweepKind { Linear, Log }

@@ -72,7 +72,8 @@ public static partial class EmergeScriptWriter
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(settings);
         if (EmergeLoweringRules.ResistiveVolumeRefusal(problem) is { } noRoom) return new(null, [], noRoom, [], 0, 0);
-        problem = EmergeLoweringRules.ResistiveSheetsAsVolumes(problem, out var loweringNotes);
+        problem = EmergeLoweringRules.ResistiveSheetsAsVolumes(problem, out var sheetNotes);
+        var loweringNotes = new List<string>(sheetNotes);
         if (EmergeLoweringRules.Refusal(problem, settings) is { } refused) return new(null, [], refused, [], 0, 0);
 
         var materials = new Materials(problem);
@@ -257,6 +258,10 @@ public static partial class EmergeScriptWriter
         // brief-emw-3 R-emw3-3 — a terminal group is ONE entry, its leader's (the lowest number): the region and the reference
         // are shared, and `terminals` lists each terminal's number, name and path in terminal order, the driver's modes 1…N.
         // A one-terminal wave port is written exactly as EMW-2 writes it.
+        var targets = problem.Ports.Where(Em3dWavePortTarget.Applies).Select(p => (p, Em3dWavePortTarget.For(problem, p)!))
+                                   .ToDictionary(x => x.p.Number, x => x.Item2);
+        foreach (var (number, target) in targets.OrderBy(x => x.Key))
+            loweringNotes.Add(EmergeLoweringRules.TargetNote(problem, problem.Ports.First(q => q.Number == number), target));
         e.Key("wavePorts").BeginArray();
         foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Wave && p.Floquet is null))
         {
@@ -275,11 +280,15 @@ public static partial class EmergeScriptWriter
             // brief-hzn-11 R-hzn11-3 — a hollow guide's mode is of any type (its path is its polarity line), and a port normalised
             // to its mode keeps EMerge's S as it is
             if (p.Hollow) e.Key("hollow").Bool(true);
+            // brief-emi-13 R-emi13-1 — the index a line's mode is aimed at, where kernel A gives one
+            if (targets.TryGetValue(p.Number, out var target) && target.Neff is { } neff) e.Key("targetNeff").Number(neff);
             if (p.ModeNormalised) e.Key("modeNormalised").Bool(true);
             if (group is not null && p.HollowMode is not null)
             {
                 // brief-hzn-20 R-hzn20-1 — a hollow guide of several modes: one wave port of that many modes, each mode's number,
                 // name and polarity line in mode order (the driver signs each by its own line and checks it is the mode named)
+                // brief-emi-13 R-emi13-3 — a degenerate pair is aligned to the modes' polarity lines
+                if (group.Any(m => m.HollowMode?.Degenerate == true)) e.Key("align").Bool(true);
                 e.Key("hollowModes").BeginArray();
                 foreach (var m in group)
                 {

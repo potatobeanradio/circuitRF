@@ -43,12 +43,23 @@ public sealed record EmergeRunFacts(string? Version, string? SparseSolver, long?
     /// EMerge's own log says it called.</summary>
     public bool Iterative => SparseSolver == IterativeSolverName;
 
+    /// <summary>brief-emi-13 R-emi13-2 — each targeted wave port's mode as the sweep took it at the sweep's top.</summary>
+    public IReadOnlyList<EmergeModeTarget> ModeTargets { get; init; } = [];
+
     /// <summary>How run.json and EMerge's log name the iterative solver.</summary>
     public const string IterativeSolverName = "CORVID";
 
     /// <summary>brief-emi-12 — CORVID's iterations: right-hand sides solved, the most any took and their mean; null when the run
     /// did not solve iteratively.</summary>
     public EmergeIterations? Iterations { get; init; }
+}
+
+/// <summary>brief-emi-13 R-emi13-2 — a targeted wave port's mode as taken: its index against the target, and its type; or why it
+/// could not be read.</summary>
+public sealed record EmergeModeTarget(int Port, double TargetNeff, double? Neff, string? Type, double FrequencyHz, string? Error)
+{
+    /// <summary>How far the mode taken is from the target, as a share of the target; null when it was not read.</summary>
+    public double? Miss => Neff is { } n && TargetNeff > 0 ? Math.Abs(n - TargetNeff) / TargetNeff : null;
 }
 
 /// <summary>brief-emi-12 — what CORVID's iterations came to over a run, as the driver counted them from EMerge's log.</summary>
@@ -167,6 +178,14 @@ public static class EmergeResults
                        Num("error"), Bool("converged"), (int?)Long("modes"), Num("meshSeconds"), Num("solveSeconds"), warnings)
                    {
                        Device = Str("device") is "gpu" ? EmergeDevice.Gpu : Str("device") is "cpu" ? EmergeDevice.Cpu : null, SecondModes = second,
+                       ModeTargets = r.TryGetProperty("modeTargets", out var mt) && mt.ValueKind == JsonValueKind.Array
+                           ? [.. mt.EnumerateArray().Where(x => x.TryGetProperty("port", out _) && x.TryGetProperty("targetNeff", out _)).Select(x =>
+                               new EmergeModeTarget(x.GetProperty("port").GetInt32(), x.GetProperty("targetNeff").GetDouble(),
+                                   x.TryGetProperty("neff", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetDouble() : null,
+                                   x.TryGetProperty("type", out var ty) && ty.ValueKind == JsonValueKind.String ? ty.GetString() : null,
+                                   x.TryGetProperty("frequencyHz", out var fh) && fh.ValueKind == JsonValueKind.Number ? fh.GetDouble() : 0,
+                                   x.TryGetProperty("error", out var er) && er.ValueKind == JsonValueKind.String ? er.GetString() : null))]
+                           : [],
                        Iterations = r.TryGetProperty("iterations", out var it) && it.ValueKind == JsonValueKind.Object &&
                                     it.TryGetProperty("solves", out var its) && its.TryGetInt32(out int solves) &&
                                     it.TryGetProperty("most", out var itm) && itm.TryGetInt32(out int most) &&

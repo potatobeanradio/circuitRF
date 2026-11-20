@@ -12,6 +12,59 @@ public static class EmergeSolver
 {
     public const Em3dSolverId Id = Em3dSolverId.Emerge;
 
+    /// <summary>
+    /// The oldest EMerge circuitRF's driver runs on. 3.0.8 put every port's modes through one procedure
+    /// (<c>Microwave3D._port_modes</c>), which the driver calls for every wave port and which no earlier EMerge has, and dropped
+    /// what the driver used to repair for 3.0.0 itself; 3.0.2 had already fixed thin conductors, which 3.0.0 reads twice as
+    /// conductive (src/Design/RESOLVED.md, "EMerge 3.0.10").
+    /// </summary>
+    public const string MinimumVersion = "3.0.8";
+
+    /// <summary>
+    /// The refusal of an EMerge older than <see cref="MinimumVersion"/>, with how to upgrade it: circuitRF's own install is
+    /// updated from Settings (or <c>circuitrf solver install emerge</c>), a Python of the user's own is upgraded with pip. Null
+    /// for an EMerge that is new enough, or whose version is unknown (the untested warning speaks for that).
+    /// </summary>
+    public static string? TooOldRefusal(SolverInstallation found)
+    {
+        string? version = found.Emerge?.Emerge ?? found.Version;
+        if (version is null || !IsBefore(version, MinimumVersion)) return null;
+        string newest = SolverDiscovery.Emerge.ValidatedVersions.Select(v => v.Release).Where(r => !IsBefore(r, MinimumVersion))
+                                       .DefaultIfEmpty(MinimumVersion).MaxBy(r => r, Comparer<string>.Create(Compare))!;
+        string how = found.HowFound == SolverHowFound.Installed
+            ? $"Update it in Settings ▸ Solvers, where the EMerge row offers Update to EMerge {newest}…, or from a terminal with " +
+              "`circuitrf solver install emerge --yes`. The new version installs beside this one, and circuitRF uses it as soon as it is in."
+            : $"This EMerge is a Python environment of your own, at {found.Path}. Upgrade it there with " +
+              $"`\"{found.Path}\" -m pip install --upgrade \"emerge[corvid]=={newest}\"`, or let circuitRF install its own: clear the " +
+              $"EMerge path in Settings ▸ Solvers (and unset {SolverDiscovery.Emerge.EnvironmentVariable} if it is set), then choose " +
+              "Install EMerge….";
+        return $"EMerge {version} is older than {MinimumVersion}, the first EMerge circuitRF's driver is written for: its wave ports " +
+               "and port modes changed in 3.0.8, and thin conductors read twice as conductive before 3.0.2, so this setup does not run " +
+               $"on it. {how}";
+    }
+
+    /// <summary>Whether EMerge version <paramref name="a"/> comes before <paramref name="b"/>: numeric parts in turn, and a
+    /// pre-release (3.0.0b2) before its release.</summary>
+    public static bool IsBefore(string a, string b) => Compare(a, b) < 0;
+
+    private static int Compare(string a, string b)
+    {
+        static (int[] Parts, bool Pre) Parse(string v)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(v.Trim(), @"^(\d+(?:\.\d+)*)(.*)$");
+            if (!m.Success) return ([], true);
+            return ([.. m.Groups[1].Value.Split('.').Select(x => int.Parse(x, CultureInfo.InvariantCulture))], m.Groups[2].Value.Length > 0);
+        }
+        var (pa, preA) = Parse(a);
+        var (pb, preB) = Parse(b);
+        for (int i = 0; i < Math.Max(pa.Length, pb.Length); i++)
+        {
+            int x = i < pa.Length ? pa[i] : 0, y = i < pb.Length ? pb[i] : 0;
+            if (x != y) return x.CompareTo(y);
+        }
+        return preA == preB ? 0 : preA ? -1 : 1;
+    }
+
     public static Em3dSolverDescriptor Descriptor { get; } = new()
     {
         Id = Id,

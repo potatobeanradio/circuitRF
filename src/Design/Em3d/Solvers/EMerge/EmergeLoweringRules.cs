@@ -492,13 +492,31 @@ internal static class EmergeLoweringRules
             : p.Hollow
             ? "its lowest mode, of any type (a hollow guide has no TEM mode), fixed at the sweep's top and followed to every frequency, " +
               "so its impedance varies with frequency"
-            : "its mode solved at every frequency (the condition is built from it) " +
-              (mixed ? "on a face of several materials, so its impedance varies with frequency" : "on a face of one material, so its impedance is constant");
+            // brief-emi-13 R-emi13-1 — the line's own mode, aimed at by the index kernel A predicts for the face
+            : ModeChoice(Em3dWavePortTarget.For(problem, p)) + ", fixed at the sweep's top and " +
+              (mixed ? "followed to every frequency by solving, on a face of several materials, so its impedance varies with frequency"
+                     : "scaled to every frequency, on a face of one material, so its impedance is constant");
         return $"a wave port, number {p.Number}: EMerge's full wave-port condition on the {problem.FaceOf(p.Min, p.Max)} face's " +
                $"{G(r.Width * 1e3)} × {G(r.Height * 1e3)} mm region, {mode}" +
                $"; {path}; " + (p.ModeNormalised ? "its S kept normalised to the mode (Z0 'mode')" : $"renormalised from the mode's impedance to {G(p.Z0.Real)} Ω") +
                (shift != 0 ? $"; reference plane {Mm(Math.Abs(shift))} {(shift > 0 ? "into the structure" : "out of it")}" : "");
     }
+
+    /// <summary>brief-emi-13 R-emi13-1 — how a single-terminal wave port's mode is chosen: the mode nearest kernel A's index for the
+    /// face, or, where kernel A cannot solve it, EMerge's own rule (the largest propagation constant) and why.</summary>
+    public static string ModeChoice(Em3dWavePortTarget? t) => t?.Neff is { } n
+        ? $"the mode nearest an effective index of {G(n)}, kernel A's for the line on the face at {G(t.FrequencyHz / 1e9)} GHz with every " +
+          $"other metal grounded (Z_c {G(t.Zc ?? 0)} Ω)"
+        : "the mode with the largest propagation constant (EMerge's own rule" + (t?.Refusal is { } why ? $": no target, since {why}" : "") + ")";
+
+    /// <summary>brief-emi-13 R-emi13-2 — the run's note on a single-terminal wave port's mode choice: its target and where it came
+    /// from, or why it has none and keeps EMerge's own rule.</summary>
+    public static string TargetNote(Em3dProblem problem, Em3dPort p, Em3dWavePortTarget t) => t.Neff is { } n
+        ? $"Port {p.Number}'s wave port carries the mode nearest an effective index of {G(n)}: kernel A's quasi-static solve of the line " +
+          $"on the {problem.FaceOf(p.Min, p.Max)} face's cross-section at {G(t.FrequencyHz / 1e9)} GHz, every other metal grounded (Z_c {G(t.Zc ?? 0)} Ω). " +
+          "EMerge's own rule, the largest propagation constant, can take a parallel-plate mode under top-layer ground instead."
+        : $"Port {p.Number}'s wave port carries the mode with the largest propagation constant at the sweep's top, EMerge's own rule: " +
+          $"circuitRF has no index to aim it at, since {t.Refusal}.";
 
     /// <summary>brief-emw-3 R-emw3-3 — explain's row for one terminal of a group: which mode of the face's modal port it is,
     /// how the face's modes are found, and the conversion to terminal S.</summary>

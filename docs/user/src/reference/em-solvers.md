@@ -340,15 +340,17 @@ memory limit. Standard solves the starting mesh only.
 ### EMerge's memory {#emerge-memory}
 
 **Memory grows with the unknowns, and the solver sets how fast.** At element order 2 a mesh has about 7.2 unknowns per
-tetrahedron. circuitRF checks the mesh EMerge made against this computer's memory before it solves, for the solver the
-run will use, and EMerge waits for the answer; it cannot estimate the size before meshing, because EMerge sizes its mesh
-along the edges of every metal face (`explain` and `em --dry-run` print each solver's figure per unknown instead). The
-estimates, all of a run's processes together:
+tetrahedron. circuitRF checks a run against this computer's memory before anything is factorised, for the solver the run
+will use, and EMerge waits for the answer. **A run on SPARTA is checked from SPARTA's own analysis** of the first system it
+is about to factorise — the size of the factor and the working space it predicts — which holds every run measured within
+1.1 to 1.3 times. Any other run is checked on the mesh, from its unknowns, with the figures below; they are also what
+`explain` and `em --dry-run` print, since nothing can be sized before EMerge meshes (it sizes its mesh along the edges of
+every metal face). All of a run's processes together:
 
 | Solver | Used by | Estimate | At 100,000 unknowns | At 500,000 |
 |---|---|---|---|---|
-| SPARTA, direct | every driven run, by default | 420 MB + 18.2 kB per unknown | 2.2 GB | 9.5 GB |
-| SPARTA on the GPU | Device GPU | 360 MB + 17.4 kB per unknown | 2.1 GB | 9.1 GB |
+| SPARTA, direct | every driven run, by default | 430 MB + 18.2 kB per unknown | 2.3 GB | 9.5 GB |
+| SPARTA on the GPU | Device GPU | 330 MB + 17.7 kB per unknown | 2.1 GB | 9.2 GB |
 | CORVID, iterative | `"LinearSolver": "Iterative"`, or the remedy below | 300 MB + 12.0 kB per unknown | 1.5 GB | 6.3 GB |
 | SuperLU, in the eigensolver | every eigenmode run | 300 MB + 19.6 kB per unknown | 2.3 GB | 10.1 GB |
 | SuperLU, direct | a driven run with no faster solver installed | 24.4 kB per unknown | 2.4 GB | 12.2 GB |
@@ -357,10 +359,11 @@ Measured on an Apple M4 (16 GB), EMerge 3.0.10, on the 3D Eigenmode Cavity and t
 Microstrip meshed at several sizes from 54,000 to 494,000 unknowns, each run at least twice, point and adaptive sweeps. The
 figure is each run's whole footprint, its compressed and swapped memory included: that is what the run's memory limit
 holds, and it barely moves from run to run, where the memory resident at one moment moved by up to 40 %. On the GPU, whose
-memory on Apple silicon is the computer's, it read within 10 % of the CPU's. **The estimates err high, by up to 1.4 times:**
-the Launch and a thin sheet line need 20 to 40 % more per unknown on a direct solver than the Cavity does, and nothing in
-the mesh's counts tells them apart before the solve, so one figure covers both. A run holds one frequency's matrices at a
-time, so its memory does not grow with the number of frequencies.
+memory on Apple silicon is the computer's, it read within 10 % of the CPU's. **The per-unknown figures err high, by up to
+1.4 times on a direct solver:** the Launch and a thin sheet line need 20 to 40 % more per unknown than the Cavity does, and
+nothing in the mesh's counts tells them apart, so one figure covers both. SPARTA's analysis does tell them apart, which is
+why a SPARTA run is checked there. A run holds one frequency's matrices at a time, so its memory does not grow with the
+number of frequencies.
 
 **When the direct solve does not fit and the iterative one would**, the question before the run offers
 **Use the Iterative Solver** first, with its estimate. The run then solves with CORVID on the mesh it already has, with

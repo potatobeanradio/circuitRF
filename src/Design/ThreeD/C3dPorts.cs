@@ -1290,13 +1290,12 @@ public static class C3dPorts
         else return null;
 
         double wu = opening.U1 - opening.U0, wv = opening.V1 - opening.V0;
-        if (port.Modes > 1 && Math.Abs(wu - wv) <= tol)
-            return Refuse(port, $"{label} is a hollow guide of {port.Modes} modes whose opening is square ({Fmt(wu)} µm a side): TE10 and " +
-                                "TE01 have one cutoff, the modes are degenerate, and which field each port carries is undefined. Make one " +
-                                "side longer than the other.", contacts);
-        if (Math.Abs(wu - wv) <= tol)
+        // brief-emi-13 R-emi13-3 — a square opening of TWO modes resolves, its pair aligned to their polarity lines by the solver
+        // (EMerge, the one that runs a hollow port of several modes); a port of ONE mode cannot absorb the other mode of its cutoff.
+        if (port.Modes == 1 && Math.Abs(wu - wv) <= tol)
             return Refuse(port, $"{label} is a hollow guide whose opening is square ({Fmt(wu)} µm a side): its two lowest modes have one " +
-                                "cutoff, so a port of one mode cannot say which it carries. Make one side longer than the other.", contacts);
+                                "cutoff, so a port of one mode cannot carry the other, which the guide then reflects. Give the port 2 modes " +
+                                "(it runs on EMerge), or make one side longer than the other.", contacts);
         bool broadU = wu > wv;
         double broad = Math.Max(wu, wv);
         (double U, double V) a, b;
@@ -1358,11 +1357,12 @@ public static class C3dPorts
                                              int axis)
     {
         double a = broadU ? o.U1 - o.U0 : o.V1 - o.V0, b = broadU ? o.V1 - o.V0 : o.U1 - o.U0;
-        if (Math.Abs(b - a / 2) <= 1e-4 * Math.Max(b, a / 2))
-            return Refuse(port, $"{label} is a hollow guide of 2 modes {Fmt(a)} × {Fmt(b)} µm, whose narrow side is half its broad side: TE01 " +
-                                "and TE20 have one cutoff, the second mode is degenerate, and which field its port carries is undefined. Make " +
-                                "the narrow side longer or shorter than half the broad side.", contacts);
-        bool te01 = b > a / 2;
+        // brief-emi-13 R-emi13-3 — a square opening (TE10 and TE01 share a cutoff) or a narrow side half the broad side (TE01 and
+        // TE20 do) is a DEGENERATE pair: no longer refused, its modes aligned to their polarity lines. At b = a/2 the second mode is
+        // TE01, the one a line across the broad side picks out (TE20's field integrates to zero along any line through its centre).
+        bool square = Math.Abs(a - b) <= 1e-4 * Math.Max(a, b), halved = Math.Abs(b - a / 2) <= 1e-4 * Math.Max(b, a / 2);
+        bool degenerate = square || halved;
+        bool te01 = b > a / 2 || halved;
         // a line in the opening's own (broad, narrow) coordinates, 0..1 along each: mapped to (u, v)
         Point3 At(double fb, double fn) => broadU ? P(o.U0 + fb * (o.U1 - o.U0), o.V0 + fn * (o.V1 - o.V0))
                                                    : P(o.U0 + fn * (o.U1 - o.U0), o.V0 + fb * (o.V1 - o.V0));
@@ -1388,7 +1388,7 @@ public static class C3dPorts
                 Kind = Em3dPortKind.Wave,
                 VoltagePath = new Em3dSegment(from, to),
                 HollowBroadM = a,
-                HollowMode = new Em3dHollowMode(k + 1, modes.Length, name, cutoff),
+                HollowMode = new Em3dHollowMode(k + 1, modes.Length, name, cutoff) { Degenerate = degenerate },
                 FaceGroup = port.Number,
                 FaceGroupLabel = label,
                 SourceLabel = $"{stem}_M{k + 1}",
@@ -1397,7 +1397,9 @@ public static class C3dPorts
         }
         string reason = $"{walls}: a hollow guide {Fmt(a)} × {Fmt(b)} µm of 2 modes, ports {port.Number} and {port.Number + 1}: " +
                         string.Join("; ", modes.Select((m, k) => $"mode {k + 1} {m.Name}, its polarity line {m.Where}")) +
-                        (port.Flip ? "; Flip reverses each" : "");
+                        (port.Flip ? "; Flip reverses each" : "") +
+                        (degenerate ? $"; {(square ? "TE10 and TE01" : "TE01 and TE20")} share a cutoff, so EMerge aligns the port's two " +
+                                      "modes to their polarity lines" : "");
         return new C3dPortResult(port, list[0], null, contacts, reason) { Terminals = list };
     }
 

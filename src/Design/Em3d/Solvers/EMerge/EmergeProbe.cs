@@ -32,6 +32,10 @@ public sealed record EmergeProbe(
     /// <summary>The class name of EMerge's single-threaded default (SciPy's SuperLU).</summary>
     internal const string BaselineSolverClass = "SolverSuperLU";
 
+    /// <summary>brief-emi-12 — the class name of SPARTA, EMerge's pick wherever it is installed: a run it solves is priced from its
+    /// own analysis.</summary>
+    internal const string SpartaSolverClass = "SolverSparta";
+
     /// <summary>The first characters of the probe's own line, which is how it is told apart from EMerge's log lines.</summary>
     private const string Marker = "{\"probe\"";
 

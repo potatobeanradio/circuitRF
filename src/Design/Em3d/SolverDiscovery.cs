@@ -715,6 +715,9 @@ public sealed partial class SolverDiscovery
             return new SolverReadiness(Tool, Name, null, rejected, [], DescribeFailure(rejected, windows));
         if (!Runs(found))
             return new SolverReadiness(Tool, Name, found, rejected, [], DescribeUnvalidated(found));
+        // brief-emi-12 — an EMerge older than the driver is written for runs nothing, and says how to upgrade it
+        if (Tool == SolverTool.Emerge && EmergeSolver.TooOldRefusal(found) is { } tooOld)
+            return new SolverReadiness(Tool, Name, found, rejected, [], tooOld);
 
         var verdicts = required.Order().Select(c => Probe(found, c)).ToList();
         string? refusal = verdicts.FirstOrDefault(v => !v.Available) is { } missing
