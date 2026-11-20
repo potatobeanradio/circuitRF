@@ -23,4 +23,17 @@ public partial class ParameterEditorDialog : Window
                 MaxHeight = System.Math.Min(MaxHeight, ScreenShare * screen.WorkingArea.Height / (screen.Scaling > 0 ? screen.Scaling : 1.0));
         };
     }
+
+    /// <summary>
+    /// The cap bounds the dialog's OWN sizing, never the user's (GitHub #78). The window manager is not told about it: Avalonia
+    /// sends no maximum-size hint while the width is unbounded. A drag past it was resized back by the layout pass, the window
+    /// manager answered with the dragged size, and the two alternated on every pointer event. On one desktop the
+    /// dialog ran out to the screen edge. A resize from outside that goes past the cap lifts it, before the layout pass sees it.
+    /// </summary>
+    protected override void OnResized(WindowResizedEventArgs e)
+    {
+        if (e.Reason is WindowResizeReason.User or WindowResizeReason.Unspecified && e.ClientSize.Height > MaxHeight)
+            MaxHeight = double.PositiveInfinity;
+        base.OnResized(e);
+    }
 }

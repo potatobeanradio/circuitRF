@@ -1,5 +1,16 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A window's MaxHeight is invisible to an X11 window manager while its width is unbounded (2026-11-20, GitHub #78)
+
+Avalonia's X11 backend sends `PMaxSize` only when BOTH maximum dimensions are below 100000 px, so a window with a
+`MaxHeight` and no `MaxWidth` tells the window manager nothing. Dragging such a window past its cap starts a fight: the
+layout pass resizes it back to the cap, the window manager answers with the dragged size, and the two alternate on every
+pointer event (reproduced under openbox with the Component Parameters dialog: 760 ↔ 1021 px for the whole drag). On a
+GNOME Wayland desktop the same fight ran the dialog's width out to the screen edge. `ParameterEditorDialog` caps only its own
+auto-sizing now: a resize from outside (`WindowResizeReason.User`/`Unspecified`) that goes past the cap clears `MaxHeight`
+in `OnResized`, which runs before the layout pass that would clamp it. Any other window that sets a `MaxHeight` (or
+`MaxWidth`) alone and stays user-resizable has the same exposure.
+
 ## A two-pin part dropped across a wire is turned into it; SnP labels larger (2026-11-17)
 
 **Turned on drop.** `SeriesPartInsertion` cut a run only when two pins landed ON it as dropped, and its remarks called a part
