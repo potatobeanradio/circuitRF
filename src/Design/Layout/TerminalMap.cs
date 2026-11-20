@@ -409,6 +409,22 @@ public static class TerminalMap
             }
         }
 
+        // ── A cell a generator draws (LayoutGenerator): its map names the generator's pins ─────
+        if (ccell?.LayoutGenerator is { Length: > 0 } generator)
+        {
+            if (!PCells.PCellRegistry.TryGet(generator, out _))
+                findings.Add(TerminalDiagnostics.GeneratorNotRegistered(path, generator));
+            else if (Lvs.DeviceTypes.TryGetSymbolKind(generator, out var kind) && ccell.Terminals is { Count: > 0 } mapped)
+            {
+                // ponytail: a built-in's pins are its symbol's at the default pin count, so a variadic one (a Wilkinson's
+                // sections) is checked at that count; a kit's pins are known only by running it, so they are not checked here.
+                var drawn = CircuitRF.Design.Schematic.SymbolPortDefs.For(kind).Select(p => p.Name).ToList();
+                foreach (var row in mapped)
+                    foreach (var pin in row.LayoutPin.Where(p => !drawn.Contains(p, System.StringComparer.OrdinalIgnoreCase)))
+                        findings.Add(TerminalDiagnostics.GeneratorPinUnknown(path, row.Port, pin, generator, drawn));
+            }
+        }
+
         // ── What the derivation had to say ──────────────────────────────────
         if (map.Origin == TerminalMapOrigin.ByOrder)
             findings.Add(TerminalDiagnostics.DerivedByOrder(path, map.Terminals.Count));

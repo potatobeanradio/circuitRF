@@ -65,6 +65,10 @@ To do it, LVS resolves three things, all of which it finds for itself:
 | **the technology** | the stackup that layout references &mdash; which conductor each drawing layer is, which vias join which conductors, and **which conductor is the ground reference** |
 | **the schematic** | the cell's own `.csch`, read by the same extraction **Simulate** performs &mdash; but *not* the flattened, elaborated netlist. The hierarchy stays intact and the names stay yours; all LVS takes from elaboration is the resolved parameter **values** it compares |
 
+Those values come out with the workspace's kit corners bound, as Simulate binds them: the corner the
+schematic selects on each axis, else the kit's nominal one. A kit part whose value or model card names a
+corner variable therefore compares at the number it simulates with.
+
 The technology is not optional and is never guessed. Without it there is no way to know that a shape on
 one layer and a shape on another are the same conductor, or that a barrel between them joins them.
 
@@ -81,7 +85,9 @@ the one inference in the whole extraction that you cannot check by looking at yo
 its generator draws lives in a folder of its own, named after the generator with a hash. LVS pairs the two by
 **generator**: the generator the kit draws the part with (the same one **Update Layout from Schematic** places), against
 the generator the layout cell came from. A different kit cell in its place is a type mismatch naming both. A parameter the
-kit's generator does not draw is reported once as not drawn, never as a mismatch.
+kit's generator does not draw is reported once as not drawn, never as a mismatch. A library cell whose `.ccell` names a
+`LayoutGenerator` pairs the same way, by that generator, and is never descended into (see
+[A library cell drawn by a PCell](pcells.html#library-cell)).
 
 **A part left off the board.** A footprint whose schematic part has **Disable** set to *Open* is taken as not fitted: its pads stay copper, it is not compared, and a note names it. If a part was marked Open by mistake, that note is the only sign.
 
@@ -323,6 +329,10 @@ tells you which rule produced the answer:
 | **imported** | The map came in with the part, from the source it was imported from. |
 | **by name** | Every symbol pin is named and every one of those names is a layout pin name. Layout pins no symbol pin names &mdash; a mounting pad, a shield &mdash; stay out of the map. |
 | **by order** | **Only** when no pin on either side is named at all and the counts match. It is a guess that is usually right, so it is reported at warning on every run that does it, including an otherwise clean one. |
+
+A declared row may leave `LayoutPin` empty (`"LayoutPin": ""`) or out: that port has no layout pin. On a cell
+a PCell draws, it is a terminal the PCell does not draw, such as a bulk or substrate tie, and LVS leaves it
+out of the comparison with one note.
 
 **A partial name match never falls through to positional.** Three of five names matching is evidence the
 author meant them to match and got two wrong; reading the whole thing by position would produce a

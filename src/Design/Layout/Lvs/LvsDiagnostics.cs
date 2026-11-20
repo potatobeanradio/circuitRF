@@ -68,6 +68,15 @@ public static class LvsDiagnostics
         + "port and it cannot be compared. {detail}",
         ("cellName", cellName), ("detail", detail));
 
+    /// <summary>A port of a generator-drawn library cell that its terminal map gives no layout pin — a bulk or substrate
+    /// terminal the generator does not draw. Left out of the comparison, as a kit part's extra symbol pin is; <b>once per
+    /// cell and port</b>, however many placements.</summary>
+    public static Diagnostic TerminalNotDrawn(string cellName, int port, string name, string generator) => Diagnostic.Create(
+        "lvs.terminal.not-drawn", DiagnosticSeverity.Info,
+        "'{cellName}' port {port} ('{name}') has no layout pin: its generator '{generator}' does not draw that terminal, "
+        + "so it is not compared.",
+        ("cellName", cellName), ("port", port), ("name", name), ("generator", generator));
+
     /// <summary>
     /// R-lvs3-5c. <b>The finding names the LAYER</b>, which is the whole point of it: "your
     /// technology does not call Metal3 a conductor" and "your pad is not connected" look identical

@@ -148,6 +148,27 @@ public sealed class KitsLoadedOnDemandTests : IDisposable
         Assert.Matches(@"(?m)^warning: .*'kitc'.*does not exist", said);
     }
 
+    /// <summary>
+    /// <c>lvs</c> reads a kit part on the schematic side, loading its kit as <c>netlist</c> does. The verb installed no
+    /// loader, so headlessly the part was read as a cell instance with no schematic, skipped, and the schematic side had no
+    /// devices at all ("schematic 0 device(s)").
+    /// </summary>
+    [Fact]
+    public void Lvs_ReadsAKitPart_LoadingItsKit()
+    {
+        var cell = CellCreate.Create(_ws, "amp", CellViews.Schematic | CellViews.Layout);
+        string dir = Path.GetDirectoryName(cell.SchematicPath!)!;
+        SchematicPersistence.SaveToFile(cell.SchematicPath!, Sheet(dir, KitPart("kita")), "amp");
+        string report = Path.Combine(_root, "amp-lvs.txt");
+
+        var (exit, err) = Run("lvs", cell.CellDir, "-o", report);
+
+        Assert.True(exit is 0 or 1, err);   // the layout is empty, so the part is unmatched: what matters is that it was read
+        Assert.Equal(["kita"], _loads);
+        Assert.DoesNotContain("has no primary schematic", err + File.ReadAllText(report), StringComparison.Ordinal);
+        Assert.Contains("schematic 1 device(s)", File.ReadAllText(report), StringComparison.Ordinal);
+    }
+
     private static (int Exit, string Err) Run(params string[] args)
     {
         var (realOut, realErr) = (Console.Out, Console.Error);

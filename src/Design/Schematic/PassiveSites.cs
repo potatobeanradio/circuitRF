@@ -42,7 +42,10 @@ public static class PassiveSites
         refusal = null;
         try
         {
-            var extracted = SchematicCircuit.Extract(model, "tb");
+            // A saved schematic binds its workspace's kit corners, as Simulate does; only the folder of the path is read.
+            var extracted = model.SchematicDirectory is { } dir
+                ? SchematicCircuit.ExtractInWorkspace(model, "tb", DiskCellResolver.Instance, Path.Combine(dir, "tb.csch"))
+                : SchematicCircuit.Extract(model, "tb");
             string? baseDir = SchematicCircuit.ReferenceBaseOfDirectory(model.SchematicDirectory, model.HostWorkspaceRoot);
             var (lib, tb) = SchematicCircuit.RoundTrip(SchematicCircuit.CnlTextOf(extracted, "tb"), "tb", baseDir);
             using var elaborated = new Elaborator(lib) { BaseDirectory = baseDir }.Elaborate(tb);

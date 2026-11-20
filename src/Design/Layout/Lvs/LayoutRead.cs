@@ -106,6 +106,12 @@ public static class LayoutRead
     /// The drawing's parts, as railRF reads them — handed to the turned-part reader and to NOTHING
     /// else (see the file header). Null skips that reading, which is every caller that is not a run.
     /// </param>
+    /// <param name="drawnCells">
+    /// The schematic's library cells a generator draws (<c>LayoutGenerator</c>), by instance name → cell folder. A
+    /// placement linked to one takes that cell's declared terminal map — its ports by the generator's pin names — in place
+    /// of the generated cell's own, so its terminals are numbered as the schematic's are. Null reads every placement by its
+    /// own cell, as before.
+    /// </param>
     /// <remarks>
     /// <b>Internal because two of what it takes are</b> — the hierarchy context a caller outside
     /// this assembly cannot have, and brief 13's already-resolved wBond wires. The public reading is
@@ -120,7 +126,8 @@ public static class LayoutRead
         LvsHierarchyContext? hierarchy = null,
         IReadOnlyList<AssemblyWBond>? wbonds = null,
         Pdn.PdnSchematicNets? schematicParts = null,
-        IReadOnlySet<string>? notFitted = null)
+        IReadOnlySet<string>? notFitted = null,
+        IReadOnlyDictionary<string, string>? drawnCells = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         geometry = LvsGeometry.None;
@@ -311,6 +318,20 @@ public static class LayoutRead
             var map = resolvedDir is { Length: > 0 } cellFolder
                 ? TerminalMap.ResolveCell(cellFolder)
                 : new TerminalMapResult([], TerminalMapOrigin.None, ["The placement's cell does not resolve."]);
+
+            // A library cell a generator draws: its own declared map names the generator's pins, so this placement's terminals
+            // are the cell's ports, numbered as the schematic numbers them. A port with no layout pin is one the generator does
+            // not draw (a bulk terminal); it is left out, as a kit part's extra symbol pin is, and said once per cell. A cell
+            // that declares no map is read by the generated cell's own, as a kit part is.
+            if (inst.SchematicId is { Length: > 0 } linked && drawnCells?.GetValueOrDefault(linked) is { } library
+                && TerminalMap.ResolveCell(library) is { Origin: TerminalMapOrigin.Declared } declared)
+            {
+                foreach (var t in declared.Terminals.Where(t => t.LayoutPins.Count == 0))
+                    if (saidOnce.Add($"not-drawn:{library}:{t.Port}"))
+                        notes.Add(LvsDiagnostics.TerminalNotDrawn(
+                            new DirectoryInfo(library).Name, t.Port, t.Name, CellFolder.LayoutGeneratorOf(library) ?? ""));
+                map = declared with { Terminals = [.. declared.Terminals.Where(t => t.LayoutPins.Count > 0)] };
+            }
 
             // R-lvs3-5a. Origin None makes the device UNMATCHABLE — emitted with no terminals,
             // reported, and never dropped: a device the comparison cannot handle must still appear
@@ -557,12 +578,7 @@ public static class LayoutRead
                 // net of whatever sits under it on the bottom.
                 // R-lvs9-5a: ONE query per pin, and here it is.
                 if (hierarchy is not null) hierarchy.Counters.PinQueries++;
-                int index = pieces.IndexAt(pads[p].X, pads[p].Y, origins[p].Layer);
-                // A pin on a PIN-purpose layer ("Metal1.pin", as a kit marks its pins) is on the conductor that layer is a purpose of —
-                // the mapping the EM cut reads pins by (EmPinConductor) — and no copper is drawn on the purpose layer itself.
-                if (index < 0 && Em.EmPinConductor.Of(tech, origins[p].Layer) is { } conductor && !conductor.DrawingLayers.Contains(origins[p].Layer))
-                    foreach (var drawn in conductor.DrawingLayers)
-                        if ((index = pieces.IndexAt(pads[p].X, pads[p].Y, drawn)) >= 0) break;
+                int index = IndexAtPin(pieces, pads[p].X, pads[p].Y, origins[p].Layer, tech);
                 int piece = index < 0 ? -1 : pieces.NetOfPiece(index);
 
                 // Recorded EITHER WAY, including where it landed on nothing: a pad on no copper is
@@ -626,12 +642,28 @@ public static class LayoutRead
             {
                 if (!byKey.TryGetValue(pinKey, out int i)) continue;
                 if (hierarchy is not null) hierarchy.Counters.PinQueries++;
-                int piece = pieces.PieceAt(pins[i].X, pins[i].Y, pins[i].Layer);
-                if (piece >= 0) { net = nets.Of(piece); break; }
+                int index = IndexAtPin(pieces, pins[i].X, pins[i].Y, pins[i].Layer, tech);
+                if (index >= 0) { net = nets.Of(pieces.NetOfPiece(index)); break; }
             }
             boundary.Add(net >= 0 ? net : nets.Open());
         }
         return boundary;
+    }
+
+    /// <summary>
+    /// The piece a pin lands on: on the pin's own layer, else, for a pin on a PIN-purpose layer ("Metal1.pin", as a kit marks
+    /// its pins), on the drawing layers of the conductor that layer is a purpose of (<see cref="Em.EmPinConductor"/>, the
+    /// mapping the EM cut reads pins by), since no copper is drawn on the purpose layer itself. <b>Every pin lookup in the
+    /// layout read goes through here</b>: a lookup on the purpose layer finds nothing, which put a generated device's pins on
+    /// no copper of its own and left its metal in the partition, shorting its terminals.
+    /// </summary>
+    internal static int IndexAtPin(CopperPieces pieces, long x, long y, LayerKey layer, Technology? tech)
+    {
+        int index = pieces.IndexAt(x, y, layer);
+        if (index < 0 && Em.EmPinConductor.Of(tech, layer) is { } conductor && !conductor.DrawingLayers.Contains(layer))
+            foreach (var drawn in conductor.DrawingLayers)
+                if ((index = pieces.IndexAt(x, y, drawn)) >= 0) break;
+        return index;
     }
 
     // ── Which instances are devices (R-lvs3-3a) ──────────────────────────────────────────────

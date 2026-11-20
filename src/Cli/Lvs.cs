@@ -287,6 +287,11 @@ internal static class Lvs
                 continue;
             }
 
+            // The workspace's kits, loadable as the schematic asks for their parts — what every other verb that reads a
+            // schematic installs (CircuitSource). Without it no kit part resolved headlessly: each was read as a cell
+            // instance with no schematic and skipped, and the schematic side had none of them.
+            WorkspaceKits.EnsureLoadedFor(clay);
+
             Console.Error.WriteLine($"[circuitRF] comparing '{name}'");
             var result = LvsRun.Run(cell, run, RunHost.Control);
 

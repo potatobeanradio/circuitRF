@@ -192,6 +192,21 @@ public sealed class KitPartLayoutParametersTests : IDisposable
         Assert.DoesNotContain("SomeKitRow", passed.Keys);
     }
 
+    /// <summary>
+    /// An empty row is unstated: the kit's own default is used and the part is placed. A count left empty used to skip the
+    /// whole part ("no value set"), and an empty text row was sent as empty text over the kit's default.
+    /// </summary>
+    [Fact]
+    public void AnEmptyRow_IsUnstated_AndTakesTheKitsDefault()
+    {
+        var result = Run(ModelWith(("w", ""), ("turns", "")));
+
+        Assert.Empty(result.NoLayoutWarnings);
+        var passed = Assert.Single(_seen);
+        Assert.Equal(PCellValue.Text("6.99u"), passed["w"]);
+        Assert.Equal(PCellValue.Int(3), passed["turns"]);
+    }
+
     // ── the silent half: kinds ────────────────────────────────────────────────
 
     /// <summary>

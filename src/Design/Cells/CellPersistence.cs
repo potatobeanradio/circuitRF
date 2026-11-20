@@ -127,13 +127,15 @@ internal sealed class CcellLayoutPinConverter : JsonConverter<List<string>>
     {
         switch (reader.TokenType)
         {
+            // An empty name is no pin: a port its layout does not draw (a bulk terminal a generator leaves out) is written
+            // "LayoutPin": "" or with the key left out, and both read as an empty list.
             case JsonTokenType.String:
-                return [reader.GetString() ?? ""];
+                return reader.GetString() is { Length: > 0 } name ? [name] : [];
 
             case JsonTokenType.StartArray:
                 var names = new List<string>();
                 while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
-                    if (reader.TokenType == JsonTokenType.String) names.Add(reader.GetString() ?? "");
+                    if (reader.TokenType == JsonTokenType.String) { if (reader.GetString() is { Length: > 0 } n) names.Add(n); }
                     else reader.Skip();
                 return names;
 
@@ -253,6 +255,20 @@ public sealed class CcellFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ExternalProvider { get; set; }
+
+    /// <summary>
+    /// The PCell generator that draws this cell wherever it is placed: a generator id as <c>PCellRegistry</c> knows it,
+    /// built in or offered by a kit the workspace loads. Update Layout from Schematic places an instance of the cell as
+    /// that generator's cell, fed the instance's parameters exactly as an imported kit part's are (a value the instance
+    /// leaves unstated takes the cell's own default, then the generator's), and LVS takes the generator as the
+    /// instance's identity, pairing its ports with the generator's pins through <see cref="Terminals"/>.
+    ///
+    /// <para>It wins over the cell's own primary layout, which stays the cell's own document (opened and EM-run on its
+    /// own) and is never what a parent places; a stated <c>Footprint</c> on the instance still wins over it. Null — every
+    /// cell written before this field — changes nothing, and the field is omitted from the file.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LayoutGenerator { get; set; }
 
     /// <summary>Device type within <see cref="ExternalProvider"/>. Meaningless without it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

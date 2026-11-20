@@ -514,6 +514,98 @@ public sealed class LayoutNetlistTests : IDisposable
         Assert.DoesNotContain(netlist.Notes, n => n.Id == "lvs.pin.no-copper");
     }
 
+    /// <summary>
+    /// The same board with the lines' pins on a PIN-purpose layer (<c>Top.pin</c>), as a kit's generator draws them: the
+    /// lines are still bodies and the same five nets come out. Looked up on the purpose layer, no pin found its own line's
+    /// copper, so no line was a body: A and B's metal stayed in the partition, joined with P1's pad, and every terminal of
+    /// a generated device read as one net.
+    /// </summary>
+    [Fact]
+    public void ALineWhosePinsAreOnAPinPurposeLayer_IsStillABody()
+    {
+        var pinLayer = new LayerKey(1, 2);
+        var tech = TwoLayerTech(groundReference: false);
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = pinLayer, Name = "Top.pin", ZOrder = 4, Color = new Rgba(200, 80, 40, 255) }];
+        string pad = PartCell("Pad1", Top, ("P", 0, 0));
+        string line = LineCell("KitLine2mm", Mm(2), Um(500), pinLayer);
+
+        var netlist = Read(MakeBoard(tech, (view, layoutDir) =>
+        {
+            view.Instances.Add(Place(pad,  layoutDir, Mm(1), Mm(5), 0, false, "P1"));
+            view.Instances.Add(Place(line, layoutDir, Mm(1), Mm(5), 0, false, "A"));
+            view.Instances.Add(Place(line, layoutDir, Mm(3), Mm(5), 0, false, "B"));
+            view.Instances.Add(Place(line, layoutDir, Mm(1), Mm(9), 0, false, "C"));
+        }));
+
+        Assert.Equal(NetOf(netlist, "P1", "P"), NetOf(netlist, "A", "1"));
+        Assert.Equal(NetOf(netlist, "A", "2"), NetOf(netlist, "B", "1"));
+        Assert.NotEqual(NetOf(netlist, "C", "1"), NetOf(netlist, "C", "2"));
+        Assert.Equal(5, new[]
+        {
+            NetOf(netlist, "A", "1"), NetOf(netlist, "A", "2"), NetOf(netlist, "B", "2"),
+            NetOf(netlist, "C", "1"), NetOf(netlist, "C", "2"),
+        }.Distinct().Count());
+        Assert.DoesNotContain(netlist.Notes, n => n.Id == "lvs.pin.no-copper");
+    }
+
+    /// <summary>
+    /// A kit's device states each pin as the middle of a box on a pin-purpose layer, and the design's traces land on the
+    /// terminal's metal wherever suits them. Here two pads joined underneath (so the device is a body) carry pins A and B
+    /// at their middles, and each is met by a trace at its outer edge only. Each terminal is on its own trace's net: an
+    /// AREA pin is read by the copper meeting its own metal, where a line's end is read at its point. Read at the point
+    /// alone, both pins found nothing and came out as opens.
+    /// </summary>
+    [Fact]
+    public void AnAreaPinIsMetAnywhereAlongItsOwnMetal()
+    {
+        var pinLayer = new LayerKey(1, 2);
+        var tech = TwoLayerTech(groundReference: false);
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = pinLayer, Name = "Top.pin", ZOrder = 4, Color = new Rgba(200, 80, 40, 255) }];
+        string pad = PartCell("Pad1", Top, ("P", 0, 0));
+        string device = PadPairCell("KitPair", pinLayer);
+
+        var netlist = Read(MakeBoard(tech, (view, layoutDir) =>
+        {
+            view.Instances.Add(Place(device, layoutDir, Mm(5), Mm(5), 0, false, "U1"));
+            view.Shapes.Add(Rect(Top, Mm(2), Mm(4.8), Mm(5), Mm(5.2)));     // to A's outer edge, x = 5 mm
+            view.Shapes.Add(Rect(Top, Mm(8), Mm(4.8), Mm(11), Mm(5.2)));    // from B's outer edge, x = 8 mm
+            view.Instances.Add(Place(pad, layoutDir, Mm(2), Mm(5), 0, false, "P1"));
+            view.Instances.Add(Place(pad, layoutDir, Mm(11), Mm(5), 0, false, "P2"));
+        }));
+
+        Assert.Equal(NetOf(netlist, "P1", "P"), NetOf(netlist, "U1", "A"));
+        Assert.Equal(NetOf(netlist, "P2", "P"), NetOf(netlist, "U1", "B"));
+        Assert.NotEqual(NetOf(netlist, "U1", "A"), NetOf(netlist, "U1", "B"));
+    }
+
+    /// <summary>
+    /// Two area pins on ONE piece of the device's own metal — a transistor's base and collector fingers, which the
+    /// partition reads as one piece when they are under a micron apart — are each read at their point, never by that
+    /// metal as a whole: read whole, each trace meeting it would join both terminals and short the two nets.
+    /// </summary>
+    [Fact]
+    public void AreaPinsSharingOnePieceOfMetal_AreReadAtTheirPoints()
+    {
+        var pinLayer = new LayerKey(1, 2);
+        var tech = TwoLayerTech(groundReference: false);
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = pinLayer, Name = "Top.pin", ZOrder = 4, Color = new Rgba(200, 80, 40, 255) }];
+        string pad = PartCell("Pad1", Top, ("P", 0, 0));
+        string device = SharedMetalCell("KitFingers", pinLayer);
+
+        var netlist = Read(MakeBoard(tech, (view, layoutDir) =>
+        {
+            view.Instances.Add(Place(device, layoutDir, Mm(5), Mm(5), 0, false, "U1"));
+            view.Shapes.Add(Rect(Top, Mm(2), Mm(4.9), Mm(5.5), Mm(5.1)));    // over A's point, x = 5.5 mm
+            view.Shapes.Add(Rect(Top, Mm(7.5), Mm(4.9), Mm(11), Mm(5.1)));   // over B's point, x = 7.5 mm
+            view.Instances.Add(Place(pad, layoutDir, Mm(2), Mm(5), 0, false, "P1"));
+            view.Instances.Add(Place(pad, layoutDir, Mm(11), Mm(5), 0, false, "P2"));
+        }));
+
+        Assert.Equal(NetOf(netlist, "P1", "P"), NetOf(netlist, "U1", "A"));
+        Assert.Equal(NetOf(netlist, "P2", "P"), NetOf(netlist, "U1", "B"));
+        Assert.NotEqual(NetOf(netlist, "U1", "A"), NetOf(netlist, "U1", "B"));
+    }
+
     // ── Reading ─────────────────────────────────────────────────────────────────────────────────
 
     private sealed record Board(LayoutView View, string Clay, string CellDir, Technology Tech);
@@ -816,8 +908,9 @@ public sealed class LayoutNetlistTests : IDisposable
         => PartCell(name, layer, pins, null);
 
     /// <summary>A two-terminal line: ONE rectangle of top copper, pin 1 at its start and pin 2 at
-    /// its end — what the microstrip generators draw.</summary>
-    private string LineCell(string name, long length, long width)
+    /// its end — what the microstrip generators draw. <paramref name="pinLayer"/> puts the pins on
+    /// another layer than the copper, as a kit's generator marks them on a pin-purpose layer.</summary>
+    private string LineCell(string name, long length, long width, LayerKey? pinLayer = null)
     {
         string cellDir = CellFolder.CreateCellFolder(_root, name);
         if (File.Exists(Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name + ".clay")))
@@ -829,8 +922,8 @@ public sealed class LayoutNetlistTests : IDisposable
             new Symbol([], [.. ports.Select((n, i) => new SymbolPin(0, i * 100, i + 1, n))], ports.Length));
 
         var view = new LayoutView { DbuPerMicron = Dbu };
-        view.Pins.Add(new LayoutPin { Name = "1", X = 0,      Y = 0, WidthDbu = width, Layer = Top });
-        view.Pins.Add(new LayoutPin { Name = "2", X = length, Y = 0, WidthDbu = width, Layer = Top });
+        view.Pins.Add(new LayoutPin { Name = "1", X = 0,      Y = 0, WidthDbu = width, Layer = pinLayer ?? Top });
+        view.Pins.Add(new LayoutPin { Name = "2", X = length, Y = 0, WidthDbu = width, Layer = pinLayer ?? Top });
         view.Shapes.Add(Rect(Top, 0, -width / 2, length, width / 2));
         LayoutPersistence.SaveToFile(
             Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name + ".clay"), view);
@@ -840,6 +933,56 @@ public sealed class LayoutNetlistTests : IDisposable
         ccell.NumPorts = ports.Length;
         CellPersistence.SaveToFile(ccellPath, ccell);
 
+        return cellDir;
+    }
+
+    /// <summary>A device as a kit's generator draws one: two 1 mm top pads, A at x 0-1 mm and B at x 2-3 mm, joined under
+    /// the board by a bottom strip and a via in each, with each pin stated at its pad's middle on <paramref name="pinLayer"/>.</summary>
+    private string PadPairCell(string name, LayerKey pinLayer)
+    {
+        string cellDir = CellFolder.CreateCellFolder(_root, name);
+        string[] ports = ["A", "B"];
+        SymbolPersistence.SaveToFile(
+            Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Symbol), name + ".csym"),
+            new Symbol([], [.. ports.Select((n, i) => new SymbolPin(0, i * 100, i + 1, n))], ports.Length));
+
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.Add(Rect(Top, 0, -Um(500), Mm(1), Um(500)));
+        view.Shapes.Add(Rect(Top, Mm(2), -Um(500), Mm(3), Um(500)));
+        view.Shapes.Add(Rect(Bot, 0, -Um(500), Mm(3), Um(500)));
+        view.Shapes.Add(new ViaShape { Layer = ViaL, X = Um(500), Y = 0, DrillSize = Um(200) });
+        view.Shapes.Add(new ViaShape { Layer = ViaL, X = Um(2500), Y = 0, DrillSize = Um(200) });
+        view.Pins.Add(new LayoutPin { Name = "A", X = Um(500),  Y = 0, WidthDbu = Mm(1), Layer = pinLayer });
+        view.Pins.Add(new LayoutPin { Name = "B", X = Um(2500), Y = 0, WidthDbu = Mm(1), Layer = pinLayer });
+        LayoutPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name + ".clay"), view);
+
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.NumPorts = ports.Length;
+        CellPersistence.SaveToFile(ccellPath, ccell);
+        return cellDir;
+    }
+
+    /// <summary>A device whose two pins, A at x 0.5 mm and B at x 2.5 mm, sit on ONE top strip from 0 to 3 mm, with each pin
+    /// stated at a point inside it on <paramref name="pinLayer"/>.</summary>
+    private string SharedMetalCell(string name, LayerKey pinLayer)
+    {
+        string cellDir = CellFolder.CreateCellFolder(_root, name);
+        string[] ports = ["A", "B"];
+        SymbolPersistence.SaveToFile(
+            Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Symbol), name + ".csym"),
+            new Symbol([], [.. ports.Select((n, i) => new SymbolPin(0, i * 100, i + 1, n))], ports.Length));
+
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.Add(Rect(Top, 0, -Um(500), Mm(3), Um(500)));
+        view.Pins.Add(new LayoutPin { Name = "A", X = Um(500),  Y = 0, WidthDbu = Um(200), Layer = pinLayer });
+        view.Pins.Add(new LayoutPin { Name = "B", X = Um(2500), Y = 0, WidthDbu = Um(200), Layer = pinLayer });
+        LayoutPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), name + ".clay"), view);
+
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.NumPorts = ports.Length;
+        CellPersistence.SaveToFile(ccellPath, ccell);
         return cellDir;
     }
 

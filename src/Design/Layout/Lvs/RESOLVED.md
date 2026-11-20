@@ -474,3 +474,61 @@ foundry's figure; a user with a real process edits the `.ctech`.
 `Constants` entry for either would be a second copy that an edit to the layer or film leaves behind.
 `DeviceRecognition.ConstantsOf` binds both from `MmicStackResolver` — the resolver the models use —
 in an outer scope; a `Constants` entry of the same name still overrides, for a measured density.
+
+## A library cell drawn by a generator (`LayoutGenerator`)
+
+**How a kit part's extra symbol pin is compared.** A kit part's schematic device has one terminal per symbol pin;
+the generated cell's device has one per generated pin, from the generated cell's own terminal map. The comparison
+joins the two port by port NUMBER (`LvsCompare.Joined`), so a fourth symbol pin against a three-pin cell is simply
+never joined: it is not compared and nothing says so, and the first three are joined by position whatever their
+names. A cell that names its generator reads its placement through ITS OWN declared map instead (`LayoutRead`,
+handed the schematic's generator-drawn instances by `LvsRun`), so its ports reach the generator's pins by name; a
+row with no `LayoutPin` is left out exactly as the kit part's extra pin is, and `lvs.terminal.not-drawn` says so
+once per cell and port.
+
+**A count declared Int arrived as a Real.** `ResolveComponentLayout` passed every resolved number as a Real, so an
+instance's `turns = 3` reached a kit generator as `3.0` and hashed to a different generated cell from the palette's
+`Int 3`. A declared Int or Bool now arrives as one (a non-whole value is rounded and the instance's report says so).
+
+**EM read a schematic-only cell as having no layout.** `EmPartKinds` classifies by the reference, and a cell with
+no layout view of its own was `NoLayout`, so `"*"` skipped it and a circuit-model EM run refused it, although
+Update Layout places its generator. A generator-drawn cell is a `Part`, as a `pdk://` part is.
+
+## A kit part valued by a corner variable did not elaborate in LVS
+
+A schematic whose kit part's model card names a corner variable (a `.param` only the kit's corner
+library defines) simulated, and `lvs` refused it with `lvs.schematic.elaboration-failed` ("expects a
+number, but is set to ...") and 0 schematic devices. `SchematicRead` extracted with
+`SchematicCircuit.Extract`, which binds no corners; Simulate and `check` extract with
+`SchematicCircuit.ExtractInWorkspace`, which binds the workspace's corner axes and the design's
+`CornerSelections`. `SchematicRead` now calls that too, and so does `PassiveSites.Read` (Place Site
+Parts refused the same schematic with the same sentence). A workspace with no corner axes extracts
+exactly as before. Gate: `tests/Ui.Tests/Lvs/WorkspaceCornerTests.cs`.
+
+`PinNetwork.Read` still extracts without corners, deliberately: its VAR block is the network's global
+variables, so binding a kit's corner section would turn every corner constant into a fit variable.
+
+## A kit's generated device shorted its own terminals
+
+A kit's generator marks its pins on a conductor's PIN purpose ("Metal1.pin") and draws the copper on its drawing
+layer. `LayoutReadBodies` asked "which piece is under this pin" on the pin's own layer, where no copper is ever
+drawn, so no pin of a generated transistor or coil found its own metal: `OwnCopperJoinsTerminals` answered false,
+the cell was not a body, and its metal (diffusion, contacts, a spiral from end to end) stayed in the partition and
+joined every terminal — every net through a transistor reported as a short, and a lone transistor read as one net.
+`ResolveTerminal` already fell back to the conductor a pin-purpose layer belongs to (`EmPinConductor`, brief-icp-10);
+the body test, the body pins' reading against the parent and the root cell's boundary pins did not. All four now go
+through `LayoutRead.IndexAtPin`. Gate: `LayoutNetlistTests.ALineWhosePinsAreOnAPinPurposeLayer_IsStillABody`.
+
+**Then the emitter came out open.** A body's terminal was read at its pin's point and the corners of its end edge — right
+for a line, whose pin is its end. A kit states the MIDDLE of a pin box, and the design's trace met the emitter's finger at
+its edge, 0.9 µm from the point. An AREA pin (a probe just past its point, the way it faces, is still in its own metal —
+`EmCellCutout.AreaFace`'s test) is now met anywhere along its own metal: the parent's pieces that overlap or touch that one
+piece of the cell's own copper join the terminal (`CopperPieces.PiecesMeeting`, in Extraction because it is geometry). An
+edge pin is read as before. Gate: `LayoutNetlistTests.AnAreaPinIsMetAnywhereAlongItsOwnMetal`.
+
+**And then base and collector were one net.** The partition reads copper on one layer closer than
+`LayerRegions.HairlineGapDbu` (1 µm) as one piece — a Gerber's rounding gap. A transistor's base, emitter and
+collector Metal1 fingers are 0.2 µm apart, so in the device's own reading they are ONE piece, and reading the base's
+pin by its whole piece put the collector's trace on it too. An area pin whose piece holds another terminal's pin is
+read at its point. Gate: `LayoutNetlistTests.AreaPinsSharingOnePieceOfMetal_AreReadAtTheirPoints`. The 1 µm close itself
+is left as it is; on a sub-micron process it also joins two parent traces drawn closer than 1 µm.

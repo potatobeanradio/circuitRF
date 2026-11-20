@@ -1549,6 +1549,8 @@ public static partial class SchematicLayoutPlanner
         // user looking for a missing folder. The part IS loaded; what it may lack is a layout
         // generator, and that is a different sentence with a different answer.
         string? kitGeneratorId = null;
+        List<CcellParameter>? cellParameters = null;   // a generator-drawn library cell's own interface
+        string? generatorCellDir = null;               // and its folder
         if (comp.CellRef is { } kitRef && PdkKitRegistry.IsKitRef(kitRef))
         {
             if (!PdkKitRegistry.TryParse(kitRef, out string kitName, out string partId))
@@ -1594,26 +1596,45 @@ public static partial class SchematicLayoutPlanner
 
             if (!Directory.Exists(cellAbsDir)) { resolveWarning = "referenced cell not found"; return null; }
 
-            var primary = CellFolder.ResolvePrimary(cellAbsDir, ViewType.Layout);
-            if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent))
+            // A library cell whose .ccell names the generator that draws it is placed as that generator, by the kit part's
+            // path below — ahead of any layout view of its own, which stays the cell's own document.
+            var ccell = CellFolder.ReadCcell(cellAbsDir);
+            if (ccell?.LayoutGenerator is { Length: > 0 } cellGenerator)
             {
-                resolveWarning = "referenced cell has no layout view";
-                return null;
+                if (!PCellRegistry.TryGet(cellGenerator, out _))
+                {
+                    resolveWarning = $"its cell \"{Path.GetFileName(Path.TrimEndingDirectorySeparator(cellAbsDir))}\" is drawn by the " +
+                                     $"generator \"{cellGenerator}\", which is not registered in this workspace; import the kit that " +
+                                     "provides it, or allow it to run";
+                    return null;
+                }
+                kitGeneratorId = cellGenerator;
+                cellParameters = ccell.Parameters;
+                generatorCellDir = cellAbsDir;
             }
-
-            // brief-sdl-10 D3 — an instance whose own values give the cell other copper is placed as a variant of it.
-            if (Em.ParametricEm.EmVariantCells.For(comp, cellAbsDir, workspaceRootDir, scope, evaluator, out string? variantNote)
-                    is { } variant)
+            else
             {
-                ledger.Lines.Add(new ReportLine(comp.InstanceName,
-                    $"{comp.InstanceName} — placed as a variant of {Path.GetFileName(Path.TrimEndingDirectorySeparator(cellAbsDir))} " +
-                    $"at its own values ({variant.At}); the cell's own layout is unchanged", ReportSeverity.Info) { Ids = [comp.InstanceName] });
-                return ToRelative(targetLayoutBaseDir, variant.CellDir);
-            }
-            if (variantNote is not null)
-                ledger.Lines.Add(new ReportLine(comp.InstanceName, variantNote, ReportSeverity.Info) { Ids = [comp.InstanceName] });
+                var primary = CellFolder.ResolvePrimary(cellAbsDir, ViewType.Layout);
+                if (primary.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent))
+                {
+                    resolveWarning = "referenced cell has no layout view";
+                    return null;
+                }
 
-            return ToRelative(targetLayoutBaseDir, cellAbsDir);
+                // brief-sdl-10 D3 — an instance whose own values give the cell other copper is placed as a variant of it.
+                if (Em.ParametricEm.EmVariantCells.For(comp, cellAbsDir, workspaceRootDir, scope, evaluator, out string? variantNote)
+                        is { } variant)
+                {
+                    ledger.Lines.Add(new ReportLine(comp.InstanceName,
+                        $"{comp.InstanceName} — placed as a variant of {Path.GetFileName(Path.TrimEndingDirectorySeparator(cellAbsDir))} " +
+                        $"at its own values ({variant.At}); the cell's own layout is unchanged", ReportSeverity.Info) { Ids = [comp.InstanceName] });
+                    return ToRelative(targetLayoutBaseDir, variant.CellDir);
+                }
+                if (variantNote is not null)
+                    ledger.Lines.Add(new ReportLine(comp.InstanceName, variantNote, ReportSeverity.Info) { Ids = [comp.InstanceName] });
+
+                return ToRelative(targetLayoutBaseDir, cellAbsDir);
+            }
         }
 
         string reference = kitGeneratorId
@@ -1634,8 +1655,59 @@ public static partial class SchematicLayoutPlanner
 
         List<string>? paramNotes = null;
 
-        foreach (var p in comp.Parameters)
+        // The generator hand-off (a kit part, or a library cell its generator draws): a row with no value is UNSTATED, not an
+        // error. A placed cell carries each of its schematic's variables as an empty row the instance may fill, and refusing
+        // one ("no value set") skipped the whole part. An unstated value takes the cell's own: its .ccell default, else its
+        // schematic's variable of that name, evaluated as the cell's model evaluates it — in the cell's scope, where its other
+        // parameters and variables are bound (the instance's own values resolved in the parent's scope). Else the generator's
+        // declared default seeded above, else nothing, and the generator uses its own.
+        IEnumerable<EditableParameter> parameters = comp.Parameters;
+        var cellScope = scope;
+        HashSet<string>? fromCell = null;
+        if (kitGeneratorId is not null)
         {
+            var stated = new Dictionary<string, EditableParameter>(StringComparer.Ordinal);
+            foreach (var p in comp.Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Expression))) stated.TryAdd(p.Name, p);
+            parameters = [.. comp.Parameters.Where(p => !string.IsNullOrWhiteSpace(p.Expression))];
+
+            if (generatorCellDir is not null)
+            {
+                // A cell variable is handed over when the generator declares it or the instance carries a row for it; a
+                // declared cell parameter always is, as an instance's own row is.
+                var wanted = new HashSet<string>(comp.Parameters.Select(p => p.Name), StringComparer.Ordinal);
+                if (declared is not null) wanted.UnionWith(declared.Keys);
+                cellScope = new Scope(comp.InstanceName, scope);
+                fromCell = new HashSet<string>(StringComparer.Ordinal);
+                var bound = new HashSet<string>(StringComparer.Ordinal);
+                var own = new List<EditableParameter>();
+                foreach (var (name, expression, unit, isParameter) in
+                         (cellParameters ?? []).Select(d => (d.Name, d.DefaultExpression, d.Unit, true))
+                         .Concat(CellVariables.Of(generatorCellDir).Select(v => (v.Name, v.Expression, v.Unit, false))))
+                {
+                    if (!bound.Add(name)) continue;   // a declared parameter before a variable of the same name
+                    if (stated.TryGetValue(name, out var mine))
+                    {
+                        if (TryEval(mine) is { } v) cellScope.Bind(name, v.ToString("R", CultureInfo.InvariantCulture));
+                        continue;
+                    }
+                    cellScope.Bind(name, expression, NonEmptyOrNull(UnitNormalizer.ToEngineUnit(unit)));
+                    if (string.IsNullOrWhiteSpace(expression) || !(isParameter || wanted.Contains(name))) continue;
+                    fromCell.Add(name);
+                    own.Add(new EditableParameter { Name = name, Expression = expression, Unit = unit });
+                }
+                parameters = [.. parameters, .. own];
+            }
+
+            double? TryEval(EditableParameter p)
+            {
+                try { return evaluator.Eval(p.Expression, scope, NonEmptyOrNull(UnitNormalizer.ToEngineUnit(p.Unit))).AsReal(); }
+                catch (Exception) { return null; }   // the loop below reports it, on the instance that has it
+            }
+        }
+
+        foreach (var p in parameters)
+        {
+            var at = fromCell?.Contains(p.Name) == true ? cellScope : scope;
             if (NonPCellParamNames.Contains(p.Name)) continue;
             if (IsInactiveMklopfEntryParam(comp, p.Name)) continue; // R-L5f-3
 
@@ -1728,17 +1800,29 @@ public static partial class SchematicLayoutPlanner
 
             if (declared is not null && declared[p.Name].Kind == PCellValueKind.String)
             {
-                resolved[p.Name] = PCellValue.Text(TextForDeclaredString(p, scope, evaluator, out string? note));
+                resolved[p.Name] = PCellValue.Text(TextForDeclaredString(p, at, evaluator, out string? note));
                 if (note is not null) (paramNotes ??= []).Add($"{p.Name}: {note}");
                 continue;
             }
 
-            if (!TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out var value, out var error))
+            if (!TryResolveSiValue(p.Expression, p.Unit, at, evaluator, out var value, out var error))
             {
                 resolveWarning = $"parameter '{p.Name}': {error}";
                 return null;
             }
-            resolved[p.Name] = value;
+
+            // A count or a flag the generator declares arrives as one, not as a Real: a turn count sent as 3.0 is another
+            // cell to the store than the palette's 3, and a script may refuse it.
+            var kind = declared?.GetValueOrDefault(p.Name).Kind;
+            if (kind == PCellValueKind.Int && Math.Abs(value - Math.Round(value)) > 1e-9)
+                (paramNotes ??= []).Add($"{p.Name}: {value.ToString("G", CultureInfo.InvariantCulture)} is not a whole number; " +
+                                        $"{Math.Round(value).ToString(CultureInfo.InvariantCulture)} was used");
+            resolved[p.Name] = kind switch
+            {
+                PCellValueKind.Int  => PCellValue.Int((long)Math.Round(value)),
+                PCellValueKind.Bool => PCellValue.Bool(value != 0),
+                _                   => value,
+            };
         }
 
         string? signalOverride = NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression);

@@ -72,6 +72,68 @@ appears to have done nothing, look at the geometry it produced before looking an
 <a href="pdk-authoring.html">PDK Authoring</a>.</p>
 </div>
 
+### A library cell drawn by a PCell {#library-cell}
+
+A device library often ships a cell whose **schematic** is the part's validated model &mdash; a compact
+transistor model with a substrate network, or a measured S-parameter block &mdash; while its **artwork**
+comes from a PCell, built in or from a kit the workspace runs. The cell says which PCell draws it with
+one field in its `.ccell`, `LayoutGenerator`: a generator id exactly as the Library palette lists it.
+
+Wherever the cell is placed, that generator draws it, with **the instance's own values**, handed over the
+way an imported kit part's are: only the parameters the generator declares, text where it declares text,
+a count where it declares a count, and every number resolved where the instance sits, so `W = 2*w` reads
+your schematic's `w`. A value the instance leaves unstated &mdash; an empty row counts as unstated &mdash;
+takes the **cell's own value**: its declared default, else the variable of that name in the cell's own
+schematic, worked out as the cell's model works it out. One the cell has neither of takes the
+**generator's** default. The parameter names are the generator's own: name the cell's parameters and
+variables after them. An imported kit part's empty row likewise takes the kit's default.
+
+**What wins.** A `Footprint` stated on the instance is still consulted first. After it, `LayoutGenerator`
+wins over the cell's own layout view: that view stays the cell's own document, which you open, edit and
+run EM on by itself, and a parent never places it. A cell without the field is placed exactly as before.
+If the generator is not registered in the workspace, Update Layout skips the instance with one warning
+that names the cell and the generator; import the kit that provides it, or allow it to run.
+
+**LVS** takes the generator as the instance's identity, as it does for a kit part, so the instance pairs
+with the cell the generator drew and LVS does not descend into the library cell. Its `Terminals` map (see
+[Terminal maps](lvs.html#terminals)) names, for each port, **the generator's pin**, which may be spelled
+differently from the port. A port the generator does not draw &mdash; a bulk or substrate terminal &mdash;
+has an empty `LayoutPin`, or none at all. It is left out of the comparison, as an imported kit part's extra
+symbol pin is, and the report says so once (`lvs.terminal.not-drawn`). `FlattenForLvs` has no effect on
+such a cell, because the cell is never placed as itself.
+
+**`check`** warns when the generator is not registered (a kit's generators are registered only where the
+kit is loaded) and reports a `LayoutPin` that a built-in generator does not draw. A kit generator's pins
+are known only once it runs, so they are checked by LVS rather than by `check`.
+
+**EM.** An EM cell's component ports treat the instance as a part, as they treat a kit part: it is cut out
+of the solve and its schematic model is put back on the cut pins, each model terminal on the pin of its
+name, or of its number when the pins are numbered.
+
+A worked example, with the built-in MLIN as the PCell. A library cell `Line` has three ports, `a`, `b` and
+`sub`, and its schematic is whatever models it:
+
+```json
+{
+  "FormatVersion": 1,
+  "NumPorts": 3,
+  "LayoutGenerator": "MLIN",
+  "Parameters": [
+    { "Name": "W", "DefaultExpression": "1", "Unit": "mm" },
+    { "Name": "L", "DefaultExpression": "5", "Unit": "mm" }
+  ],
+  "Terminals": [
+    { "Port": 1, "Name": "a",   "LayoutPin": "1" },
+    { "Port": 2, "Name": "b",   "LayoutPin": "2" },
+    { "Port": 3, "Name": "sub", "LayoutPin": "" }
+  ]
+}
+```
+
+Place `Line` in a schematic as `X2` with `W = w` (a VAR, `w = 1.1 mm`), `L` left unstated and `sub` on
+ground. **Update Layout from Schematic** places an MLIN cell 1.1 mm wide and 5 mm long linked to `X2`, and
+`circuitrf lvs` pairs the two, with one note that port 3 of `Line` (`sub`) is not drawn.
+
 ## The worked example: MLIN {#mlin}
 
 MLIN — a straight microstrip line — is the simplest PCell that is still a real one, and it is the

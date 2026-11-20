@@ -282,6 +282,31 @@ public sealed class CopperPieces
     internal Paths64 PathsOfPiece(int piece) => _pieces[piece].Paths;
 
     /// <summary>
+    /// The pieces of this partition on <paramref name="layers"/> that overlap or touch piece <paramref name="piece"/> of
+    /// <paramref name="other"/> — a placed cell's own metal, each of its points mapped into this frame by
+    /// <paramref name="toHere"/>. Touching counts: the placed piece is grown by <paramref name="within"/> DBU first, so metal
+    /// that only shares an edge with it is found too. Here rather than in the LVS read because it is geometry.
+    /// </summary>
+    internal IEnumerable<int> PiecesMeeting(
+        CopperPieces other, int piece, Func<long, long, (long X, long Y)> toHere, IReadOnlySet<LayerKey> layers, long within)
+    {
+        var placed = new Paths64(other._pieces[piece].Paths.Select(path => new Path64(path.Select(pt =>
+        {
+            var (x, y) = toHere(pt.X, pt.Y);
+            return new Point64(x, y);
+        }))));
+        var grown = Clipper.InflatePaths(Clipper.Union(placed, FillRule.NonZero), within, JoinType.Miter, EndType.Polygon);
+        var b = Clipper.GetBounds(grown);
+        for (int i = 0; i < _pieces.Count; i++)
+        {
+            if (!layers.Contains(_pieces[i].Layer)) continue;
+            var pb = _pieces[i].Bounds;
+            if (pb.MaxX < b.left || pb.MinX > b.right || pb.MaxY < b.top || pb.MinY > b.bottom) continue;
+            if (Clipper.Intersect(_pieces[i].Paths, grown, FillRule.NonZero).Count > 0) yield return i;
+        }
+    }
+
+    /// <summary>
     /// The <b>net index</b> of the piece covering (<paramref name="x"/>, <paramref name="y"/>) on
     /// <paramref name="layer"/>, or <c>-1</c> where no piece does — R-lvs3-5c.
     /// </summary>
