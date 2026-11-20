@@ -7,6 +7,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
@@ -56,6 +57,86 @@ public sealed class DataDisplayEditUndoTests : IDisposable
     private static void UndoAll(DataDisplayViewModel d)
     {
         while (d.UndoRedo.CanUndo) d.UndoRedo.Undo();
+    }
+
+    [Fact]
+    public void TabAnnotations_RoundTripInOrder_AndAreOptional()
+    {
+        var options = DataDisplayJson.Options;
+        var tab = JsonSerializer.Deserialize<TabConfig>("""{"Name":"Page 1"}""", options)!;
+        Assert.Null(tab.Annotations);
+        Assert.DoesNotContain("Annotations", JsonSerializer.Serialize(tab, options));
+
+        tab.Annotations = [new CanvasText(10, -20, "Gain\nand noise"),
+                           new CanvasLine(-10, 4, 90, 4),
+                           new CanvasLine(10, 30, 90, 35, CanvasLineStyle.Dashed),
+                           new CanvasBox(90, 80, 10, 20, CanvasLineStyle.Dashed) { Color = "#FF008000" }];
+        var json = JsonSerializer.Serialize(tab, options);
+        var restored = JsonSerializer.Deserialize<TabConfig>(json, options)!;
+        Assert.Equal(tab.Annotations, restored.Annotations);
+    }
+
+    [Fact]
+    public async Task TabAnnotationEdit_KeepsSelection_AndUndoRestoresProperties()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var line = new CanvasLine(10, 20, 40, 20);
+        display.AddAnnotation(line);
+        display.SelectAnnotation(0);
+        var styled = line with { Style = CanvasLineStyle.Dashed };
+        var edited = styled with { Color = "#FF008000" };
+        display.AnnotationInspector.LineStyle = CanvasLineStyle.Dashed;
+        display.AnnotationInspector.SetColor(edited.Color);
+        Assert.Equal(edited, display.SelectedAnnotation);
+        display.UndoRedo.Undo();
+        Assert.Equal(styled, display.SelectedAnnotation);
+        display.UndoRedo.Undo();
+        Assert.Equal(line, display.SelectedAnnotation);
+        display.UndoRedo.Redo();
+        display.UndoRedo.Redo();
+        Assert.Equal(edited, display.SelectedAnnotation);
+        display.DeleteSelected();
+        Assert.Empty(display.Annotations);
+        Assert.Null(display.SelectedAnnotation);
+        display.UndoRedo.Undo();
+        Assert.Equal(edited, display.SelectedAnnotation);
+        display.SelectOnly(display.Plots[0]);
+        Assert.Null(display.SelectedAnnotation);
+    }
+
+    [Fact]
+    public async Task TabAnnotations_AreUndoable_AndSurviveSaveAndReopen()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var text = new CanvasText(10, 20, "Gain\nvs frequency")
+            { FontSize = 22, Rotation = CanvasTextRotation.R270, WrapWidth = 75 };
+        var line = new CanvasLine(10, 60, 90, 60, CanvasLineStyle.Dashed) { Color = "#FF008000" };
+
+        display.AddAnnotation(text);
+        display.AddAnnotation(line);
+        Assert.True(window.HasUnsavedChanges());
+
+        display.UndoRedo.Undo();
+        Assert.Equal(text, Assert.Single(display.Annotations));
+        display.UndoRedo.Undo();
+        Assert.Empty(display.Annotations);
+        Assert.False(window.HasUnsavedChanges());
+
+        display.UndoRedo.Redo();
+        display.UndoRedo.Redo();
+        Assert.True(window.HasUnsavedChanges());
+
+        string path = Path.Combine(_dir, "annotated.cdd");
+        await window.SaveAllAsync(path);
+        Assert.False(window.HasUnsavedChanges());
+        var reopened = new DisplayWindowViewModel();
+        reopened.DataSourceLibrary.ResultsRootProvider = () => _dir;
+        await reopened.LoadAllAsync(path);
+        Assert.Equal(new CanvasAnnotation[] { text, line }, reopened.DataDisplay!.Annotations);
+        Assert.False(reopened.DataDisplay!.UndoRedo.CanUndo);
+        Assert.False(reopened.HasUnsavedChanges());
     }
 
     [Fact]

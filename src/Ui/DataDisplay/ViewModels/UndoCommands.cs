@@ -18,6 +18,31 @@ using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
+internal sealed class AddAnnotationCommand(DataDisplayViewModel display, int index,
+                                           CanvasAnnotation annotation) : IUndoableCommand
+{
+    public void Execute() => display.InsertAnnotation(index, annotation);
+    public void Undo() => display.RemoveAnnotation(index);
+}
+
+internal sealed class RemoveAnnotationCommand(DataDisplayViewModel display, int index,
+                                              CanvasAnnotation annotation) : IUndoableCommand
+{
+    public void Execute() => display.RemoveAnnotation(index);
+    public void Undo()
+    {
+        display.InsertAnnotation(index, annotation);
+        display.SelectAnnotation(index);
+    }
+}
+
+internal sealed class EditAnnotationCommand(DataDisplayViewModel display, int index,
+    CanvasAnnotation before, CanvasAnnotation after) : IUndoableCommand
+{
+    public void Execute() => display.ReplaceAnnotation(index, after);
+    public void Undo() => display.ReplaceAnnotation(index, before);
+}
+
 // ---- Plot add / remove -----------------------------------------------
 
 /// <summary>Undo: remove the added container.  Redo: add it back.</summary>

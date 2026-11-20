@@ -324,6 +324,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             {
                 Name  = full.Name,
                 Plots = full.Plots,
+                Annotations = full.Annotations,
                 // ZoomLevel / ViewOffsetX / ViewOffsetY left at default 0
             });
         }
@@ -698,6 +699,11 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     [RelayCommand]
     private void DeselectAll()
     {
+        if (DataDisplay is { DrawingTool: not AnnotationTool.None } drawing)
+        {
+            drawing.DrawingTool = AnnotationTool.None;
+            return;
+        }
         if (DataDisplay?.DisarmZoomBox() == true) return;
         DataDisplay?.DeselectAll();
     }
@@ -708,7 +714,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
     [RelayCommand(CanExecute = nameof(CanRemovePlot))]
     private void RemovePlot() => DataDisplay?.RemoveSelected();
-    private bool CanRemovePlot() => DataDisplay?.HasAnySelection ?? false;
+    private bool CanRemovePlot() => DataDisplay is { HasAnySelection: true, SelectedAnnotation: null };
 
     [RelayCommand(CanExecute = nameof(CanDeleteSelected))]
     private void DeleteSelected() => DataDisplay?.DeleteSelected();
@@ -820,7 +826,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         await PerformCopy(selectedOnly: true);
         DataDisplay?.RemoveSelected();
     }
-    private bool CanCut() => DataDisplay?.HasAnySelection ?? false;
+    private bool CanCut() => DataDisplay is { HasAnySelection: true, SelectedAnnotation: null };
 
     /// <summary>
     /// Copies selected plots (or all plots when none selected) to clipboard.

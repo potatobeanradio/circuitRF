@@ -28,7 +28,43 @@ public sealed class TabConfig
     public double ViewOffsetX { get; set; } = 0.0;
     public double ViewOffsetY { get; set; } = 0.0;
     public List<PlotContainerConfig> Plots { get; set; } = new();
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CanvasAnnotation>? Annotations { get; set; }
 }
+
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "Kind")]
+[JsonDerivedType(typeof(CanvasText), "Text")]
+[JsonDerivedType(typeof(CanvasLine), "Line")]
+[JsonDerivedType(typeof(CanvasBox), "Box")]
+public abstract record CanvasAnnotation
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Color { get; init; }
+}
+
+public sealed record CanvasText(double X, double Y, string Text) : CanvasAnnotation
+{
+    public double FontSize { get; init; } = 16;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? WrapWidth { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public CanvasTextRotation Rotation { get; init; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter<CanvasTextRotation>))]
+public enum CanvasTextRotation { R0 = 0, R90 = 90, R180 = 180, R270 = 270 }
+
+[JsonConverter(typeof(JsonStringEnumConverter<CanvasLineStyle>))]
+public enum CanvasLineStyle { Solid, Dashed }
+
+public sealed record CanvasLine(double X, double Y, double EndX, double EndY,
+                                CanvasLineStyle Style = CanvasLineStyle.Solid) : CanvasAnnotation;
+
+public sealed record CanvasBox(double X, double Y, double EndX, double EndY,
+                               CanvasLineStyle Style = CanvasLineStyle.Solid) : CanvasAnnotation;
 
 public sealed class DataDisplayConfig
 {

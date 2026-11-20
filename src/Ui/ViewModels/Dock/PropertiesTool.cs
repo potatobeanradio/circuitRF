@@ -100,6 +100,9 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private PlotInspectorViewModel? _plotInspectorVm;
 
+    [ObservableProperty]
+    private AnnotationInspectorViewModel? _annotationInspectorVm;
+
     partial void OnPlotInspectorVmChanged(PlotInspectorViewModel? value) =>
         OnPropertyChanged(nameof(HasSelectedPlot));
 
@@ -265,6 +268,7 @@ public partial class PropertiesTool : Tool
         IsLayoutActive        = false;
         CellEditorVm          = null;
         PlotInspectorVm       = vm;
+        AnnotationInspectorVm = window?.DataDisplay?.AnnotationInspector;
         FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);

@@ -113,6 +113,7 @@
                 Padding="4,2">
             <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory needs a
                  stable handle on this panel. -->
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <StackPanel x:Name="DocsToolbar" Orientation="Horizontal" Spacing="2" Classes="Toolbar">
 
                 <!-- Datasource combo: lists results/ schematics + workspace Touchstone files -->
@@ -253,6 +254,22 @@
                 <!-- The magnifier ARMS; it does not zoom (owner, 2026-09-11). Clicking it takes the
                      left button for one drag, and the box that drag draws on the canvas is what gets
                      framed. Ctrl/Cmd +/- above is where a single step lives. -->
+                <Button Command="{Binding ViewModel.Window.DataDisplay.ToggleTextToolCommand}"
+                        Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.TextToolArmed, FallbackValue=False}"
+                        AutomationProperties.Name="Add Text" ToolTip.Tip="Add Text" Padding="6,3">
+                    <mi:MaterialIcon Kind="FormatText" Width="16" Height="16"/>
+                </Button>
+                <Button Command="{Binding ViewModel.Window.DataDisplay.ToggleLineToolCommand}"
+                    Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.LineToolArmed, FallbackValue=False}"
+                    AutomationProperties.Name="Draw Line" ToolTip.Tip="Draw Line" Padding="6,3">
+                    <mi:MaterialIcon Kind="VectorLine" Width="16" Height="16"/>
+                </Button>
+                <Button Command="{Binding ViewModel.Window.DataDisplay.ToggleBoxToolCommand}"
+                        Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.BoxToolArmed, FallbackValue=False}"
+                        AutomationProperties.Name="Draw Box" ToolTip.Tip="Draw Box" Padding="6,3">
+                    <mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/>
+                </Button>
+
                 <Button Command="{Binding ViewModel.Window.ZoomBoxCommand}"
                         Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.ZoomBoxArmed, FallbackValue=False}"
                         ToolTip.Tip="Zoom Box  (Z) — drag a box to zoom to it  (Esc cancels; Ctrl++ steps)"
@@ -324,6 +341,7 @@
                 </Button>
 
             </StackPanel>
+            </ScrollViewer>
         </Border>
 
         <!-- ── Main content: tabs + inspector (library panel removed) ────────── -->

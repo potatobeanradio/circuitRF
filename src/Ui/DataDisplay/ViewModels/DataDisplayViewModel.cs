@@ -14,12 +14,15 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using RfCore;
 using SkiaSharp;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
+
+public enum AnnotationTool { None, Text, Line, Box }
 
 public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 {
@@ -72,6 +75,72 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     private readonly ObservableCollection<PlotContainerViewModel> _plots = new();
     public  ObservableCollection<PlotContainerViewModel> Plots => _plots;
 
+    private readonly ObservableCollection<CanvasAnnotation> _annotations = new();
+    public ReadOnlyObservableCollection<CanvasAnnotation> Annotations { get; }
+
+    internal void AddAnnotation(CanvasAnnotation annotation)
+        => UndoRedo.Do(new AddAnnotationCommand(this, _annotations.Count, annotation));
+
+    internal void InsertAnnotation(int index, CanvasAnnotation annotation) => _annotations.Insert(index, annotation);
+
+    internal void RemoveAnnotation(int index)
+    {
+        if (SelectedAnnotationIndex == index) SetAnnotationSelection(-1);
+        else if (SelectedAnnotationIndex > index) SelectedAnnotationIndex--;
+        _annotations.RemoveAt(index);
+    }
+
+    internal int SelectedAnnotationIndex { get; private set; } = -1;
+    public CanvasAnnotation? SelectedAnnotation => SelectedAnnotationIndex >= 0
+        && SelectedAnnotationIndex < _annotations.Count ? _annotations[SelectedAnnotationIndex] : null;
+
+    internal void SelectAnnotation(int index)
+    {
+        if (index == SelectedAnnotationIndex) return;
+        if (index >= 0) DeselectAll();
+        SetAnnotationSelection(index);
+    }
+
+    private void SetAnnotationSelection(int index)
+    {
+        if (SelectedAnnotationIndex == index) return;
+        SelectedAnnotationIndex = index;
+        OnPropertyChanged(nameof(SelectedAnnotation));
+        OnPropertyChanged(nameof(HasAnySelection));
+    }
+
+    internal void EditAnnotation(int index, CanvasAnnotation annotation)
+    {
+        if (index < 0 || index >= _annotations.Count || _annotations[index] == annotation) return;
+        UndoRedo.Do(new EditAnnotationCommand(this, index, _annotations[index], annotation));
+    }
+
+    internal void ReplaceAnnotation(int index, CanvasAnnotation annotation)
+    {
+        _annotations[index] = annotation;
+        if (SelectedAnnotationIndex == index) OnPropertyChanged(nameof(SelectedAnnotation));
+    }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TextToolArmed), nameof(LineToolArmed), nameof(BoxToolArmed))]
+    private AnnotationTool _drawingTool;
+
+    public bool TextToolArmed => DrawingTool == AnnotationTool.Text;
+    public bool LineToolArmed => DrawingTool == AnnotationTool.Line;
+    public bool BoxToolArmed => DrawingTool == AnnotationTool.Box;
+
+    [RelayCommand] private void ToggleTextTool() => ToggleAnnotationTool(AnnotationTool.Text);
+    [RelayCommand] private void ToggleLineTool() => ToggleAnnotationTool(AnnotationTool.Line);
+    [RelayCommand] private void ToggleBoxTool() => ToggleAnnotationTool(AnnotationTool.Box);
+
+    public AnnotationInspectorViewModel AnnotationInspector { get; }
+
+    private void ToggleAnnotationTool(AnnotationTool tool)
+    {
+        DisarmZoomBox();
+        DrawingTool = DrawingTool == tool ? AnnotationTool.None : tool;
+    }
+
     private readonly ObservableCollection<MarkerInfoBoxViewModel> _markerInfoBoxes = new();
     public  ObservableCollection<MarkerInfoBoxViewModel> MarkerInfoBoxes => _markerInfoBoxes;
 
@@ -98,7 +167,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// Used to gate the Delete command and similar multi-select operations.
     /// </summary>
     public bool HasAnySelection =>
-        _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected);
+        SelectedAnnotation is not null || _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected);
 
     /// <summary>True when at least one marker InfoBox is selected.</summary>
     public bool HasSelectedInfoBoxes => _markerInfoBoxes.Any(m => m.IsSelected);
@@ -578,6 +647,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     public DataDisplayViewModel(DataSourceLibraryViewModel library, bool addEmptyPlot = true, bool selectEmptyPlot = true)
     {
         _library = library;
+        Annotations = new(_annotations);
+        AnnotationInspector = new(this);
         library.LibraryChanged            += (_, _) => OnLibraryEntryCountChanged();
         library.Entries.CollectionChanged += (_, _) => OnLibraryEntryCountChanged();
         library.SelectedDataSourceChanged += OnSelectedDataSourceChanged;
@@ -1145,6 +1216,11 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void DeleteSelected()
     {
+        if (SelectedAnnotation is { } annotation)
+        {
+            UndoRedo.Do(new RemoveAnnotationCommand(this, SelectedAnnotationIndex, annotation));
+            return;
+        }
         var cmds = new List<IUndoableCommand>();
 
         // Collect marker-remove commands (one per selected marker).
@@ -1221,6 +1297,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void SelectOnly(PlotContainerViewModel? vm)
     {
+        SetAnnotationSelection(-1);
         foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
         foreach (var m in Boxes)  m.IsSelected = false;
         if (vm is not null)
@@ -1244,6 +1321,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void DeselectAll()
     {
+        SetAnnotationSelection(-1);
         foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
         foreach (var m in Boxes)  m.IsSelected = false;
         RefreshSelection();
@@ -1253,6 +1331,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// info box.</summary>
     public void SelectAll()
     {
+        SetAnnotationSelection(-1);
         foreach (var p in _plots) p.IsSelected = true;
         foreach (var m in Boxes)  m.IsSelected = true;
         RefreshSelection();
@@ -1278,6 +1357,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void SelectOnly(CanvasBoxViewModel? vm)
     {
+        SetAnnotationSelection(-1);
         foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
         foreach (var m in Boxes)  m.IsSelected = false;
         if (vm is not null) vm.IsSelected = true;
@@ -1347,6 +1427,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
     internal void RefreshSelection()
     {
+        if (_plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(box => box.IsSelected))
+            SetAnnotationSelection(-1);
         var selected = _plots.Where(p => p.IsSelected).ToList();
         SingleSelectedPlot = selected.Count == 1 ? selected[0] : null;
         OnPropertyChanged(nameof(HasAnySelection));
@@ -1561,7 +1643,11 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>Arms the magnifier, or disarms it when it is already on — one button, two states.</summary>
-    public void ToggleZoomBox() => ZoomBoxArmed = !ZoomBoxArmed;
+    public void ToggleZoomBox()
+    {
+        DrawingTool = AnnotationTool.None;
+        ZoomBoxArmed = !ZoomBoxArmed;
+    }
 
     /// <summary>Disarms the magnifier. Returns true when it WAS armed, which is what lets Escape
     /// unwind it before reaching the selection.</summary>
@@ -1677,6 +1763,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             ZoomLevel   = _zoomLevel,
             ViewOffsetX = _viewOffsetX,
             ViewOffsetY = _viewOffsetY,
+            Annotations = _annotations.Count > 0 ? _annotations.ToList() : null,
         };
         foreach (var c in _plots)
             tc.Plots.Add(BuildPlotContainerConfig(c, configDir, Library));
@@ -1693,6 +1780,11 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         _plots.Clear();
         _markerInfoBoxes.Clear();
         _legendBoxes.Clear();
+        SetAnnotationSelection(-1);
+        _annotations.Clear();
+        if (tabConfig.Annotations is { } annotations)
+            foreach (var annotation in annotations)
+                _annotations.Add(annotation);
         RefreshSelection();
 
         foreach (var pc in tabConfig.Plots)

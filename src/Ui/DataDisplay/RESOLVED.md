@@ -1,5 +1,13 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-20 — canvas annotation selection
+
+Data Display text and lines are tab-owned, not plot overlays. The canvas tunnels pointer presses
+so an annotation over a plot can be selected before the plot starts a gesture. A line is picked
+by distance from its segment, not its bounding rectangle. Dragging previews a replacement without
+changing the saved document; release adds one undo command. The shared Properties dock edits the
+same annotation records, and new lines start solid with dashed available in the inspector.
+
 ## 2026-11-11 — constant graph area, axis Step, Use display source, `.cddt` templates
 
 **A rectangular plot's extra Y-label columns grow the CANVAS, not the margin.** `Plot.LabelColumnsOutside`
