@@ -18,11 +18,17 @@ using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Em;
 
 public class ConformalBoundaryCellsUiTests
 {
+    // Diagnostic tables go to the test's own output, never Console: a CLI test captures Console.Out in-process, and a line
+    // written here while it does lands in that test's stdout.
+    private readonly ITestOutputHelper _out;
+    public ConformalBoundaryCellsUiTests(ITestOutputHelper output) => _out = output;
+
     private const int Dbu = LayoutUnits.DefaultDbuPerMicron;
 
     /// <summary>A 45° chamfer, so the mesher genuinely has something to cut.</summary>
@@ -389,7 +395,7 @@ public class ConformalBoundaryCellsUiTests
             foreach (var (label, shapes) in ShippingParts(tech, layerSel, scale))
             {
                 var x = PlanarExtractor.Extract(shapes, tech, Dbu, 10e9, settings);
-                if (!x.Ok) { Console.WriteLine($"[G1] {tech.Name} / {label}: REFUSED — {x.Refusal}"); continue; }
+                if (!x.Ok) { _out.WriteLine($"[G1] {tech.Name} / {label}: REFUSED — {x.Refusal}"); continue; }
 
                 double drawn = x.Problem!.Layers[0].Polygons[0].Area();
                 var stair = SurfaceMesher.Mesh(x.Problem, Mesh(PlanarBoundaryCells.Staircase));
@@ -398,7 +404,7 @@ public class ConformalBoundaryCellsUiTests
                 double eStair = Math.Abs(stair.MeshedAreaM2 - drawn) / drawn;
                 double eCut   = Math.Abs(cut.MeshedAreaM2   - drawn) / drawn;
 
-                Console.WriteLine(
+                _out.WriteLine(
                     $"[G1] {tech.Name} / {label}: staircase N {stair.UnknownCount,5} err {eStair:P4}  |  " +
                     $"conformal N {cut.UnknownCount,5} cells {cut.Mesh.Cells.Count,5} " +
                     $"cut {cut.CutCellCount,4} merged {cut.MergedSliverCount,3} " +
@@ -466,8 +472,8 @@ public class ConformalBoundaryCellsUiTests
         Assert.True(x.Ok, x.Refusal);
         double drawn = x.Problem!.Layers[0].Polygons[0].Area();
 
-        Console.WriteLine("[G1b] MKlopf on-axis, PCB 2-Layer — the saturation ladder, re-run after M1.");
-        Console.WriteLine("  cells/λ      N    cut  fallback  nonconvex-cut   conformal err   staircase err");
+        _out.WriteLine("[G1b] MKlopf on-axis, PCB 2-Layer — the saturation ladder, re-run after M1.");
+        _out.WriteLine("  cells/λ      N    cut  fallback  nonconvex-cut   conformal err   staircase err");
 
         double worstCut = 0;
         foreach (int cpw in new[] { 20, 40, 80, 160, 320 })
@@ -483,7 +489,7 @@ public class ConformalBoundaryCellsUiTests
             double eStair = Math.Abs(stair.MeshedAreaM2 - drawn) / drawn;
             worstCut = Math.Max(worstCut, eCut);
 
-            Console.WriteLine($"  {cpw,7}  {cut.UnknownCount,5}  {cut.CutCellCount,5}  " +
+            _out.WriteLine($"  {cpw,7}  {cut.UnknownCount,5}  {cut.CutCellCount,5}  " +
                               $"{cut.StaircaseFallbackCells,8}  {diag.AdmittedNonConvex.Count,13}   " +
                               $"{eCut:E3}       {eStair:E3}");
 
@@ -492,7 +498,7 @@ public class ConformalBoundaryCellsUiTests
             Assert.Equal(0, cut.StaircaseFallbackCells);
         }
 
-        Console.WriteLine($"[G1b] worst conformal area error over the ladder: {worstCut:E3}");
+        _out.WriteLine($"[G1b] worst conformal area error over the ladder: {worstCut:E3}");
 
         // §7 gate 2 — MKlopf's own area error, at round-off, at every density on the starter where it
         // used to come out WORSE than the staircase (0.766% against 0.593%). Measured against the
@@ -548,7 +554,7 @@ public class ConformalBoundaryCellsUiTests
             Auto: false, CellsPerWavelength: 320, EdgeMesh: true, EdgeCells: 3,
             BoundaryCells: PlanarBoundaryCells.Conformal), diagnostics: diag);
 
-        Console.WriteLine($"[G1c] MKlopf on-axis outline: {outer.Count} vertices, {reflex} of them " +
+        _out.WriteLine($"[G1c] MKlopf on-axis outline: {outer.Count} vertices, {reflex} of them " +
                           $"REFLEX. At cells/λ = 320 the mesh staircases {fine.StaircaseFallbackCells} " +
                           $"cell(s) and CUTS {diag.AdmittedNonConvex.Count} non-convex one(s) that the " +
                           $"pre-M1 predicate would have refused.");

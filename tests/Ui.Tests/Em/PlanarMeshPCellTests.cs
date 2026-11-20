@@ -19,11 +19,17 @@ using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
 using CircuitRF.Ui.Schematic;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Em;
 
 public class PlanarMeshPCellTests
 {
+    // Diagnostic tables go to the test's own output, never Console: a CLI test captures Console.Out in-process, and a line
+    // written here while it does lands in that test's stdout.
+    private readonly ITestOutputHelper _out;
+    public PlanarMeshPCellTests(ITestOutputHelper output) => _out = output;
+
     private const int Dbu = LayoutUnits.DefaultDbuPerMicron;
     private const double Fghz10 = 10e9;
 
@@ -153,7 +159,7 @@ public class PlanarMeshPCellTests
         double areaErr  = Math.Abs(meshCut - trueCut) / trueCut;
         int    cellsCut = sq.CellCount - mi.CellCount;
 
-        Console.WriteLine(
+        _out.WriteLine(
             $"[L8b Tier 6] MBend mitre @10 GHz FR-4: true cut = {trueCut * 1e6:G4} mm², " +
             $"staircased cut = {meshCut * 1e6:G4} mm² ({areaErr:P1} error), " +
             $"cells removed = {cellsCut}, N square = {sq.UnknownCount}, N mitred = {mi.UnknownCount}, " +
@@ -187,7 +193,7 @@ public class PlanarMeshPCellTests
 
             double trueCut = TrueArea(sqP) - TrueArea(miP);
             double meshCut = MeshArea(sq) - MeshArea(mi);
-            Console.WriteLine(
+            _out.WriteLine(
                 $"[L8b Tier 6] MBend mitre @{cpw} cells/λ: cell = {mi.MaxCellEdgeM * 1e6:G4} µm, " +
                 $"cut error = {Math.Abs(meshCut - trueCut) / trueCut:P1}, " +
                 $"cells removed = {sq.CellCount - mi.CellCount}, N = {mi.UnknownCount} " +
@@ -237,7 +243,7 @@ public class PlanarMeshPCellTests
             double rms = n > 0 ? Math.Sqrt(sumSq / n) : 0;
 
             double areaErr = Math.Abs(MeshArea(r) - TrueArea(problem)) / TrueArea(problem);
-            Console.WriteLine(
+            _out.WriteLine(
                 $"[L8b Tier 6] {label}: local width error worst = {worst:P2}, RMS = {rms:P2}; " +
                 $"global area error = {areaErr:P2}; cell = {r.MaxCellEdgeM * 1e6:G4} µm; " +
                 $"cells = {r.CellCount}, N = {r.UnknownCount} ({r.Verdict})");
@@ -284,10 +290,10 @@ public class PlanarMeshPCellTests
             foreach (var (label, shapes) in Parts(tech, layerSel, scale))
             {
                 var x = PlanarExtractor.Extract(shapes, tech, Dbu, Fghz10, settings);
-                if (!x.Ok) { Console.WriteLine($"[L8b Tier 7] {tech.Name} / {label}: REFUSED — {x.Refusal}"); continue; }
+                if (!x.Ok) { _out.WriteLine($"[L8b Tier 7] {tech.Name} / {label}: REFUSED — {x.Refusal}"); continue; }
 
                 var r = SurfaceMesher.Mesh(x.Problem!);
-                Console.WriteLine(
+                _out.WriteLine(
                     $"[L8b Tier 7] {tech.Name} / {label}: cells = {r.CellCount}, N = {r.UnknownCount} " +
                     $"(ceiling {SurfaceMesher.UnknownCeiling}), verdict = {r.Verdict}, " +
                     $"cell = {r.MaxCellEdgeM * 1e6:G4} µm, across narrowest = {r.CellsAcrossNarrowestConductor}");
@@ -465,7 +471,7 @@ public class PlanarMeshPCellTests
                          Straight(tech, layerSel, 2.9e-3 * scale, 20e-3 * scale))))
             {
                 var x = PlanarExtractor.Extract(shapes, tech, Dbu, Fghz10, settings);
-                if (!x.Ok) { Console.WriteLine($"[edge-mesh M0] {tech.Name} / {label}: REFUSED — {x.Refusal}"); continue; }
+                if (!x.Ok) { _out.WriteLine($"[edge-mesh M0] {tech.Name} / {label}: REFUSED — {x.Refusal}"); continue; }
 
                 var problem = x.Problem!;
                 int obliqueEdges = ObliqueEdges(problem).Count;
@@ -479,7 +485,7 @@ public class PlanarMeshPCellTests
                     ns.Add(r.UnknownCount);
                     midRim.Add(rim.MidRimM);
 
-                    Console.WriteLine(
+                    _out.WriteLine(
                         $"[edge-mesh M0] {tech.Name} / {label} / EdgeCells = {ec,2}: " +
                         $"N = {r.UnknownCount,5}, cells = {r.CellCount,5}, " +
                         $"min cell = {r.MinCellEdgeM * 1e6,8:F2} µm, bulk = {r.MaxCellEdgeM * 1e6,8:F2} µm, " +
@@ -493,7 +499,7 @@ public class PlanarMeshPCellTests
 
                 bool nResponds   = ns.Distinct().Count() > 1;
                 bool rimResponds = obliqueEdges > 0 && midRim.Distinct().Count() > 1;
-                Console.WriteLine(
+                _out.WriteLine(
                     $"[edge-mesh M0] {tech.Name} / {label}: N responds to EdgeCells = {nResponds}" +
                     (obliqueEdges == 0 ? "" : $", the MID-RIM responds = {rimResponds}"));
 
@@ -506,7 +512,7 @@ public class PlanarMeshPCellTests
             }
         }
 
-        Console.WriteLine($"[edge-mesh M0] parts whose OBLIQUE RIM does not respond to EdgeCells at all: " +
+        _out.WriteLine($"[edge-mesh M0] parts whose OBLIQUE RIM does not respond to EdgeCells at all: " +
                           (noResponseOnTheRim.Count == 0 ? "(none)" : string.Join(", ", noResponseOnTheRim)));
     }
 
@@ -548,14 +554,14 @@ public class PlanarMeshPCellTests
             {
                 var r = SurfaceMesher.Mesh(x.Problem!, EdgeCells(ec));
                 ns.Add(r.UnknownCount);
-                Console.WriteLine(
+                _out.WriteLine(
                     $"[edge-mesh M0] MBend {angle:F0}° / EdgeCells = {ec,2}: N = {r.UnknownCount,6}, " +
                     $"cells = {r.CellCount,6}, min cell = {r.MinCellEdgeM * 1e6,8:F2} µm, {r.Verdict}");
             }
 
             bool monotone = true;
             for (int i = 1; i < ns.Count; i++) if (ns[i] < ns[i - 1]) monotone = false;
-            Console.WriteLine($"[edge-mesh M0] MBend {angle:F0}°: N = [{string.Join(", ", ns)}], " +
+            _out.WriteLine($"[edge-mesh M0] MBend {angle:F0}°: N = [{string.Join(", ", ns)}], " +
                               $"monotone in EdgeCells = {monotone}");
 
             // The claim being tested is that the hand-built fixture was unrepresentative. If a real

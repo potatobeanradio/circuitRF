@@ -683,6 +683,19 @@ by default; <code>.ccell</code> records the primary when there are several. A pl
 cell by <strong>relative path</strong> and resolves its glyph through the cell's primary symbol — so a broken
 path shows a &quot;Not Found&quot; glyph, and a resolved cell with a missing primary symbol shows a
 plain-rectangle stand-in. The cell folder is the unit you copy to share or reuse a cell.</p>
+<p>Besides the parameters and the primaries, a <code>.ccell</code> may carry a <strong>terminal map</strong> (<code>Terminals</code>: for each
+port, its <code>Name</code> and the <code>LayoutPin</code> that is it; see <a href="lvs.html#terminals">Terminal maps</a>) and a
+<strong><code>LayoutGenerator</code></strong>, the PCell that draws the cell wherever it is placed (see
+<a href="pcells.html#library-cell">A library cell drawn by a PCell</a>). Both are optional and left out of the file
+when unset.</p>
+<pre><code class="language-json">{
+  &quot;FormatVersion&quot;: 1,
+  &quot;NumPorts&quot;: 2,
+  &quot;LayoutGenerator&quot;: &quot;MLIN&quot;,
+  &quot;Parameters&quot;: [ { &quot;Name&quot;: &quot;W&quot;, &quot;DefaultExpression&quot;: &quot;1&quot;, &quot;Unit&quot;: &quot;mm&quot; } ],
+  &quot;Terminals&quot;: [ { &quot;Port&quot;: 1, &quot;Name&quot;: &quot;a&quot;, &quot;LayoutPin&quot;: &quot;1&quot; }, { &quot;Port&quot;: 2, &quot;Name&quot;: &quot;b&quot;, &quot;LayoutPin&quot;: &quot;2&quot; } ]
+}
+</code></pre>
 <h3 id="library-a-folder-of-cells">Library = a folder of cells</h3>
 <pre><code class="language-text">&lt;LibraryName&gt;/
    .clib               manifest: name, version, metadata

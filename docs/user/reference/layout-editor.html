@@ -659,7 +659,9 @@ layout:</p>
 <li>Each component instance resolves its layout view. A <strong>stated footprint is consulted first</strong> — an
 SMT case size, an imported part or your own <code>.clay</code> (see <a href="footprints.html">Footprints</a>) — then a
 kit reference, then a cell reference, then a registered PCell generator, whose layout is generated
-rather than stored (see <a href="pcells.html">PCells</a>).</li>
+rather than stored (see <a href="pcells.html">PCells</a>). A referenced cell whose <code>.ccell</code> names a
+<code>LayoutGenerator</code> is placed as that generator at the instance's own values, ahead of any layout view
+of its own (see <a href="pcells.html#library-cell">A library cell drawn by a PCell</a>).</li>
 <li>Components with no layout view at all — VAR, MEAS, Ground, and any un-laid-out cell — are <strong>reported
 to Messages and skipped</strong>, not silently omitted.</li>
 <li>Parts the schematic <strong>joins pin to pin are placed so their pins meet</strong> (see <em>Joined parts</em> below). Everything

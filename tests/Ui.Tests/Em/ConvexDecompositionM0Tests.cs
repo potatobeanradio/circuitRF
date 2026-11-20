@@ -16,11 +16,17 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Em;
 
 public class ConvexDecompositionM0Tests
 {
+    // Diagnostic tables go to the test's own output, never Console: a CLI test captures Console.Out in-process, and a line
+    // written here while it does lands in that test's stdout.
+    private readonly ITestOutputHelper _out;
+    public ConvexDecompositionM0Tests(ITestOutputHelper output) => _out = output;
+
     private const int Dbu = LayoutUnits.DefaultDbuPerMicron;
 
     private static StackupLayer LowestSignalMetal(Technology tech) =>
@@ -61,9 +67,9 @@ public class ConvexDecompositionM0Tests
     [Fact]
     public void M0_TheNonConvexCells_ClassifiedByFlowSimplicity()
     {
-        Console.WriteLine("[M0] non-convex cut cells, classified. xy/x-/-y/-- = flow-simple in both / " +
+        _out.WriteLine("[M0] non-convex cut cells, classified. xy/x-/-y/-- = flow-simple in both / " +
                           "x only / y only / neither.");
-        Console.WriteLine("  technology            part              cells/λ  nonconvex    xy   x-   -y   --   " +
+        _out.WriteLine("  technology            part              cells/λ  nonconvex    xy   x-   -y   --   " +
                           "reflex(min/med/max)   area/rect(min/med/max)");
 
         int total = 0, both = 0, neither = 0, staircased = 0;
@@ -98,7 +104,7 @@ public class ConvexDecompositionM0Tests
                     total += f.Count; both += bx; neither += no;
                     staircased += diag.Fallbacks.Count;
 
-                    Console.WriteLine(
+                    _out.WriteLine(
                         $"  {tech.Name,-20}  {label,-16}  {cpw,6}   {f.Count,7}  {bx,4} {xo,4} {yo,4} {no,4}   " +
                         $"{Spread(f.Select(c => (double)c.ReflexVertices)),-21} " +
                         $"{Spread(f.Select(c => c.AreaFraction))}");
@@ -106,7 +112,7 @@ public class ConvexDecompositionM0Tests
             }
         }
 
-        Console.WriteLine($"[M0] {total} non-convex cut cells over the whole table: {both} flow-simple in " +
+        _out.WriteLine($"[M0] {total} non-convex cut cells over the whole table: {both} flow-simple in " +
                           $"BOTH directions, {total - both - neither} in exactly one, {neither} in " +
                           $"neither. {staircased} cell(s) were staircased.");
 
@@ -141,7 +147,7 @@ public class ConvexDecompositionM0Tests
         {
             var diag = new ConformalDiagnostics();
             var rep = SurfaceMesher.Mesh(x.Problem!, At(cpw), diagnostics: diag);
-            Console.WriteLine($"[M0-disc] cells/λ {cpw,4}: N {rep.UnknownCount,6}  cut {rep.CutCellCount,5}  " +
+            _out.WriteLine($"[M0-disc] cells/λ {cpw,4}: N {rep.UnknownCount,6}  cut {rep.CutCellCount,5}  " +
                               $"refused {diag.Fallbacks.Count}");
             Assert.True(rep.CutCellCount > 0, "the disc produced no cut cells, so the control is vacuous");
             Assert.Empty(diag.Fallbacks);

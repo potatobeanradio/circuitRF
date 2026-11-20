@@ -4,11 +4,17 @@ using System.Diagnostics;
 using System.Linq;
 using CircuitRF.Ui.Schematic;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests;
 
 public class PerfBenchmarkTests
 {
+    // Diagnostic tables go to the test's own output, never Console: a CLI test captures Console.Out in-process, and a line
+    // written here while it does lands in that test's stdout.
+    private readonly ITestOutputHelper _out;
+    public PerfBenchmarkTests(ITestOutputHelper output) => _out = output;
+
     /// <summary>
     /// <b>Opt-in (2026-08-16): this is a wall-clock gate and a full-solution run is not a place to
     /// measure wall clock.</b>
@@ -32,7 +38,7 @@ public class PerfBenchmarkTests
         var renderModel = SchematicModelBuilder.GenerateStressTest(10_000);
         var editModel   = SchematicEditModel.FromRenderModel(renderModel);
 
-        Console.WriteLine($"Components: {editModel.Components.Count}, Wires: {editModel.Wires.Count}");
+        _out.WriteLine($"Components: {editModel.Components.Count}, Wires: {editModel.Wires.Count}");
 
         // Warm up
         editModel.BuildRenderModel();
@@ -44,11 +50,11 @@ public class PerfBenchmarkTests
             editModel.BuildRenderModel();
             sw.Stop();
             times.Add(sw.Elapsed.TotalMilliseconds);
-            Console.WriteLine($"  Run {i+1}: {sw.Elapsed.TotalMilliseconds:F1} ms");
+            _out.WriteLine($"  Run {i+1}: {sw.Elapsed.TotalMilliseconds:F1} ms");
         }
 
         double best = times.Min();
-        Console.WriteLine($"  Best: {best:F1} ms  Avg: {times.Average():F1} ms  Max: {times.Max():F1} ms");
+        _out.WriteLine($"  Best: {best:F1} ms  Avg: {times.Average():F1} ms  Max: {times.Max():F1} ms");
 
         // Gate on the BEST run, not the mean. This is a "did the algorithm regress" check, and the
         // fastest observed run is the statistic that answers it: a genuine regression (the O(N²)

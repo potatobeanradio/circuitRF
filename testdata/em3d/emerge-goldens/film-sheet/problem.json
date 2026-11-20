@@ -146,7 +146,8 @@
       },
       "z0": 50,
       "shiftM": 0,
-      "mixed": true
+      "mixed": true,
+      "targetNeff": 2.8287073033503565
     },
     {
       "number": 2,
@@ -161,7 +162,8 @@
       },
       "z0": 50,
       "shiftM": 0,
-      "mixed": true
+      "mixed": true,
+      "targetNeff": 2.8287073033503565
     }
   ],
   "lumpedElements": [],

@@ -20,11 +20,17 @@ using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Em;
 
 public class ConformalPortTests
 {
+    // Diagnostic tables go to the test's own output, never Console: a CLI test captures Console.Out in-process, and a line
+    // written here while it does lands in that test's stdout.
+    private readonly ITestOutputHelper _out;
+    public ConformalPortTests(ITestOutputHelper output) => _out = output;
+
     private const int Dbu = LayoutUnits.DefaultDbuPerMicron;
 
     /// <summary>The reported setup, verbatim: Z1 = 50, Z2 = 12, Γmax = 0.05, L = 50.8 mm,
@@ -76,7 +82,7 @@ public class ConformalPortTests
             bool ok = PlanarPorts.TryResolve(mesh, port, out var res, out string? refusal);
             Assert.True(ok, $"port {port.Number} was refused: {refusal}");
             Assert.True(res!.BasisCount > 1, $"port {port.Number} resolved onto {res.BasisCount} basis");
-            Console.WriteLine(res.Describe());
+            _out.WriteLine(res.Describe());
         }
     }
 
@@ -141,7 +147,7 @@ public class ConformalPortTests
     {
         var (problem, ports) = Extract();
 
-        Console.WriteLine("  cells/λ  port  bases   driven width   undriven      undriven %");
+        _out.WriteLine("  cells/λ  port  bases   driven width   undriven      undriven %");
         var byPort = new Dictionary<int, List<double>>();
 
         foreach (int cpw in new[] { 20, 40, 80 })
@@ -151,7 +157,7 @@ public class ConformalPortTests
             {
                 var r = PlanarPorts.Resolve(mesh, port);
                 double frac = r.UndrivenMetalM / (r.UndrivenMetalM + r.WidthM);
-                Console.WriteLine($"  {cpw,7}  {r.Number,4}  {r.BasisCount,5}   {r.WidthM:E4}   " +
+                _out.WriteLine($"  {cpw,7}  {r.Number,4}  {r.BasisCount,5}   {r.WidthM:E4}   " +
                                   $"{r.UndrivenMetalM:E4}     {frac:P2}");
                 (byPort.TryGetValue(r.Number, out var l) ? l : byPort[r.Number] = []).Add(frac);
             }
@@ -204,8 +210,8 @@ public class ConformalPortTests
         var r = PlanarPorts.Resolve(mesh, new PlanarPort(1, new EmPoint(0.2e-3, 2.7e-3),
                                                          PlanarPortSide.MinX, 50.0));
 
-        Console.WriteLine(r.Describe());
-        Console.WriteLine($"[slant] width {r.WidthM:E6} against grid {r.GridWidthM:E6} — " +
+        _out.WriteLine(r.Describe());
+        _out.WriteLine($"[slant] width {r.WidthM:E6} against grid {r.GridWidthM:E6} — " +
                           $"{(r.GridWidthM - r.WidthM) / r.GridWidthM:P3} narrower, {r.CutCellCount} cut cell(s)");
 
         // NON-VACUITY: without a cut cell in the port's own run this is the staircase path again and
@@ -253,8 +259,8 @@ public class ConformalPortTests
         var g = SurfaceMesher.Mesh(problem, At(PlanarBoundaryCells.Conformal)).Mesh.GridX;
         var head = Enumerable.Range(0, 4).Select(i => g[i + 1] - g[i]).ToArray();
         var tail = Enumerable.Range(g.Count - 5, 4).Select(i => g[i + 1] - g[i]).ToArray();
-        Console.WriteLine($"  first 4 x-cells: {string.Join(", ", head.Select(v => $"{v * 1e6:F1}"))} µm");
-        Console.WriteLine($"  last  4 x-cells: {string.Join(", ", tail.Select(v => $"{v * 1e6:F1}"))} µm");
+        _out.WriteLine($"  first 4 x-cells: {string.Join(", ", head.Select(v => $"{v * 1e6:F1}"))} µm");
+        _out.WriteLine($"  last  4 x-cells: {string.Join(", ", tail.Select(v => $"{v * 1e6:F1}"))} µm");
 
         // The narrow end's fan must GROW inward, and its first cell must be a small fraction of bulk.
         Assert.True(head[0] < head[1] && head[1] < head[2],

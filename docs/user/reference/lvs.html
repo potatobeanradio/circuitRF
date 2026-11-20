@@ -104,6 +104,9 @@ terminations as missing parts on every run.</p>
 </tr>
 </tbody>
 </table>
+<p>Those values come out with the workspace's kit corners bound, as Simulate binds them: the corner the
+schematic selects on each axis, else the kit's nominal one. A kit part whose value or model card names a
+corner variable therefore compares at the number it simulates with.</p>
 <p>The technology is not optional and is never guessed. Without it there is no way to know that a shape on
 one layer and a shape on another are the same conductor, or that a barrel between them joins them.</p>
 <div class="callout note">
@@ -118,7 +121,9 @@ the one inference in the whole extraction that you cannot check by looking at yo
 its generator draws lives in a folder of its own, named after the generator with a hash. LVS pairs the two by
 <strong>generator</strong>: the generator the kit draws the part with (the same one <strong>Update Layout from Schematic</strong> places), against
 the generator the layout cell came from. A different kit cell in its place is a type mismatch naming both. A parameter the
-kit's generator does not draw is reported once as not drawn, never as a mismatch.</p>
+kit's generator does not draw is reported once as not drawn, never as a mismatch. A library cell whose <code>.ccell</code> names a
+<code>LayoutGenerator</code> pairs the same way, by that generator, and is never descended into (see
+<a href="pcells.html#library-cell">A library cell drawn by a PCell</a>).</p>
 <p><strong>A part left off the board.</strong> A footprint whose schematic part has <strong>Disable</strong> set to <em>Open</em> is taken as not fitted: its pads stay copper, it is not compared, and a note names it. If a part was marked Open by mistake, that note is the only sign.</p>
 <h2 id="window">Running it from the window</h2>
 <p>Open the cell's <strong>layout</strong> view, then <strong>View › Panels › LVS</strong>. The panel is not in either
@@ -437,6 +442,9 @@ tells you which rule produced the answer:</p>
 </tr>
 </tbody>
 </table>
+<p>A declared row may leave <code>LayoutPin</code> empty (<code>&quot;LayoutPin&quot;: &quot;&quot;</code>) or out: that port has no layout pin. On a cell
+a PCell draws, it is a terminal the PCell does not draw, such as a bulk or substrate tie, and LVS leaves it
+out of the comparison with one note.</p>
 <p><strong>A partial name match never falls through to positional.</strong> Three of five names matching is evidence the
 author meant them to match and got two wrong; reading the whole thing by position would produce a
 confident wrong answer over a visible clue. That case is reported, naming the pins on both sides that
