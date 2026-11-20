@@ -94,40 +94,56 @@ public static class CouplingCurves
 
     /// <summary>
     /// The <paramref name="count"/> poles of y(f), sorted by their real parts, from a rational fit
-    /// N(x)/D(x) over x = (f − fc)/(half span), N of degree count + 1 (a slow background) and D monic of degree count:
-    /// Levy's linearised least squares, N − y·D = 0, reweighted by 1/|D| as Sanathanan and Koerner do
-    /// (IEEE Trans. AC 8(1), 1963, <see href="https://doi.org/10.1109/TAC.1963.1105517">10.1109/TAC.1963.1105517</see>).
+    /// N(x)/D(x) over x = (f − fc)/(half span), N of degree count + 1 (a slow background) and D monic of degree count
+    /// (<see cref="Rational"/>).
     /// </summary>
     public static Complex[] Poles(IReadOnlyList<double> fHz, IReadOnlyList<Complex> y, int count)
     {
         double fc = (fHz[0] + fHz[^1]) / 2.0, half = (fHz[^1] - fHz[0]) / 2.0;
-        var x = fHz.Select(f => (f - fc) / half).ToArray();
-        int na = count + 2, m = na + count;
-        var d = new Complex[count + 1];
-        d[count] = 1.0;
-        var w = Enumerable.Repeat(1.0, x.Length).ToArray();
+        var (_, d) = Rational([.. fHz.Select(f => (f - fc) / half)], [y], [count + 1], count);
+        return [.. Roots(d).Select(r => fc + half * r).OrderBy(r => r.Real)];
+    }
+
+    /// <summary>
+    /// Responses over a real x that share one denominator, y_r(x) = N_r(x)/D(x): D monic of degree
+    /// <paramref name="poles"/>, N_r of degree <paramref name="zeros"/>[r], every coefficient complex and ascending.
+    /// Levy's linearised least squares, N_r − y_r·D = 0, reweighted by 1/|D| as Sanathanan and Koerner do
+    /// (IEEE Trans. AC 8(1), 1963, <see href="https://doi.org/10.1109/TAC.1963.1105517">10.1109/TAC.1963.1105517</see>).
+    /// Keep x within about ±1: the normal equations square the monomials' conditioning.
+    /// </summary>
+    public static (Complex[][] N, Complex[] D) Rational(IReadOnlyList<double> x, IReadOnlyList<IReadOnlyList<Complex>> y,
+        IReadOnlyList<int> zeros, int poles)
+    {
+        int[] at = new int[zeros.Count + 1];
+        for (int r = 0; r < zeros.Count; r++) at[r + 1] = at[r] + zeros[r] + 1;
+        int nn = at[^1], m = nn + poles;
+        var d = new Complex[poles + 1];
+        d[poles] = 1.0;
+        var u = new Complex[m];
+        var w = Enumerable.Repeat(1.0, x.Count).ToArray();
         for (int pass = 0; pass < 4; pass++)
         {
-            // Unknowns a_0 … a_(count+1), d_0 … d_(count−1): Σ a_j x^j − y Σ d_j x^j = y x^count.
+            // Unknowns: each N_r's coefficients, then d_0 … d_(poles−1): Σ a_j x^j − y Σ d_j x^j = y x^poles.
             var ata = new Complex[m, m];
             var atb = new Complex[m];
-            var row = new Complex[m];
-            for (int i = 0; i < x.Length; i++)
-            {
-                for (int j = 0; j < na; j++) row[j] = w[i] * Math.Pow(x[i], j);
-                for (int j = 0; j < count; j++) row[na + j] = -w[i] * y[i] * Math.Pow(x[i], j);
-                Complex b = w[i] * y[i] * Math.Pow(x[i], count);
-                for (int r = 0; r < m; r++)
+            for (int r = 0; r < y.Count; r++)
+                for (int i = 0; i < x.Count; i++)
                 {
-                    atb[r] += Complex.Conjugate(row[r]) * b;
-                    for (int c = 0; c < m; c++) ata[r, c] += Complex.Conjugate(row[r]) * row[c];
+                    var row = new Complex[m];
+                    for (int j = 0; j <= zeros[r]; j++) row[at[r] + j] = w[i] * Math.Pow(x[i], j);
+                    for (int j = 0; j < poles; j++) row[nn + j] = -w[i] * y[r][i] * Math.Pow(x[i], j);
+                    Complex b = w[i] * y[r][i] * Math.Pow(x[i], poles);
+                    for (int a = 0; a < m; a++)
+                    {
+                        atb[a] += Complex.Conjugate(row[a]) * b;
+                        for (int c = 0; c < m; c++) ata[a, c] += Complex.Conjugate(row[a]) * row[c];
+                    }
                 }
-            }
-            var u = new WspMatrix.Lu(ata).Solve(atb);
-            for (int j = 0; j < count; j++) d[j] = u[na + j];
-            for (int i = 0; i < x.Length; i++) w[i] = 1.0 / Horner(d, x[i]).Magnitude;
+            u = new WspMatrix.Lu(ata).Solve(atb);
+            for (int j = 0; j < poles; j++) d[j] = u[nn + j];
+            for (int i = 0; i < x.Count; i++) w[i] = 1.0 / Horner(d, x[i]).Magnitude;
         }
-        return [.. Roots(d).Select(r => fc + half * r).OrderBy(r => r.Real)];
+        return ([.. Enumerable.Range(0, zeros.Count).Select(r => u[at[r]..at[r + 1]])], d);
     }
 
     private static Complex Horner(Complex[] c, Complex x)

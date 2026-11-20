@@ -11,6 +11,7 @@ using CircuitRF.Design.Filters;
 using CircuitRF.Engine;
 using CircuitRF.Ui.Filters;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Synthesis;
 
@@ -19,7 +20,7 @@ namespace CircuitRF.Ui.Tests.Synthesis;
 /// realiser of its own: the <c>filter</c> verb end to end, the MCP mode's schema and one call through the adapter, and the
 /// Filter Designer's list and Place.
 /// </summary>
-public sealed class FilterDesignerTests : IDisposable
+public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "crf-filter-" + Guid.NewGuid().ToString("N")[..12]);
     public void Dispose() { try { Directory.Delete(_dir, true); } catch { /* best effort */ } }
@@ -186,5 +187,253 @@ public sealed class FilterDesignerTests : IDisposable
 
         schematic.UndoRedo.Undo();
         Assert.Empty(model.Components);
+    }
+
+    /// <summary>Opened from Tools ▸ Filter Designer… with no schematic open: every family listed, the filter realised and
+    /// plotted, and Place greyed with why.</summary>
+    [Fact]
+    public async Task WithNoSchematic_ItRealises_AndPlaceIsGreyedWithWhy()
+    {
+        var vm = new FilterDesignerViewModel(null, realisers: Realisers) { Band = FilterBand.Lowpass };
+        await vm.Realising;
+        Assert.Equal(FilterDesignerViewModel.AnyFamily, vm.Family);
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.False(vm.PlaceCommand.CanExecute(null));
+        Assert.Contains("No schematic", vm.PlaceTip);
+    }
+
+    /// <summary>
+    /// The Designer's own paths timed on a typical specification, the shipped realisers on the shipped RO4350B board: a
+    /// 5-pole 0.1 dB Chebyshev bandpass, 2.28 to 2.52 GHz (10 % at 2.4 GHz). Opening is on the window's own default
+    /// specification; the specification is then typed in; the list is one Refresh; each selection and the ripple's edit
+    /// run until their response is shown, and every listed realiser until it is checked; then the ideal and each realiser's
+    /// own realising and bench, cold. The times go to the test output (docs/design/filter-synthesis.md §6 records them). Asserted: the
+    /// UI thread's share stays small, and the checked list is truthful, the coupled-feed hairpin refusing what its check
+    /// let through.
+    /// </summary>
+    [Fact]
+    public async Task TheDesigner_PathsOnATypicalSpec_AreTimed()
+    {
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId);
+        var lines = new List<string>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        double sync = 0.0, drawn = 0.0;
+        FilterDesignerViewModel? vm = null;
+        async Task Time(string what, Action act)
+        {
+            clock.Restart();
+            act();
+            sync = Math.Max(sync, clock.Elapsed.TotalMilliseconds);
+            string ui = $"{clock.Elapsed.TotalMilliseconds:0.0} ms on the UI thread";
+            await vm!.Drawn;
+            drawn = Math.Max(drawn, clock.Elapsed.TotalMilliseconds);
+            string ideal = $"ideal {clock.Elapsed.TotalMilliseconds:0} ms";
+            await vm.Realising;
+            string shown = $"{clock.Elapsed.TotalMilliseconds:0} ms";
+            await vm.Checking;
+            lines.Add($"{what}: {ideal}, realised {shown}, list checked {clock.Elapsed.TotalMilliseconds:0} ms ({ui})"
+                      + (vm.Realisation is null ? $"; {vm.Status}" : ""));
+        }
+        await Time("open", () => vm = new FilterDesignerViewModel(null, technology: tech));
+        await Time("type 5 poles, 2.28 to 2.52 GHz", () => { vm!.Order = "5"; vm.F1 = "2.28 GHz"; vm.F2 = "2.52 GHz"; });
+        await Time($"list ({vm!.Realisers.Count} realisers)", vm.Refresh);
+
+        Assert.All(vm.Realisers.Where(r => r.Supported), r => Assert.True(r.Realised, r.Name));
+        Assert.StartsWith("refuses: ", vm.Realisers.Single(r => r.Name.StartsWith("Hairpin bandpass, coupled", StringComparison.Ordinal)).Status);
+        foreach (var row in vm.Realisers.Where(r => r.Supported).ToList())
+        {
+            await Time($"select {row.Name}", () => vm.Selected = row);
+            if (row.Name.StartsWith("Hairpin bandpass, tapped", StringComparison.Ordinal)) lines.Add(vm.LossText);
+        }
+        await Time("edit ripple", () => vm.Ripple = "0.2");
+        await Time("open again", () => vm = new FilterDesignerViewModel(null, technology: tech));
+
+        // Cold: a ripple the window has not seen, so no cross-section of it is in the N-line solver's cache.
+        var spec = new FilterSpec(FilterResponse.Chebyshev, FilterBand.Bandpass, 5, 2.28e9, 2.52e9, 0.15);
+        var substrate = FilterSynthesisService.Substrate(tech, null, null, out _);
+        var f = FilterSynthesisService.Frequencies(spec, 401);
+        clock.Restart();
+        FilterSynthesisService.Response(FilterSynthesisService.Ideal(spec, 401), f, spec.Z0);
+        lines.Add($"ideal: {clock.Elapsed.TotalMilliseconds:0} ms");
+        foreach (var r in FilterRealisers.All.Where(r => r.Supports(spec, out _)))
+        {
+            clock.Restart();
+            try
+            {
+                var realisation = r.Realise(spec, substrate);
+                double realise = clock.Elapsed.TotalMilliseconds;
+                FilterSynthesisService.Response(FilterSynthesisService.Cnl(spec, realisation, r.Name, substrate, tech, 401, []), f, spec.Z0);
+                lines.Add($"cold {r.Name}: realise {realise:0} ms, bench {clock.Elapsed.TotalMilliseconds - realise:0} ms");
+            }
+            catch (CircuitRF.Core.Devices.ParameterRefusalException) { lines.Add($"cold {r.Name}: refuses in {clock.Elapsed.TotalMilliseconds:0} ms"); }
+        }
+        output.WriteLine(string.Join("\n", lines));
+        Assert.True(sync < 1000 && drawn < 1000, string.Join("\n", lines));
+    }
+
+    /// <summary>
+    /// The ideal at the board's unloaded Q: at f0 a Butterworth bandpass loses 4.343·Σg/(FBW·Qu) dB, the first-order
+    /// estimate as Hong and Lancaster give it (<see href="https://doi.org/10.1002/0471221619">10.1002/0471221619</see>),
+    /// and nothing with no loss. In the Designer, on the shipped board, the edge-coupled
+    /// filter's plot has the lossy ideal beside the lossless one (a toggle takes it off), and the readout gives the Q,
+    /// the loss it costs and the realised part's own loss at f0.
+    /// </summary>
+    [Fact]
+    public async Task TheLossyIdeal_LosesCohnsMidBandLoss_AndTheDesignerReadsItOut()
+    {
+        var spec = new FilterSpec(FilterResponse.Butterworth, FilterBand.Bandpass, 3, 2.28e9, 2.52e9);
+        double LossAtF0(double qu) => -20.0 * Math.Log10(FilterSynthesisService.LossyIdeal(spec, [spec.CentreHz], qu).Matrices[0][1, 0].Magnitude);
+        Assert.Equal(0.0, LossAtF0(double.PositiveInfinity), 9);
+        Assert.Equal(4.343 * 4.0 / (spec.FractionalBandwidth * 200.0), LossAtF0(200.0), 0.01);
+
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId);
+        var vm = new FilterDesignerViewModel(null, realisers: [new EdgeCoupledRealiser()], technology: tech)
+            { F1 = "2.28 GHz", F2 = "2.52 GHz" };
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.True(vm.HasLoss);
+        Assert.Equal(5, vm.Plot.Traces.Count);                     // ideal S21, S11, the ideal at Qu, realised S21, S11
+        Assert.Matches(@"^Unloaded Q \d+, .* the ideal with that Q loses \d+\.\d\d dB; the realised part loses \d+\.\d\d dB, ", vm.LossText);
+        vm.ShowLoss = false;
+        Assert.Equal(4, vm.Plot.Traces.Count);
+    }
+
+    /// <summary>The Designer's default bandpass, 2.2 to 2.6 GHz, three poles, as the tapped hairpin builds it on the shipped
+    /// board: realised once per process, as the window keeps it.</summary>
+    private static FilterDesignerViewModel Hairpin(ViewModels.SchematicViewModel? schematic = null)
+        => new(schematic, realisers: [new TappedHairpinRealiser()],
+            technology: CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId));
+
+    /// <summary>The metrics under the plot (docs/design/filter-synthesis.md §6c) come with the realisation, off the UI
+    /// thread: nothing is extracted while the window opens, and once the bench is shown its prototype is read back, each
+    /// row against the spec or the synthesis, with pass or fail.</summary>
+    [Fact]
+    public async Task TheMetrics_FillInTheBackground()
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var vm = Hairpin();
+        Assert.True(clock.Elapsed.TotalSeconds < 1.0, $"{clock.Elapsed.TotalSeconds:0.00} s on the UI thread");
+        Assert.Empty(vm.SpecRows);
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.Equal(["Centre", "Bandwidth", "Ripple", "Return loss", "Insertion loss", "Unloaded Q"], vm.SpecRows.Select(r => r.Name));
+        Assert.All(vm.SpecRows.Take(4), r => Assert.Contains(r.Verdict, new[] { "pass", "fail" }));
+        Assert.Contains(vm.MatrixRows, r => r.Name == "k(1,2)");
+        Assert.Contains(vm.MatrixRows, r => r.Name == "Qe(S)");
+        Assert.StartsWith("Circuit bench", vm.MetricsNote);
+        Assert.True(vm.RunEmCommand.CanExecute(null), vm.EmTip);
+        Assert.True(vm.PolishCommand.CanExecute(null), vm.PolishTip);
+        Assert.False(vm.CalibrateCommand.CanExecute(null));          // no EM run yet
+        output.WriteLine(string.Join("\n", vm.SpecRows.Concat(vm.MatrixRows)));
+    }
+
+    /// <summary>Polish replaces the selected realisation with the polished one, says how far the worst return loss moved,
+    /// and Place puts the polished part down.</summary>
+    [Fact]
+    public async Task Polish_ReplacesTheRealisation_AndPlacePutsItDown()
+    {
+        var model = new SchematicEditModel();
+        var vm = Hairpin(new ViewModels.SchematicViewModel(model));
+        await vm.Realising;
+        var realised = vm.Realisation!;
+        vm.Polish();
+        Assert.True(vm.Busy);
+        await vm.Work;
+        output.WriteLine(vm.Status);
+        var polished = vm.Realisation!;
+        Assert.NotSame(realised, polished);
+        Assert.Contains("Polished in 3 passes", polished.Notes[^1]);
+        var m = System.Text.RegularExpressions.Regex.Match(vm.Status, @"^Polish: worst return loss across the band (\S+) dB before, (\S+) dB after");
+        Assert.True(m.Success, vm.Status);
+        Assert.True(double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) >= double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture));
+
+        vm.PlaceCommand.Execute(null);
+        var part = Assert.Single(model.Components, c => c.Symbol == SymbolKind.Mcrc);
+        Assert.Equal(polished.Parameters["Tap"], part.Parameters.Single(p => p.Name == "Tap").Expression);
+    }
+
+    /// <summary>Run Planar EM solves in the background with a bar and Cancel; cancelled, it leaves no EM result and the
+    /// Designer free for the next run.</summary>
+    [Fact]
+    public async Task RunPlanarEm_IsCancelled()
+    {
+        var vm = Hairpin();
+        await vm.Realising;
+        vm.RunEm();
+        Assert.True(vm.Busy);
+        Assert.False(vm.RunEmCommand.CanExecute(null));
+        Assert.True(vm.CancelWorkCommand.CanExecute(null));
+        for (var clock = System.Diagnostics.Stopwatch.StartNew(); !(vm.BusyProgress > 0) && clock.Elapsed.TotalSeconds < 60;)
+            await Task.Delay(50);
+        output.WriteLine($"cancelled at {vm.BusyProgress:P0}");
+        vm.CancelWork();
+        await vm.Work.WaitAsync(TimeSpan.FromSeconds(60));
+        Assert.Equal("Planar EM cancelled.", vm.Status);
+        Assert.False(vm.HasEm);
+        Assert.False(vm.Busy);
+        Assert.True(vm.RunEmCommand.CanExecute(null));
+    }
+
+    /// <summary>A realisation Planar EM refuses (a jumper site has no value to close its port with) greys Run Planar EM,
+    /// its tooltip saying why; and a ladder is no MCRC to polish.</summary>
+    [Fact]
+    public async Task RunPlanarEm_IsGreyedWithWhy_WhereTheServiceRefuses()
+    {
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId);
+        var vm = new FilterDesignerViewModel(null, realisers: [new Jumpered()], technology: tech) { Band = FilterBand.Lowpass, F1 = "1 GHz" };
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.False(vm.RunEmCommand.CanExecute(null));
+        Assert.Contains("Jumper", vm.EmTip);
+        Assert.False(vm.PolishCommand.CanExecute(null));
+        Assert.Contains("not hairpins or open loops", vm.PolishTip);
+    }
+
+    /// <summary>The lumped ladder with its first site a jumper.</summary>
+    private sealed class Jumpered : IFilterRealiser
+    {
+        public string Name => "Jumpered lowpass (MLAD)";
+        public bool Supports(FilterSpec spec, out string? why) => new LumpedLadder().Supports(spec, out why);
+        public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate)
+        {
+            var r = new LumpedLadder().Realise(spec, substrate);
+            return r with { Sites = [r.Sites[0] with { Role = "Jumper" }, .. r.Sites.Skip(1)] };
+        }
+    }
+
+    /// <summary>A realiser that runs until it is cancelled, and says when it was.</summary>
+    private sealed class Endless : IFilterRealiser
+    {
+        public readonly TaskCompletionSource<bool> Stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string Name => "Endless lowpass (MLAD)";
+        public bool Supports(FilterSpec spec, out string? why) { why = null; return true; }
+        public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate) => Realise(spec, substrate, default);
+        public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate, CancellationToken cancel)
+        {
+            if (spec.RippleDb == 0.2) return new LumpedLadder().Realise(spec, substrate);
+            cancel.WaitHandle.WaitOne(TimeSpan.FromSeconds(30));
+            Stopped.TrySetResult(cancel.IsCancellationRequested);
+            cancel.ThrowIfCancellationRequested();
+            throw new TimeoutException("never cancelled");
+        }
+    }
+
+    /// <summary>The ideal is drawn while the realisation still runs, with "realising…"; a newer specification cancels the
+    /// older one's realisation, and its own fills in.</summary>
+    [Fact]
+    public async Task ANewerEdit_CancelsTheOlderRealisation()
+    {
+        var endless = new Endless();
+        var vm = new FilterDesignerViewModel(null, realisers: [endless]) { Band = FilterBand.Lowpass, F1 = "1 GHz" };
+        await vm.Drawn;
+        Assert.Equal(2, vm.Plot.Traces.Count);
+        Assert.EndsWith("realising…", vm.Status);
+        Assert.True(vm.Working);
+
+        vm.Ripple = "0.2";
+        Assert.True(await endless.Stopped.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+        await vm.Realising;
+        Assert.True(vm.Realisation is not null, vm.Status);
+        Assert.Equal(4, vm.Plot.Traces.Count);
     }
 }

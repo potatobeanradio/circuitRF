@@ -539,15 +539,109 @@ modes.
 **The window** (`src/Ui/Filters/FilterDesignerViewModel.cs`, `src/Ui/Views/Filters/`) is laid out as the Match
 Designer is.
 - On the left: the specification, the family filter, the substrate it found, then the realisers. Under each one it
-  shows whether it can build the filter and, if not, why. Below them, "What Place writes": the parameters and site
-  values.
+  shows whether it can build the filter and, if not, why: first its own check (`Supports`), then what realising it found
+  (below). Below them, "What Place writes": the parameters and site values.
 - On the right: one Data Display plot, as the Match Designer hosts its own. It shows |S21| and |S11| of the ideal ladder
   and of the selected realisation's bench, both run by the engine on every edit.
+- **The ideal at Qu**, for a bandpass on a substrate: |S21| of the same prototype with every resonator at the board's
+  unloaded Q, through `CouplingMatrix.Response` with δ = 1/(Qu·FBW) on the inline matrix `CouplingMatrix.AllPole` builds
+  from the g-values (`FilterSynthesisService.LossyIdeal`). With no loss it is the ideal ladder's own response.
+  - Qu is `CoupledResonatorDesign.UnloadedQ`: β/(2α) of a Z0 line on the substrate at f0, with α MLIN's own conductor
+    (Wheeler, with roughness) and dielectric loss. Radiation and the open ends are left out. On the shipped RO4350B
+    board at 2.4 GHz, Qu is about 110.
+  - A line above the plot reads the loss out: Qu, the ideal at Qu's loss at f0, and the realised bench's loss at f0 with
+    the part of it that is dissipated, −10·log(|S21|²/(1 − |S11|²)). On the 5-pole 0.1 dB, 10 % bandpass, the tapped
+    hairpin's loss of about 3 dB is nearly all dissipation and close to the ideal at Qu's: the board's loss, not a
+    design error. A toggle hides the curve.
+  - A test checks the ideal at Qu against the first-order estimate 4.343·Σg/(FBW·Qu) dB at f0, as Hong and Lancaster
+    give it ([10.1002/0471221619](https://doi.org/10.1002/0471221619)). They agree to 0.001 dB at Qu = 200.
+- **The metrics**, under the plot: the selected realisation's bench read back to its prototype (§6c), in the same
+  background task as the bench, by `FilterSynthesisService.Extract` against `Target(spec)` (the all-pole chain, or with
+  zeros the folded generalised Chebyshev). Two compact tables, each row a `FilterCheck` with its value, its target and
+  pass or fail:
+  - the spec's: centre, bandwidth, ripple, return loss and each zero, then the insertion loss at f0 and the unloaded Q
+    beside the board's, which the spec asks nothing of;
+  - the matrix's: each Qe, k and resonator frequency against the synthesis's (`ToPhysical`'s terms).
+
+  A line above says whose response it is and how many checks fail. A response the extraction refuses (not a bandpass,
+  too few points) shows the refusal instead. The extraction is milliseconds beside the bench.
+- **Run Planar EM** runs `FilterEmService` (§6d) on the selected realisation on a worker, at `EmPoints` = 31 frequencies
+  across the extraction's window, ω = ±3 (`EmFrequencies`; a band other than a bandpass across the plot's sweep). Every
+  point then counts towards the fit, which needs 2·(2N + 1) of them, so 31 reach order 7. A bar follows the solved points
+  and **Cancel** stops the solve at its next point or stage.
+  - The EM |S21| and |S11| join the plot, and the metrics switch to the EM response. **From Planar EM** switches them
+    back to the bench's.
+  - A run is kept for the process, keyed by the part's stored values: a `ConditionalWeakTable` on the realisation's
+    `Parameters` dictionary, which a polish replaces and nothing else shares. Selecting the realisation again shows it
+    at once.
+  - The button is greyed, its tooltip giving the reason, where `FilterEmService.Refusal` refuses: the bench's background
+    task runs the service's own checks before anything is meshed (the drawing, its pins, each site's port). With no
+    substrate the tooltip says so.
+- **Polish** runs `FilterPolish.Run` (§6c, three passes on the bench) on a worker. It is enabled where
+  `FilterPolish.Refusal` passes: hairpins and open loops in a row.
+  - The polished part replaces the realiser's entry in the kept realisations. The plot, the metrics, What Place writes
+    and Place all take it, and selecting the realiser again gives it.
+  - The status line gives the worst return loss across the band before and after.
+- **Calibrate from EM**, once the realisation has an EM run: one polish pass with the EM response in place of the
+  bench's (`Run`'s `response`), so the curves are corrected at the EM output, then the corrected part on EM. It starts
+  from the `PolishAim` the part was solved for, so it builds on a polish rather than undoing it. One pass per click.
+- **Tools ▸ Filter Designer…** (both menu surfaces) opens it on no part: the default specification, every family. Place
+  targets the schematic active when it opened, and its technology gives the substrate, else the workspace's default.
+  With no schematic, Place is greyed and its tooltip says why. **Filter Designer…** on a schematic's empty-canvas menu
+  does the same for that schematic. The app has no command palette to add it to.
 - **Synthesise…** in the Properties of an MLAD, MCRC or MCLA opens it with that family preselected. A family is matched
   against the realiser's name, which by the contract's convention ends in the part type, e.g. "(MCRC)".
-- **Place** puts the part to the right of the drawing. It reads the part's sites the way Place Site Parts reads them,
-  from the part's own plan (`PassiveSites.Read`, with the part in the schematic for that one read), and fills them with
-  `PassiveSites.PlaceParts`. Part, site parts and wires go in one `PlaceSitePartsCommand`, so one Undo takes them all off.
+- **Place** puts the part to the right of the drawing, or at the origin of an empty one. It reads the part's sites the
+  way Place Site Parts reads them, from the part's own plan (`PassiveSites.Read`, with the part in the schematic for that
+  one read), and fills them with `PassiveSites.PlaceParts`. Part, site parts and wires go in one `PlaceSitePartsCommand`,
+  so one Undo takes them all off.
+
+**Speed.** Measured by `TheDesigner_PathsOnATypicalSpec_AreTimed` on a 5-pole 0.1 dB Chebyshev bandpass, 2.28 to
+2.52 GHz, every shipped realiser, the shipped RO4350B board, a Debug build on one shared machine (other builds ran
+beside it, so the seconds vary by about 20 % between runs). Before, nothing was on the plot until the realised response
+was; after, the ideal is drawn first and the realised response fills in.
+
+| Path | Before | After |
+|---|---|---|
+| Open, the window's default spec | 5.7 s | Ideal drawn in 0.44 s the first time in a session, of which 0.36 s is on the UI thread: 0.28 s of it is the Data Display's first plot (start-up and JIT), which any plot window pays once. 10 ms after that. Realised in 3.1 s |
+| Fill the realiser list (16 `Supports`) | 0.2 ms | 0.4 ms; then each row realised in the background, 26 to 30 s for all 11 |
+| Select a realiser | 0.05 to 20.7 s (interdigital 20.7, open loop 4.8, tapped hairpin 3.1) | 0.05 to 0.21 s once its row is checked |
+| Edit a field (the ripple) | 9.1 s, the window waiting | Ideal drawn in 8 ms, 1 ms on the UI thread. Realised in 3.9 to 4.8 s, after the 0.25 s pause |
+| Combline, realise + bench, cold | 9.2 + 1.7 s | 2.9 to 3.9 + 0.06 s |
+| Interdigital, realise + bench, cold | 18.3 + 2.5 s | 8.4 to 9.1 + 0.06 s |
+| Open loop / tapped hairpin, realise, cold | 4.8 / 3.1 s | 3.7 to 4.1 / 2.4 to 3.3 s |
+
+Where the time went. `Supports` designs nothing (the list was 0.2 ms), and only the selected realiser was simulated, so
+neither was the cause. The ideal is 4 to 18 ms and a bench at most 0.2 s.
+- MCLA's cross-section fit is 9 to 11 N-line solves, each two field solves (C and C₀): 1.0 s for 5 strips, 1.6 s for 7.
+  The bench then solved the same cross-section again, 1.7 to 2.5 s, because the fit's widths were not on the plan's grid
+  and so missed the solver's cache.
+- MCRC's k(S) and Qe bisections are 30 halvings each, and every halving is a peak search over 601 frequencies of the
+  part's circuit model.
+- Nothing was kept: selecting a realiser again realised it again, and every keystroke started a realisation.
+
+What changed.
+- **The window** draws the ideal first, on a worker and without waiting for the typing to pause, and says "realising…".
+  It then realises and runs the selected realiser alone, and the realised pair fills in when it arrives. Realisations
+  are kept for the process by specification, substrate and realiser (a running one is joined, not started twice; cleared
+  whole at 256). Every listed realiser its check lets through is then realised in the background, one at a time, and its
+  row changes in place to "builds it" or "refuses: why": a check is cheap but not the last word (on this spec the
+  coupled-feed and stepped-impedance hairpins pass it and then cannot reach Qe). If the list's own first choice refuses,
+  the next is selected. Typed fields wait for 0.25 s without a keystroke before anything is realised; a choice runs at
+  once. The bar beside "Realisers" shows after 0.1 s.
+- **Cancelling.** `IFilterRealiser.Realise` has an overload with a `CancellationToken`; a realiser that solves nothing at
+  length takes the interface's default, which ignores it. MCRC's and MCLA's realisers stop between circuit or field
+  solves: each bisection halving and resonator sizing step of `FromCouplings`, each step of the cross-section fit. A new
+  specification, or closing the window, cancels the older one's runs. A cancelled run is no result: the cache replaces
+  it, and another window that had joined it starts it again under its own token.
+- **The N-line solver** (`MicrostripMultiLineModel`) solves C and C₀ side by side. The results are bit-identical.
+- **The MCLA fit** steps on the plan's 2 nm grid, so its last solve is the bench's, from the cache. The stored widths and
+  gaps move by 1 nm at most.
+- **MCRC's bisection** stops once its bracket is under 1 nm (half the plan's grid) and 1e-7 of its range: 21 to 24
+  halvings in place of 30. A gap or tap moves by one grid step at most. Each coupled-modes call now has its own validity
+  reporter, so two realisers can run side by side (the selected one and the background check).
+
+The realiser, synthesis and device tests pass unchanged at their own tolerances.
 
 **Tests** (`tests/Ui.Tests/Synthesis/FilterDesignerTests.cs`) use a realiser of their own: a lumped Butterworth or
 Chebyshev lowpass written as MLAD sites.
@@ -559,6 +653,21 @@ Chebyshev lowpass written as MLAD sites.
   and writes the netlist.
 - The Designer preselects the family and lists the realiser, plots four traces, and refuses Place on a band the realiser
   cannot build. Its Place adds the ladder, two inductors and a capacitor, and one Undo takes them all off.
+- Opened with no schematic, it lists every family and realises the filter, and Place is greyed with its reason.
+- The timing harness above. It asserts that the UI thread's share of each path, and the ideal's drawing, stay under a
+  second, and that the checked list is truthful: every row its check let through is realised, and the coupled-feed
+  hairpin says "refuses:".
+- The ideal at Qu matches the first-order estimate. On the shipped board the Designer draws it with the edge-coupled
+  filter, the readout states Qu and both losses, and the toggle hides the curve.
+- A realiser that runs until cancelled: the ideal is drawn with "realising…" while it runs, a newer ripple cancels it,
+  and the new realisation fills in.
+- The metrics, on the tapped hairpin on the shipped board: none while the window opens (under a second on the UI
+  thread), then the spec's six rows and the matrix's k and Qe once the bench is shown, with Run Planar EM and Polish
+  enabled and Calibrate from EM not.
+- Polish replaces the realisation, its note and the status give the worst return loss before and after, and Place puts
+  the polished tap down.
+- Run Planar EM, cancelled after its first point: "Planar EM cancelled.", no EM result kept, and the button enabled again.
+- A lumped ladder with a jumper site: Run Planar EM greyed with the service's refusal, and Polish greyed with its own.
 
 ## 6a. Tuning a synthesised filter
 
@@ -608,7 +717,9 @@ bench and run through `OptimizationRun`, meets both stop goals and centres withi
 measured curves. The pure part is `src/Core/Synthesis/Filters/CouplingCurves.cs`; the solver is a seam,
 `ICouplingCurveSolver` (a two-pin plan and a sweep in, S-parameters out), so Core stays EM-free. The Design layer's
 `CouplingCurvePlanarSolver` (`src/Design/Layout/Em/`) is its Planar MoM: the plan drawn as its PCell draws it, the copper
-unioned into one sheet on the substrate's grounded slab, an edge port on each pin, a coarse mesh, no de-embedding.
+unioned into one sheet on the substrate's grounded slab, an edge port on each pin, a coarse mesh, no de-embedding. The
+ports are grounded, as §6d's are: their source returns through the ground plane, so the outer cell's capacitance is not
+in series with them.
 
 **k against S** (Hong and Lancaster, [10.1002/0471221619](https://doi.org/10.1002/0471221619), §8.2). The bench is
 §4's: two resonators lightly fed by coupled strips 3·h off, or for the cross square's own pairs (S3, Sx) the square
@@ -632,6 +743,174 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
 
 **Tests.** `tests/Core.Tests/Synthesis/CouplingCurveTests.cs`: from synthetic S-parameters on the 21-point grid, a Q =
 300 pair's k to 1e-4, and Qe = 15 behind 30 ps of line to 1 %, and the curve read backwards and refused outside.
+`Benchmark`, `tests/Ui.Tests/Synthesis/CouplingCurveEmTests.cs`: the tapped hairpin for a 0.1 dB Chebyshev of order 5,
+2.2 to 2.6 GHz, on lossless 20 mil RO4350B, on the coarse mesh against the circuit model. One point of each curve:
+- k(1,2) at its circuit gap (0.213 mm): 0.101 against 0.133, 24 % low. The ports do not move it (0.101 on the series
+  gap as well), as a lightly fed pair's resonances are its own. The test allows 30 %.
+- Qe at the circuit tap (6.109 mm): 7.20 against 6.86, 5 % high. On the series gap the tap barely loaded the resonator,
+  and Qe read 7957. The test allows 10 %.
+- The two sweeps take about 6.5 min.
+
+## 6c. Extraction and polish
+
+**What it does.** Two pieces run the synthesis backwards:
+- `FilterExtraction.Extract(spec, f, S11, S21, target, tolerance)` (`src/Core/Synthesis/Filters/FilterExtraction.cs`)
+  reads a bandpass filter's prototype back from any two-port's S-parameters: a circuit run, an EM run or a measured
+  file. It is a pure function in Core, next to the `CouplingMatrix` it feeds.
+- `FilterPolish.Run(spec, realisation, substrate, passes)` (`src/Design/Filters/FilterPolish.cs`) uses it to correct a
+  realised MCRC until the matrix its bench extracts to is the synthesised one. It sits beside `FilterSynthesisService`,
+  whose bench it runs.
+
+**Off the samples.** These need no model:
+- the band, where |S21| is within the ripple of its peak (3 dB for a response without a ripple), each edge interpolated
+  linearly in dB; its centre √(f1·f2) and its width f2 − f1;
+- the ripple, |S21|'s peak less its lowest across the spec's band;
+- the worst return loss across the spec's band;
+- the insertion loss at the spec's centre.
+
+**The fit.** The samples within ω = ±3 of the band (`Window`), with ω = (f/f0 − f0/f)/FBW. S11 = F/E and S21 = P/E
+share E, monic of degree N; F is of degree N, and P of the spec's count of transmission zeros. They are fitted over
+x = ω/max|ω| by `CouplingCurves.Rational`: Levy's linearised least squares, reweighted by 1/|E| as Sanathanan and
+Koerner do. It is §6b's pole fit, generalised to several responses over one denominator; `CouplingCurves.Poles` now
+calls it. This is the rational-model route to the coupling matrix (García-Lampérez et al.,
+[10.1109/TMTT.2003.822021](https://doi.org/10.1109/TMTT.2003.822021)). `VectorFit` (Engine) was the other choice. It
+fits real systems in Hz, with poles in conjugate pairs, and the lowpass poles of an asymmetric response are not; it also
+cannot hold P to the zeros' count.
+
+**Loss.** A uniform loss δ = 1/(Qu·FBW) on every resonator is the lossless response at s + δ (§2's `Response`), so every
+fitted pole and zero sits δ to the left of its lossless place (Macchiarella,
+[10.1109/LMWC.2010.2047455](https://doi.org/10.1109/LMWC.2010.2047455)). δ is the shift back that restores
+|S11|² + |S21|² = 1 on the samples, found by ternary search between 0 and the nearest fitted pole's distance from the
+axis. Then Qu = 1/(δ·FBW).
+
+**The matrix.** The fitted zeros of F and P, each moved δ back, are the lossless reflection and transmission zeros.
+- The transmission zeros are put on the axis, as `FilterSpec` holds real zeros only.
+- The reflection zeros stay where they are: a mistuned filter's leave the axis, so its F is complex in ω.
+- ε is 1/|P's leading coefficient|. εR is 1 unless all N zeros are finite, and ε/√(ε² − 1) then, as in §2.
+- E comes from |E|² = |F/εR|² + |P/ε|² on the axis: the roots of that degree-2N polynomial above it.
+
+These polynomials go through §2's `Transversal` and `Folded` as a synthesised set does. `Transversal` now adds F's
+imaginary part in ω to Im Q, which a synthesised F does not have. The folded matrix's main line is made positive by
+flipping whole rows and columns (`Signed`), so two matrices of one response compare entry by entry. For an all-pole
+response the folded form is the inline chain. `ToPhysical` gives its Qe, k_ij and resonant frequencies, except for a
+fully canonical matrix, whose source–load coupling no external Q carries.
+
+**Checks.** Each is a `FilterCheck`: the value, its target, the delta and pass or fail.
+- Against the spec: the centre within `tolerance` of half the band; the width at least (1 − `tolerance`) of the spec's;
+  the ripple at most (1 + `tolerance`) of it; the return loss at least (1 − `tolerance`) of the prototype's at its edge;
+  each transmission zero, in order, within `tolerance` of half the band of the spec's.
+- Against a target matrix: every entry non-zero in either, named in band-pass terms (`f(i)`, `Qe(S)`, `Qe(L)`,
+  `k(i,j)`, else `M(S,j)`), passing when it is within `tolerance` in M. The default, 0.02, is about 1 % of the band in
+  a resonator's frequency and 4 % in an end's Qe.
+
+`FilterCheck.Format` gives a value in its own unit (GHz, MHz for the bandwidth, dB, k to four places), and
+`FilterSynthesisService.Extract(spec, snp)` reads a two-port against `Target(spec)`: what the Designer's metrics (§6) and
+the polish call.
+
+**Polish.** It takes the realisers that solve k and Qe on the circuit model: hairpins and open loops in a row (§4). Each
+pass does three things:
+1. It runs the bench the Filter Designer runs (`FilterSynthesisService.Cnl`, then `Response`): the part through the
+   engine, on the substrate with its loss.
+2. It extracts that bench against the all-pole target, `CouplingMatrix.AllPole(g)`.
+3. It moves what `FromCouplings` is solved for. Each k(i,i+1) and the Qe are scaled by the ratio the extraction missed
+   them by. `FromCouplings` then solves the gaps and the tap on its own curves. Each resonator's length is then scaled
+   by its own extracted frequency over f0, as a resonator that sits low is too long.
+
+The curves stand in for the filter, corrected at their output: output space mapping (Bandler et al.,
+[10.1109/TMTT.2003.820904](https://doi.org/10.1109/TMTT.2003.820904)). `Run` returns every pass, the first being the
+realisation as given, and the realisation of the pass with the best worst return loss, with a note saying how far it
+got.
+- **Another response.** `Run`'s `response` stands in for the bench in step 1: the Designer's Calibrate from EM passes
+  the Planar EM run (§6d), so the curves are corrected at the EM output. Nothing else changes.
+- **Where it starts.** Each `PolishStep` carries the `PolishAim` its part was solved for: the targets k and Qe and each
+  resonator's length factor. `Run` takes one back as `aim`, so a later polish or calibration multiplies its ratios onto
+  the earlier ones'. Started from the synthesis's own targets, it would undo them.
+- **Whether it can.** `Refusal(realisation)` is the form check `Run` makes first, for a caller that greys a button.
+- `cancel` stops it between passes and inside `FromCouplings`.
+
+**How far it gets.** The Filter Designer's tapped hairpin for a 0.1 dB Chebyshev of order 5, 2.2 to 2.6 GHz, on the
+shipped 20 mil RO4350B with its loss. Its worst return loss across the band is 8.6 dB as realised and 15.5 dB after
+three passes, against the lossless prototype's 16.4 dB; the passes give 14.2, 15.2 and 15.5 dB.
+- As realised, the end couplings are 3 to 7 % strong, Qe is 31 % high at the source and 22 % at the load, and
+  resonators 2 and 4 sit 1.1 % and 0.6 % high.
+- After three passes every k is within 0.4 % and every resonator within 0.15 % of f0. Qe is 5 % high at the source and
+  5 % low at the load: MCRC has one tap for both ends, and the polish corrects their geometric mean.
+- The extracted Qu is 114 to 121 throughout, the board's loss.
+
+The three passes take about 25 s, most of it in `FromCouplings`.
+
+**Refusals.** `synthesis.extract.*`: `band` (not a bandpass), `lengths` (the sample counts differ), `target` (a target
+not N+2 square), `samples` (too few samples within the window, or under two in the band). `synthesis.polish.form`: not
+an MCRC of hairpins or open loops in a row. Cohn's chains have no k or Qe to re-solve, the cross square realises only
+|k14|, and MCLA is closed form (§7).
+
+**Tests.**
+- `tests/Core.Tests/Synthesis/FilterExtractionTests.cs`:
+  - Round trip, from 401 samples of the matrix's own response over ω = ±4. Cameron's 4–2 at Qu = 500, and a mistuned
+    0.1 dB order-5 chain (three resonators off tune, the source 10 % heavy) at Qu = 200: M back to 3e-13 and 6e-14, Qu
+    within 0.001 and the zeros within 1 Hz.
+  - An ideal 0.1 dB Chebyshev of order 5, 10 % wide: the centre to 1e-5, the width to 1e-3, the ripple 0.1 dB and the
+    return loss 16.43 dB, every spec check passing.
+- `tests/Ui.Tests/Synthesis/FilterPolishTests.cs`: the tapped hairpin above, its worst return loss across the band at
+  least 3 dB better once polished, and the realisation returned the best pass's.
+
+## 6d. Planar EM from the designer
+
+**What it does.** `FilterEmService.Run(spec, realisation, substrate, frequencies, progress, token)`
+(`src/Design/Filters/`) solves a realisation on Planar MoM. It is the run the Filter Designer and `circuitrf filter --em`
+share. The spec gives the ports' Z0 and the bench the part is read from.
+- **The drawing.** The bench (§6) is elaborated, and the part's plan is the one its model stamps
+  (`PassiveSites.PlansOf`). `PassivePlanPCells.Draw` draws that plan, which is what the placed part's PCell draws, piece
+  for piece, so the values are read exactly as a run reads them.
+- **The solve** is §6b's `CouplingCurvePlanarSolver`, which now takes shapes and ports as well as a plan. The copper is
+  unioned into one sheet on the substrate's grounded slab, on the coarse mesh (ten cells a wavelength, no edge cells),
+  with at most 8 threads and no de-embedding.
+- **The ports.** Ports 1 and 2 are edge ports on pins 1 and 2, and their source returns through the ground plane
+  (Uncalibrated Ports). The default series gap is driven against the floating outer cell, so with no de-embedding that
+  cell's capacitance sits in series with each port. On the edge-coupled bandpass below, that left the passband at
+  −38 dB, and finer meshes made it worse. Each pin pair the realisation's sites use gets one more port, and parallel
+  parts on the same pins share it.
+  - A series site: the planar mesh cannot span a slot (`EmPlanarComponentPorts`), so a strip half the narrower pin wide
+    joins the two pins across the gap, and an internal delta-gap port is cut across it. The pads' faces stay gridlines,
+    so the cut lands between the pads. Shorted, the pair is solid metal.
+  - A shunt site: an internal port to ground at the foot of a via grown one via in from the pin
+    (`PlanarGroundPath`). The via is the board's 0.3 mm drill, or half the pad where that is narrower.
+- **Closing the sites.** Each site port is terminated in its parts' reflection Γ: R, jωL or 1/(jωC) in parallel, and a
+  via or 0 Ω is a short (Γ = −1). The two-port is S' = S_ee + S_es·Γ·(I − S_ss·Γ)⁻¹·S_se. The result carries the closed
+  two-port and, when there are sites, the raw N-port with the site names in port order.
+- **The verb.** `--em` runs it after the bench is written, at `--points` frequencies across the bench's sweep (11
+  without `--points`, since 401 full-wave points is not a quick look). It writes `<name>.em.s2p` beside the `.cnl` and
+  prints one line: the EM centre and the worst in-band |S11|, each with the circuit model's. The centre is midway between
+  the first and last crossings of |S21| 3 dB under its peak (for a lowpass or highpass, its first crossing, the edge).
+  Progress goes to stderr. A fuller set of figures is a later wiring.
+
+**From the designer** (§6). Run Planar EM calls `Run` at `EmFrequencies`, 31 points across ω = ±3, so the extraction
+gets every point. `Refusal(spec, realisation, substrate)` makes `Run`'s own checks (the drawing, pins 1 and 2, each
+site's port) and returns the reason, so the window greys the button before anything is meshed. On the three-pole tapped
+hairpin, 2.2 to 2.6 GHz on the shipped board, the first point took about 20 s in a Debug build on a shared machine.
+
+**What it leaves out.** The site parts' own lands and bodies: the strip and the grown via stand for the part. A shunt
+part's via is in the EM answer, while the circuit bench grounds the part ideally. Pins with no site stay open, as the
+bench leaves them.
+
+**What it costs.** The edge-coupled bandpass below solves in about 0.6 s a point. A grown via takes the solve onto
+the general kernel: the 1 GHz lumped Butterworth lowpass below (three sites) takes 20 to 60 s a point. So the verb's
+default is 11 points.
+
+**Refusals.** `filter.em.*`, before anything is meshed:
+- `sites`: a site of another role than R, L, C or via (a jumper or a load has no value to close its port with), a
+  site pin the drawing lacks, or a series site whose pins do not face each other across a straight gap.
+- `part`: a part with no plan, or no pins 1 and 2.
+- The verb's `refused`: no substrate, or the solve's own failure, such as a mesh past the solver's ceiling.
+
+**Tests** (`tests/Ui.Tests/Synthesis/FilterEmTests.cs`):
+- A lumped ladder with a jumper site, and with a site on a pin the part does not draw, is refused as `filter.em.sites`.
+- `Benchmark`: §6a's edge-coupled bandpass (0.5 dB Chebyshev, order 3, 2.28 to 2.52 GHz, the shipped 20 mil RO4350B),
+  through `filter --em` at 11 points. `bp.em.s2p` passes the band, and its |S21|²-weighted centre is the circuit
+  model's within 3 %: 2.352 GHz against 2.389 GHz, 1.6 % low. The run takes about 6 s.
+- `Benchmark`: the lumped Butterworth lowpass at 1 GHz on MLAD sites (shunt C, series L, shunt C), at 300 MHz and
+  1 GHz. Its ports are G1, G2-G3 and G4, and the raw N-port has five. The closed two-port passes 300 MHz, and at the
+  cutoff it is within 1.5 dB of the circuit model: −4.15 dB against −3.43 dB. The run takes about 37 s.
 
 ## 7. Possible enhancements
 
@@ -698,43 +977,31 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   alone leaves out.
 - **MCLA: centring the combline's band.** Why: its skirts are not symmetric, so the 3 dB band sits about 1 % below a
   centre its resonators are tuned to. A small shift of the tuning frequency, found from the band edges, would centre it.
+- **Designer: the ideal at Qu for the other bands.** A lowpass, highpass or bandstop prototype with lossy elements.
+  Why: only a bandpass's resonators map onto `CouplingMatrix.Response`'s single δ, so the other bands show no ideal at
+  Qu and no readout.
+- **Designer: the resonator's own Qu.** Radiation and the open ends in the unloaded Q, from the realised part's own
+  resonator. Why: the line's β/2α leaves both out, so a hairpin loses somewhat more than the ideal at Qu.
+- **MCLA: the fit coarse, then fine.** Its steps on the field solver at half the resolution until within the 0.3 %, then
+  at full resolution to finish. Why: the fit's solves are nearly all of an MCLA realisation, and a coarse solve costs about
+  a tenth of a fine one.
+- **MCRC: the peak search narrowed to the last step's peaks.** Why: each halving sweeps 601 points over ±50 % of f0,
+  while the peaks move a fraction of a per cent from one halving to the next.
 - **MCLA: choosing h, or a combline's Y_a, for the process.** Why: the defaults fit a board. A die with a minimum gap
   wants the scale that keeps the narrowest gap at or above that minimum.
 
-## 8. References
+- **EM (§6d): shunt sites on grounded edge ports at the pin.** Why: a grown via takes the solve onto the general
+  kernel, 30 to 100 times slower a point than the one-level one (§6d). The via's inductance would then go into the
+  closing load, as the circuit bench's VIAGND has it.
+- **EM (§6d): de-embedded edge ports.** Why: ports 1 and 2 are solved without the two-line calibration, so the half
+  cell beyond each cut is in |S11|. The calibrated run would sharpen the return loss, at a few calibration solves per
+  point.
+- **EM: the site parts' lands from their `Footprint`.** Why: the strip across a series gap and the via under a shunt pad
+  stand for the part. Drawing the footprint's lands would put their capacitance in the answer, as the circuit bench's
+  footprint does.
+- **EM: an adaptive sweep** (`PlanarAdaptiveSweep`). Why: a coarse uniform grid reads a narrow band's edges between
+  samples. Points placed where the response turns would give the edges at the same cost.
 
-
-- R. J. Cameron, "General coupling matrix synthesis methods for Chebyshev filtering functions", IEEE T-MTT 47(4),
-  1999, pp. 433–442: [10.1109/22.754877](https://doi.org/10.1109/22.754877). The recursion, E from F and P, and the
-  coupling matrix from the admittance residues.
-- R. J. Cameron, "Advanced coupling matrix synthesis techniques for microwave filters", IEEE T-MTT 51(1), 2003,
-  pp. 1–10: [10.1109/TMTT.2002.806937](https://doi.org/10.1109/TMTT.2002.806937). The N+2 transversal matrix and its
-  folding sequence.
-- R. J. Cameron, "Advanced filter synthesis", IEEE Microwave Magazine 12(6), 2011, pp. 42–61:
-  [10.1109/MMM.2011.942007](https://doi.org/10.1109/MMM.2011.942007). Table 1 and Fig. 21, the 4–2 test values.
-- R. J. Cameron, C. M. Kudsia and R. R. Mansour, *Microwave Filters for Communication Systems*, 2nd ed., Wiley, 2018:
-  [10.1002/9781119292371](https://doi.org/10.1002/9781119292371). The N+2 response and the lossy shift.
-- A. E. Atia and A. E. Williams, "Narrow-bandpass waveguide filters", IEEE T-MTT 20(4), 1972, pp. 258–265:
-  [10.1109/TMTT.1972.1127732](https://doi.org/10.1109/TMTT.1972.1127732). The coupling matrix of an all-pole filter.
-- J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001, §8.1:
-  [10.1002/0471221619](https://doi.org/10.1002/0471221619). Qe, k and asynchronous tuning.
-- G. L. Matthaei, L. Young and E. M. T. Jones, *Microwave Filters, Impedance-Matching Networks, and Coupling
-  Structures*, McGraw-Hill, 1964: §4.04 (the transforms), §4.05 (Butterworth and Chebyshev), table 4.07-1 (maximally
-  flat delay). A book, no DOI: [Open Library](https://openlibrary.org/works/OL153218W).
-- R. Saal and E. Ulbrich, "On the design of filters by synthesis", *IRE Trans. Circuit Theory*, 1958,
-  [10.1109/TCT.1958.1086481](https://doi.org/10.1109/TCT.1958.1086481).
-- P. Amstutz, "Elliptic approximation and elliptic filter design on small computers", *IEEE Trans. Circuits Syst.*,
-  1978, [10.1109/TCS.1978.1084429](https://doi.org/10.1109/TCS.1978.1084429).
-
-- P. I. Richards, "Resistor-transmission-line circuits", Proc. IRE, 1948. [10.1109/JRPROC.1948.233274](https://doi.org/10.1109/JRPROC.1948.233274)
-- H. Ozaki and J. Ishii, "Synthesis of a class of strip-line filters", IRE Trans. Circuit Theory, 1958. [10.1109/TCT.1958.1086441](https://doi.org/10.1109/TCT.1958.1086441)
-- G. L. Matthaei, "Design of wide-band (and narrow-band) band-pass microwave filters on the insertion loss basis", IRE Trans. MTT, 1960. [10.1109/TMTT.1960.1124801](https://doi.org/10.1109/TMTT.1960.1124801)
-- S. B. Cohn, "Direct-coupled-resonator filters", Proc. IRE, 1957. [10.1109/JRPROC.1957.278389](https://doi.org/10.1109/JRPROC.1957.278389)
-- J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001. [10.1002/0471221619](https://doi.org/10.1002/0471221619)
-- B. M. Schiffman and G. L. Matthaei, "Exact design of band-stop microwave filters", IEEE Trans. MTT, 1964. [10.1109/TMTT.1964.1125744](https://doi.org/10.1109/TMTT.1964.1125744)
-- R. Levy, "Tables of element values for the distributed low-pass prototype filter", IEEE Trans. MTT, 1965. [10.1109/TMTT.1965.1126048](https://doi.org/10.1109/TMTT.1965.1126048)
-- M. C. Horton and R. J. Wenzel, "General theory and design of optimum quarter-wave TEM filters", IEEE Trans. MTT, 1965. [10.1109/TMTT.1965.1125996](https://doi.org/10.1109/TMTT.1965.1125996)
-- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §8.6 and §8.8: a book, no DOI. [Wiley](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553)
 - **A width per section in Cohn's chains** (MCRC, §4). An option giving each coupled section its own W, as Cohn's Ze
   and Zo ask. Why: with one W only the coupling ratio is met, and the edge-coupled band comes out about 5 % wider than asked.
 - **Hairpins designed under `Coupling` = `Full`** (§4). The routine solves whatever the part's model holds, so a hairpin
@@ -767,8 +1034,70 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   model, and gaps and lengths alone leave its pass goal 4.5 dB short.
 - **Stop goals over a range** (§6a). Why: the stop goals are points at the edges, which holds an all-pole skirt but not
   an elliptic's stopband ripple past them.
+- **Phase loading in the extraction** (§6c). A linear phase in ω on each port, fitted out of S11 and S22 before the
+  rational fit. Why: a measured or EM filter has line between each port and its first resonator, whose phase no
+  rational of degree N holds, so its fit and matrix suffer. The circuit model's taps sit on the resonators, which is
+  why the polish does without.
+- **Run Planar EM measured on the five-pole hairpin** (§6, §6d). Its time, and its extraction against the circuit
+  bench's, phase loading included. Why: the run was stopped before it finished, so the 31-point cost and the EM matrix
+  are not yet known.
+- **The Designer's EM screenshot** (§6). `UiSnapshot --filter-designer mcrc --fd-em` captures the five-pole hairpin
+  after Run Planar EM, for the user page. Why: the EM run behind it was not run to the end.
+- **Polish for Cohn's chains and MCLA** (§6c). A Broyden step on the stored gaps and lengths, its first Jacobian by
+  finite differences on the bench. Why: their geometry comes from closed forms, not from k and Qe curves, so output
+  space mapping has nothing to re-solve, and an edge-coupled chain's 1.6 dB ripple (§6a) is the case that most needs it.
+- **Extraction in the verb and the MCP tool** (§6c). A `filter --extract` mode on a Touchstone file, and the same over
+  MCP. Why: the Designer reads its own responses back (§6), but a measured board is the commonest thing to hold against
+  its synthesis, and an agent has no window.
+- **Complex and asymmetric zeros in the extraction** (§6c). Keep the transmission zeros' imaginary parts, and polish
+  the cross square with its k14's sign. Why: the extraction puts every zero on the axis as `FilterSpec` holds them, and
+  the polish refuses the square, so neither group-delay zeros (item 10) nor the cross-coupled loops are corrected.
+
+- **Apply to the selected part.** Writing the realisation into the part that opened the Designer, as one undo step,
+  would keep its wiring and its place, where Place adds a second filter beside it.
+- **Signal and ground layer pickers in the window.** The verb takes `--signal` and `--ground`, but the window uses the
+  technology's default layers, so a filter on an inner layer of a board, or on a die's second metal, can only be
+  designed headless.
+- **A family on `IFilterRealiser`.** The family filter matches the part type at the end of the realiser's name. A
+  property would not depend on how a name is written.
+- **Markers on the Designer's plot.** The plot is a bare PlotControl with no info-box layer, so a marker shows no
+  readout. Hosting it as the Signal Designer hosts its plots would let you read a band edge off the curve.
+- **A `result.filter` object in the JSON envelope.** The list rides on `filter.realiser.listed` diagnostics. An object
+  with the realisation's parameters and site values would let an agent read what was written without parsing the `.cnl`.
 
 ## 8. References
+
+- R. J. Cameron, "General coupling matrix synthesis methods for Chebyshev filtering functions", IEEE T-MTT 47(4),
+  1999, pp. 433–442: [10.1109/22.754877](https://doi.org/10.1109/22.754877). The recursion, E from F and P, and the
+  coupling matrix from the admittance residues.
+- R. J. Cameron, "Advanced coupling matrix synthesis techniques for microwave filters", IEEE T-MTT 51(1), 2003,
+  pp. 1–10: [10.1109/TMTT.2002.806937](https://doi.org/10.1109/TMTT.2002.806937). The N+2 transversal matrix and its
+  folding sequence.
+- R. J. Cameron, "Advanced filter synthesis", IEEE Microwave Magazine 12(6), 2011, pp. 42–61:
+  [10.1109/MMM.2011.942007](https://doi.org/10.1109/MMM.2011.942007). Table 1 and Fig. 21, the 4–2 test values.
+- R. J. Cameron, C. M. Kudsia and R. R. Mansour, *Microwave Filters for Communication Systems*, 2nd ed., Wiley, 2018:
+  [10.1002/9781119292371](https://doi.org/10.1002/9781119292371). The N+2 response and the lossy shift.
+- A. E. Atia and A. E. Williams, "Narrow-bandpass waveguide filters", IEEE T-MTT 20(4), 1972, pp. 258–265:
+  [10.1109/TMTT.1972.1127732](https://doi.org/10.1109/TMTT.1972.1127732). The coupling matrix of an all-pole filter.
+- J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001, §8.1:
+  [10.1002/0471221619](https://doi.org/10.1002/0471221619). Qe, k and asynchronous tuning.
+- G. L. Matthaei, L. Young and E. M. T. Jones, *Microwave Filters, Impedance-Matching Networks, and Coupling
+  Structures*, McGraw-Hill, 1964: §4.04 (the transforms), §4.05 (Butterworth and Chebyshev), table 4.07-1 (maximally
+  flat delay). A book, no DOI: [Open Library](https://openlibrary.org/works/OL153218W).
+- R. Saal and E. Ulbrich, "On the design of filters by synthesis", *IRE Trans. Circuit Theory*, 1958,
+  [10.1109/TCT.1958.1086481](https://doi.org/10.1109/TCT.1958.1086481).
+- P. Amstutz, "Elliptic approximation and elliptic filter design on small computers", *IEEE Trans. Circuits Syst.*,
+  1978, [10.1109/TCS.1978.1084429](https://doi.org/10.1109/TCS.1978.1084429).
+
+- P. I. Richards, "Resistor-transmission-line circuits", Proc. IRE, 1948. [10.1109/JRPROC.1948.233274](https://doi.org/10.1109/JRPROC.1948.233274)
+- H. Ozaki and J. Ishii, "Synthesis of a class of strip-line filters", IRE Trans. Circuit Theory, 1958. [10.1109/TCT.1958.1086441](https://doi.org/10.1109/TCT.1958.1086441)
+- G. L. Matthaei, "Design of wide-band (and narrow-band) band-pass microwave filters on the insertion loss basis", IRE Trans. MTT, 1960. [10.1109/TMTT.1960.1124801](https://doi.org/10.1109/TMTT.1960.1124801)
+- S. B. Cohn, "Direct-coupled-resonator filters", Proc. IRE, 1957. [10.1109/JRPROC.1957.278389](https://doi.org/10.1109/JRPROC.1957.278389)
+- J.-S. Hong and M. J. Lancaster, *Microstrip Filters for RF/Microwave Applications*, Wiley, 2001. [10.1002/0471221619](https://doi.org/10.1002/0471221619)
+- B. M. Schiffman and G. L. Matthaei, "Exact design of band-stop microwave filters", IEEE Trans. MTT, 1964. [10.1109/TMTT.1964.1125744](https://doi.org/10.1109/TMTT.1964.1125744)
+- R. Levy, "Tables of element values for the distributed low-pass prototype filter", IEEE Trans. MTT, 1965. [10.1109/TMTT.1965.1126048](https://doi.org/10.1109/TMTT.1965.1126048)
+- M. C. Horton and R. J. Wenzel, "General theory and design of optimum quarter-wave TEM filters", IEEE Trans. MTT, 1965. [10.1109/TMTT.1965.1125996](https://doi.org/10.1109/TMTT.1965.1125996)
+- D. M. Pozar, *Microwave Engineering*, 4th ed., Wiley, 2012, §8.6 and §8.8: a book, no DOI. [Wiley](https://www.wiley.com/en-us/Microwave+Engineering%2C+4th+Edition-p-9780470631553)
 
 - S. B. Cohn, "Parallel-coupled transmission-line-resonator filters," IRE Trans. MTT 6(2), 1958:
   [10.1109/TMTT.1958.1124542](https://doi.org/10.1109/TMTT.1958.1124542) (§4).
@@ -783,21 +1112,6 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
 - M. Kirschning and R. H. Jansen, "Accurate wide-range design equations for the frequency-dependent characteristic of
   parallel coupled microstrip lines," IEEE Trans. MTT 32(1), 1984:
   [10.1109/TMTT.1984.1132616](https://doi.org/10.1109/TMTT.1984.1132616) (§4).
-- **Tools ▸ Filter Designer, on the active schematic.** Today the window opens only from a placed MLAD, MCRC or MCLA, so
-  you have to place a part before you can synthesise one.
-- **Apply to the selected part.** Writing the realisation into the part that opened the Designer, as one undo step,
-  would keep its wiring and its place, where Place adds a second filter beside it.
-- **Signal and ground layer pickers in the window.** The verb takes `--signal` and `--ground`, but the window uses the
-  technology's default layers, so a filter on an inner layer of a board, or on a die's second metal, can only be
-  designed headless.
-- **A family on `IFilterRealiser`.** The family filter matches the part type at the end of the realiser's name. A
-  property would not depend on how a name is written.
-- **Markers on the Designer's plot.** The plot is a bare PlotControl with no info-box layer, so a marker shows no
-  readout. Hosting it as the Signal Designer hosts its plots would let you read a band edge off the curve.
-- **A `result.filter` object in the JSON envelope.** The list rides on `filter.realiser.listed` diagnostics. An object
-  with the realisation's parameters and site values would let an agent read what was written without parsing the `.cnl`.
-
-## 8. References
 
 - G. L. Matthaei, L. Young and E. M. T. Jones, *Microwave Filters, Impedance-Matching Networks, and Coupling Structures*,
   McGraw-Hill, 1964: the doubly terminated lowpass prototype, its terminations and its frequency transformations to the
@@ -827,3 +1141,13 @@ edge-coupled or zig-zag chain, which has no k or Qe to measure), `out-of-curve`.
   shorted array's susceptance (§5).
 - C. Sanathanan and J. Koerner, "Transfer function synthesis as a ratio of two complex polynomials," IEEE Trans. AC
   8(1), 1963: [10.1109/TAC.1963.1105517](https://doi.org/10.1109/TAC.1963.1105517) (§6b).
+- A. García-Lampérez, S. Llorente-Romano, M. Salazar-Palma and T. K. Sarkar, "Efficient electromagnetic optimization
+  of microwave filters and multiplexers using rational models," IEEE Trans. MTT 52(2), 2004:
+  [10.1109/TMTT.2003.822021](https://doi.org/10.1109/TMTT.2003.822021). S11 and S21 as rationals over one denominator,
+  then the coupling matrix (§6c).
+- G. Macchiarella, "Extraction of unloaded Q and coupling matrix from measurements on filters with large losses," IEEE
+  Microwave and Wireless Components Letters 20(6), 2010: [10.1109/LMWC.2010.2047455](https://doi.org/10.1109/LMWC.2010.2047455).
+  A uniform loss as one shift of every pole and zero, and Qu from it (§6c).
+- J. W. Bandler, Q. S. Cheng, S. A. Dakroury, A. S. Mohamed, M. H. Bakr, K. Madsen and J. Søndergaard, "Space mapping:
+  the state of the art," IEEE Trans. MTT 52(1), 2004: [10.1109/TMTT.2003.820904](https://doi.org/10.1109/TMTT.2003.820904).
+  Output space mapping, the polish (§6c).

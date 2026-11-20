@@ -74,7 +74,7 @@ public class CanvasContextMenuPopOutTests
     }
 
     [Fact]
-    public void SchematicCanvasMenu_ShowsOnlyPopOut_HidingEveryComponentItemGenerically()
+    public void SchematicCanvasMenu_ShowsPopOutAndTheFilterDesigner_HidingEveryComponentItemGenerically()
     {
         string src = SchematicCodeBehind();
 
@@ -82,7 +82,26 @@ public class CanvasContextMenuPopOutTests
         // item added later from leaking onto the canvas menu by being forgotten in this handler.
         Assert.Contains("foreach (var entry in ComponentContextMenu.Items)", src);
         Assert.Contains("control.IsVisible = hasTarget;", src);
-        Assert.Contains("CtxPopOut.IsVisible = !hasTarget;", src);
+        Assert.Contains("CtxPopOut.IsVisible = CtxFilterDesigner.IsVisible = !hasTarget;", src);
+    }
+
+    /// <summary>The canvas menu's Filter Designer… row (docs/design/filter-synthesis.md §6): hidden by default as Pop Out
+    /// is, and opening the Designer on no part over this view's own schematic, which Place then targets.</summary>
+    [Fact]
+    public void SchematicMenu_DeclaresTheFilterDesigner_HiddenByDefault_OverThisSchematic()
+    {
+        var menu = XDocument.Parse(SchematicXaml())
+            .Descendants()
+            .First(e => e.Name.LocalName == "ContextMenu"
+                        && (string?)e.Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))
+                           == "ComponentContextMenu");
+        var row = menu.Elements()
+            .Single(e => e.Name.LocalName == "MenuItem" && (string?)e.Attribute("Header") == "Filter Designer…");
+
+        Assert.Equal("OnCtxFilterDesigner", (string?)row.Attribute("Click"));
+        Assert.Equal("False", (string?)row.Attribute("IsVisible"));
+        Assert.Contains("=> Views.Filters.FilterDesignerWindow.Show(Vm, null, TopLevel.GetTopLevel(this) as Window);",
+                        SchematicCodeBehind());
     }
 
     [Fact]

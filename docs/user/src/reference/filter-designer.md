@@ -3,8 +3,8 @@ title: Filter Designer
 slug: reference/filter-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Filter Designer
-lede: A filter from its specification - the realisers that can build it, the ideal response beside the realised one, and the part placed with a part on each of its sites.
-keywords: filter, filter synthesis, Filter Designer, lowpass, highpass, bandpass, bandstop, Butterworth, Chebyshev, ripple, realiser, MLAD, MCRC, MCLA, sites, Synthesise, filter verb
+lede: A filter from its specification - the realisers that can build it, the ideal response beside the realised one, its prototype read back from the circuit or a Planar EM run, and the part placed with a part on each of its sites.
+keywords: filter, filter synthesis, Filter Designer, Tools menu, lowpass, highpass, bandpass, bandstop, Butterworth, Chebyshev, ripple, realiser, MLAD, MCRC, MCLA, sites, Synthesise, filter verb, coupling matrix, extraction, external Q, Planar EM, polish, calibrate
 ---
 
 <nav class="toc">
@@ -15,6 +15,7 @@ keywords: filter, filter synthesis, Filter Designer, lowpass, highpass, bandpass
 <li><a href="#spec">The specification</a></li>
 <li><a href="#realisers">The realisers</a></li>
 <li><a href="#response">The response</a></li>
+<li><a href="#metrics">The metrics, Planar EM and Polish</a></li>
 <li><a href="#place">Place</a></li>
 <li><a href="#headless">Running it headless</a></li>
 </ol>
@@ -39,8 +40,12 @@ part you placed yourself.
 
 ## Opening it {#open}
 
-Select an MLAD, MCRC or MCLA in a schematic and press **Synthesise…** in its Properties. The Designer opens with that part's
-family preselected, and **Place** puts the filter into that schematic.
+There are three ways in:
+- **Tools ▸ Filter Designer…** opens it on its default specification with every family listed. **Place** puts the filter into
+  the schematic that was active when you opened it. With no schematic open, **Place** is greyed, and its tooltip says why.
+- **Filter Designer…** on a schematic's right-click menu, on an empty spot of the canvas, does the same for that schematic.
+- Select an MLAD, MCRC or MCLA in a schematic and press **Synthesise…** in its Properties. The Designer opens with that
+  part's family preselected, and **Place** puts the filter into that schematic.
 
 ## The specification {#spec}
 
@@ -56,28 +61,82 @@ family preselected, and **Place** puts the filter into that schematic.
 | Z0, Ω | The source and load. |
 | Family | Show only the realisers of one family, or of any. |
 
-The substrate comes from the schematic's technology: its default signal layer over its ground. The line under the form
-says which one it is. With no technology, a realiser that needs a substrate refuses, and says so.
+The substrate comes from the schematic's technology: its default signal layer over its ground. Opened from Tools with no
+schematic, it comes from the workspace's default technology. The line under the form says which one it is. With no
+technology, a realiser that needs a substrate refuses, and says so.
+
+A choice from a list takes effect at once. The ideal response follows every keystroke. The realisers wait until you pause
+typing for a quarter of a second, so they do not run on every keystroke, and a newer specification stops the designs
+still running for an older one.
 
 ## The realisers {#realisers}
 
-The list shows every realiser of the chosen family. Under each one, it says **can build it**, or why it cannot: the band
-is not one it builds, the order is too high, and so on. The first realiser that can build the filter is selected. Select
-another one to compare.
+The list shows every realiser of the chosen family. Under each one, it first says **can build it; checking…**, or why it
+cannot: the band is not one it builds, the order is too high, and so on. That first answer is the realiser's quick check.
+Each realiser that passes it is then designed in the background, one after another, and its line changes to **builds it**
+or to **refuses:** and the reason. A realiser can pass the check and still refuse once it designs the filter, for example
+when a feed gap would be narrower than the board allows.
+
+The first realiser that can build the filter is selected. If it refuses once designed, the next one is selected. Select
+another one to compare. A design is kept for as long as the application runs, so selecting a realiser again, or going back
+to an earlier specification, shows its response at once.
 
 **What Place writes** lists the parameters the part will store and the value each site wants, plus any notes from the
 realiser.
 
 ## The response {#response}
 
-The plot shows |S21| and |S11| in dB, in two pairs:
+The plot shows |S21| and |S11| in dB:
 - **ideal**: the lowpass prototype's own ladder, transformed to the band and run by the engine. For an even-order
   Chebyshev, port 2 is the prototype's own load, so the ripple you see is the response's and not a mismatch;
+- **ideal S21 at Qu**, for a bandpass on a substrate: the same prototype with every resonator at the board's unloaded Q.
+  That Q is a resonator line's conductor and dielectric loss at the centre frequency: a Z0 line of the substrate, as the
+  line models compute its loss. Radiation is left out, so a real resonator does a little worse. Untick **Ideal at Qu** to
+  hide this curve;
 - **realised**: the selected realisation's test bench, run by the engine. That is the part with each site filled, on the
-  substrate, between two ports of Z0.
+  substrate, between two ports of Z0. The bench has the board's loss.
+
+Above the plot, a line reads the loss out. It gives the unloaded Q, the loss the ideal at that Q has at the centre
+frequency, and the realised part's own loss there, with how much of it is dissipated rather than reflected. For example,
+the five-pole hairpin's 3 dB or so at 2.4 GHz is nearly all dissipation, close to what the ideal at Qu loses, and not a
+design error.
 
 The sweep runs from near DC to three times the cutoff for a lowpass, from a third of the cutoff to three times it for a
 highpass, and over two bandwidths either side of a band.
+
+The ideal curves appear at once, and the status line says the selected realiser is **realising…**. The realised pair
+joins them when that realiser has been designed. That takes under a tenth of a second for the closed-form designs. The
+hairpins and open loops take a few seconds, because their couplings are solved on the part's circuit model, and a coupled
+array up to about ten, because its cross-section is fitted with a field solver. A bar beside **Realisers** shows while the
+window waits. The window stays responsive throughout, and closing it stops the work.
+
+## The metrics, Planar EM and Polish {#metrics}
+
+Under the plot, **Metrics** reads the selected realisation's response back to the filter it describes, for a bandpass:
+- on the left, the band's **centre** and **bandwidth**, the **ripple** and the worst **return loss** across the band, each
+  against the specification with **pass** or **fail**, then the **insertion loss** at the centre and the **unloaded Q**
+  beside the board's;
+- on the right, the filter's coupling matrix in band-pass terms: each end's **external Q** (`Qe(S)`, `Qe(L)`), each
+  **coupling** `k(i,j)` and each resonator's own frequency `f(i)`, against the synthesised values.
+
+The centre passes within 2 % of half the band, the bandwidth when it is at least 98 % of the one asked, the ripple when
+it is at most 2 % over the one asked, and the return loss when it is at most 2 % under the prototype's. A matrix entry
+passes within 0.02 in the normalised matrix: about 1 % of the band in a resonator's frequency and 4 % in an end's external
+Q. The line above the tables says whose response
+they read and how many checks fail. The metrics come with the realised response, so they never hold the window up. A
+lowpass, highpass or bandstop has no coupling matrix, and the line says so.
+
+**Run Planar EM** solves the realisation's layout, as Place would draw it, on Planar MoM: a coarse mesh, 31 frequencies
+across the band and about one bandwidth either side. A bar shows how far it is, and **Cancel** stops it. When it finishes, the EM |S21| and |S11| join
+the plot and the metrics read from the EM response. Untick **From Planar EM** to read the circuit bench's again. A run is
+kept for as long as the application runs, so going back to the realisation shows it at once. The button is greyed for a
+realisation the solver cannot take, such as a site with no value to close its port with, and its tooltip says why.
+
+**Polish** corrects a hairpin or open-loop filter in a row: three passes, each reading the bench's coupling matrix and
+moving the gaps, the tap and the resonator lengths by what it missed. It takes about half a minute. The polished part
+replaces the realisation, so the plot, the metrics, **What Place writes** and **Place** all use it, and the status line
+gives the worst return loss before and after. **Calibrate from EM**, once the realisation has an EM run, does one such pass
+against the EM response instead of the bench's, then solves the corrected part on EM. Each click is one more pass.
 
 ## Place {#place}
 

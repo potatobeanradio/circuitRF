@@ -637,6 +637,10 @@ public partial class SchematicView : UserControl
         if (rows.FirstOrDefault(r => !r.MakeSchematic) is { } l) ToolTip.SetTip(CtxImageLayout, l.Tip);
     }
 
+    /// <summary>Canvas menu ▸ Filter Designer…: the Designer on no part, its Place into this schematic.</summary>
+    private void OnCtxFilterDesigner(object? sender, RoutedEventArgs e)
+        => Views.Filters.FilterDesignerWindow.Show(Vm, null, TopLevel.GetTopLevel(this) as Window);
+
     private void OnCtxImageSchematic(object? sender, RoutedEventArgs e) => OpenImageDialogOnBitmap(makeSchematic: true);
     private void OnCtxImageLayout(object? sender, RoutedEventArgs e) => OpenImageDialogOnBitmap(makeSchematic: false);
 
@@ -655,18 +659,19 @@ public partial class SchematicView : UserControl
         // One ContextMenu instance serves two menus: the COMPONENT menu (a right-click that hit
         // something) and the CANVAS menu (one that did not). Every component item is hidden for the
         // canvas menu by walking the menu itself rather than by a list of names, so an item added
-        // later cannot leak onto the canvas menu by being forgotten here; Pop Out is the inverse.
+        // later cannot leak onto the canvas menu by being forgotten here; Pop Out and the Filter
+        // Designer are the inverse.
         foreach (var entry in ComponentContextMenu.Items)
         {
-            if (ReferenceEquals(entry, CtxPopOut) || IsImageRow(entry)) continue;
+            if (ReferenceEquals(entry, CtxPopOut) || ReferenceEquals(entry, CtxFilterDesigner) || IsImageRow(entry)) continue;
             if (entry is Control control) control.IsVisible = hasTarget;
         }
-        CtxPopOut.IsVisible = !hasTarget;
+        CtxPopOut.IsVisible = CtxFilterDesigner.IsVisible = !hasTarget;
         ShowImageRows(hasTarget ? [] : ImageRowsAtContextMenu());
 
         if (!hasTarget)
         {
-            // Pop Out is the canvas menu's only item. Disabled with its reason at the top level
+            // Pop Out is the canvas menu's first item. Disabled with its reason at the top level
             // rather than hidden — the row is how the action is discoverable at all.
             bool canPop = (DataContext as SchematicDocument)?.CanPopOut ?? false;
             CtxPopOut.IsEnabled = canPop;

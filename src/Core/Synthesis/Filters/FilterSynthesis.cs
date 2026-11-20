@@ -90,6 +90,12 @@ public interface IFilterRealiser
     bool Supports(FilterSpec spec, out string? why);
 
     FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate);
+
+    /// <summary>As <see cref="Realise(FilterSpec, MicrostripSubstrate?)"/>, stopping with an
+    /// <see cref="OperationCanceledException"/> between its solves once <paramref name="cancel"/> is cancelled: the Filter
+    /// Designer drops a realisation the specification has moved on from. A realiser that solves nothing at length need
+    /// not implement it.</summary>
+    FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate, CancellationToken cancel) => Realise(spec, substrate);
 }
 
 /// <summary>Every realiser in this assembly, by name. Found by type so each family adds its own without a shared

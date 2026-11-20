@@ -10833,6 +10833,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Views.Match.MatchDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null));
 
     /// <summary>
+    /// Tools ▸ Filter Designer…: the Designer on no part, every family listed (docs/design/filter-synthesis.md §6). Place puts the
+    /// filter into the active schematic, and with none it is greyed with why. The substrate is that schematic's technology, else the
+    /// workspace's default; no workspace is needed.
+    /// </summary>
+    [RelayCommand]
+    private void NewFilterDesigner() => Views.Filters.FilterDesignerWindow.Show(
+        (ResolveActiveDocumentForCommands() as SchematicDocument)?.ViewModel, null, ResolveOwner(null),
+        MicrostripSubstrateInjection.ResolveWorkspaceTechnology(CurrentWorkspaceRoot));
+
+    /// <summary>
     /// Tools ▸ Signal Designer: the Designer on no MOD_Source, to design a signal — or read an I/Q file — preview it and
     /// export it. Needs no workspace; opens unowned and cascaded as the standalone Match Designer does.
     /// </summary>

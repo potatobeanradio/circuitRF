@@ -1,4 +1,5 @@
 using System.Globalization;
+using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Synthesis.Filters;
 using CircuitRF.Core.Systems;
@@ -6,17 +7,22 @@ using CircuitRF.Design.Filters;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Matching;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Engine;
+using RfCore;
 
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf filter --band B --order N --f1 F [--f2 F] [spec…] [--tech T] [--realiser R -o f.cnl [--to-schematic]]</c> —
+/// <c>circuitrf filter --band B --order N --f1 F [--f2 F] [spec…] [--tech T] [--realiser R -o f.cnl [--to-schematic] [--em]]</c>
+/// or <c>[--extract f.s2p]</c> —
 /// the Filter Designer, headless (docs/design/filter-synthesis.md §6).
 ///
 /// <para><b>It owns no synthesis.</b> The realisers are Core's (<see cref="FilterRealisers"/>), and the substrate, the
 /// part and the bench are <see cref="FilterSynthesisService"/>'s, the calls the window makes. Without <c>--realiser</c> it
 /// lists every realiser and whether it can build the specification; with one it writes the bench as a <c>.cnl</c>, and with
-/// <c>--to-schematic</c> draws it through <c>netlist --to-schematic</c>'s own path.</para>
+/// <c>--to-schematic</c> draws it through <c>netlist --to-schematic</c>'s own path, and with <c>--em</c> solves the part on Planar
+/// MoM (<see cref="FilterEmService"/>, §6d) into <c>&lt;name&gt;.em.s2p</c> beside it. <c>--extract</c> reads any two-port
+/// Touchstone file's filter metrics against the specification (<see cref="FilterExtraction"/>, §6c).</para>
 /// </summary>
 internal static class FilterVerb
 {
@@ -25,13 +31,14 @@ internal static class FilterVerb
     /// <summary>The verb over <paramref name="realisers"/>; a test hands its own.</summary>
     internal static int Run(string[] args, IReadOnlyList<IFilterRealiser> realisers)
     {
-        string? tech = null, signal = null, ground = null, realiser = null, output = null;
+        string? tech = null, signal = null, ground = null, realiser = null, output = null, extract = null;
         string? response = null, band = null, order = null, f1 = null, f2 = null, ripple = null, stop = null, z0 = null, zeros = null, points = null;
-        bool toSchematic = false;
+        bool toSchematic = false, em = false;
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i];
             if (a == "--to-schematic") { toSchematic = true; continue; }
+            if (a == "--em") { em = true; continue; }
             if (i + 1 >= args.Length || !a.StartsWith('-')) return JsonRun.Fail(CliDiagnostics.FilterUnknownOption(a));
             string v = args[++i];
             switch (a)
@@ -50,6 +57,7 @@ internal static class FilterVerb
                 case "--ground": ground = v; break;
                 case "--realiser": realiser = v; break;
                 case "--points": points = v; break;
+                case "--extract": extract = v; break;
                 case "-o" or "--output": output = v; break;
                 default: return JsonRun.Fail(CliDiagnostics.FilterUnknownOption(a));
             }
@@ -86,6 +94,7 @@ internal static class FilterVerb
         if (points is not null && (!int.TryParse(points, NumberStyles.Integer, CultureInfo.InvariantCulture, out np) || np < 2))
             return JsonRun.Fail(CliDiagnostics.FilterBadValue("--points", points, "a whole number of at least 2"));
         var spec = new FilterSpec(fr, fb, n, lo, hi, rippleDb, stopDb, zRef, tz.Count > 0 ? tz : null);
+        if (extract is not null) return Extract(spec, extract);
 
         // ── the technology: --tech, else the workspace the CLI was given, else the one the output lands in ──
         Technology? technology;
@@ -136,7 +145,133 @@ internal static class FilterVerb
         Console.WriteLine($"Wrote {path}: {realisation.PartType} and {realisation.Sites.Count} site part(s)");
         JsonRun.AddOutput("cnl", path);
 
-        return toSchematic ? NetlistToSchematic.Run(path, DocumentKind.Netlist, Path.ChangeExtension(path, ".csch")) : 0;
+        if (toSchematic && NetlistToSchematic.Run(path, DocumentKind.Netlist, Path.ChangeExtension(path, ".csch")) is var drawn and not 0)
+            return drawn;
+        return em ? Em(spec, realisation, substrate, cnl, path, points is null ? 8 * spec.Order + 4 * (spec.TransmissionZerosHz?.Count ?? 0) + 1 : np, np) : 0;
+    }
+
+    /// <summary><c>--em</c>: the realisation on Planar MoM at <paramref name="points"/> frequencies across the bench's sweep,
+    /// written as <c>&lt;name&gt;.em.s2p</c> beside the bench, and one line against the bench's own response; for a bandpass,
+    /// the extracted metrics of both, the circuit's on the bench's <paramref name="benchPoints"/>.</summary>
+    private static int Em(FilterSpec spec, FilterRealisation realisation, MicrostripSubstrate? substrate, string cnl, string path,
+        int points, int benchPoints)
+    {
+        if (substrate is null) return JsonRun.Fail(CliDiagnostics.FilterEmRefused("Planar EM needs the substrate a --tech gives."));
+        var f = FilterSynthesisService.Frequencies(spec, points);
+        string last = "";
+        FilterEmService.Result run;
+        try
+        {
+            run = FilterEmService.Run(spec, realisation, substrate, f, new Progress<RunProgress>(p =>
+            {
+                string line = $"[{p.Completed}/{p.Total}] {p.Stage}";
+                if (line != last) Console.Error.WriteLine(last = line);
+            }), RunHost.Cancellation);
+        }
+        catch (ParameterRefusalException ex) when (ex.Diagnostic is { } d) { return JsonRun.Fail(d); }
+        catch (Exception ex) when (ex is not (OutOfMemoryException or OperationCanceledException))
+        { return JsonRun.Fail(CliDiagnostics.FilterEmRefused(ex.Message)); }
+
+        string snp = Path.ChangeExtension(path, ".em.s2p");
+        TouchstoneIO.WriteFile(run.S, snp);
+        JsonRun.AddOutput("em", snp);
+        var circuit = FilterSynthesisService.Response(cnl, f, spec.Z0);
+        string edge = spec.Band is FilterBand.Lowpass or FilterBand.Highpass ? "edge" : "centre";
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+            $"EM: {edge} {Centre(spec, run.S) / 1e9:0.####} GHz (circuit {Centre(spec, circuit) / 1e9:0.####}), worst in-band |S11| "
+          + $"{WorstS11(spec, run.S):0.##} dB (circuit {WorstS11(spec, circuit):0.##}); wrote {snp}"));
+        if (spec.Band == FilterBand.Bandpass)
+            Metrics(spec, ("EM", run.S), ("circuit", FilterSynthesisService.Response(cnl, FilterSynthesisService.Frequencies(spec, benchPoints), spec.Z0)));
+        return 0;
+    }
+
+    /// <summary><c>--extract</c>: a two-port Touchstone file's filter metrics against the specification.</summary>
+    private static int Extract(FilterSpec spec, string file)
+    {
+        SNP snp;
+        try { snp = TouchstoneIO.ReadFile(file, readComments: false); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        { return JsonRun.Fail(CliDiagnostics.FilterExtractUnreadable(file, ex.Message)); }
+        if (snp.Ports != 2 || snp.Type != MatrixType.S)
+            return JsonRun.Fail(CliDiagnostics.FilterExtractUnreadable(file,
+                $"it holds {snp.Ports}-port {snp.Type}-parameters, and the extraction reads a two-port's S-parameters"));
+        Console.WriteLine($"Filter: {FilterSynthesisService.Describe(spec)}; {Path.GetFullPath(file)}");
+        return Metrics(spec, (Path.GetFileName(file), snp)) ? 0 : 1;
+    }
+
+    /// <summary>
+    /// <see cref="FilterExtraction"/>'s metrics of each column side by side: each checked row with pass or fail and the
+    /// spec's value (for an all-pole spec the matrix's resonant frequencies, k and Qe against the prototype's too), then
+    /// the insertion loss, the unloaded Q and any zeros. A column the extraction refuses (not a bandpass, too few samples
+    /// near the band) reports its refusal and reads "-"; false when every column is refused.
+    /// </summary>
+    private static bool Metrics(FilterSpec spec, params (string Label, SNP S)[] columns)
+    {
+        // ponytail: a target only for an all-pole spec; one with zeros is checked on its sample rows alone.
+        double[,]? target = spec.TransmissionZerosHz is { Count: > 0 } ? null
+            : CouplingMatrix.AllPole(LowpassPrototype.GValues(spec.Response, spec.Order, spec.RippleDb));
+        var x = columns.Select(c =>
+        {
+            try
+            {
+                return FilterExtraction.Extract(spec, c.S.Frequencies, [.. c.S.Matrices.Select(m => m[0, 0])],
+                    [.. c.S.Matrices.Select(m => m[1, 0])], target);
+            }
+            catch (ParameterRefusalException ex) when (ex.Diagnostic is { } d) { JsonRun.Report(d); return null; }
+        }).ToArray();
+        if (x.All(e => e is null)) return false;
+
+        void Row(string name, IEnumerable<string> cells, string goal) =>
+            Console.WriteLine($"  {name,-15}" + string.Concat(cells.Select(c => $"{c,-22}")) + goal);
+        Row("", columns.Select(c => c.Label), "spec");
+        foreach (string name in x.OfType<ExtractedFilter>().SelectMany(e => e.Checks).Select(c => c.Name).Distinct())
+        {
+            var cells = x.Select(e => e?.Checks.FirstOrDefault(c => c.Name == name)).ToArray();
+            for (int i = 0; i < cells.Length; i++)
+                if (cells[i] is { } c)
+                    JsonRun.Note(CliDiagnostics.FilterExtracted(columns[i].Label, name, c.Value, c.Target, c.Pass));
+            Row(name, cells.Select(c => c is null ? "-" : $"{Value(name, c.Value)} {(c.Pass ? "pass" : "fail")}"),
+                Value(name, cells.First(c => c is not null)!.Target));
+        }
+        Row("Insertion loss", x.Select(e => e is null ? "-" : Value("Insertion loss", e.InsertionLossDb)), "");
+        Row("Unloaded Q", x.Select(e => e is null ? "-" : e.UnloadedQ > 1e6 ? "lossless" : FormattableString.Invariant($"{e.UnloadedQ:0.#}")), "");
+        if (spec.TransmissionZerosHz is { Count: > 0 } tz)
+            Row("Zeros", x.Select(e => e is null ? "-" : Ghz(e.TransmissionZerosHz)), Ghz(tz));
+        return true;
+
+        static string Ghz(IEnumerable<double> f) => string.Join(", ", f.Select(v => FormattableString.Invariant($"{v / 1e9:0.####}"))) + " GHz";
+        static string Value(string name, double v) =>
+            name is "Centre" or "Bandwidth" || name.StartsWith("f(", StringComparison.Ordinal) ? FormattableString.Invariant($"{v / 1e9:0.####} GHz")
+            : name is "Ripple" or "Return loss" or "Insertion loss" ? FormattableString.Invariant($"{v:0.##} dB")
+            : FormattableString.Invariant($"{v:0.####}");
+    }
+
+    /// <summary>Where |S21| crosses 3 dB under its peak, linearly between samples: a lowpass's or highpass's first crossing,
+    /// a band's midway between its first and last; NaN when it never crosses.</summary>
+    private static double Centre(FilterSpec spec, SNP s)
+    {
+        var db = s.Matrices.Select(m => 20.0 * Math.Log10(m[1, 0].Magnitude)).ToArray();
+        double level = db.Max() - 3.0;
+        var x = new List<double>();
+        for (int i = 1; i < db.Length; i++)
+            if ((db[i - 1] - level) * (db[i] - level) < 0)
+                x.Add(s.Frequencies[i - 1] + (level - db[i - 1]) / (db[i] - db[i - 1]) * (s.Frequencies[i] - s.Frequencies[i - 1]));
+        return x.Count == 0 ? double.NaN : spec.Band is FilterBand.Lowpass or FilterBand.Highpass ? x[0] : 0.5 * (x[0] + x[^1]);
+    }
+
+    /// <summary>The largest |S11| in dB at the samples inside the passband; NaN when none is.</summary>
+    private static double WorstS11(FilterSpec spec, SNP s)
+    {
+        bool In(double f) => spec.Band switch
+        {
+            FilterBand.Lowpass => f <= spec.F1Hz,
+            FilterBand.Highpass => f >= spec.F1Hz,
+            FilterBand.Bandpass => f >= spec.F1Hz && f <= spec.F2Hz,
+            _ => f <= spec.F1Hz || f >= spec.F2Hz,
+        };
+        var db = s.Frequencies.Select((f, i) => (f, i)).Where(x => In(x.f))
+            .Select(x => 20.0 * Math.Log10(s.Matrices[x.i][0, 0].Magnitude)).ToList();
+        return db.Count == 0 ? double.NaN : db.Max();
     }
 
     /// <summary>A frequency with its unit (<c>2.4GHz</c>, <c>2.4 GHz</c>, or Hz bare), above zero; null with the refusal

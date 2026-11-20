@@ -3089,6 +3089,7 @@ static int PrintHelp()
     Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
     Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
     Console.WriteLine("  filter --band b --order n --f1 f [--f2 f] [--realiser r -o x.cnl]  (filter synthesis: the realisers, or one realised)");
+    Console.WriteLine("  filter --extract <file.s2p> --band bandpass --order n --f1 f --f2 f  (a two-port's filter metrics against the spec)");
     Console.WriteLine("  snp    <file.sNp>    (the S-Parameter Viewer: what the file states, and its Smith, dB and phase plots)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");
     Console.WriteLine("  netlist <path.csch> [-o out.cnl]  (the extraction Simulate performs)");

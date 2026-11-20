@@ -23,13 +23,21 @@ namespace CircuitRF.Core.Synthesis.Filters;
 public static class CoupledResonatorDesign
 {
     private const double C0 = 299_792_458.0;
-    private static readonly MicrostripValidityReporter Quiet = new("(coupled-resonator synthesis, not reported)");
 
     // ══ Lines and their ends ═════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>The width of a <paramref name="z0"/> line at <paramref name="fHz"/>, on the plan grid.</summary>
     public static double Width(double z0, double fHz, MicrostripSubstrate s)
         => PassivePlan.OnGrid(BranchLinePlan.Width(z0, fHz, s, "Coupled-resonator synthesis", "synthesis.mcrc.width-unreachable"));
+
+    /// <summary>The unloaded Q of a resonator of a <paramref name="z0"/> line at <paramref name="fHz"/>: β/(2α), with α
+    /// MLIN's own conductor and dielectric loss. Radiation and the open ends are left out, so a real resonator's Q is
+    /// somewhat lower.</summary>
+    public static double UnloadedQ(double z0, double fHz, MicrostripSubstrate s)
+    {
+        var p = BranchLinePlan.Line(Width(z0, fHz, s), s).LineParameters(fHz);
+        return p.BetaRadPerM / (2.0 * p.AlphaNpPerM);
+    }
 
     /// <summary>A line's εeff at <paramref name="fHz"/>.</summary>
     public static double LineEeff(double w, double fHz, MicrostripSubstrate s) => BranchLinePlan.Line(w, s).LineParameters(fHz).Eeff;
@@ -49,7 +57,8 @@ public static class CoupledResonatorDesign
     }
 
     private static KirschningJansenCoupled.Modes Modes(double fHz, double w, double gap, MicrostripSubstrate s)
-        => KirschningJansenCoupled.Compute(fHz, w, gap, s.HMeters, s.TMeters, s.EpsR, Quiet);
+        => KirschningJansenCoupled.Compute(fHz, w, gap, s.HMeters, s.TMeters, s.EpsR,
+            new MicrostripValidityReporter("(coupled-resonator synthesis, not reported)"));   // one each: realisers run side by side
 
     // ══ Cohn's parallel-coupled filter ════════════════════════════════════════════════════════════════════════════
 
@@ -128,10 +137,11 @@ public static class CoupledResonatorDesign
     /// gaps 5·h, so the split and the mean are the pair's own. Only |k| is realised: the square's geometry sets each
     /// sign. Any other non-zero k_ij further apart is refused. Returns the stored values: <paramref name="form"/>'s, plus
     /// N, L_k, the gaps (and Sx) and Tap. With <paramref name="em"/>, each gap and a tap are then read off EM curves
-    /// measured around the circuit model's answer (§6b, <see cref="CouplingCurves"/>).
+    /// measured around the circuit model's answer (§6b, <see cref="CouplingCurves"/>). <paramref name="cancel"/> stops it
+    /// between circuit solves.
     /// </summary>
     public static Dictionary<string, object> FromCouplings(IReadOnlyDictionary<string, object> form, double[,] k, double qe,
-        double fHz, MicrostripSubstrate s, ICouplingCurveSolver? em = null)
+        double fHz, MicrostripSubstrate s, ICouplingCurveSolver? em = null, CancellationToken cancel = default)
     {
         int n = k.GetLength(0);
         bool cross = form.GetValueOrDefault("Arrangement") is "Cross";
@@ -151,6 +161,7 @@ public static class CoupledResonatorDesign
         double l = C0 / (2.0 * fHz * Math.Sqrt(LineEeff(w, fHz, s))), lone = 0.0;
         for (int i = 0; i < 8 && Math.Abs(lone / fHz - 1.0) > 1e-5; i++)
         {
+            cancel.ThrowIfCancellationRequested();
             lone = Peaks(Build(1, l, Light(1)), s, 1, 0.5 * fHz, 1.5 * fHz)[0];
             l = PassivePlan.OnGrid(l * lone / fHz);
         }
@@ -174,7 +185,7 @@ public static class CoupledResonatorDesign
         {
             string what = $"k({i},{j}) = {k[i - 1, j - 1]:G3}";
             double target = Math.Abs(k[i - 1, j - 1]);
-            double gap = Solve(gap => Split(Pair(key, gap)), target, 0.1 * h, 5.0 * h, log: true, what);
+            double gap = Solve(gap => Split(Pair(key, gap)), target, 0.1 * h, 5.0 * h, log: true, what, cancel);
             // EM: k(S) on the same bench through half, once and twice the circuit's gap.
             if (em is not null)
                 gap = onEm.TryGetValue((Bed(key), gap), out var g) ? g : onEm[(Bed(key), gap)] = CouplingCurve.Through(
@@ -200,7 +211,7 @@ public static class CoupledResonatorDesign
             double Fit(Func<double, double> tapOf, double lo, double hi)
             {
                 string what = $"Qe = {qe:G3}";
-                double u = Solve(x => Qe(Build(1, l, ("Tap", PassivePlan.OnGrid(tapOf(x))))), qe, lo, hi, log: false, what);
+                double u = Solve(x => Qe(Build(1, l, ("Tap", PassivePlan.OnGrid(tapOf(x))))), qe, lo, hi, log: false, what, cancel);
                 if (em is null) return tapOf(u);
                 double d = 0.1 * (hi - lo);
                 return tapOf(CouplingCurve.Through([Math.Max(lo, u - d), u, Math.Min(hi, u + d)],
@@ -226,7 +237,7 @@ public static class CoupledResonatorDesign
         else
         {
             double gap = PassivePlan.OnGrid(Solve(x => -Qe(Build(1, l, ("S1", PassivePlan.OnGrid(x)),
-                ("S2", PassivePlan.OnGrid(x)))), -qe, 0.1 * h, 5.0 * h, log: true, $"Qe = {qe:G3}"));
+                ("S2", PassivePlan.OnGrid(x)))), -qe, 0.1 * h, 5.0 * h, log: true, $"Qe = {qe:G3}", cancel));
             v["S1"] = v[$"S{n + 1}"] = gap;
             fed = [("S1", gap), ("S2", gap)];
         }
@@ -326,14 +337,17 @@ public static class CoupledResonatorDesign
     }
 
     /// <summary>Where a decreasing <paramref name="y"/> meets <paramref name="target"/> in [lo, hi], by bisection
-    /// (in log space with <paramref name="log"/>); refused when the answer sits at an end, <paramref name="what"/> out of
-    /// the range's reach.</summary>
-    private static double Solve(Func<double, double> y, double target, double lo, double hi, bool log, string what)
+    /// (in log space with <paramref name="log"/>) until the bracket is under half the plan's grid
+    /// (<see cref="PassivePlan.OnGrid"/>) and 1e-7 of the range, each halving one circuit solve; refused when the answer sits
+    /// at an end, <paramref name="what"/> out of the range's reach.</summary>
+    private static double Solve(Func<double, double> y, double target, double lo, double hi, bool log, string what,
+        CancellationToken cancel = default)
     {
         double a = log ? Math.Log(lo) : lo, b = log ? Math.Log(hi) : hi;
         double X(double t) => log ? Math.Exp(t) : t;
-        for (int i = 0; i < 30; i++)
+        for (int i = 0; i < 30 && X(b) - X(a) > Math.Min(1e-9, 1e-7 * hi); i++)
         {
+            cancel.ThrowIfCancellationRequested();
             double m = 0.5 * (a + b);
             if (y(X(m)) > target) a = m; else b = m;
         }

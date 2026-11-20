@@ -103,13 +103,15 @@ public static class CouplingMatrix
     {
         int n = poly.Order;
         // On s = jω, with E and F back in ω (monic): y22 = j·Im Q/Re Q and y21 = −P(jω)/(ε·jᴺ·Re Q), where
-        // Q = E + F/εR and Re, Im take the coefficients' parts. The poles are the real roots of Re Q.
+        // Q = E + F/εR and Re, Im take the coefficients' parts. The poles are the real roots of Re Q. A synthesised F is
+        // real in ω; an extracted one (FilterExtraction), whose reflection zeros leave the axis, is not.
         // ponytail: residues from the coefficients. Poles a few 1e-4 apart near the band edge (8–2 or 10–4 with zeros
         // close to it) hold the response to about 1e-8 and 3e-7, against 1e-13 with the poles apart; extended
         // precision here if that ever matters.
         Complex[] ew = ToOmega(poly.E), fw = ToOmega(poly.F);
         double[] re = new double[n + 1], im = new double[n + 1];
-        for (int i = 0; i <= n; i++) { re[i] = ew[i].Real + fw[i].Real / poly.EpsilonR; im[i] = ew[i].Imaginary; }
+        for (int i = 0; i <= n; i++)
+            (re[i], im[i]) = (ew[i].Real + fw[i].Real / poly.EpsilonR, ew[i].Imaginary + fw[i].Imaginary / poly.EpsilonR);
         double[] dre = [.. re[..^1].Select((c, i) => c * (n - i))];
 
         var m = new double[n + 2, n + 2];
@@ -256,9 +258,9 @@ public static class CouplingMatrix
     }
 
     // X(s) = j^deg·X_ω(s/j): the coefficient of s^k is a_k·j^(deg−k), i.e. index i is multiplied by j^i.
-    private static Complex[] ToS(Complex[] w) => [.. w.Select((c, i) => c * JPow(i))];
+    internal static Complex[] ToS(Complex[] w) => [.. w.Select((c, i) => c * JPow(i))];
     private static Complex[] ToS(double[] w) => ToS([.. w.Select(c => (Complex)c)]);
-    private static Complex[] ToOmega(Complex[] s) => [.. s.Select((c, i) => c * JPow(-i))];
+    internal static Complex[] ToOmega(Complex[] s) => [.. s.Select((c, i) => c * JPow(-i))];
 
     private static Complex JPow(int k) => (((k % 4) + 4) % 4) switch
     {
@@ -266,7 +268,7 @@ public static class CouplingMatrix
     };
 
     // MatchPoly.FromRoots keeps only the real part; E's roots are not conjugate-closed, so its coefficients are complex.
-    private static Complex[] FromRoots(IEnumerable<Complex> roots)
+    internal static Complex[] FromRoots(IEnumerable<Complex> roots)
     {
         Complex[] p = [Complex.One];
         foreach (var r in roots) p = [.. p.Append(Complex.Zero).Select((c, i) => i == 0 ? c : c - p[i - 1] * r)];

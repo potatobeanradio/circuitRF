@@ -167,6 +167,27 @@ public static class FilterSynthesisService
         return b.AppendLine($"Port:P2 {at} 0 Num=2 Z={F(load)} Ohm").Append(Analysis(spec, points)).ToString();
     }
 
+    /// <summary>
+    /// A bandpass's ideal response with every resonator at the unloaded Q <paramref name="unloadedQ"/>: the inline coupling
+    /// matrix of the same lowpass prototype (<see cref="CouplingMatrix.AllPole"/>) through
+    /// <see cref="CouplingMatrix.Response"/> at ω = (f/f0 − f0/f)/FBW, which with no loss is <see cref="Ideal"/>'s own
+    /// response. Only S11 and S21 are computed; S22 is taken as S11.
+    /// </summary>
+    public static SNP LossyIdeal(FilterSpec spec, double[] frequencies, double unloadedQ)
+    {
+        var m = CouplingMatrix.AllPole(LowpassPrototype.GValues(spec.Response, spec.Order, spec.RippleDb));
+        double f0 = spec.CentreHz, fbw = spec.FractionalBandwidth;
+        var mats = new Mat<Complex>[frequencies.Length];
+        for (int i = 0; i < mats.Length; i++)
+        {
+            var (s11, s21) = CouplingMatrix.Response(m, (frequencies[i] / f0 - f0 / frequencies[i]) / fbw, unloadedQ, fbw);
+            mats[i] = new Mat<Complex>(2, 2);
+            mats[i][0, 0] = mats[i][1, 1] = s11;
+            mats[i][0, 1] = mats[i][1, 0] = s21;
+        }
+        return new SNP(frequencies, mats, MatrixType.S, MatrixFormat.RI, new Complex(spec.Z0, 0.0));
+    }
+
     /// <summary>A bench's S-parameters over its own sweep, read and run as a run verb reads a <c>.cnl</c>: the two-port's
     /// S at each frequency, labelled with <paramref name="z0"/> (each port's S is referred to its own Port's Z).</summary>
     public static SNP Response(string cnl, double[] frequencies, double z0)
@@ -185,6 +206,24 @@ public static class FilterSynthesisService
         }
         return new SNP(frequencies, mats, MatrixType.S, MatrixFormat.RI, new Complex(z0, 0.0));
     }
+
+    /// <summary>The N+2 matrix a bandpass is checked against: the all-pole prototype's inline chain
+    /// (<see cref="CouplingMatrix.AllPole"/>), or with transmission zeros the folded generalised Chebyshev
+    /// (<see cref="CouplingMatrix.Synthesise"/>) at the ripple's return loss.</summary>
+    public static double[,] Target(FilterSpec spec)
+    {
+        if (spec.TransmissionZerosHz is not { Count: > 0 } zeros)
+            return CouplingMatrix.AllPole(LowpassPrototype.GValues(spec.Response, spec.Order, spec.RippleDb));
+        double f0 = spec.CentreHz, fbw = spec.FractionalBandwidth;
+        return CouplingMatrix.Synthesise(spec.Order, -10.0 * Math.Log10(1.0 - Math.Pow(10.0, -spec.RippleDb / 10.0)),
+            [.. zeros.Select(f => (f / f0 - f0 / f) / fbw)]);
+    }
+
+    /// <summary>A two-port's prototype back from its S (<see cref="FilterExtraction"/>), checked against the spec and
+    /// <see cref="Target"/>: what the Designer's metrics and the polish read.</summary>
+    public static ExtractedFilter Extract(FilterSpec spec, SNP s)
+        => FilterExtraction.Extract(spec, s.Frequencies, [.. s.Matrices.Select(m => m[0, 0])], [.. s.Matrices.Select(m => m[1, 0])],
+            Target(spec));
 
     /// <summary>"Chebyshev bandpass, order 3, 2.2 to 2.6 GHz, 0.1 dB ripple, Z0 50 Ω".</summary>
     public static string Describe(FilterSpec s)

@@ -33,7 +33,9 @@ public abstract class CoupledResonatorRealiser(string name, ResonatorShape shape
         return why is null;
     }
 
-    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate)
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate) => Realise(spec, substrate, default);
+
+    public FilterRealisation Realise(FilterSpec spec, MicrostripSubstrate? substrate, CancellationToken cancel)
     {
         if (Check(spec) is { } refusal) throw refusal;
         var s = substrate ?? throw CoupledResonatorDesign.Refusal("substrate", "an MCRC is microstrip and needs its substrate.");
@@ -66,7 +68,7 @@ public abstract class CoupledResonatorRealiser(string name, ResonatorShape shape
             }
             var k = CoupledResonatorDesign.Couplings(g, fbw);
             double qe = CoupledResonatorDesign.ExternalQ(g, fbw);
-            v = CoupledResonatorDesign.FromCouplings(form, k, qe, f0, s, Refine == CouplingRefine.Em ? Em : null);
+            v = CoupledResonatorDesign.FromCouplings(form, k, qe, f0, s, Refine == CouplingRefine.Em ? Em : null, cancel);
             note = $"Coupling coefficients k(1,2) = {(n > 1 ? k[0, 1] : 0.0).ToString("G3", CultureInfo.InvariantCulture)}… "
                  + $"and Qe = {qe.ToString("G3", CultureInfo.InvariantCulture)}, each gap and the "
                  + (feed == ResonatorFeed.Tapped ? "tap" : "feed gap") + " solved on the circuit model (MCLIN pairs; the "
@@ -82,7 +84,7 @@ public abstract class CoupledResonatorRealiser(string name, ResonatorShape shape
     }
 
     /// <summary>The stored values as a placed part holds them: lengths in mm, N and Uc as numbers, names as text.</summary>
-    internal static Dictionary<string, string> Stored(IReadOnlyDictionary<string, object> v)
+    public static Dictionary<string, string> Stored(IReadOnlyDictionary<string, object> v)
         => v.ToDictionary(e => e.Key, e => e.Value switch
         {
             string text => text,
