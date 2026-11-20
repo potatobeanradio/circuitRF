@@ -113,7 +113,10 @@ public class CoupledResonatorRealiserTests(ITestOutputHelper output)
         var edge = new EdgeCoupledRealiser();
         Assert.Equal("synthesis.mcrc.substrate", Code(() => edge.Realise(Band(0.1), null)));
         Assert.Equal("synthesis.mcrc.width-unreachable", Code(() => edge.Realise(Band(0.1, z0: 2000.0), Board)));
-        Assert.Equal("synthesis.mcrc.out-of-reach", Code(() => CoupledResonatorDesign.GapFor(1e-3, 0.9, F0, Board)));
+        var reach = Assert.Throws<ParameterRefusalException>(() => CoupledResonatorDesign.GapFor(1e-3, 0.9, F0, Board));
+        Assert.Equal("synthesis.mcrc.out-of-reach", reach.Diagnostic!.Id);
+        // the Filter Designer lists this text under the realiser: the reach in µm and mm, never a raw double in metres
+        Assert.Contains("between 50.8 µm and 5.08 mm", reach.Message);
         var crossed = new double[3, 3];
         crossed[0, 2] = 0.01;
         Assert.Equal("synthesis.mcrc.cross-coupling", Code(() => CoupledResonatorDesign.FromCouplings(

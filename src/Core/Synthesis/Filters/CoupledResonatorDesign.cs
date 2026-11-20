@@ -150,7 +150,7 @@ public static class CoupledResonatorDesign
                 if ((k[i, j] != 0.0 || k[j, i] != 0.0) && !(cross && i == 0 && j == n - 1))
                     throw Refusal("cross-coupling", "k({i},{j}) = {k} couples resonators that do not sit side by side; an "
                       + "inline row realises adjacent couplings only, and the cross-coupled square adds k(1,4) alone.",
-                        ("i", i + 1), ("j", j + 1), ("k", k[i, j] != 0.0 ? k[i, j] : k[j, i]));
+                        ("i", i + 1), ("j", j + 1), ("k", (k[i, j] != 0.0 ? k[i, j] : k[j, i]).ToString("G3", System.Globalization.CultureInfo.InvariantCulture)));
         s = Lossless(s);
         double w = (double)form["W"], h = s.HMeters, light = 3.0 * h;
         bool tapped = form.TryGetValue("Feed", out var feed) && feed is "Tapped";
@@ -353,10 +353,14 @@ public static class CoupledResonatorDesign
         }
         double x = X(0.5 * (a + b));
         if (Math.Abs(x - lo) < 1e-6 * hi || Math.Abs(x - hi) < 1e-6 * hi)
-            throw Refusal("out-of-reach", "{what} is out of reach between {lo} and {hi} m on this substrate.",
-                ("what", what), ("lo", lo), ("hi", hi));
+            throw Refusal("out-of-reach", "{what} is out of reach between {lo} and {hi} on this substrate.",
+                ("what", what), ("lo", Length(lo)), ("hi", Length(hi)));
         return x;
     }
+
+    /// <summary>A length for a message: µm below a millimetre, mm above.</summary>
+    private static string Length(double m)
+        => m < 1e-3 ? $"{LadderSynthesis.Fmt(m * 1e6)} µm" : $"{LadderSynthesis.Fmt(m * 1e3)} mm";
 
     internal static ParameterRefusalException Refusal(string code, string message, params (string, object?)[] args)
         => new(Diagnostic.Create("synthesis.mcrc." + code, DiagnosticSeverity.Error,
