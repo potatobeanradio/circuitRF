@@ -55,6 +55,7 @@ public partial class PlotCanvasView : UserControl
         _plotCanvas        = this.FindControl<ItemsControl>("PlotCanvas");
         _contentGrid       = this.FindControl<Grid>("ContentGrid");
         _dragSelectOverlay = this.FindControl<DragSelectOverlay>("DragSelectOverlay");
+        InitializeAnnotations();
 
         // Register canvas-background handlers on PlotCanvas.
         // Handlers are registered once in the constructor so they never accumulate
@@ -191,6 +192,18 @@ public partial class PlotCanvasView : UserControl
     /// </summary>
     private void OnCanvasKeyDown(object? sender, KeyEventArgs e)
     {
+        if (!e.Handled && e.Key == Key.Escape && _moveOriginal is not null)
+        {
+            CancelAnnotationDraft();
+            e.Handled = true;
+            return;
+        }
+        if (!e.Handled && e.Key == Key.Escape && Display is { DrawingTool: not AnnotationTool.None } drawing)
+        {
+            drawing.DrawingTool = AnnotationTool.None;
+            e.Handled = true;
+            return;
+        }
         if (e.Handled || Display is not { } display || display.HasAnySelection) return;
         if (CanvasArrowPan.ScreenStep(e.Key, e.KeyModifiers) is not { } step) return;
 
@@ -214,6 +227,7 @@ public partial class PlotCanvasView : UserControl
                 (_plotCanvas.Bounds.Width, _plotCanvas.Bounds.Height);
 
         if (_watchedDisplay is not null) _watchedDisplay.PropertyChanged -= OnDisplayPropertyChanged;
+        SwitchAnnotationDisplay(Display);
         _watchedDisplay = Display;
         if (_watchedDisplay is not null) _watchedDisplay.PropertyChanged += OnDisplayPropertyChanged;
         SyncZoomBoxCursor();
@@ -221,14 +235,17 @@ public partial class PlotCanvasView : UserControl
 
     private void OnDisplayPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(DataDisplayViewModel.ZoomBoxArmed)) SyncZoomBoxCursor();
+        if (e.PropertyName is nameof(DataDisplayViewModel.ZoomBoxArmed) or nameof(DataDisplayViewModel.DrawingTool))
+            SyncZoomBoxCursor();
+        UpdateAnnotationView(e.PropertyName);
     }
 
     /// <summary>The armed magnifier reads as a crosshair, the same way the schematic, layout and
     /// wBond editors draw theirs — the arming is a mode, and a mode with no pointer change is one the
     /// user discovers by clicking.</summary>
     private void SyncZoomBoxCursor() =>
-        Cursor = Display is { ZoomBoxArmed: true } ? new Cursor(StandardCursorType.Cross) : Cursor.Default;
+        Cursor = Display is { ZoomBoxArmed: true } or { DrawingTool: not AnnotationTool.None }
+            ? new Cursor(StandardCursorType.Cross) : Cursor.Default;
 
     // Helper to reach the active DataDisplayViewModel.
     private DataDisplayViewModel? Display => (DataContext as TabViewModel)?.DataDisplay;

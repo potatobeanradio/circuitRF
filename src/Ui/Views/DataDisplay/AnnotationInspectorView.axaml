@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.AnnotationInspectorView"
+             x:DataType="vm:AnnotationInspectorViewModel"
+             IsVisible="{Binding IsActive, FallbackValue=False}">
+    <StackPanel Margin="8,4,8,8" Spacing="6">
+        <StackPanel IsVisible="{Binding IsText}" Spacing="4">
+            <TextBlock Text="Text" FontWeight="SemiBold"/>
+            <TextBox Text="{Binding Content, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                     AcceptsReturn="True" TextWrapping="Wrap" MaxHeight="120"
+                     AutomationProperties.Name="Text content"/>
+            <Grid ColumnDefinitions="75,*">
+                <TextBlock Text="Font size" VerticalAlignment="Center"/>
+                <NumericUpDown Grid.Column="1" Value="{Binding FontSize, Mode=TwoWay}"
+                               Minimum="1" Maximum="200" Increment="1" FormatString="0.##"
+                               AutomationProperties.Name="Text font size"/>
+            </Grid>
+            <Grid ColumnDefinitions="75,*">
+                <TextBlock Text="Rotation" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Rotations}"
+                          SelectedItem="{Binding Rotation, Mode=TwoWay}" AutomationProperties.Name="Text rotation"/>
+            </Grid>
+        </StackPanel>
+        <StackPanel IsVisible="{Binding HasStroke}" Spacing="4">
+            <TextBlock Text="{Binding ShapeName}" FontWeight="SemiBold"/>
+            <Grid ColumnDefinitions="75,*">
+                <TextBlock Text="Style" VerticalAlignment="Center"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding LineStyles}"
+                          SelectedItem="{Binding LineStyle, Mode=TwoWay}" AutomationProperties.Name="Outline style"/>
+            </Grid>
+        </StackPanel>
+        <Grid ColumnDefinitions="75,Auto,*">
+            <TextBlock Text="Color" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Click="PickColor" ToolTip.Tip="Choose annotation color"
+                    AutomationProperties.Name="Annotation color">
+                <Border Width="20" Height="14" BorderThickness="1"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                        Background="{Binding ColorSwatch, TargetNullValue={DynamicResource SystemControlForegroundBaseHighBrush}}"/>
+            </Button>
+            <Button Grid.Column="2" Click="ResetColor" Content="Default" Margin="4,0,0,0"/>
+        </Grid>
+    </StackPanel>
+</UserControl>

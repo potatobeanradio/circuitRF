@@ -25,7 +25,7 @@ using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Views.Layout;
 using CircuitRF.Design.Layout;
 
-// UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
+// UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display|display-properties] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
 // UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--blocks-png <png>] [--chain-tab <header>] [--size WxH] [steps]
@@ -747,9 +747,9 @@ if (netsPanel is not null && output is not null)
     return ShowSeededNetsPanel(netsPanel, output, sizeGiven ? width : 320, sizeGiven ? height : 460);
 }
 bool vendorMode = placeInstance3d is not null || projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null || repointQuestion is not null;
-if ((cdd is null && c3dSetups is null && hznOpen is null && c3dSetupPanel is null && signal.Count == 0 && chainFile is null && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && c3dSetups is null && hznOpen is null && c3dSetupPanel is null && signal.Count == 0 && chainFile is null && snp is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display" or "display-properties"))
 {
-    Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
+    Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display|display-properties] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
                           + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]\n"
@@ -1477,8 +1477,23 @@ var tab = window.ActiveTab ?? throw new InvalidOperationException("the display o
 Control content;
 if (view == "canvas")
     content = new PlotCanvasView { DataContext = tab };
-else if (view == "display")
+else if (view is "display" or "display-properties")
+{
     content = new DataDisplayView { DataContext = new DataDisplayDocument(Path.GetFileName(cdd!), document, cdd) };
+    if (view == "display-properties")
+    {
+        var properties = new CircuitRF.Ui.ViewModels.Dock.PropertiesTool();
+        properties.SetActiveDataDisplay(window.ActiveInspector, window);
+        window.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DisplayWindowViewModel.ActiveInspector))
+                properties.SetActiveDataDisplay(window.ActiveInspector, window);
+        };
+        var panel = new CircuitRF.Ui.Views.Properties.PropertiesView { DataContext = properties, Width = 250 };
+        DockPanel.SetDock(panel, Avalonia.Controls.Dock.Left);
+        content = new DockPanel { Children = { panel, content } };
+    }
+}
 else
 {
     var plots = tab.DataDisplay.Plots;
