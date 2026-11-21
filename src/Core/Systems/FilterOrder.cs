@@ -15,7 +15,7 @@ public static class FilterOrder
     /// </summary>
     /// <param name="fpHz">Passband edge for lowpass / highpass; unused for band forms.</param>
     /// <param name="fsHz">Stopband edge for lowpass / highpass; unused for band forms.</param>
-    /// <param name="fp1Hz">Lower passband edge (bandpass) or lower passband (bandstop).</param>
+    /// <param name="fp1Hz">Lower passband edge (bandpass), or the passband edge below the rejected band (bandstop).</param>
     /// <param name="fp2Hz">Upper passband edge.</param>
     /// <param name="fs1Hz">Lower stopband edge.</param>
     /// <param name="fs2Hz">Upper stopband edge.</param>
@@ -45,7 +45,8 @@ public static class FilterOrder
 
         return response switch
         {
-            FilterResponse.Butterworth  => Ceil(Math.Log(epsS / epsP) / Math.Log(omegaS) / 2.0),
+            // |S21|² = 1/(1 + (εp Ω^n)²), so Ω_s^n ≥ εs/εp. (A stray /2 here once halved the order.)
+            FilterResponse.Butterworth  => Ceil(Math.Log(epsS / epsP) / Math.Log(omegaS)),
             FilterResponse.Chebyshev    => Ceil(Acosh(epsS / epsP) / Acosh(omegaS)),
             FilterResponse.InvChebyshev => Ceil(Acosh(epsS / epsP) / Acosh(omegaS)),
             FilterResponse.Elliptic     => EllipticMinimum(epsP, epsS, omegaS) is { } n
@@ -124,13 +125,15 @@ public static class FilterOrder
             }
             case NetworkForm.Bandstop:
             {
-                // F1/F2 on the ladder are the stopband edges; the passband edges sit outside.
-                if (!(fs1 > 0) || !(fs2 > fs1) || !(fp1 > 0) || !(fp2 > fs2) || !(fs1 > fp1))
+                // The prototype's Ω = 1 sits at the PASSBAND edges, which bound the rejected band
+                // from outside; the stop edges sit between them, nearer the centre. Mapped through
+                // Ω = BW·f / (f0² − f²) they land at |Ω| > 1 — the bandpass case, turned inside out.
+                if (!(fp1 > 0) || !(fs1 > fp1) || !(fs2 > fs1) || !(fp2 > fs2))
                     return false;
-                double w0 = Math.Sqrt(fs1 * fs2);
-                double bw = fs2 - fs1;
-                double Map(double f) => Math.Abs(f * bw / (f * f - w0 * w0));
-                omegaS = Math.Min(Map(fp1), Map(fp2));
+                double w0 = Math.Sqrt(fp1 * fp2);
+                double bw = fp2 - fp1;
+                double Map(double f) => Math.Abs(f * bw / (w0 * w0 - f * f));
+                omegaS = Math.Min(Map(fs1), Map(fs2));
                 return true;
             }
             default:

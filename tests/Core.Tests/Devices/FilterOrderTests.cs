@@ -9,11 +9,12 @@ public class FilterOrderTests
     [Fact]
     public void AButterworthLowpassOrderMatchesTheClosedForm()
     {
-        // Ap ≈ 3.01 dB (ε=1), As = 40 dB, Fs/Fp = 2 → n = log(εs/εp)/(2 log 2) ≈ 3.32 → 4.
+        // Ap ≈ 3.01 dB (ε=1), As = 40 dB, Fs/Fp = 2.
         int? n = FilterOrder.Minimum(FilterResponse.Butterworth, NetworkForm.Lowpass,
                                      3.0102999566, 40, fpHz: 1e9, fsHz: 2e9,
                                      0, 0, 0, 0);
-        Assert.Equal(4, n);
+        // Ω_s^n ≥ εs/εp = √(10⁴ − 1): n ≥ log(99.995)/log 2 = 6.64.
+        Assert.Equal(7, n);
     }
 
     [Fact]
@@ -84,4 +85,57 @@ public class FilterOrderTests
         }
         return worst;
     }
+
+    /// <summary>
+    /// A bandstop mask — Fp1 &lt; Fs1 &lt; Fs2 &lt; Fp2 — has an order, and that order built the way the
+    /// Designer builds it (at Fp1/Fp2; inverse Chebyshev at Fs1/Fs2) meets the mask at all four
+    /// edges, while one order fewer misses it. The mapping used to take its centre from the stop
+    /// edges and returned no order for any bandstop at all.
+    /// </summary>
+    [Theory]
+    [InlineData(FilterResponse.Butterworth)]
+    [InlineData(FilterResponse.Chebyshev)]
+    [InlineData(FilterResponse.Elliptic)]
+    [InlineData(FilterResponse.InvChebyshev)]
+    public void ABandstopMaskHasAnOrderThatMeetsIt(FilterResponse response)
+    {
+        // A Butterworth edge is its 3.01 dB point, which is what Ap has to say for the order to
+        // be about the filter the Designer builds.
+        double ap = response == FilterResponse.Butterworth ? 3.0103 : 0.5;
+        const double astop = 40;
+        // Geometrically symmetric about 1.5 GHz, so the stop and the pass edges share a centre.
+        double f0 = 1.5e9, fs1 = 1.3e9, fs2 = f0 * f0 / fs1, fp1 = 1.0e9, fp2 = f0 * f0 / fp1;
+        int? n = FilterOrder.Minimum(response, NetworkForm.Bandstop, ap, astop, 0, 0,
+                                     fp1, fp2, fs1, fs2, EllipticType.Auto);
+        Assert.NotNull(n);
+
+        double Db(int order, double f)
+        {
+            bool inv = response == FilterResponse.InvChebyshev;
+            var net = FilterNetwork.Create(response, NetworkForm.Bandstop, order, 0,
+                                           inv ? fs1 : fp1, inv ? fs2 : fp2, ap, astop, 0,
+                                           EllipticTypes.Resolve(EllipticType.Auto, order));
+            return -20 * Math.Log10(net.At(2 * Math.PI * f).S21.Magnitude);
+        }
+        double passLimit = ap;
+        foreach (double f in new[] { fp1, fp2 })
+            Assert.True(Db(n!.Value, f) <= passLimit + 1e-6, $"{response} n={n}: {Db(n.Value, f):F3} dB at Fp {f:G4}");
+        foreach (double f in new[] { fs1, fs2 })
+            Assert.True(Db(n!.Value, f) >= astop - 1e-6, $"{response} n={n}: {Db(n.Value, f):F3} dB at Fs {f:G4}");
+        // One order fewer misses: at Fs for the families built at Fp, at Fp for inverse Chebyshev,
+        // whose floor sits at Fs by construction.
+        if (n > 1 && response != FilterResponse.Elliptic)
+            Assert.True(response == FilterResponse.InvChebyshev
+                            ? Db(n.Value - 1, fp1) > ap + 1e-6
+                            : Db(n.Value - 1, fs1) < astop - 1e-6,
+                        $"{response}: order {n - 1} already meets the mask");
+    }
+
+    [Fact]
+    public void ABandstopWhoseEdgesAreOutOfOrderHasNoOrder()
+    {
+        Assert.Null(FilterOrder.Minimum(FilterResponse.Chebyshev, NetworkForm.Bandstop, 0.5, 40, 0, 0,
+                                        fp1Hz: 1.4e9, fp2Hz: 2.5e9, fs1Hz: 1.0e9, fs2Hz: 2e9));
+    }
+
 }

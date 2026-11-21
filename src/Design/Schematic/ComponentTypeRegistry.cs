@@ -1814,7 +1814,9 @@ public static class ComponentTypeRegistry
         (SymbolKind.Filter, "Form") =>
             "Lowpass, Highpass, Bandpass or Bandstop. The symbol strikes a line through every wave "
           + "the network blocks, so the shape is read off the glyph. Lowpass and Highpass read Fc; "
-          + "Bandpass and Bandstop read F1 and F2. For a Bandstop those two edges are the STOPBAND.",
+          + "Bandpass and Bandstop read F1 and F2. For a Bandstop those two edges bound the rejected "
+          + "band from OUTSIDE: they are its passband edges, at the ripple (3.01 dB for "
+          + "Butterworth), and the floor is reached between them.",
         (SymbolKind.Filter, "Response") =>
             "Which prototype family the response comes from: Butterworth (maximally flat "
           + "magnitude), Chebyshev (equiripple passband, reads Ripple), InvChebyshev (flat "
@@ -1837,7 +1839,9 @@ public static class ComponentTypeRegistry
           + "Bandstop.",
         (SymbolKind.Filter, "F1") =>
             "Lower edge, for Bandpass and Bandstop. On a Bandpass it is the passband edge; on a "
-          + "Bandstop it is the stopband edge. The centre is the GEOMETRIC mean of F1 and F2 and "
+          + "Bandstop it is the passband edge below the rejected band. Both are where the response sits "
+          + "at its passband level (Ripple, or 3.01 dB for Butterworth) — except InvChebyshev, whose "
+          + "edges are where Astop is first met, as its Fc is. The centre is the GEOMETRIC mean of F1 and F2 and "
           + "the response is geometrically symmetric about it. Ignored for Lowpass and Highpass.",
         (SymbolKind.Filter, "F2") =>
             "Upper edge, for Bandpass and Bandstop. Read with F1 — the two set both the centre and "

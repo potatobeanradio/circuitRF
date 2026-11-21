@@ -29,7 +29,8 @@ Denormalisation, with `R` the source and `ω` the cutoff:
 - Highpass: each inductor and capacitor exchanged, `C = 1/(g R ω)`, `L = R/(g ω)`.
 - Bandpass: each arm a resonator at `ω0 = √(ω1 ω2)`, bandwidth `ω2 − ω1`.
 - Bandstop: `s → BW·s / (s² + ω0²)`. A series arm becomes a parallel LC in the through path; a
-  shunt arm becomes a series LC to ground. `F1` and `F2` are the stopband edges. Order 3 is six
+  shunt arm becomes a series LC to ground. `F1` and `F2` are the passband edges either side of the rejected band (inverse Chebyshev:
+  the Astop edges); the Designer's minimum order maps Fs1/Fs2 inward through the same transform. Order 3 is six
   elements.
 
 The extracted remainder is a resistance after an even number of removals and a conductance after

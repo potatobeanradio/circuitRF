@@ -187,6 +187,14 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private string _labelB = "Fp1";
     [ObservableProperty] private string _labelC = "Fp2";
     [ObservableProperty] private string _labelD = "Fs2";
+    [ObservableProperty] private Avalonia.Media.IBrush _swatchA = StopSwatch;
+    [ObservableProperty] private Avalonia.Media.IBrush _swatchB = PassSwatch;
+    [ObservableProperty] private Avalonia.Media.IBrush _swatchC = PassSwatch;
+    [ObservableProperty] private Avalonia.Media.IBrush _swatchD = StopSwatch;
+    private static readonly Avalonia.Media.IBrush PassSwatch =
+        Avalonia.Media.Brush.Parse(FilterMaskColors.PassBrush);
+    private static readonly Avalonia.Media.IBrush StopSwatch =
+        Avalonia.Media.Brush.Parse(FilterMaskColors.StopBrush);
     [ObservableProperty] private string _tipA = "";
     [ObservableProperty] private string _tipB = "";
     [ObservableProperty] private string _tipC = "";
@@ -326,22 +334,26 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         {
             case NetworkForm.Lowpass:
                 LabelA = "Fp"; LabelB = "Fs"; ShowC = false; ShowD = false;
+                (SwatchA, SwatchB) = (PassSwatch, StopSwatch);
                 TipA = "Passband frequency."; TipB = "Stopband frequency edge.";
                 TipC = TipD = "";
                 break;
             case NetworkForm.Highpass:
                 LabelA = "Fs"; LabelB = "Fp"; ShowC = false; ShowD = false;
+                (SwatchA, SwatchB) = (StopSwatch, PassSwatch);
                 TipA = "Stopband frequency edge."; TipB = "Passband frequency.";
                 TipC = TipD = "";
                 break;
             case NetworkForm.Bandstop:
                 LabelA = "Fp1"; LabelB = "Fs1"; LabelC = "Fs2"; LabelD = "Fp2";
+                (SwatchA, SwatchB, SwatchC, SwatchD) = (PassSwatch, StopSwatch, StopSwatch, PassSwatch);
                 ShowC = true; ShowD = true;
                 TipA = "Lower passband frequency."; TipB = "Lower stopband frequency edge.";
                 TipC = "Upper stopband frequency edge."; TipD = "Upper passband frequency.";
                 break;
             default:
                 LabelA = "Fs1"; LabelB = "Fp1"; LabelC = "Fp2"; LabelD = "Fs2";
+                (SwatchA, SwatchB, SwatchC, SwatchD) = (StopSwatch, PassSwatch, PassSwatch, StopSwatch);
                 ShowC = true; ShowD = true;
                 TipA = "Lower stopband frequency edge."; TipB = "Lower passband frequency.";
                 TipC = "Upper passband frequency."; TipD = "Upper stopband frequency edge.";
@@ -393,6 +405,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             Status = error ?? "";
             DesignInfo = "";
             ClearPlots();
+            ShowMaskAlone();
             return;
         }
 
@@ -578,8 +591,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 return fallback;
             return v;
         }
-        FaText = FormatEdge(GhzOf(Form is NetworkForm.Lowpass or NetworkForm.Highpass ? "Fc" : "F1", 1));
-        FbText = FormatEdge(GhzOf("F2", 2));
+        SeedEdges(GhzOf("Fc", 1), GhzOf("F1", 0.9), GhzOf("F2", 1.1));
         if (double.TryParse(Expr("Ripple"), NumberStyles.Float, CultureInfo.InvariantCulture, out double ripple))
         {
             RippleText = ripple.ToString("0.####", CultureInfo.InvariantCulture);
@@ -593,6 +605,106 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         LoadText = Ohms("Zout", 50).ToString("0.####", CultureInfo.InvariantCulture);
         _unitForEdges = Unit;
         ApplyLabels();
+    }
+
+    /// <summary>
+    /// Puts a Filter's own cutoff (GHz) into the boxes that edge belongs to — the passband edges,
+    /// or for inverse Chebyshev the stopband edges, by form — and keeps the mask's other edges
+    /// where they were when they still sit on the right side, else a fifth of the way out.
+    /// </summary>
+    /// <remarks>
+    /// The inverse of <see cref="FilterAssignments"/>, so Apply then Seed gives back the edges the
+    /// window built at. Reading F1/F2 into the first two boxes regardless of form put a bandpass's
+    /// passband into its Fs1/Fp1 boxes and a bandstop's into Fp1/Fs1.
+    /// </remarks>
+    private void SeedEdges(double fcGhz, double f1Ghz, double f2Ghz)
+    {
+        double A() => Parse(FaText);
+        double B() => Parse(FbText);
+        double C() => Parse(FcText);
+        double D() => Parse(FdText);
+        static double Parse(string t) =>
+            double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : double.NaN;
+        bool inv = Response == FilterResponse.InvChebyshev;
+        double a, b, c = C(), d = D();
+        switch (Form)
+        {
+            case NetworkForm.Lowpass:          // A Fp, B Fs
+                (a, b) = inv ? (A(), fcGhz) : (fcGhz, B());
+                if (!(a > 0 && b > a)) { if (inv) a = b / 1.25; else b = a * 1.25; }
+                break;
+            case NetworkForm.Highpass:         // A Fs, B Fp
+                (a, b) = inv ? (fcGhz, B()) : (A(), fcGhz);
+                if (!(a > 0 && b > a)) { if (inv) b = a * 1.25; else a = b / 1.25; }
+                break;
+            case NetworkForm.Bandstop:         // A Fp1, B Fs1, C Fs2, D Fp2
+                if (inv)
+                {
+                    (b, c) = (f1Ghz, f2Ghz);
+                    a = A(); d = D();
+                    if (!(a > 0 && b > a)) a = b - 0.5 * (c - b);
+                    if (!(d > c)) d = c + 0.5 * (c - b);
+                    if (!(a > 0)) a = b / 1.25;
+                }
+                else
+                {
+                    (a, d) = (f1Ghz, f2Ghz);
+                    b = B(); c = C();
+                    if (!(b > a && c > b && d > c)) { double w = (d - a) / 5; b = a + 2 * w; c = d - 2 * w; }
+                }
+                break;
+            default:                           // A Fs1, B Fp1, C Fp2, D Fs2
+                if (inv)
+                {
+                    (a, d) = (f1Ghz, f2Ghz);
+                    b = B(); c = C();
+                    if (!(b > a && c > b && d > c)) { double w = (d - a) / 5; b = a + w; c = d - w; }
+                }
+                else
+                {
+                    (b, c) = (f1Ghz, f2Ghz);
+                    a = A(); d = D();
+                    if (!(a > 0 && b > a)) a = b - 0.5 * (c - b);
+                    if (!(d > c)) d = c + 0.5 * (c - b);
+                    if (!(a > 0)) a = b / 1.25;
+                }
+                break;
+        }
+        FaText = FormatEdge(a);
+        FbText = FormatEdge(b);
+        FcText = FormatEdge(c);
+        FdText = FormatEdge(d);
+    }
+
+    /// <summary>
+    /// The parameters Apply to Filter writes, from the specification the last design was BUILT
+    /// from rather than from box positions — the cutoff edges are the ones the ladder used, so the
+    /// block and the ladder are the same response. Frequencies in GHz. Null before a design.
+    /// </summary>
+    public IReadOnlyList<(string Name, string Expression)>? FilterAssignments()
+    {
+        if (_lastSpec is not { } spec) return null;
+        string Ghz(double hz) => (hz / 1e9).ToString("0.#########", CultureInfo.InvariantCulture);
+        var list = new List<(string, string)>
+        {
+            ("Response", spec.Response.ToString()),
+            ("Form", spec.Form.ToString()),
+            ("Order", spec.Order.ToString(CultureInfo.InvariantCulture)),
+            ("Ripple", RippleText.Trim()),
+            ("Astop", AsText.Trim()),
+            ("Zin", SourceText.Trim()),
+            ("Zout", LoadText.Trim()),
+        };
+        if (spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass)
+            list.Add(("Fc", Ghz(spec.FcHz)));
+        else
+        {
+            list.Add(("F1", Ghz(spec.F1Hz)));
+            list.Add(("F2", Ghz(spec.F2Hz)));
+        }
+        if (spec.Response == FilterResponse.Elliptic)
+            list.Add(("EllipticType", spec.EllipticType.ToString()));
+        return list;
     }
 
     /// <summary>
@@ -667,9 +779,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     private EllipticType SelectedEllipticType => EllipticTypeChoice?.Value ?? EllipticType.Auto;
 
-    /// <summary>The elliptic type the last design was built as — what Apply writes to the Filter.</summary>
-    public EllipticType DesignedEllipticType =>
-        _lastSpec?.EllipticType ?? EllipticTypes.Resolve(SelectedEllipticType, int.TryParse(OrderText, out int n) ? n : 1);
 
     private sealed record Spec(
         FilterResponse Response, NetworkForm Form, int Order, bool OrderFromMinimum,
@@ -685,6 +794,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                         FilterFirstElement.Series, EllipticType.A, 1, 0, 0, 0.1, 20, 50, 50, 0, 1, false,
                         3, 0, 0, 0, 0);
         error = null;
+        _mask = null;
         if (!double.TryParse(ApText, NumberStyles.Float, CultureInfo.InvariantCulture, out double ap) || ap < 0)
         { error = "Ap is a number of dB, zero or more."; return false; }
         if (!double.TryParse(AsText, NumberStyles.Float, CultureInfo.InvariantCulture, out double astop) || !(astop > 0))
@@ -705,25 +815,36 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         {
             case NetworkForm.Lowpass:
                 // Inverse Chebyshev's Fc is the stopband edge; every other family's is the passband.
+                _mask = new MaskSpec(Form, ap, astop, a, b, 0, 0);
                 fp = a; fs = b;
                 fc = Response == FilterResponse.InvChebyshev ? b : a;
                 f1 = f2 = 0; passLo = 0; passHi = a; outside = false;
                 break;
             case NetworkForm.Highpass:
+                _mask = new MaskSpec(Form, ap, astop, a, b, 0, 0);
                 fs = a; fp = b;
                 fc = Response == FilterResponse.InvChebyshev ? a : b;
                 f1 = f2 = 0; passLo = b; passHi = double.PositiveInfinity; outside = false;
                 break;
             case NetworkForm.Bandstop:
-                // A Fp1, B Fs1, C Fs2, D Fp2. The cutoff pair is the stopband.
-                if (!(b > 0) || !(c > b)) { error = "A bandstop needs 0 < Fs1 < Fs2."; return false; }
+                // A Fp1, B Fs1, C Fs2, D Fp2. The prototype's Ω = 1 is the PASSBAND edge, which on a
+                // bandstop bounds the rejected band from outside — Fp1 and Fp2 — except for inverse
+                // Chebyshev, whose Ω = 1 is where Astop is first met: Fs1 and Fs2.
+                _mask = new MaskSpec(Form, ap, astop, a, b, c, d);
+                if (!(a > 0) || !(b > a) || !(c > b) || !(d > c))
+                { error = "A bandstop needs 0 < Fp1 < Fs1 < Fs2 < Fp2."; return false; }
                 fp1 = a; fs1 = b; fs2 = c; fp2 = d;
-                fc = 0; f1 = b; f2 = c; passLo = a; passHi = d; outside = true;
+                fc = 0; passLo = a; passHi = d; outside = true;
+                (f1, f2) = Response == FilterResponse.InvChebyshev ? (b, c) : (a, d);
                 break;
             default:
+                // A Fs1, B Fp1, C Fp2, D Fs2. Inverse Chebyshev is built at its stop edges, as on a
+                // lowpass.
+                _mask = new MaskSpec(Form, ap, astop, a, b, c, d);
                 if (!(b > 0) || !(c > b)) { error = "A bandpass needs 0 < Fp1 < Fp2."; return false; }
                 fs1 = a; fp1 = b; fp2 = c; fs2 = d;
-                fc = 0; f1 = b; f2 = c; passLo = b; passHi = c; outside = false;
+                fc = 0; passLo = b; passHi = c; outside = false;
+                (f1, f2) = Response == FilterResponse.InvChebyshev && a > 0 && d > c ? (a, d) : (b, c);
                 break;
         }
 
@@ -1060,26 +1181,85 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Announce();
     }
 
-    private FilterMaskLine[] MaskLines(Spec spec)
+    /// <summary>The mask as typed — what the plot draws whether or not a design came of it.</summary>
+    internal sealed record MaskSpec(NetworkForm Form, double ApDb, double AsDb,
+                                    double AHz, double BHz, double CHz, double DHz);
+
+    private MaskSpec? _mask;
+
+    /// <summary>The last mask the boxes described, for a test or a caller that draws it.</summary>
+    internal MaskSpec? Mask => _mask;
+
+    private FilterMaskLine[] MaskLines(Spec spec) =>
+        MaskLinesFor(new MaskSpec(spec.Form, spec.ApDb, spec.AsDb,
+                                  spec.EdgeAHz, spec.EdgeBHz, spec.EdgeCHz, spec.EdgeDHz),
+                     LabelA, LabelB, LabelC, LabelD);
+
+    /// <summary>
+    /// The mask as the plot draws it, coloured by ROLE: every passband edge and the −Ap limit in
+    /// one colour, every stopband edge and the −As limit in another. Each limit spans only its own
+    /// band — −Ap over a passband, −As over a stopband — and a band open to one side runs to the
+    /// plot's edge (NaN), so the picture is the stepped mask a trace has to stay inside.
+    /// </summary>
+    internal static FilterMaskLine[] MaskLinesFor(MaskSpec m, string la, string lb, string lc, string ld)
     {
-        var list = new List<FilterMaskLine>(6);
-        void Edge(double hz, SKColor color, string label)
+        var list = new List<FilterMaskLine>(10);
+        double ap = -m.ApDb, ast = -m.AsDb;
+        void Edge(double hz, bool pass, string label)
         {
             if (hz > 0 && double.IsFinite(hz))
-                list.Add(new FilterMaskLine(hz, color, Vertical: true, label));
+                list.Add(new FilterMaskLine(hz, pass ? FilterMaskColors.Pass : FilterMaskColors.Stop,
+                                            Vertical: true, label));
         }
-        Edge(spec.EdgeAHz, FilterMaskColors.EdgeA, LabelA);
-        Edge(spec.EdgeBHz, FilterMaskColors.EdgeB, LabelB);
-        if (spec.Form is NetworkForm.Bandpass or NetworkForm.Bandstop)
+        void Limit(bool pass, double x0, double x1)
         {
-            Edge(spec.EdgeCHz, FilterMaskColors.EdgeC, LabelC);
-            Edge(spec.EdgeDHz, FilterMaskColors.EdgeD, LabelD);
+            double y = pass ? ap : ast;
+            if (!double.IsFinite(y)) return;
+            if (double.IsFinite(x0) && double.IsFinite(x1) && !(x1 > x0)) return;
+            list.Add(new FilterMaskLine(y, pass ? FilterMaskColors.Pass : FilterMaskColors.Stop,
+                                        Vertical: false, pass ? "Ap" : "As", x0, x1, Forbid: pass ? -1 : 1));
         }
-        if (double.IsFinite(spec.ApDb))
-            list.Add(new FilterMaskLine(-spec.ApDb, FilterMaskColors.Ap, Vertical: false, "Ap"));
-        if (double.IsFinite(spec.AsDb))
-            list.Add(new FilterMaskLine(-spec.AsDb, FilterMaskColors.As, Vertical: false, "As"));
-        return list.ToArray();
+        const double Open = double.NaN;
+        switch (m.Form)
+        {
+            case NetworkForm.Lowpass:
+                Edge(m.AHz, true, la); Edge(m.BHz, false, lb);
+                Limit(true, Open, m.AHz); Limit(false, m.BHz, Open);
+                break;
+            case NetworkForm.Highpass:
+                Edge(m.AHz, false, la); Edge(m.BHz, true, lb);
+                Limit(false, Open, m.AHz); Limit(true, m.BHz, Open);
+                break;
+            case NetworkForm.Bandstop:
+                Edge(m.AHz, true, la); Edge(m.BHz, false, lb); Edge(m.CHz, false, lc); Edge(m.DHz, true, ld);
+                Limit(true, Open, m.AHz); Limit(false, m.BHz, m.CHz); Limit(true, m.DHz, Open);
+                break;
+            default:
+                Edge(m.AHz, false, la); Edge(m.BHz, true, lb); Edge(m.CHz, true, lc); Edge(m.DHz, false, ld);
+                Limit(false, Open, m.AHz); Limit(true, m.BHz, m.CHz); Limit(false, m.DHz, Open);
+                break;
+        }
+        return [.. list];
+    }
+
+    /// <summary>
+    /// A refused specification still draws its mask, framed on its own edges, so an edge typed on
+    /// the wrong side of another is visible rather than replaced by a blank plot.
+    /// </summary>
+    private void ShowMaskAlone()
+    {
+        if (_mask is not { } m) return;
+        var hz = new[] { m.AHz, m.BHz, m.CHz, m.DHz }.Where(f => f > 0 && double.IsFinite(f)).ToArray();
+        if (hz.Length == 0) return;
+        MagnitudePlot.FreqUnits = FreqUnitOf(Unit);
+        double scale = ScaleOf(Unit);
+        double lo = hz.Min() / scale, hi = hz.Max() / scale;
+        double pad = Math.Max(hi - lo, hi * 0.1) * 0.1;
+        double depth = double.IsFinite(m.AsDb) ? m.AsDb + 20 : 60;
+        MagnitudeMask.ShowLabels = ShowMaskLabels;
+        MagnitudeMask.Lines = MaskLinesFor(m, LabelA, LabelB, LabelC, LabelD);
+        MagnitudePlot.Axes.Window = new PlotRect(Math.Max(0, lo - pad), -depth, hi - lo + 2 * pad, depth + 5);
+        Announce();
     }
 
     private void ClearPlots()

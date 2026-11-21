@@ -158,54 +158,26 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         if (Vm?.Target is not { } comp || Vm.Schematic is not { } schematic) return;
         if (comp.Symbol != SymbolKind.Filter) return;
 
+        if (Vm.FilterAssignments() is not { } assignments)
+        {
+            Vm.Status = "There is no design to apply; the specification above is refused.";
+            return;
+        }
         var updated = comp.Parameters.Select(p => p.Clone()).ToList();
-        void Set(string name, string expression)
+        foreach (var (name, expression) in assignments)
         {
             var p = updated.FirstOrDefault(x => x.Name == name);
-            if (p is null) return;
-            p.Expression = expression;
-        }
-
-        // The boxes are in the selected unit. Write them as GHz so the unit already on the
-        // parameter stays the one the editor shows.
-        double ToGHz(string text)
-        {
-            if (!double.TryParse(text, System.Globalization.NumberStyles.Float,
-                                 System.Globalization.CultureInfo.InvariantCulture, out double v))
-                return 0;
-            double hz = Vm.Unit switch { "kHz" => v * 1e3, "MHz" => v * 1e6, "GHz" => v * 1e9, _ => v };
-            return hz / 1e9;
-        }
-
-        Set("Response", Vm.Response.ToString());
-        Set("Form", Vm.Form.ToString());
-        Set("Order", Vm.OrderText.Trim());
-        Set("Ripple", Vm.RippleText.Trim());
-        Set("Astop", Vm.AsText.Trim());
-        Set("Zin", Vm.SourceText.Trim());
-        Set("Zout", Vm.LoadText.Trim());
-        if (Vm.Response == FilterResponse.Elliptic)
-        {
-            // A Filter placed before the parameter existed does not carry it; add it rather than
-            // leave the block on type a while the ladder beside it is b or c.
-            string letter = Vm.DesignedEllipticType.ToString();
-            if (updated.Any(x => x.Name == "EllipticType")) Set("EllipticType", letter);
-            else updated.Add(new EditableParameter { Name = "EllipticType", Expression = letter });
-        }
-        string g(string t) => ToGHz(t).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
-        if (Vm.Form is NetworkForm.Lowpass)
-            Set("Fc", g(Vm.FaText));
-        else if (Vm.Form is NetworkForm.Highpass)
-            Set("Fc", g(Vm.FbText));
-        else if (Vm.Form is NetworkForm.Bandstop)
-        {
-            Set("F1", g(Vm.FbText));
-            Set("F2", g(Vm.FcText));
-        }
-        else
-        {
-            Set("F1", g(Vm.FbText));
-            Set("F2", g(Vm.FcText));
+            if (p is not null)
+            {
+                p.Expression = expression;
+                // The edges are written in GHz; a parameter that showed another unit would be
+                // read in it.
+                if (name is "Fc" or "F1" or "F2") p.Unit = "GHz";
+            }
+            // A Filter placed before EllipticType existed does not carry it; add it rather than
+            // leave the block on type A while the ladder beside it is b or c.
+            else if (name == "EllipticType")
+                updated.Add(new EditableParameter { Name = name, Expression = expression });
         }
 
         schematic.Execute(new SetParametersCommand(schematic.EditModel, comp, updated));

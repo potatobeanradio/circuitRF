@@ -1443,8 +1443,8 @@ Maximally Flat, Chebyshev, inverse Chebyshev, elliptic, Bessel or Gaussian, as a
 bandpass or bandstop — and prints each element as exact value and, with `--series`, the nearest
 IEC preferred number.
 `--first parallel` starts the ladder on a shunt arm. `--fc` (or `--fp`) is the cutoff of a lowpass
-or highpass. `--f1` and `--f2` are the passband edges of a bandpass and the stopband edges of a
-bandstop. `Order` is the prototype order, so a bandpass or bandstop of order 3 is six elements.
+or highpass. `--f1` and `--f2` are the passband edges: a bandpass passes between them and a bandstop
+rejects between them (inverse Chebyshev: the edges where `--as` is first met). `Order` is the prototype order, so a bandpass or bandstop of order 3 is six elements.
 
 The load the ladder prints is the one the family produces. An even-order Chebyshev does not come
 out equal to the source; that ratio is the family's. The ideal Filter block can take any pair of

@@ -185,7 +185,7 @@
                                           SelectedItem="{Binding Form}"/>
                                 <StackPanel Grid.Row="2" Classes="lblrow" ToolTip.Tip="{Binding TipAp}">
                                     <TextBlock Classes="lbl" Text="Ap, dB"/>
-                                    <Line Classes="maskleg" Stroke="#C0392B"/>
+                                    <Line Classes="maskleg" Stroke="#2980B9"/>
                                 </StackPanel>
                                 <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding ApText}"
                                          ToolTip.Tip="{Binding TipAp}"/>
@@ -196,7 +196,7 @@
                                          ToolTip.Tip="{Binding TipRipple}"/>
                                 <StackPanel Grid.Row="4" Classes="lblrow" ToolTip.Tip="{Binding TipAs}">
                                     <TextBlock Classes="lbl" Text="As, dB"/>
-                                    <Line Classes="maskleg" Stroke="#7F8C8D"/>
+                                    <Line Classes="maskleg" Stroke="#C0392B"/>
                                 </StackPanel>
                                 <TextBox Grid.Row="4" Grid.Column="1" Classes="num" Text="{Binding AsText}"
                                          ToolTip.Tip="{Binding TipAs}"/>
@@ -227,27 +227,27 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow" ToolTip.Tip="{Binding TipA}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelA}"/>
-                                    <Line Classes="maskleg" Stroke="#E67E22"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchA}"/>
                                 </StackPanel>
                                 <TextBox Grid.Column="1" Classes="num" Text="{Binding FaText}"
                                          ToolTip.Tip="{Binding TipA}"/>
                                 <StackPanel Grid.Row="1" Classes="lblrow" ToolTip.Tip="{Binding TipB}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelB}"/>
-                                    <Line Classes="maskleg" Stroke="#2980B9"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchB}"/>
                                 </StackPanel>
                                 <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding FbText}"
                                          ToolTip.Tip="{Binding TipB}"/>
                                 <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding ShowC}"
                                             ToolTip.Tip="{Binding TipC}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelC}"/>
-                                    <Line Classes="maskleg" Stroke="#27AE60"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchC}"/>
                                 </StackPanel>
                                 <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding FcText}"
                                          IsVisible="{Binding ShowC}" ToolTip.Tip="{Binding TipC}"/>
                                 <StackPanel Grid.Row="3" Classes="lblrow" IsVisible="{Binding ShowD}"
                                             ToolTip.Tip="{Binding TipD}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelD}"/>
-                                    <Line Classes="maskleg" Stroke="#8E44AD"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchD}"/>
                                 </StackPanel>
                                 <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding FdText}"
                                          IsVisible="{Binding ShowD}" ToolTip.Tip="{Binding TipD}"/>

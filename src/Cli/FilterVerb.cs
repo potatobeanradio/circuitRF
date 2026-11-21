@@ -131,7 +131,8 @@ public static class FilterVerb
           --first series|parallel
           --fc 1GHz          cutoff for lowpass and highpass (also --fp)
           --f1 0.8GHz --f2 1.25GHz
-                             passband edges for a bandpass, stopband edges for a bandstop
+                             the passband edges; a bandstop rejects between them
+                             (inverse Chebyshev: the edges where --as is first met)
           --rs 50 --rl 50    ohms. The ladder's load is the family's own ratio when that differs.
           --ap 0.1           passband ripple, dB, for Chebyshev and elliptic
           --as 40            stopband floor, dB, for inverse Chebyshev and elliptic

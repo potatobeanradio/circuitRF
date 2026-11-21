@@ -466,7 +466,7 @@ band follows <code>Form</code> — see <a href="dynamic-symbols.html#form">Dynam
 
 **`Order` is the PROTOTYPE order.** The bandpass and bandstop transformations double the degree, so
 `Order = 3` as a bandpass or a bandstop is a **6th-degree network**. Both conventions exist in the
-wild; this one is the prototype's. On a bandstop, `F1` and `F2` are the stopband edges. For the three all-pole families the far stopband falls at 20 × `Order` dB per decade;
+wild; this one is the prototype's. On a bandstop, `F1` and `F2` are the passband edges either side of the rejected band (for InvChebyshev, where `Astop` is first met). For the three all-pole families the far stopband falls at 20 × `Order` dB per decade;
 InvChebyshev and Elliptic put transmission zeros on the jω axis instead, which is what buys their
 sharp transition and why their stopbands **level off** at `Astop` rather than continuing to fall.
 

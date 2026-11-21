@@ -50,8 +50,15 @@ the existing optimizer's problem, on an E-series or on a part.
 | Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. The unit sits on the row. |
 
 The cutoff the ladder is built at is Fp for a lowpass or highpass, the passband edges for a
-bandpass, and the stopband edges for a bandstop. Fs on a lowpass or highpass is the mask: where
-you want the stopband floor, not a second cutoff.
+bandpass, and Fp1 and Fp2 for a bandstop — the passband edges either side of the rejected band.
+Inverse Chebyshev is the one exception: its edge is where As is first met, so it is built at Fs
+(Fs1 and Fs2 on a band form). The other edges are the mask: where you want the stopband floor, not
+a second cutoff.
+
+The plot draws that mask by role. Passband edges and the −Ap limit are blue, stopband edges and
+the −As limit are red, and each limit spans only its own band, with the side a trace must not
+enter lightly tinted. A specification the window refuses (an edge on the wrong side of another)
+still draws its mask, so the mistake is visible.
 
 Gaussian is scaled so the cutoff is the −3.01 dB point at every order. Bessel is chosen for its
 group delay, which is the second plot.

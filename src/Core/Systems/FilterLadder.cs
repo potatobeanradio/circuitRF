@@ -131,7 +131,11 @@ public static partial class FilterLadder
     /// <paramref name="sourceOhms"/> and to the cutoff <paramref name="form"/> names.
     /// </summary>
     /// <param name="fcHz">Cutoff for lowpass and highpass.</param>
-    /// <param name="f1Hz">Lower cutoff edge for bandpass (passband) and bandstop (stopband).</param>
+    /// <param name="f1Hz">
+    /// Lower band edge for bandpass and bandstop: where the prototype's Ω = 1 lands — the edge of
+    /// the passband at the ripple (3.01 dB for Butterworth), or of the stopband at Astop for
+    /// inverse Chebyshev. On a bandstop it bounds the rejected band from outside.
+    /// </param>
     /// <param name="f2Hz">Upper cutoff edge.</param>
     /// <param name="rippleDb">Read by Chebyshev. Ignored by the other all-pole families.</param>
     /// <param name="first">Which arm comes first. Parallel is the dual of series.</param>
@@ -192,8 +196,12 @@ public static partial class FilterLadder
         // Parallel-first is the same g-vector with the arms swapped: an element that was a series
         // inductor becomes a shunt capacitor of the same normalised value. For a symmetric prototype
         // that is the dual and the response is unchanged. For an asymmetric one (an even-order
-        // Chebyshev) it is the other canonical ladder, and its load is still the prototype's ratio.
+        // Chebyshev) it is the other canonical ladder, terminated in the reciprocal ratio.
         bool shuntFirst = first == FilterFirstElement.Parallel;
+        // The dual exchanges impedance and admittance all the way along, the termination
+        // included, so its load is the RECIPROCAL ratio. The DC mismatch 4r/(1+r)² is the same for
+        // r and 1/r, which is how the wrong one went unnoticed: only the ripple edge shows it.
+        if (shuntFirst) loadNorm = 1.0 / loadNorm;
         double rs = sourceOhms;
         double rl = loadNorm * sourceOhms;
 

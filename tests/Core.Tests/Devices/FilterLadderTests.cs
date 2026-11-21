@@ -237,4 +237,25 @@ public class FilterLadderTests
         double w = 1.0 / Math.Sqrt(l * c);
         Assert.True(Math.Abs(w - w0) / w0 < 1e-6, $"resonant at {w:G6}, centre {w0:G6}");
     }
+
+    /// <summary>
+    /// An even-order Chebyshev is the same response series-first or parallel-first: the ripple at
+    /// the cutoff, and the dual's load is the reciprocal ratio. It used to keep the series-first
+    /// ratio and read 3.1 dB at a 0.5 dB edge.
+    /// </summary>
+    [Theory]
+    [InlineData(2)] [InlineData(4)] [InlineData(6)]
+    public void AParallelFirstEvenChebyshevIsTerminatedInTheReciprocalRatio(int n)
+    {
+        var series = FilterLadder.Synthesize(FilterResponse.Chebyshev, NetworkForm.Lowpass, n,
+                                             1e9, 0, 0, 0.5, 50, FilterFirstElement.Series).Realization!;
+        var shunt = FilterLadder.Synthesize(FilterResponse.Chebyshev, NetworkForm.Lowpass, n,
+                                            1e9, 0, 0, 0.5, 50, FilterFirstElement.Parallel).Realization!;
+        Assert.Equal(50.0 / series.LoadOhms, shunt.LoadOhms / 50.0, 9);
+        foreach (var r in new[] { series, shunt })
+        {
+            double db = -20 * Math.Log10(FilterEllipticHighOrderTests.LadderS21(r, 2 * Math.PI * 1e9).Magnitude);
+            Assert.Equal(0.5, db, 3);   // the closed-form g-values' own precision
+        }
+    }
 }

@@ -41529,3 +41529,29 @@ one part unlabelled, rails running between arms).
   orders 3–15, both first elements. `EveryLabelIsClearAndBesideItsOwnGlyph` measures label text with
   the pane's own font. At the Match pitch a shunt label beside its symbol touched the next column's
   label; the filter drawing uses a wider column step and always puts shunt labels beside.
+
+## Filter Designer — a bandstop never had an order, and the mask drew nothing on a refusal (2026-11-21)
+
+Reported: choosing Bandstop said the mask edges did not form a transition.
+
+- **The bandstop order mapping was turned inside out.** `FilterOrder.PrototypeStop` took the centre
+  and width from the STOP edges and mapped the PASS edges, which always lands below 1 — so no
+  bandstop mask ever had a minimum order. The prototype's Ω = 1 is the passband edge; the stop edges
+  map outward from the pass edges' centre, as the bandpass case does.
+- **The ladder was built at the wrong edges.** `TrySpec` passed Fs1/Fs2 as a bandstop's F1/F2, so
+  Ap sat at the stop edges. It is Fp1/Fp2 (inverse Chebyshev: Fs1/Fs2, its Ω = 1 being the Astop
+  edge — now also on a bandpass, which built inverse Chebyshev at Fp1/Fp2).
+- **Apply and Seed disagreed about which box an edge lives in.** Apply wrote F1/F2 from box
+  positions and Seed read F1/F2 into the first two boxes whatever the form (a bandpass's passband
+  landed in its Fs1/Fp1 boxes). Both now go through `FilterAssignments` / `SeedEdges`, the edges the
+  ladder was built from.
+- **Two older defects the bandstop gate exposed:** the Butterworth minimum order divided by a stray
+  2 (Ap 3 dB / As 40 dB / Fs = 2·Fp gave 4, which reaches 24 dB; it is 7), and a parallel-first
+  even-order Chebyshev was terminated in the series-first ratio — right at DC, where r and 1/r give
+  the same mismatch, and 3.1 dB at a 0.5 dB ripple edge. The dual's load is the reciprocal.
+- **The mask is drawn by role and survives a refusal.** Pass edges and −Ap in one colour, stop
+  edges and −As in another, each limit spanning only its own band with the forbidden side tinted;
+  a refused specification still frames and draws its mask. Limit labels are right-aligned at the
+  segment's end so they never sit on an edge label.
+- **Still open:** the minimum order is sized from Ap while the ladder is built at the separate
+  Ripple box; with Ripple below Ap a Chebyshev or elliptic misses As at Fs.
