@@ -121,6 +121,62 @@
         </Style>
     </Window.Styles>
 
+    <DockPanel>
+    <!-- ── Toolbar (owner, 2026-11-21): the window's actions, as icons in the Match Designer's
+         toolbar style — a bare 16 px glyph in a Padding="6,3" button, its name in the tooltip.
+         Design first; then what the design does to a schematic; then the file. -->
+    <Border DockPanel.Dock="Top" Padding="6,4"
+            BorderThickness="0,0,0,1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+        <StackPanel Orientation="Horizontal" Spacing="4">
+            <Button Name="DesignButton" Padding="6,3" Command="{Binding DesignCommand}"
+                    ToolTip.Tip="Design — rebuild the ladder and redraw the response">
+                <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+            </Button>
+            <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                    Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+            <Button Name="ApplyButton" Padding="6,3" Click="OnApply" IsVisible="{Binding CanApply}"
+                    ToolTip.Tip="Apply to Filter — write this specification and the Designer's settings onto the Filter">
+                <mi:MaterialIcon Kind="CheckBold" Width="16" Height="16"/>
+            </Button>
+            <Button Name="PlaceFilterButton" Padding="6,3" Click="OnPlaceFilter" IsEnabled="{Binding CanPlace}"
+                    ToolTip.ShowOnDisabled="True">
+                <ToolTip.Tip>
+                    <TextBlock MaxWidth="360" TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold" Text="Place filter — the LC ladder, ends labelled IN and OUT"/>
+                        <LineBreak/>
+                        <Run Text="{Binding PlaceTip}"/>
+                    </TextBlock>
+                </ToolTip.Tip>
+                <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
+            </Button>
+            <Button Name="PlaceComponentButton" Padding="6,3" Click="OnPlaceComponent" IsEnabled="{Binding CanPlace}"
+                    ToolTip.ShowOnDisabled="True">
+                <ToolTip.Tip>
+                    <TextBlock MaxWidth="360" TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold" Text="Place component — one Filter block carrying this design"/>
+                        <LineBreak/>
+                        <Run Text="{Binding PlaceTip}"/>
+                    </TextBlock>
+                </ToolTip.Tip>
+                <mi:MaterialIcon Kind="PackageVariantClosed" Width="16" Height="16"/>
+            </Button>
+            <!-- Lit = Place filter replaces the Filter this window was opened on. A Button bound to
+                 Classes.ToolActive, as the Match Designer's panel lamps are: the view model owns the
+                 state and the class follows it. -->
+            <Button Name="ReplaceButton" Padding="6,3" Command="{Binding ToggleReplaceCommand}"
+                    Classes.ToolActive="{Binding ReplaceTarget}" IsVisible="{Binding CanReplaceTarget}"
+                    ToolTip.Tip="Replace this Filter — when lit, Place filter removes the Filter block and puts the ladder in its place, on the block's nets, as one undo step">
+                <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
+            </Button>
+            <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                    Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+            <Button Name="SaveNetlistButton" Padding="6,3" Click="OnSave"
+                    ToolTip.Tip="Save netlist… — the ladder as a .cnl, at the values the table shows">
+                <mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/>
+            </Button>
+        </StackPanel>
+    </Border>
+
     <Grid ColumnDefinitions="292,*" RowDefinitions="*,*">
 
         <!-- ── Specification ─────────────────────────────────────────────── -->
@@ -193,6 +249,7 @@
                                     <TextBlock Classes="lbl" Text="Ripple, dB"/>
                                 </StackPanel>
                                 <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding RippleText}"
+                                         IsEnabled="{Binding RippleRelevant}" ToolTip.ShowOnDisabled="True"
                                          ToolTip.Tip="{Binding TipRipple}"/>
                                 <StackPanel Grid.Row="4" Classes="lblrow" ToolTip.Tip="{Binding TipAs}">
                                     <TextBlock Classes="lbl" Text="As, dB"/>
@@ -328,19 +385,6 @@
                         </StackPanel>
                     </Border>
 
-                    <WrapPanel Orientation="Horizontal" Margin="0,2,0,0" ItemSpacing="6" LineSpacing="4">
-                        <Button Content="Design" Command="{Binding DesignCommand}"/>
-                        <Button Content="Apply to Filter" Click="OnApply" IsVisible="{Binding CanApply}"
-                                ToolTip.Tip="Writes this specification and the Designer's settings onto the Filter."/>
-                        <Button Content="Place filter" Click="OnPlaceFilter" IsEnabled="{Binding CanPlace}"
-                                ToolTip.Tip="{Binding PlaceTip}" ToolTip.ShowOnDisabled="True"/>
-                        <Button Content="Place component" Click="OnPlaceComponent" IsEnabled="{Binding CanPlace}"
-                                ToolTip.Tip="{Binding PlaceTip}" ToolTip.ShowOnDisabled="True"/>
-                        <Button Content="Save netlist…" Click="OnSave"/>
-                    </WrapPanel>
-                    <CheckBox Content="Place filter replaces this Filter" IsChecked="{Binding ReplaceTarget}"
-                              IsVisible="{Binding CanReplaceTarget}" FontSize="11"
-                              ToolTip.Tip="The ladder takes the block's place as one undo step: its ends are labelled with the nets the block's pins were on, and the block is removed."/>
                 </StackPanel>
             </ScrollViewer>
         </Border>
@@ -465,10 +509,6 @@
                                   ToolTip.Tip="Phase and group delay against frequency">
                         <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
                     </ToggleButton>
-                    <ToggleButton Classes="plotpick" IsChecked="{Binding ShowMaskLabels, Mode=TwoWay}"
-                                  ToolTip.Tip="Show Fs / Fp / Ap / As names beside the mask lines">
-                        <mi:MaterialIcon Kind="FormatText" Width="16" Height="16"/>
-                    </ToggleButton>
                 </StackPanel>
                 <fv:FilterPlotLayout Grid.Row="1" ClipToBounds="True"
                                      ShowMagnitude="{Binding ShowMagnitude}"
@@ -489,4 +529,5 @@
             </Grid>
         </Border>
     </Grid>
+    </DockPanel>
 </Window>

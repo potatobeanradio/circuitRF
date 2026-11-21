@@ -970,7 +970,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             if (comp.Symbol == SymbolKind.ComposedFET) AdoptComposedFetSwitches(comp);
 
             var built = new List<ParameterRowViewModel>();
-            foreach (var param in comp.Parameters)
+            foreach (var param in comp.Symbol == SymbolKind.Filter ? FilterRowParameters(comp) : comp.Parameters)
             {
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
 
@@ -2277,7 +2277,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         // SnP uses a custom panel; generic rows are always empty.
         if (comp.Symbol == SymbolKind.Snp) return [];
-        return comp.Parameters
+        return (comp.Symbol == SymbolKind.Filter ? FilterRowParameters(comp) : comp.Parameters)
             .Where(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name))
             // A SpiceModel's panel owns File/Name/PinConfig/Pitch, so they are not rows and must not
             // be counted as ones here — this list IS the comparison OnModelChanged rebuilds on, and

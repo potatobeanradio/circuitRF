@@ -149,6 +149,17 @@ public static class FilterPlacement
         }
     }
 
+    /// <summary>
+    /// True when <paramref name="filter"/> carries a Filter Designer design: Apply to Filter and
+    /// Place component always write <c>Ap</c> and the mask edges, and nothing else writes them
+    /// (their rows are hidden on a Filter without a design). A designed Filter's rows are locked;
+    /// it changes through Synthesize….
+    /// </summary>
+    public static bool IsDesigned(EditableComponent filter) =>
+        filter.Symbol == SymbolKind.Filter
+        && filter.Parameters.Any(p => p.Name is "Ap" or "Fp" or "Fs" or "Fp1" or "Fs1" or "Fs2" or "Fp2"
+                                      && !string.IsNullOrWhiteSpace(p.Expression));
+
     /// <summary>The registry's default Filter parameters, as editable ones.</summary>
     public static List<EditableParameter> DefaultParameters() =>
         ComponentTypeRegistry.DefaultParameters(SymbolKind.Filter, 0)

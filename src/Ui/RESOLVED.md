@@ -41594,3 +41594,24 @@ Synthesize… entry on the Filter, and the Filter's fields to carry every Design
   (`Gate10_Cli_…`, `Gate14_Cli_…`, `TheVerb_AsAProcess_…`) fail on this machine in isolation:
   `src/Cli/bin/Debug/net10.0/runtimes/` holds osx and win folders only, so `libSkiaSharp.so` is not
   found.
+
+## Filter Designer — a toolbar, and a designed Filter is locked (2026-11-21)
+
+Asked for: the window's buttons on a toolbar, the mask-label toggle removed, irrelevant controls
+disabled, and a Filter that carries a design edited only through Synthesize….
+
+- **A greyed PICKER was still live.** `SetDisabledByMode` greyed a row's text box and unit combo,
+  but the choice `ComboBox` bound only `IsVisible`, so a greyed `Form` or `Response` could still be
+  changed — nobody had noticed because the only greyed rows until now (the test pad's) are numbers.
+  It binds `ExpressionEnabled` now, and a locked row is also `SetExpressionReadOnly`, which is what
+  `CommitExpression` itself refuses on.
+- **Reordering rows must reorder the rebuild check too.** `OnModelChanged` compares the row names
+  with `VisibleParams` IN SEQUENCE; displaying a Filter in the Designer's order while
+  `VisibleParams` kept the model's order would rebuild every row on every edit. Both read
+  `FilterRowParameters`.
+- **"Designed" needs a marker nothing else writes.** It is `Ap` or a mask edge being non-blank, and
+  those rows are hidden on a Filter without a design, so typing one in cannot lock a block by
+  accident.
+- **Firewall gate:** the two Gaussian-prototype invariants in `FilterPrototype.cs` were allow-listed
+  beside the file's existing invariant lines — a factorisation that cannot come back empty in
+  practice, not a message a user acts on.

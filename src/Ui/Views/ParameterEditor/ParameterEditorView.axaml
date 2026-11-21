@@ -655,6 +655,7 @@
                                           ItemsSource="{Binding ChoiceOptions}"
                                           SelectedItem="{Binding SelectedChoice}"
                                           IsVisible="{Binding IsChoiceParam}"
+                                          IsEnabled="{Binding ExpressionEnabled}"
                                           FontSize="11"
                                           Padding="4,3"
                                           HorizontalAlignment="Stretch"

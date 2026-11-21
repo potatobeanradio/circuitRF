@@ -4712,8 +4712,10 @@ it in the properties) to open the Designer on it.</p>
 <p>The parameters from <code>Ap</code> on are the <strong>Designer's own settings</strong>: the mask it sized the order for, how
 it chose the order, how it built the ladder. Apply to Filter writes them so the Designer reopens on
 exactly what it applied. The block's response reads none of them, and none of them reaches the
-netlist, so a Filter simulates the same with or without them. In the properties, a row the chosen
-<code>Response</code> or <code>Form</code> does not read is greyed, with the reason as its tooltip.</p>
+netlist, so a Filter simulates the same with or without them. They appear only on a Filter that
+carries a design, and such a Filter is <strong>locked</strong>: every field but <code>IL</code> is greyed, and a change goes
+through <strong>Synthesize…</strong>. On a Filter without a design, a row the chosen <code>Response</code> or <code>Form</code> does not
+read is greyed, with the reason as its tooltip. The rows are listed in the Designer's own order.</p>
 <p>Tell a filter from a matching network by its type label and its instance name — <code>FLT1</code> against <code>MN1</code>
 — the same way the five FET laws, which also share one glyph, are told apart. <code>Order</code> is the
 <strong>prototype</strong> order, so a 3rd-order bandpass is a 6th-degree network.</p>

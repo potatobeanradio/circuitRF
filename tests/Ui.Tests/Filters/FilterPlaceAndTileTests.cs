@@ -120,9 +120,7 @@ public class FilterPlaceAndTileTests
     [InlineData("Chebyshev", "Bandstop", "Fc", true)]
     [InlineData("Chebyshev", "Bandstop", "F1", false)]
     [InlineData("Chebyshev", "Highpass", "F2", true)]
-    [InlineData("Chebyshev", "Highpass", "Fs", false)]
-    [InlineData("Chebyshev", "Highpass", "Fs1", true)]
-    [InlineData("Chebyshev", "Bandpass", "Fp", true)]
+    [InlineData("Chebyshev", "Highpass", "Fc", false)]
     [InlineData("Chebyshev", "Bandpass", "IL", false)]
     public void ARowTheResponseOrFormDoesNotReadIsGreyed(string response, string form, string row, bool greyed)
     {
@@ -136,6 +134,100 @@ public class FilterPlaceAndTileTests
         var r = editor.Rows.Single(x => x.Name == row);
         Assert.Equal(!greyed, r.ExpressionEnabled);
         if (greyed) Assert.False(string.IsNullOrEmpty(r.DisabledReason));
+    }
+
+    private static ParameterEditorViewModel EditorOn(EditableComponent comp, out SchematicViewModel vm)
+    {
+        var model = new SchematicEditModel();
+        model.Components.Add(comp);
+        vm = new SchematicViewModel(model);
+        var editor = new ParameterEditorViewModel();
+        editor.SetTargetDirect(vm, comp);
+        return editor;
+    }
+
+    private static async Task<EditableComponent> DesignedFilter()
+    {
+        var designer = await Designed(FilterResponse.Chebyshev, NetworkForm.Bandpass);
+        var comp = NewFilter();
+        comp.Parameters.Clear();
+        comp.Parameters.AddRange(designer.AppliedParameters(FilterPlacement.DefaultParameters())!);
+        return comp;
+    }
+
+    [Fact]
+    public void APlainFilterShowsNoDesignerRows_InTheDesignersOrder()
+    {
+        var editor = EditorOn(NewFilter(), out _);
+        Assert.False(FilterPlacement.IsDesigned(NewFilter()));
+        Assert.DoesNotContain(editor.Rows, r => ComponentTypeRegistry.IsFilterDesignerParameter(SymbolKind.Filter, r.Name));
+        Assert.Equal(["Zin", "Zout", "Order", "Response", "Form", "Ripple", "Astop", "EllipticType", "Fc", "F1", "F2", "IL"],
+                     editor.Rows.Select(r => r.Name));
+        Assert.All(editor.Rows.Where(r => r.Name is "Zin" or "Order" or "Form"), r => Assert.True(r.ExpressionEnabled));
+    }
+
+    /// <summary>
+    /// A Filter carrying a Designer design is locked: every row but IL is greyed and read-only, a
+    /// picker included, so the only way to change it is Synthesize….
+    /// </summary>
+    [Fact]
+    public async Task ADesignedFilterLocksEveryRowButIL()
+    {
+        var comp = await DesignedFilter();
+        Assert.True(FilterPlacement.IsDesigned(comp));
+        var editor = EditorOn(comp, out var vm);
+        Assert.Contains(editor.Rows, r => r.Name == "Ap");
+        foreach (var row in editor.Rows)
+        {
+            if (row.Name == "IL") { Assert.True(row.ExpressionEnabled); continue; }
+            Assert.False(row.ExpressionEnabled, row.Name);
+            Assert.True(row.ExpressionReadOnly, row.Name);
+            Assert.StartsWith("This Filter was designed", row.DisabledReason);
+        }
+
+        // The picker and the text box write nothing.
+        int before = vm.UndoRedo.Entries.Count();
+        var form = editor.Rows.Single(r => r.Name == "Form");
+        form.SelectedChoice = "Lowpass";
+        var order = editor.Rows.Single(r => r.Name == "Order");
+        order.StagedExpression = "9";
+        order.CommitExpression();
+        Assert.Equal(before, vm.UndoRedo.Entries.Count());
+        Assert.Equal("Bandpass", comp.Parameters.Single(p => p.Name == "Form").Expression);
+
+        // The view greys the picker too, not only the text box.
+        string xaml = File.ReadAllText(Source("src", "Ui", "Views", "ParameterEditor", "ParameterEditorView.axaml"));
+        Assert.Matches(@"ItemsSource=""\{Binding ChoiceOptions\}""\s+SelectedItem=""\{Binding SelectedChoice\}""\s+IsVisible=""\{Binding IsChoiceParam\}""\s+IsEnabled=""\{Binding ExpressionEnabled\}""", xaml);
+    }
+
+    [Theory]
+    [InlineData(FilterResponse.Butterworth, false)]
+    [InlineData(FilterResponse.Chebyshev, true)]
+    [InlineData(FilterResponse.InvChebyshev, false)]
+    [InlineData(FilterResponse.Elliptic, true)]
+    [InlineData(FilterResponse.Bessel, false)]
+    public void TheDesignersRippleBoxIsEnabledOnlyWhereTheResponseReadsIt(FilterResponse response, bool enabled)
+    {
+        var vm = new FilterDesignerViewModel { Response = FilterResponse.Gaussian };
+        vm.Response = response;
+        Assert.Equal(enabled, vm.RippleRelevant);
+    }
+
+    [Fact]
+    public void TheDesignersActionsAreOnItsToolbar_AndTheMaskLabelToggleIsGone()
+    {
+        string xaml = File.ReadAllText(Source("src", "Ui", "Views", "Filters", "FilterDesignerWindow.axaml"));
+        int bar = xaml.IndexOf("<Border DockPanel.Dock=\"Top\"", StringComparison.Ordinal);
+        Assert.True(bar >= 0);
+        string toolbar = xaml[bar..xaml.IndexOf("</Border>", xaml.IndexOf("SaveNetlistButton", bar, StringComparison.Ordinal), StringComparison.Ordinal)];
+        foreach (string name in (string[])["DesignButton", "ApplyButton", "PlaceFilterButton", "PlaceComponentButton", "ReplaceButton", "SaveNetlistButton"])
+        {
+            Assert.Contains($"Name=\"{name}\"", toolbar);
+            Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(xaml, $"Name=\"{name}\"").Count);
+        }
+        Assert.DoesNotContain("Content=\"Place filter\"", xaml);
+        Assert.DoesNotContain("ShowMaskLabels", xaml);
+        Assert.DoesNotContain("FormatText", xaml);
     }
 
     // ── §3.3: the Designer's settings on the block, invisible downstream ──

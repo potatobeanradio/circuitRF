@@ -28,6 +28,10 @@ prototype and shows the response on the same plots a Data Display uses. To open 
 same Filter brings that window forward. **Apply to Filter** writes the design back onto the ideal
 block, and **Place filter** puts the ladder itself on the schematic.
 
+The window's actions are on its toolbar, as icons with their names in the tooltips: **Design**,
+**Apply to Filter** (only when opened on a Filter), **Place filter**, **Place component**,
+**Replace this Filter** (likewise) and **Save netlist…**.
+
 The ideal Filter and the ladder answer different questions. The block is a rational scattering
 matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
 that: its load is the ratio the family produces (1 for Butterworth, a particular ratio for an
@@ -48,7 +52,7 @@ the existing optimizer's problem, on an E-series or on a part.
 | Type | In Shape, for Elliptic only. **Auto** (a at odd order, c at even order), **a** (classical), **b** (even order, unequal terminations), **c** (even order, equal terminations). |
 | Form | Lowpass, highpass, bandpass, bandstop. |
 | Order | **Minimum** is the smallest prototype order that meets Ap, As and the mask edges. **Specify** types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder). |
-| Ap, As | Passband and stopband attenuation, in dB. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording. |
+| Ap, Ripple, As | Passband attenuation, synthesis ripple and stopband attenuation, in dB. Ripple is enabled only for Chebyshev and elliptic, the two families that have one; the others build at a fixed ripple. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording. |
 | Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. The unit sits on the row. |
 
 The cutoff the ladder is built at is Fp for a lowpass or highpass, the passband edges for a
@@ -91,7 +95,7 @@ series resonator on top, its inductor on the line, its capacitor below; and a pa
 ground is two adjacent legs. Every label sits beside its own symbol. **Copy** puts the same drawing
 on the clipboard, and pasted into a schematic it extracts to exactly the ladder in the table.
 
-**Design** and **Redraw** both rebuild the ladder and the curves. Every edit redesigns after a
+**Design** on the toolbar rebuilds the ladder and the curves. Every edit redesigns after a
 short pause, off the window's thread, so typing an order of 25 does not freeze the window; the
 status line says *Designing…* until the new ladder is drawn. A design whose specification has not
 changed (a new frequency or impedance level on the same response) is reused, not resynthesised.
@@ -124,6 +128,12 @@ value series and the library series and parts. **Synthesize…** on that Filter 
 window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
 because the block has no elements.
 
+**A Filter that carries a design is locked.** Its properties and its parameter dialog show the same
+fields the window does, in the window's order, but greyed: every change goes through
+**Synthesize…** and Apply, so the block never drifts from the design behind it. `IL` stays editable,
+because the window does not set it. A Filter placed from the palette carries no design; it shows
+only the block's own fields and is edited directly.
+
 **Place filter** puts the realised ladder, at the values the table shows, on the schematic. It has no
 terminations: each end is a short wire with a net label, `IN` on port 1 and `OUT` on port 2 (`IN2` and
 `OUT2` onward when the schematic already has those names), ready to be wired into the design. The
@@ -135,7 +145,7 @@ Both go into the schematic the window was opened on. A window opened from Tools 
 places into the schematic you last worked in, and both buttons are disabled when there is no
 schematic or no design; the tooltip says which.
 
-When the window was opened on a Filter, the **Place filter replaces this Filter** checkbox turns
+When the window was opened on a Filter, the **Replace this Filter** toolbar button, while lit, turns
 Place filter into a replacement. The block is removed, its two pins keep their nets under labels
 (the net's own name when it already has one), and the ladder is placed below where the block was,
 with its ends on the same names. It is one undo step, and the ladder arrives selected so you can

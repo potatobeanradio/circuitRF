@@ -137,6 +137,17 @@ step, and undo reinserts the block at its own index so the sheet saves byte for 
 Filter only (`SchematicViewModel.SynthesizeTarget`). Both call `FilterDesignerWindow.Show`, which
 keeps one window per Filter (`FilterDesignerWindows<T>`) and brings an open one forward.
 
+**A designed Filter is locked** (owner decision, 2026-11-21). `FilterPlacement.IsDesigned` is true
+when `Ap` or a mask edge is non-blank, which only Apply / Place component write. Such a Filter's
+rows are all read-only and greyed except `IL` (the Designer does not write it), pickers included, so
+a change goes through Synthesize…. A Filter without a design hides the Designer rows. Rows follow the
+window's card order (`ParameterEditorViewModel.FilterRowOrder`), and the same ordered list is what
+the editor's rebuild check compares, so a reorder does not rebuild on every edit.
+
+**The window's actions are a toolbar** (Design, Apply, Place filter, Place component, the Replace
+toggle, Save netlist), icons in the Match Designer's style. The mask-label toggle is gone; the
+labels are always drawn. The Ripple box is disabled unless the response is Chebyshev or elliptic.
+
 **The tile.** `Form` offers Bandstop and the glyph strikes the middle wave; a test holds that a
 `SetParametersCommand` to Bandstop redraws it. `EllipticType`, `OrderMode`, `First` and `Values` are
 pickers. Rows the `Response` or `Form` does not read are greyed with a reason

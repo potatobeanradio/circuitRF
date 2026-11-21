@@ -141,9 +141,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>Phase / group-delay plot is on. Off at startup — the response plot fills the pane alone.</summary>
     [ObservableProperty] private bool _showPhase;
 
-    /// <summary>Fs/Fp/Ap/As names drawn beside the mask lines on the response plot.</summary>
-    [ObservableProperty] private bool _showMaskLabels = true;
-
     /// <summary>The realization, one row per element.</summary>
     public ObservableCollection<FilterElementRow> Elements { get; } = [];
 
@@ -171,6 +168,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private FilterFirstElement _first = FilterFirstElement.Parallel;
     [ObservableProperty] private EllipticTypeChoice? _ellipticTypeChoice;
     [ObservableProperty] private bool _isElliptic;
+
+    /// <summary>
+    /// True when the response reads the Ripple box — Chebyshev and Elliptic. The other families
+    /// build at a fixed internal ripple, so the box is disabled rather than silently ignored.
+    /// </summary>
+    [ObservableProperty] private bool _rippleRelevant;
     [ObservableProperty] private FilterSeriesKind _series = FilterSeriesKind.Exact;
     [ObservableProperty] private FilterOrderMode _orderMode = FilterOrderMode.Minimum;
     [ObservableProperty] private string _unit = "GHz";
@@ -288,6 +291,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>Whether Place filter replaces the Filter the window was opened on (phase 2 of FD-P).</summary>
     [ObservableProperty] private bool _replaceTarget;
 
+    /// <summary>The toolbar's Replace toggle.</summary>
+    [RelayCommand]
+    private void ToggleReplace() => ReplaceTarget = CanReplaceTarget && !ReplaceTarget;
+
     /// <summary>True when the window was opened on a placed Filter, so Place filter can replace it.</summary>
     public bool CanReplaceTarget => Target is { Symbol: SymbolKind.Filter } && Schematic is not null;
 
@@ -398,6 +405,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         OrderEditable = OrderMode == FilterOrderMode.Specify
                         || value is FilterResponse.Bessel or FilterResponse.Gaussian;
         IsElliptic = value == FilterResponse.Elliptic;
+        RippleRelevant = value is FilterResponse.Chebyshev or FilterResponse.Elliptic;
         Design();
     }
 
@@ -1412,7 +1420,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 PhasePlot.Traces.Add(delay);
         }
 
-        MagnitudeMask.ShowLabels = ShowMaskLabels;
         MagnitudeMask.Lines = MaskLines(spec);
 
         MagnitudePlot.CustomTitleOn = true;
@@ -1421,12 +1428,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         PhasePlot.CustomTitleOn = true;
         PhasePlot.CustomTitle = "Phase and group delay";
         PhasePlot.Autoscale(force: true);
-        Announce();
-    }
-
-    partial void OnShowMaskLabelsChanged(bool value)
-    {
-        MagnitudeMask.ShowLabels = value;
         Announce();
     }
 
@@ -1505,7 +1506,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         double lo = hz.Min() / scale, hi = hz.Max() / scale;
         double pad = Math.Max(hi - lo, hi * 0.1) * 0.1;
         double depth = double.IsFinite(m.AsDb) ? m.AsDb + 20 : 60;
-        MagnitudeMask.ShowLabels = ShowMaskLabels;
         MagnitudeMask.Lines = MaskLinesFor(m, LabelA, LabelB, LabelC, LabelD);
         MagnitudePlot.Axes.Window = new PlotRect(Math.Max(0, lo - pad), -depth, hi - lo + 2 * pad, depth + 5);
         Announce();

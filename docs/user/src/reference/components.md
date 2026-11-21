@@ -2272,8 +2272,10 @@ it in the properties) to open the Designer on it.
 The parameters from `Ap` on are the **Designer's own settings**: the mask it sized the order for, how
 it chose the order, how it built the ladder. Apply to Filter writes them so the Designer reopens on
 exactly what it applied. The block's response reads none of them, and none of them reaches the
-netlist, so a Filter simulates the same with or without them. In the properties, a row the chosen
-`Response` or `Form` does not read is greyed, with the reason as its tooltip.
+netlist, so a Filter simulates the same with or without them. They appear only on a Filter that
+carries a design, and such a Filter is **locked**: every field but `IL` is greyed, and a change goes
+through **Synthesize…**. On a Filter without a design, a row the chosen `Response` or `Form` does not
+read is greyed, with the reason as its tooltip. The rows are listed in the Designer's own order.
 
 Tell a filter from a matching network by its type label and its instance name — `FLT1` against `MN1`
 — the same way the five FET laws, which also share one glyph, are told apart. `Order` is the
