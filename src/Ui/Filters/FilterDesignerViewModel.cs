@@ -27,20 +27,24 @@ public sealed record FilterResponseChoice(FilterResponse Value, string Label)
     public override string ToString() => Label;
 }
 
-/// <summary>Whether the order is the smallest that meets the mask, or a typed override.</summary>
+/// <summary>
+/// One parameter Apply to Filter writes: its name, its expression and, for a quantity whose unit
+/// the window chooses (the edges, Ap), that unit. Null leaves the parameter's unit as it is.
+/// </summary>
+public sealed record FilterAssignment(string Name, string Expression, string? Unit = null)
+{
+    /// <summary>Name and expression, for callers that do not need the unit.</summary>
+    public void Deconstruct(out string name, out string expression)
+    {
+        name = Name;
+        expression = Expression;
+    }
+}
+
 /// <summary>One row of the Elliptic type picker.</summary>
 public sealed record EllipticTypeChoice(EllipticType Value, string Label)
 {
     public override string ToString() => Label;
-}
-
-public enum FilterOrderMode
-{
-    /// <summary>The closed-form minimum for the family and the mask edges.</summary>
-    Minimum,
-
-    /// <summary>The order in the Order box.</summary>
-    Specify,
 }
 
 /// <summary>How the response plots pick their frequency span.</summary>
@@ -235,6 +239,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// re-synthesising the ladder.</summary>
     private Spec? _lastSpec;
     private FilterNetwork? _lastIdeal;
+
+    /// <summary>The ideal response of the last design, the curve the block reproduces.</summary>
+    internal FilterNetwork? LastIdeal => _lastIdeal;
     private double _lastRs;
     private double _lastRl;
     /// <summary>Ap — passband attenuation used for the order mask.</summary>
@@ -260,6 +267,112 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     /// <summary>True when a placed Filter can take Apply.</summary>
     public bool CanApply => Target is { Symbol: SymbolKind.Filter } && Schematic is not null;
+
+    /// <summary>
+    /// The schematic Place filter / Place component go into when the window was opened standalone
+    /// (Tools ▸ Filter Designer): the workspace's last active schematic, read when the button is
+    /// pressed, not when the window opened. Opened on a Filter, it is that Filter's schematic.
+    /// </summary>
+    public Func<global::CircuitRF.Ui.ViewModels.SchematicViewModel?>? SchematicProvider { get; set; }
+
+    /// <summary>Where a placement lands right now, or null when there is no schematic.</summary>
+    public global::CircuitRF.Ui.ViewModels.SchematicViewModel? PlacementSchematic =>
+        Schematic ?? SchematicProvider?.Invoke();
+
+    /// <summary>True when Place filter and Place component can run.</summary>
+    [ObservableProperty] private bool _canPlace;
+
+    /// <summary>Why they cannot, or what they do — the buttons' tooltip.</summary>
+    [ObservableProperty] private string _placeTip = "";
+
+    /// <summary>Whether Place filter replaces the Filter the window was opened on (phase 2 of FD-P).</summary>
+    [ObservableProperty] private bool _replaceTarget;
+
+    /// <summary>True when the window was opened on a placed Filter, so Place filter can replace it.</summary>
+    public bool CanReplaceTarget => Target is { Symbol: SymbolKind.Filter } && Schematic is not null;
+
+    /// <summary>
+    /// Re-reads whether a placement can run: after every design, and when the window is activated
+    /// (a schematic may have been opened or closed behind it).
+    /// </summary>
+    public void RefreshPlacement()
+    {
+        if (_lastSpec is null)
+        {
+            CanPlace = false;
+            PlaceTip = Status.Length > 0 ? Status : "There is no design to place.";
+        }
+        else if (PlacementSchematic is null)
+        {
+            CanPlace = false;
+            PlaceTip = "There is no schematic to place into. Open a schematic and try again.";
+        }
+        else
+        {
+            CanPlace = true;
+            PlaceTip = "Places the design on the schematic: it follows the pointer, a click puts it down, "
+                     + "Escape drops it.";
+        }
+    }
+
+    /// <summary>
+    /// Place filter: the realised ladder at the values the table shows, ending in two wire stubs
+    /// labelled IN and OUT (no terminations), armed as a paste ghost on the schematic. With
+    /// <see cref="ReplaceTarget"/> on a Filter the window was opened on, the ladder takes the
+    /// block's place instead (<see cref="ReplaceFilter"/>).
+    /// </summary>
+    /// <returns>What happened, for the status line.</returns>
+    public string PlaceFilter()
+    {
+        RefreshPlacement();
+        if (!CanPlace || PlacementSchematic is not { } schematic) return PlaceTip;
+        if (ReplaceTarget && CanReplaceTarget) return ReplaceFilter();
+        var (inName, outName) = FilterPlacement.EndNames(schematic.EditModel);
+        var fragment = FilterPlacement.LadderFragment(Ladder, inName, outName);
+        return schematic.ArmFragmentPlacement(fragment)
+            ? $"Click on the schematic to place the ladder. Its ends are the nets {inName} and {outName}."
+            : "There is no ladder to place.";
+    }
+
+    /// <summary>
+    /// Place component: one Filter block carrying this specification and every Designer setting —
+    /// written by <see cref="AppliedParameters"/>, the function Apply uses, so the two cannot disagree.
+    /// </summary>
+    public string PlaceComponent()
+    {
+        RefreshPlacement();
+        if (!CanPlace || PlacementSchematic is not { } schematic) return PlaceTip;
+        if (AppliedParameters(FilterPlacement.DefaultParameters()) is not { } parameters)
+            return "There is no design to place.";
+        return schematic.ArmFragmentPlacement(FilterPlacement.ComponentFragment(parameters))
+            ? "Click on the schematic to place the Filter."
+            : "There is no design to place.";
+    }
+
+    /// <summary>
+    /// Replaces the Filter the window was opened on with the ladder, as ONE undo step: the ladder
+    /// goes where the block was, its two ends wired to the block's two pins, and the block is
+    /// removed. Phase 2 of FD-P.
+    /// </summary>
+    public string ReplaceFilter()
+    {
+        if (Target is not { Symbol: SymbolKind.Filter } target || Schematic is not { } schematic)
+            return "The window was not opened on a placed Filter.";
+        if (!schematic.EditModel.Components.Contains(target))
+            return "The Filter this window was opened on is no longer on the schematic.";
+        if (Ladder.Elements.Count == 0) return "There is no ladder to place.";
+        var fragment = FilterPlacement.ReplacementFragment(schematic.EditModel, target, Ladder);
+        schematic.Execute(new global::CircuitRF.Ui.Commands.Schematic.FilterReplaceCommand(
+            schematic.EditModel, target, fragment, ids => schematic.Selection.SetAll(ids)));
+        Target = null;
+        Schematic = null;
+        OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(CanReplaceTarget));
+        ReplaceTarget = false;
+        SchematicProvider ??= () => schematic;
+        RefreshPlacement();
+        return $"Replaced {target.InstanceName} with the ladder. Undo puts the Filter back.";
+    }
 
     public FilterDesignerViewModel()
     {
@@ -406,6 +519,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             DesignInfo = "";
             ClearPlots();
             ShowMaskAlone();
+            RefreshPlacement();
             return;
         }
 
@@ -517,6 +631,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             Status = r.Status;
             DesignInfo = "";
             ClearPlots();
+            RefreshPlacement();
             return;
         }
 
@@ -541,6 +656,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                      (r.Real is { } rr ? $"\nLoad: {rr.LoadOhms:0.###} Ω" : "");
         Status = r.Status;
         BuildPlots(r.IdealSnp, r.LadderSnp, spec);
+        RefreshPlacement();
     }
 
     /// <summary>Indexes the workspace's vendor libraries into inductor and capacitor series.</summary>
@@ -563,49 +679,122 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         if (LibraryAvailable) Design();
     }
 
-    /// <summary>Reads a placed Filter's parameters into the boxes.</summary>
+    /// <summary>
+    /// Reads a placed Filter's parameters into the window: the block's own specification, and the
+    /// Designer settings Apply stores beside it (mask edges, Ap, order mode, first element, value
+    /// series and library picks). A Filter placed before those existed carries none of them, and
+    /// each falls back to what the window derived before: Ap from Ripple, the mask's other edges
+    /// from the cutoff, Specify for the order (the block's Order is what it is).
+    /// </summary>
     public void SeedFrom(EditableComponent component)
     {
-        string Expr(string name) =>
-            component.Parameters.FirstOrDefault(p => p.Name == name)?.Expression ?? "";
-        if (Enum.TryParse<FilterResponse>(Expr("Response"), out var response)) Response = response;
-        if (Enum.TryParse<NetworkForm>(Expr("Form"), out var form)) Form = form;
-        if (double.TryParse(Expr("Order"), NumberStyles.Float, CultureInfo.InvariantCulture, out double order))
+        EditableParameter? Param(string name) => component.Parameters.FirstOrDefault(p => p.Name == name);
+        string Expr(string name) => Param(name)?.Expression.Trim() ?? "";
+        static bool Num(string text, out double v) =>
+            double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
+
+        if (Enum.TryParse<FilterResponse>(Expr("Response"), true, out var response)) Response = response;
+        if (Enum.TryParse<NetworkForm>(Expr("Form"), true, out var form)) Form = form;
+        if (Num(Expr("Order"), out double order))
             OrderText = ((int)order).ToString(CultureInfo.InvariantCulture);
+        OrderMode = Enum.TryParse<FilterOrderMode>(Expr("OrderMode"), true, out var mode) ? mode : FilterOrderMode.Specify;
+        if (Enum.TryParse<FilterFirstElement>(Expr("First"), true, out var first)) First = first;
+        if (Enum.TryParse<FilterSeriesKind>(Expr("Values"), true, out var values)) Series = values;
+
+        // The boxes are filled in GHz and shown in the unit the edges were applied in.
+        string unit = UnitOf(Param(Form is NetworkForm.Lowpass or NetworkForm.Highpass ? "Fc" : "F1")?.Unit);
         Unit = "GHz";
-        double GhzOf(string name, double fallback)
+        double? Ghz(string name)
         {
-            var p = component.Parameters.FirstOrDefault(x => x.Name == name);
-            if (p is null || !double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
-                return fallback;
-            double scale = p.Unit.ToLowerInvariant() switch
-            {
-                "hz" => 1e-9, "khz" => 1e-6, "mhz" => 1e-3, "ghz" => 1, _ => 1,
-            };
-            return v * scale;
+            var p = Param(name);
+            if (p is null || !Num(p.Expression.Trim(), out double v) || !(v > 0)) return null;
+            return v / 1e9 * ScaleOf(UnitOf(p.Unit));
         }
-        double Ohms(string name, double fallback)
+        double Ohms(string name, double fallback) => Num(Expr(name), out double v) ? v : fallback;
+
+        // The stored mask edges go into their boxes first; SeedEdges then puts the block's own
+        // cutoff over the edge it names and keeps every stored edge that still sits on the right
+        // side of it.
+        string[] boxes = Form switch
         {
-            var p = component.Parameters.FirstOrDefault(x => x.Name == name);
-            if (p is null || !double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
-                return fallback;
-            return v;
-        }
-        SeedEdges(GhzOf("Fc", 1), GhzOf("F1", 0.9), GhzOf("F2", 1.1));
-        if (double.TryParse(Expr("Ripple"), NumberStyles.Float, CultureInfo.InvariantCulture, out double ripple))
-        {
+            NetworkForm.Lowpass  => ["Fp", "Fs", "", ""],
+            NetworkForm.Highpass => ["Fs", "Fp", "", ""],
+            NetworkForm.Bandstop => ["Fp1", "Fs1", "Fs2", "Fp2"],
+            _                    => ["Fs1", "Fp1", "Fp2", "Fs2"],
+        };
+        string? Stored(string name) => name.Length > 0 && Ghz(name) is { } g ? FormatEdge(g) : null;
+        FaText = Stored(boxes[0]) ?? FaText;
+        FbText = Stored(boxes[1]) ?? FbText;
+        FcText = Stored(boxes[2]) ?? FcText;
+        FdText = Stored(boxes[3]) ?? FdText;
+        SeedEdges(Ghz("Fc") ?? 1, Ghz("F1") ?? 0.9, Ghz("F2") ?? 1.1);
+
+        if (Num(Expr("Ripple"), out double ripple))
             RippleText = ripple.ToString("0.####", CultureInfo.InvariantCulture);
-            ApText = RippleText;
-        }
+        ApText = Num(Expr("Ap"), out double ap) ? ap.ToString("0.####", CultureInfo.InvariantCulture) : RippleText;
         if (EllipticTypes.TryParse(Expr("EllipticType"), out var et))
             EllipticTypeChoice = EllipticTypeChoices.First(c => c.Value == et);
-        if (double.TryParse(Expr("Astop"), NumberStyles.Float, CultureInfo.InvariantCulture, out double ast))
+        if (Num(Expr("Astop"), out double ast))
             AsText = ast.ToString("0.####", CultureInfo.InvariantCulture);
         SourceText = Ohms("Zin", 50).ToString("0.####", CultureInfo.InvariantCulture);
         LoadText = Ohms("Zout", 50).ToString("0.####", CultureInfo.InvariantCulture);
         _unitForEdges = Unit;
+        if (unit != Unit) Unit = unit;
+        SeedLibrary(Expr("LSeries"), Expr("CSeries"), Expr("Parts"));
         ApplyLabels();
     }
+
+    /// <summary>One of the window's units, from a parameter's unit; GHz for anything else.</summary>
+    private string UnitOf(string? unit) =>
+        Units.FirstOrDefault(u => string.Equals(u, unit?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? "GHz";
+
+    /// <summary>
+    /// Finds the library series and hand-picked parts a Filter names again, by loading this
+    /// workspace's libraries. A name that is not there any more is said, not silently dropped.
+    /// </summary>
+    private void SeedLibrary(string lSeries, string cSeries, string parts)
+    {
+        _partOverrides.Clear();
+        if (lSeries.Length == 0 && cSeries.Length == 0 && parts.Length == 0) return;
+        LoadLibraries();
+        var missing = new List<string>();
+        FilterLibrarySeries? Find(IEnumerable<FilterLibrarySeries> list, string key)
+        {
+            if (key.Length == 0) return null;
+            var s = list.FirstOrDefault(x => x.Key == key);
+            if (s is null) missing.Add(key);
+            return s;
+        }
+        InductorChoice = Find(InductorSeries, lSeries);
+        CapacitorChoice = Find(CapacitorSeries, cSeries);
+        foreach (var (element, key, partName) in ParseParts(parts))
+        {
+            var series = InductorSeries.Concat(CapacitorSeries).FirstOrDefault(x => x.Key == key);
+            var part = series?.Parts.FirstOrDefault(x => x.Name == partName);
+            if (series is null || part is null) { missing.Add($"{key}|{partName}"); continue; }
+            _partOverrides[element] = (series, part);
+        }
+        if (missing.Count > 0)
+            Status = "Not in this workspace's libraries: " + string.Join(", ", missing.Distinct()) + ".";
+        Design();
+    }
+
+    /// <summary>The Parts value as written: <c>element=library: series|part</c>, separated by ';'.</summary>
+    internal static IEnumerable<(string Element, string SeriesKey, string Part)> ParseParts(string text)
+    {
+        foreach (string item in text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int eq = item.IndexOf('=');
+            int bar = item.LastIndexOf('|');
+            if (eq <= 0 || bar <= eq + 1 || bar == item.Length - 1) continue;
+            yield return (item[..eq].Trim(), item[(eq + 1)..bar].Trim(), item[(bar + 1)..].Trim());
+        }
+    }
+
+    /// <summary>The hand-picked parts, written the way <see cref="ParseParts"/> reads them.</summary>
+    private string PartsText() =>
+        string.Join("; ", _partOverrides.OrderBy(o => o.Key, StringComparer.Ordinal)
+                                        .Select(o => $"{o.Key}={o.Value.Series.Key}|{o.Value.Part.Name}"));
 
     /// <summary>
     /// Puts a Filter's own cutoff (GHz) into the boxes that edge belongs to — the passband edges,
@@ -677,34 +866,94 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The parameters Apply to Filter writes, from the specification the last design was BUILT
-    /// from rather than from box positions — the cutoff edges are the ones the ladder used, so the
-    /// block and the ladder are the same response. Frequencies in GHz. Null before a design.
+    /// The parameters Apply to Filter and Place component write, from the specification the last
+    /// design was BUILT from rather than from box positions — the cutoff edges are the ones the
+    /// ladder used, so the block and the ladder are the same response — plus every Designer setting
+    /// the block keeps for the round trip. Frequencies in the window's unit. Null before a design.
     /// </summary>
-    public IReadOnlyList<(string Name, string Expression)>? FilterAssignments()
+    /// <remarks>
+    /// The mask edges of the OTHER forms are written blank, so a Filter that changed form does not
+    /// keep a stale pair the Designer would read back.
+    /// </remarks>
+    public IReadOnlyList<FilterAssignment>? FilterAssignments()
     {
         if (_lastSpec is not { } spec) return null;
-        string Ghz(double hz) => (hz / 1e9).ToString("0.#########", CultureInfo.InvariantCulture);
-        var list = new List<(string, string)>
+        double scale = UnitScale();
+        string F(double hz) => (hz / scale).ToString("0.#########", CultureInfo.InvariantCulture);
+        string u = Unit;
+        var list = new List<FilterAssignment>
         {
-            ("Response", spec.Response.ToString()),
-            ("Form", spec.Form.ToString()),
-            ("Order", spec.Order.ToString(CultureInfo.InvariantCulture)),
-            ("Ripple", RippleText.Trim()),
-            ("Astop", AsText.Trim()),
-            ("Zin", SourceText.Trim()),
-            ("Zout", LoadText.Trim()),
+            new("Response", spec.Response.ToString()),
+            new("Form", spec.Form.ToString()),
+            new("Order", spec.Order.ToString(CultureInfo.InvariantCulture)),
+            new("Ripple", RippleText.Trim()),
+            new("Astop", AsText.Trim()),
+            new("Zin", SourceText.Trim()),
+            new("Zout", LoadText.Trim()),
+            new("EllipticType", (EllipticTypeChoice?.Value ?? EllipticType.Auto).ToString()),
+            new("Ap", ApText.Trim(), "dB"),
+            new("OrderMode", OrderMode.ToString()),
+            new("First", spec.First.ToString()),
+            new("Values", Series.ToString()),
+            new("LSeries", InductorChoice?.Key ?? ""),
+            new("CSeries", CapacitorChoice?.Key ?? ""),
+            new("Parts", PartsText()),
         };
-        if (spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass)
-            list.Add(("Fc", Ghz(spec.FcHz)));
+        bool edge = spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass;
+        if (edge)
+            list.Add(new("Fc", F(spec.FcHz), u));
         else
         {
-            list.Add(("F1", Ghz(spec.F1Hz)));
-            list.Add(("F2", Ghz(spec.F2Hz)));
+            list.Add(new("F1", F(spec.F1Hz), u));
+            list.Add(new("F2", F(spec.F2Hz), u));
         }
-        if (spec.Response == FilterResponse.Elliptic)
-            list.Add(("EllipticType", spec.EllipticType.ToString()));
+        var (a, b, c, d) = (F(spec.EdgeAHz), F(spec.EdgeBHz), F(spec.EdgeCHz), F(spec.EdgeDHz));
+        var mask = spec.Form switch
+        {
+            NetworkForm.Lowpass  => new[] { ("Fp", a), ("Fs", b) },
+            NetworkForm.Highpass => [("Fs", a), ("Fp", b)],
+            NetworkForm.Bandstop => [("Fp1", a), ("Fs1", b), ("Fs2", c), ("Fp2", d)],
+            _                    => [("Fs1", a), ("Fp1", b), ("Fp2", c), ("Fs2", d)],
+        };
+        foreach (string name in (string[])["Fp", "Fs", "Fp1", "Fs1", "Fs2", "Fp2"])
+        {
+            string value = mask.FirstOrDefault(m => m.Item1 == name).Item2 ?? "";
+            list.Add(new(name, value, u));
+        }
         return list;
+    }
+
+    /// <summary>
+    /// <paramref name="current"/> with <see cref="FilterAssignments"/> written over it: each named
+    /// parameter takes the new expression (and its unit when one is stated), and one the Filter
+    /// does not carry yet — it was placed before that parameter existed — is added with the
+    /// registry's own unit and dimension. Null before a design.
+    /// </summary>
+    public List<EditableParameter>? AppliedParameters(IEnumerable<EditableParameter> current)
+    {
+        if (FilterAssignments() is not { } assignments) return null;
+        var updated = current.Select(p => p.Clone()).ToList();
+        var defaults = ComponentTypeRegistry.DefaultParameters(SymbolKind.Filter, 0);
+        foreach (var a in assignments)
+        {
+            var p = updated.FirstOrDefault(x => x.Name == a.Name);
+            if (p is null)
+            {
+                int k = defaults.ToList().FindIndex(x => x.Name == a.Name);
+                p = new EditableParameter { Name = a.Name };
+                if (k >= 0)
+                {
+                    var d = defaults[k];
+                    p.Unit = d.Unit;
+                    p.Dimension = d.Dimension;
+                    p.ShowOnSchematic = d.ShowOnSchematic;
+                }
+                updated.Add(p);
+            }
+            p.Expression = a.Expression;
+            if (a.Unit is { } unit) p.Unit = unit;
+        }
+        return updated;
     }
 
     /// <summary>

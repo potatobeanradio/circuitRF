@@ -2262,9 +2262,18 @@ following the `Form` parameter:
 | `Highpass` | the bottom two | the highest |
 | `Bandstop` | the middle | the lowest and the highest |
 
+{{ui: filter-form-glyphs}}
+
 The [Filter Designer](filter-designer.html) builds the LC ladder for every family — elliptic of any
 practical order and type included — and can snap each value onto a standard series or a library
-part. This block stays the ideal response.
+part. This block stays the ideal response. Right-click a Filter and choose **Synthesize…** (or press
+it in the properties) to open the Designer on it.
+
+The parameters from `Ap` on are the **Designer's own settings**: the mask it sized the order for, how
+it chose the order, how it built the ladder. Apply to Filter writes them so the Designer reopens on
+exactly what it applied. The block's response reads none of them, and none of them reaches the
+netlist, so a Filter simulates the same with or without them. In the properties, a row the chosen
+`Response` or `Form` does not read is greyed, with the reason as its tooltip.
 
 Tell a filter from a matching network by its type label and its instance name — `FLT1` against `MN1`
 — the same way the five FET laws, which also share one glyph, are told apart. `Order` is the

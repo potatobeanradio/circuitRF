@@ -1,6 +1,6 @@
 # circuitRF — Filter Designer
 
-**Status:** Built · **Date:** 2026-11-13 · elliptic ladder rebuilt 2026-11-21
+**Status:** Built · **Date:** 2026-11-13 · elliptic ladder rebuilt 2026-11-21 · placing and the tile (FD-P) 2026-11-21
 
 The Filter Designer is a tool window (Tools ▸ Filter Designer) and a `filter` verb. It synthesises
 a doubly terminated LC ladder from the ideal Filter's own prototype and draws the response with the
@@ -98,6 +98,50 @@ none, 2 when an argument does not parse.
 
 Apply to Filter writes the specification onto a placed Filter through one `SetParametersCommand`.
 The snap stays in the netlist, not on the block.
+
+## Placing, Synthesize…, and the Designer's settings on the block (FD-P, 2026-11-21)
+
+**One parameter list, two writers.** `FilterDesignerViewModel.AppliedParameters` is the only place
+the window turns a design into Filter parameters. Apply to Filter writes it onto the target; Place
+component writes it onto a fresh block. A parameter a Filter does not carry yet (placed before it
+existed) is added with the registry's own unit and dimension.
+
+**The Designer's settings live on the block, and nothing downstream sees them.** Appended after
+`EllipticType`: `Ap` (blank = Ripple), the six mask edges `Fp`, `Fs`, `Fp1`, `Fs1`, `Fs2`, `Fp2`
+(the other form's edges are written blank), `OrderMode`, `First`, `Values`, `LSeries`, `CSeries`
+and `Parts` (`element=library: series|part; …`). `ComponentTypeRegistry.IsFilterDesignerParameter`
+names them and `NetExtractor` drops them, so the netlist line is identical with or without them and a
+blank edge never reaches the `.cnl` as `Fs=` — the empty-value trap. The edges are written in the
+window's frequency unit and the unit rides on the parameter, so Seed reopens in that unit.
+`SeedFrom` puts the stored edges in their boxes first, then the block's own cutoff over the edge it
+names, so an edit to `F1` in Properties still wins; each missing setting falls back to what Seed
+derived before (Ap from Ripple, edges from the cutoff, Specify for the order). A library series is
+found again by `FilterLibrarySeries.Key` after loading the workspace's libraries; one that is not
+there is said in the status line.
+
+**Placement is the paste ghost.** `SchematicViewModel.ArmFragmentPlacement` hands a fragment to
+the private paste path (renaming, grid snap, nudge, one undo step, Escape) and raises
+`PlacementActivationRequested`, which `SchematicDocument` turns into `IHierarchyHost.BringToFront`.
+It arms at the pointer if it is over the canvas, otherwise at the view centre. Place filter's
+fragment is `MatchSchematicCopy.Build` without its two `TermG`s, plus a stub and an anchored net
+label at each end (`FilterPlacement.LadderFragment`; `IN`/`OUT`, numbered when taken). A standalone
+window places into the workspace's last active schematic, read when the button is pressed.
+
+**Replace this Filter joins by name.** The ladder is wider than the block, so drawing it where the
+block was would lay its spine over the wires that ran into the block and short a series element.
+`FilterReplaceCommand` removes the block, puts a free-standing label on each pin (the net's existing
+label name when it has one), and pastes the ladder below with its ends on the same names: one undo
+step, and undo reinserts the block at its own index so the sheet saves byte for byte.
+
+**Synthesize…** is the Properties button (renamed) and a schematic context-menu item shown on a
+Filter only (`SchematicViewModel.SynthesizeTarget`). Both call `FilterDesignerWindow.Show`, which
+keeps one window per Filter (`FilterDesignerWindows<T>`) and brings an open one forward.
+
+**The tile.** `Form` offers Bandstop and the glyph strikes the middle wave; a test holds that a
+`SetParametersCommand` to Bandstop redraws it. `EllipticType`, `OrderMode`, `First` and `Values` are
+pickers. Rows the `Response` or `Form` does not read are greyed with a reason
+(`ParameterEditorViewModel.ConfigureFilterRows`, the test pad's mechanism). The docs show the four
+forms (`filter-form-glyphs`).
 
 ## Documentation
 

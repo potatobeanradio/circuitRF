@@ -328,11 +328,19 @@
                         </StackPanel>
                     </Border>
 
-                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                    <WrapPanel Orientation="Horizontal" Margin="0,2,0,0" ItemSpacing="6" LineSpacing="4">
                         <Button Content="Design" Command="{Binding DesignCommand}"/>
-                        <Button Content="Apply to Filter" Click="OnApply" IsVisible="{Binding CanApply}"/>
+                        <Button Content="Apply to Filter" Click="OnApply" IsVisible="{Binding CanApply}"
+                                ToolTip.Tip="Writes this specification and the Designer's settings onto the Filter."/>
+                        <Button Content="Place filter" Click="OnPlaceFilter" IsEnabled="{Binding CanPlace}"
+                                ToolTip.Tip="{Binding PlaceTip}" ToolTip.ShowOnDisabled="True"/>
+                        <Button Content="Place component" Click="OnPlaceComponent" IsEnabled="{Binding CanPlace}"
+                                ToolTip.Tip="{Binding PlaceTip}" ToolTip.ShowOnDisabled="True"/>
                         <Button Content="Save netlist…" Click="OnSave"/>
-                    </StackPanel>
+                    </WrapPanel>
+                    <CheckBox Content="Place filter replaces this Filter" IsChecked="{Binding ReplaceTarget}"
+                              IsVisible="{Binding CanReplaceTarget}" FontSize="11"
+                              ToolTip.Tip="The ladder takes the block's place as one undo step: its ends are labelled with the nets the block's pins were on, and the block is removed."/>
                 </StackPanel>
             </ScrollViewer>
         </Border>

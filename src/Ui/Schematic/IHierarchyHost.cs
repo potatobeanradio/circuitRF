@@ -16,6 +16,13 @@ public interface IHierarchyHost
     void OpenCellInNewTab(SchematicDocument fromDoc, EditableComponent comp);
 
     /// <summary>
+    /// Selects <paramref name="doc"/>'s tab and brings the window showing it to the front — what a
+    /// placement handed over from another window (the Filter Designer) needs. Does nothing by
+    /// default, which is the right answer for a host with no windows.
+    /// </summary>
+    void BringToFront(SchematicDocument doc) { }
+
+    /// <summary>
     /// Saves <paramref name="doc"/> with the same behaviour as ⌘S single-doc scope:
     /// materialized → writes to its known path; scratch → the Save-to-Cell plan dialog.
     /// Registers the file/session and refreshes the project tree. The host resolves the owner window.

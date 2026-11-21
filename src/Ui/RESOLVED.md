@@ -41555,3 +41555,42 @@ Reported: choosing Bandstop said the mask edges did not form a transition.
   segment's end so they never sit on an edge label.
 - **Still open:** the minimum order is sized from Ap while the ladder is built at the separate
   Ripple box; with Ripple below Ap a Chebyshev or elliptic misses As at Fs.
+
+## Filter Designer — placing the design, Synthesize…, and the Filter tile (brief FD-P, 2026-11-21)
+
+Reported: the Filter tile showed no bandstop anywhere; asked for Place filter / Place component, a
+Synthesize… entry on the Filter, and the Filter's fields to carry every Designer setting.
+
+- **The missing bandstop was the build, not the code.** The installed AppImage
+  (`~/Applications/circuitRF`, built 2026-11-20) is from `main`, which does not contain `a4eb5336d`:
+  its `NetworkForm` has no `Bandstop` member at all (a metadata string scan of the single-file
+  bundle finds `Lowpass`, `Highpass`, `InvChebyshev` and no `Bandstop`). On this branch the `Form`
+  picker offers it and the glyph strikes the middle wave; `SettingFormToBandstopRedrawsTheGlyph` holds
+  the redraw through `SetParametersCommand`. The docs now draw all four forms (`filter-form-glyphs`).
+  **`main` also carries a different, distributed "Filter Designer"** (MLAD ladder realisers), so the two
+  lines will meet at merge.
+- **Designer-only parameters must never reach the `.cnl`.** The mask edges are blank when unset, and a
+  blank value written as `Fs=` is the empty-value trap (`src/Core/CLAUDE.md`): the reader glues the next
+  token on. A library series name may hold a space, which would split into phantom nets.
+  `ComponentTypeRegistry.IsFilterDesignerParameter` names them and `NetExtractor` drops them, so a
+  Filter extracts the same line with or without them — no `ResolveEnumNamedParameters` entry needed.
+- **The window's settings are read back with the block's own cutoff winning.** Seed fills the boxes
+  from the stored mask, then `SeedEdges` puts `Fc`/`F1`/`F2` over the edge they name, so an edit made
+  in Properties is not undone by a stale stored edge. A Filter without the settings seeds as before,
+  except the order: **Specify** (the block's `Order`), where it used to recompute a minimum the block
+  was never built at.
+- **Replace this Filter joins by net NAME.** The ladder is wider than the block, and drawn where the
+  block was its spine lies over the wires that ran into the block; a series element on a wire is
+  shorted by it. Labels on the two pins (reusing a label the net already has) and on the ladder's
+  ends join the same nets with nothing drawn across the neighbouring parts. Undo reinserts the block
+  at its own list index, or the undone sheet does not save byte for byte.
+- **A placement handed over from another window must arm without a pointer.** The pointer is over
+  the Designer, so `ArmFragmentPlacement` arms at the view centre and the ghost follows once the
+  pointer arrives; `PlacementActivationRequested` → `IHierarchyHost.BringToFront` raises the
+  schematic's window.
+- **Two placed ladders must not share end names**, or they join end to end: `IN`/`OUT`, then
+  `IN2`/`OUT2` onward.
+- **Not mine, seen while gating:** the three ThreeD tests that launch the CLI as a process
+  (`Gate10_Cli_…`, `Gate14_Cli_…`, `TheVerb_AsAProcess_…`) fail on this machine in isolation:
+  `src/Cli/bin/Debug/net10.0/runtimes/` holds osx and win folders only, so `libSkiaSharp.so` is not
+  found.

@@ -297,14 +297,32 @@ public static class DocMatchFixtures
         return new FigureScene(row);
     }
 
-    private static Control GlyphTile(NetworkForm form, int bands, string caption) => new StackPanel
+    /// <summary>
+    /// The four <c>Filter</c> glyphs, one per <c>Form</c>, bandstop included (brief FD-P §3.1). Each
+    /// goes through <c>BuiltInSymbols.PrimitivesForFilter</c>, the call a placed Filter draws with.
+    /// </summary>
+    public static FigureScene FilterFormGlyphs()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        foreach (var (form, caption) in (ReadOnlySpan<(NetworkForm, string)>)
+                 [(NetworkForm.Lowpass,  "Lowpass"),
+                  (NetworkForm.Highpass, "Highpass"),
+                  (NetworkForm.Bandpass, "Bandpass"),
+                  (NetworkForm.Bandstop, "Bandstop")])
+            row.Children.Add(GlyphTile(form, 1, caption, SymbolKind.Filter));
+
+        return new FigureScene(row);
+    }
+
+    private static Control GlyphTile(NetworkForm form, int bands, string caption,
+                                     SymbolKind kind = SymbolKind.Match) => new StackPanel
     {
         Spacing = 2,
         Children =
         {
             new DocSymbolGlyph
             {
-                Kind = SymbolKind.Match, PortCount = 2, MatchForm = form, MatchBands = bands,
+                Kind = kind, PortCount = 2, MatchForm = form, MatchBands = bands,
                 Width = 150, Height = 120,
             },
             new TextBlock

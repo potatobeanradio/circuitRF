@@ -137,10 +137,12 @@ shape is read straight off the schematic:
 
 | `Form` | What is drawn | What passes |
 |---|---|---|
-| `Lowpass` | the high wave struck through | low frequencies |
-| `Highpass` | the low wave struck through | high frequencies |
+| `Lowpass` | the top two waves struck through | low frequencies |
+| `Highpass` | the bottom two waves struck through | high frequencies |
 | `Bandpass` | the outer waves struck through | the band between `F1` and `F2` |
-| `Bandstop` | the middle wave struck through | everything outside the stopband `F1` to `F2` |
+| `Bandstop` | the middle wave struck through | everything outside the stopband between `F1` and `F2` |
+
+{{ui: filter-form-glyphs}}
 
 Both pins stay where they are, so changing `Form` never disturbs your wiring. Because the glyph
 already says which shape the network is, `Form` is **not** captioned beside the symbol — it would

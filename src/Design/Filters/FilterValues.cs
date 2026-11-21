@@ -25,6 +25,20 @@ public enum FilterSeriesKind
     E96,
 }
 
+/// <summary>
+/// Whether the Filter Designer sizes the order to the mask or takes a typed one. The Filter block
+/// stores it (<c>OrderMode</c>) so the Designer reopens the way it was left; the block's own
+/// response reads <c>Order</c> either way.
+/// </summary>
+public enum FilterOrderMode
+{
+    /// <summary>The closed-form minimum for the family and the mask edges.</summary>
+    Minimum,
+
+    /// <summary>The order in the Order box.</summary>
+    Specify,
+}
+
 /// <summary>One part a library series offers, in base SI, with its stated tolerance when known.</summary>
 public sealed record FilterPart(string Name, double Value, string Tolerance = "")
 {
@@ -45,6 +59,12 @@ public sealed record FilterLibrarySeries(
 {
     /// <inheritdoc/>
     public override string ToString() => Label;
+
+    /// <summary>
+    /// What a Filter block's <c>LSeries</c>/<c>CSeries</c> parameter stores to name this series:
+    /// the vendor library, then the series. Compared, never parsed.
+    /// </summary>
+    public string Key => Library + ": " + Label;
 }
 
 /// <summary>

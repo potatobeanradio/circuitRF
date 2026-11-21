@@ -52,9 +52,11 @@
 </nav>
 <h2 id="what">What it is</h2>
 <p><strong>Filter Designer</strong> (Tools ▸ Filter Designer) synthesises a doubly terminated LC ladder from a
-prototype and shows the response on the same plots a Data Display uses. Open it on a placed
-<a href="components.html#filter">Filter</a> from that component's properties, and <strong>Apply to Filter</strong> writes
-the specification back onto the ideal block.</p>
+prototype and shows the response on the same plots a Data Display uses. To open it on a placed
+<a href="components.html#filter">Filter</a>, right-click the Filter and choose <strong>Synthesize…</strong>, or press
+<strong>Synthesize…</strong> in its properties. Both open the same window, and opening it a second time on the
+same Filter brings that window forward. <strong>Apply to Filter</strong> writes the design back onto the ideal
+block, and <strong>Place filter</strong> puts the ladder itself on the schematic.</p>
 <p>The ideal Filter and the ladder answer different questions. The block is a rational scattering
 matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
 that: its load is the ratio the family produces (1 for Butterworth, a particular ratio for an
@@ -176,10 +178,28 @@ transmission after a snap.</p>
 <p>A workspace with no vendor library leaves the series lists empty and says so. It does not fall
 back to an E-series. The power-integrity part library is a different drawer and is not read here.</p>
 <h2 id="place">Where the result goes</h2>
-<p><strong>Apply to Filter</strong>, when the window was opened on a placed Filter, writes Response, Form, Order,
-the cutoff, Ap, As, the elliptic type and the two impedances onto that instance, so the ideal
-block and the ladder are the same response. The snap is not applied to the
-block, because the block has no elements.</p>
+<p><strong>Apply to Filter</strong>, when the window was opened on a placed Filter, writes the whole specification
+onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
+impedances, so the ideal block and the ladder are the same response. It also writes the window's
+own settings, which the block keeps for the Designer and does not simulate: Ap, every mask edge
+(<code>Fp</code>, <code>Fs</code> or <code>Fp1</code>, <code>Fs1</code>, <code>Fs2</code>, <code>Fp2</code>), Minimum or Specify for the order, the first element, the
+value series and the library series and parts. <strong>Synthesize…</strong> on that Filter later reopens the
+window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
+because the block has no elements.</p>
+<p><strong>Place filter</strong> puts the realised ladder, at the values the table shows, on the schematic. It has no
+terminations: each end is a short wire with a net label, <code>IN</code> on port 1 and <code>OUT</code> on port 2 (<code>IN2</code> and
+<code>OUT2</code> onward when the schematic already has those names), ready to be wired into the design. The
+ladder follows the pointer on the connection grid until you click, exactly as a paste does, and
+Escape drops it. <strong>Place component</strong> places one Filter block carrying the specification and the
+settings, written by the same function Apply uses.</p>
+<p>Both go into the schematic the window was opened on. A window opened from Tools ▸ Filter Designer
+places into the schematic you last worked in, and both buttons are disabled when there is no
+schematic or no design; the tooltip says which.</p>
+<p>When the window was opened on a Filter, the <strong>Place filter replaces this Filter</strong> checkbox turns
+Place filter into a replacement. The block is removed, its two pins keep their nets under labels
+(the net's own name when it already has one), and the ladder is placed below where the block was,
+with its ends on the same names. It is one undo step, and the ladder arrives selected so you can
+move it.</p>
 <p><strong>Save netlist…</strong> writes the ladder as a <code>.cnl</code>: two terminations and the inductors and capacitors
 between them, at the values the table shows. That file is what <code>sparam</code> simulates, and it is the
 same netlist the plot was drawn from.</p>

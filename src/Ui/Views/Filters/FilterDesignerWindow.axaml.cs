@@ -27,34 +27,53 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
     {
         InitializeComponent();
         DataContextChanged += (_, _) => WirePlots();
+        // A schematic may have been opened or closed while this window was behind.
+        Activated += (_, _) => Vm?.RefreshPlacement();
     }
 
     public string WindowMenuHeader => "Filter Designer";
 
     private FilterDesignerViewModel? Vm => DataContext as FilterDesignerViewModel;
 
-    /// <summary>Tools ▸ Filter Designer, on no component.</summary>
-    public static FilterDesignerWindow ShowStandalone(string? workspaceRoot, Window? owner)
+    /// <summary>The windows open on placed Filters, one each.</summary>
+    private static readonly FilterDesignerWindows<FilterDesignerWindow> OnFilter = new();
+
+    /// <summary>
+    /// Tools ▸ Filter Designer, on no component. <paramref name="schematic"/> is where Place filter
+    /// and Place component go, read when the button is pressed.
+    /// </summary>
+    public static FilterDesignerWindow ShowStandalone(string? workspaceRoot, Window? owner,
+                                                      Func<SchematicViewModel?>? schematic = null)
     {
-        var vm = new FilterDesignerViewModel { WorkspaceRoot = workspaceRoot };
+        var vm = new FilterDesignerViewModel { WorkspaceRoot = workspaceRoot, SchematicProvider = schematic };
         var window = new FilterDesignerWindow { DataContext = vm };
         ShowUnowned(window, owner);
         vm.Design();
         return window;
     }
 
-    /// <summary>Opens on a placed Filter and can write the specification back onto it.</summary>
+    /// <summary>
+    /// Opens on a placed Filter and can write the specification back onto it — or, when a window
+    /// is already open on that Filter, brings it forward instead of opening a second one.
+    /// </summary>
     public static FilterDesignerWindow Show(SchematicViewModel schematic, EditableComponent component, Window? owner)
     {
-        var vm = new FilterDesignerViewModel
+        var (window, created) = OnFilter.Show(component, () =>
         {
-            Schematic = schematic,
-            Target = component,
-            WorkspaceRoot = schematic.WorkspaceRoot,
-        };
-        vm.SeedFrom(component);
-        var window = new FilterDesignerWindow { DataContext = vm };
-        ShowUnowned(window, owner);
+            var vm = new FilterDesignerViewModel
+            {
+                Schematic = schematic,
+                Target = component,
+                WorkspaceRoot = schematic.WorkspaceRoot,
+            };
+            vm.SeedFrom(component);
+            return new FilterDesignerWindow { DataContext = vm };
+        }, w => w.Activate());
+        if (created)
+        {
+            window.Closed += (_, _) => OnFilter.Closed(component, window);
+            ShowUnowned(window, owner);
+        }
         return window;
     }
 
@@ -158,31 +177,30 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         if (Vm?.Target is not { } comp || Vm.Schematic is not { } schematic) return;
         if (comp.Symbol != SymbolKind.Filter) return;
 
-        if (Vm.FilterAssignments() is not { } assignments)
+        // The same function Place component writes with, so the two cannot disagree. A Filter
+        // placed before a Designer setting existed gains it here.
+        if (Vm.AppliedParameters(comp.Parameters) is not { } updated)
         {
             Vm.Status = "There is no design to apply; the specification above is refused.";
             return;
-        }
-        var updated = comp.Parameters.Select(p => p.Clone()).ToList();
-        foreach (var (name, expression) in assignments)
-        {
-            var p = updated.FirstOrDefault(x => x.Name == name);
-            if (p is not null)
-            {
-                p.Expression = expression;
-                // The edges are written in GHz; a parameter that showed another unit would be
-                // read in it.
-                if (name is "Fc" or "F1" or "F2") p.Unit = "GHz";
-            }
-            // A Filter placed before EllipticType existed does not carry it; add it rather than
-            // leave the block on type A while the ladder beside it is b or c.
-            else if (name == "EllipticType")
-                updated.Add(new EditableParameter { Name = name, Expression = expression });
         }
 
         schematic.Execute(new SetParametersCommand(schematic.EditModel, comp, updated));
         Vm.Status = "Applied to the Filter. The ideal block keeps the impedances you typed.";
     }
+
+    private void OnPlaceFilter(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is null) return;
+        Vm.Status = Vm.PlaceFilter();
+    }
+
+    private void OnPlaceComponent(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is null) return;
+        Vm.Status = Vm.PlaceComponent();
+    }
+
 
     private async void OnSave(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

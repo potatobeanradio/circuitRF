@@ -451,8 +451,10 @@ A two-port filter synthesised from a prototype: `Response` picks the family — 
 **Chebyshev**, **InvChebyshev**, **Bessel**, **Gaussian** or **Elliptic** — and `Form` picks
 Lowpass, Highpass, Bandpass or Bandstop. A parameter the chosen family does not read is ignored
 rather than refused, so changing family never means clearing a field first. The
-[Filter Designer](filter-designer.html) builds the LC ladder for the all-pole families; this block
-stays the rational response, which is what an arbitrary impedance pair and a complex port need.
+[Filter Designer](filter-designer.html) builds the LC ladder for every family; this block stays the
+rational response, which is what an arbitrary impedance pair and a complex port need. Right-click a
+Filter and choose **Synthesize…** to open the Designer on it; it can apply the design back onto the
+block, place the ladder beside it, or replace the block with the ladder.
 
 <div class="callout note">
 <span class="label">It wears the Match component's symbol, and that is deliberate</span>
@@ -463,6 +465,8 @@ you tell the five FET laws apart: by the <b>type label</b> and the <b>instance n
 <code>FLT1</code> against <code>MN1</code>. The stack of waves with a slash through each blocked
 band follows <code>Form</code> — see <a href="dynamic-symbols.html#form">Dynamic symbols</a>.</p>
 </div>
+
+{{ui: filter-form-glyphs}}
 
 **`Order` is the PROTOTYPE order.** The bandpass and bandstop transformations double the degree, so
 `Order = 3` as a bandpass or a bandstop is a **6th-degree network**. Both conventions exist in the

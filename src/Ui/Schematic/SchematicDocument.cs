@@ -153,6 +153,7 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
     public void PushIn(SchematicViewModel session, string label)
     {
         _frames.Add(new NavFrame(session, label));
+        session.PlacementActivationRequested += OnPlacementActivationRequested;
         RebindActiveVm(session);
         RaiseRetargetEvents();
     }
@@ -283,7 +284,14 @@ public sealed class SchematicDocument : Document, IUndoableDocument, IActivatabl
 
         // Wire up the initial active-VM subscriptions.
         RebindActiveVm(viewModel);
+        viewModel.PlacementActivationRequested += OnPlacementActivationRequested;
     }
+
+    /// <summary>
+    /// A frame of this document was handed a fragment to place from another window (the Filter
+    /// Designer): bring this document forward so the ghost is where the user will look.
+    /// </summary>
+    private void OnPlacementActivationRequested() => Hierarchy?.BringToFront(this);
 
     // ── Materialization ───────────────────────────────────────────────────────
 

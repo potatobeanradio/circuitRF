@@ -22,9 +22,11 @@ keywords: filter, ladder, bandstop, Butterworth, Chebyshev, Gaussian, preferred 
 ## What it is {#what}
 
 **Filter Designer** (Tools ▸ Filter Designer) synthesises a doubly terminated LC ladder from a
-prototype and shows the response on the same plots a Data Display uses. Open it on a placed
-[Filter](components.html#filter) from that component's properties, and **Apply to Filter** writes
-the specification back onto the ideal block.
+prototype and shows the response on the same plots a Data Display uses. To open it on a placed
+[Filter](components.html#filter), right-click the Filter and choose **Synthesize…**, or press
+**Synthesize…** in its properties. Both open the same window, and opening it a second time on the
+same Filter brings that window forward. **Apply to Filter** writes the design back onto the ideal
+block, and **Place filter** puts the ladder itself on the schematic.
 
 The ideal Filter and the ladder answer different questions. The block is a rational scattering
 matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
@@ -113,10 +115,31 @@ back to an E-series. The power-integrity part library is a different drawer and 
 
 ## Where the result goes {#place}
 
-**Apply to Filter**, when the window was opened on a placed Filter, writes Response, Form, Order,
-the cutoff, Ap, As, the elliptic type and the two impedances onto that instance, so the ideal
-block and the ladder are the same response. The snap is not applied to the
-block, because the block has no elements.
+**Apply to Filter**, when the window was opened on a placed Filter, writes the whole specification
+onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
+impedances, so the ideal block and the ladder are the same response. It also writes the window's
+own settings, which the block keeps for the Designer and does not simulate: Ap, every mask edge
+(`Fp`, `Fs` or `Fp1`, `Fs1`, `Fs2`, `Fp2`), Minimum or Specify for the order, the first element, the
+value series and the library series and parts. **Synthesize…** on that Filter later reopens the
+window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
+because the block has no elements.
+
+**Place filter** puts the realised ladder, at the values the table shows, on the schematic. It has no
+terminations: each end is a short wire with a net label, `IN` on port 1 and `OUT` on port 2 (`IN2` and
+`OUT2` onward when the schematic already has those names), ready to be wired into the design. The
+ladder follows the pointer on the connection grid until you click, exactly as a paste does, and
+Escape drops it. **Place component** places one Filter block carrying the specification and the
+settings, written by the same function Apply uses.
+
+Both go into the schematic the window was opened on. A window opened from Tools ▸ Filter Designer
+places into the schematic you last worked in, and both buttons are disabled when there is no
+schematic or no design; the tooltip says which.
+
+When the window was opened on a Filter, the **Place filter replaces this Filter** checkbox turns
+Place filter into a replacement. The block is removed, its two pins keep their nets under labels
+(the net's own name when it already has one), and the ladder is placed below where the block was,
+with its ends on the same names. It is one undo step, and the ladder arrives selected so you can
+move it.
 
 **Save netlist…** writes the ladder as a `.cnl`: two terminations and the inductors and capacitors
 between them, at the values the table shows. That file is what `sparam` simulates, and it is the

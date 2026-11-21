@@ -194,10 +194,11 @@
                      user reads on the schematic page itself. -->
                 <StackPanel IsVisible="{Binding IsFilter}" Margin="6,4" Spacing="4">
                     <TextBlock TextWrapping="Wrap" FontSize="11"
-                               Text="The Filter Assistant draws this response and the LC ladder that realises it, including a bandstop, and can snap each element to a standard series or a library part."/>
-                    <Button Content="Open Filter Designer…"
+                               Text="Synthesize opens the Filter Designer on this Filter: it draws this response and the LC ladder that realises it, including a bandstop, snaps each element to a standard series or a library part, and can apply the design back here or place the ladder."/>
+                    <Button Content="Synthesize…"
                             HorizontalAlignment="Right"
                             FontSize="11" Padding="8,3"
+                            ToolTip.Tip="Opens the Filter Designer on this Filter"
                             Command="{Binding OpenFilterDesignerCommand}"/>
                 </StackPanel>
 

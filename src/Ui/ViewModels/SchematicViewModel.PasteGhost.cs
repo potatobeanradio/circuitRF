@@ -63,6 +63,53 @@ public sealed partial class SchematicViewModel
         MovePasteGhost(wx, wy);
     }
 
+    /// <summary>
+    /// Raised when something outside the schematic window hands it a fragment to place (the Filter
+    /// Designer's Place filter / Place component): the host brings this schematic's window forward
+    /// so the ghost is under the pointer the user is about to move.
+    /// </summary>
+    public event Action? PlacementActivationRequested;
+
+    /// <summary>
+    /// Arms <paramref name="fragment"/> as a paste ghost — the one placement path, shared with
+    /// Ctrl+V: it follows the pointer on the connection grid, a click places it as one undoable
+    /// paste (instances renamed to be unique, the overlap nudge, the selection), and Escape drops it.
+    /// The fragment's objects are taken over; pass a model built for the purpose.
+    /// </summary>
+    /// <remarks>
+    /// Armed at the pointer when it is over the canvas, otherwise at the centre of the view, where
+    /// it waits until the pointer arrives — the request comes from another window, so the pointer
+    /// is usually not over this one yet.
+    /// </remarks>
+    /// <returns>False when the fragment is empty and nothing was armed.</returns>
+    public bool ArmFragmentPlacement(SchematicEditModel fragment)
+    {
+        ArgumentNullException.ThrowIfNull(fragment);
+        var comps = fragment.Components.ToList();
+        var wires = fragment.Wires.ToList();
+        var cobjs = fragment.CanvasObjects.ToList();
+        if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return false;
+        var labels = fragment.NetLabels.ToList();
+
+        (double X, double Y) at;
+        if (PointerWorldProvider?.Invoke() is { } pointer) at = pointer;
+        else if (ViewportProvider?.Invoke() is { } view) at = ((view.MinX + view.MaxX) / 2, (view.MinY + view.MaxY) / 2);
+        else at = (0, 0);
+
+        ArmPasteGhost(comps, wires, cobjs, fragment.GridSize > 0 ? fragment.GridSize : EditModel.GridSize,
+                      labels.Count > 0 ? labels : null, at.X, at.Y);
+        if (!IsPasteArmed) return false;
+        PlacementActivationRequested?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// The Filter the context menu's Synthesize… opens the Filter Designer on: the component
+    /// <paramref name="id"/> names when it is a Filter, else null — which hides the item.
+    /// </summary>
+    public EditableComponent? SynthesizeTarget(string? id) =>
+        id is not null && EditModel.FindComponent(id) is { Symbol: SymbolKind.Filter } c ? c : null;
+
     private double PasteGrid => EditModel.GridSize > 0 ? EditModel.GridSize : 100.0;
 
     /// <summary>The ghost follows the pointer, its anchor snapped onto the connection grid.</summary>

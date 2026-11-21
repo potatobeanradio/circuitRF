@@ -7,6 +7,7 @@ using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Filters;
 using CircuitRF.Design.Layout.PCells;
 namespace CircuitRF.Design.Schematic;
 
@@ -1872,6 +1873,39 @@ public static class ComponentTypeRegistry
           + "moves the lowest reflection zero to DC (equal terminations). Auto is A at odd order "
           + "and C at even order. B and C at odd order are A. The Filter Designer's LC ladder is "
           + "the same response as this block's when the two name the same type.",
+        (SymbolKind.Filter, "Ap") =>
+            "Filter Designer: the passband attenuation, in dB, the order was sized for. Blank means "
+          + "the Ripple value. The block's response does not read it.",
+        (SymbolKind.Filter, "Fp") =>
+            "Filter Designer: the passband edge of a Lowpass or Highpass mask. Blank means Fc. The "
+          + "block's response does not read it.",
+        (SymbolKind.Filter, "Fs") =>
+            "Filter Designer: the stopband edge of a Lowpass or Highpass mask, where As has to be "
+          + "met. Blank, the Designer derives one. The block's response does not read it.",
+        (SymbolKind.Filter, "Fp1" or "Fp2") =>
+            "Filter Designer: a passband edge of a Bandpass or Bandstop mask (1 the lower, 2 the "
+          + "upper). Blank means F1 or F2. The block's response does not read it.",
+        (SymbolKind.Filter, "Fs1" or "Fs2") =>
+            "Filter Designer: a stopband edge of a Bandpass or Bandstop mask (1 the lower, 2 the "
+          + "upper), where As has to be met. Blank, the Designer derives one. The block's response "
+          + "does not read it.",
+        (SymbolKind.Filter, "OrderMode") =>
+            "Filter Designer: Minimum sizes the order to the mask (Ap, As and the edges); Specify "
+          + "keeps Order as typed. The block's response reads Order either way.",
+        (SymbolKind.Filter, "First") =>
+            "Filter Designer: whether the LC ladder starts with a Series arm or a Parallel (shunt) "
+          + "arm. The block's response is the same either way.",
+        (SymbolKind.Filter, "Values") =>
+            "Filter Designer: the values the ladder is built with: Exact, or the nearest IEC "
+          + "preferred number (E6, E12, E24, E96). A library series in LSeries or CSeries takes "
+          + "precedence for its kind.",
+        (SymbolKind.Filter, "LSeries" or "CSeries") =>
+            "Filter Designer: the vendor-library series the inductors (LSeries) or capacitors "
+          + "(CSeries) were snapped to, as library: series. Blank means none. The Designer loads "
+          + "the workspace's libraries to find it again.",
+        (SymbolKind.Filter, "Parts") =>
+            "Filter Designer: elements given a library part by hand, as element=library: "
+          + "series|part, separated by ';'. Blank means every element takes the nearest part.",
         (SymbolKind.Filter, "IL") =>
             "A flat insertion loss laid on top of the ideal response, in dB. It multiplies S21 and "
           + "leaves S11 alone, so the block genuinely dissipates rather than reflecting what it "
@@ -2209,7 +2243,25 @@ public static class ComponentTypeRegistry
                         new("Zout",     "50",        "Ω",   false, UnitDimension.Resistance),
                         new("IL",       "0",         "dB",  false, UnitDimension.None),
                         // Appended, so every existing Filter line keeps its meaning (type a).
-                        new("EllipticType", "A",     "",    false, UnitDimension.None)];
+                        new("EllipticType", "A",     "",    false, UnitDimension.None),
+                        // The Filter Designer's own settings, appended so the Designer reopens on
+                        // exactly what it applied rather than deriving the mask again. The block's
+                        // response reads none of them and NetExtractor drops them
+                        // (IsFilterDesignerParameter), so a Filter extracts the same netlist with or
+                        // without them, and a blank one is never written as `Name=`.
+                        new("Ap",        "",        "dB",  false, UnitDimension.None),
+                        new("Fp",        "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fs",        "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fp1",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fs1",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fs2",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fp2",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("OrderMode", "Specify", "",    false, UnitDimension.None),
+                        new("First",     "Parallel", "",   false, UnitDimension.None),
+                        new("Values",    "Exact",   "",    false, UnitDimension.None),
+                        new("LSeries",   "",        "",    false, UnitDimension.None),
+                        new("CSeries",   "",        "",    false, UnitDimension.None),
+                        new("Parts",     "",        "",    false, UnitDimension.None)];
 
             // The duplexer is two complete filter specifications plus one shared antenna impedance,
             // and deliberately NO Isolation: the isolation a duplexer achieves is what its two
@@ -3752,6 +3804,34 @@ public static class ComponentTypeRegistry
         [nameof(NetworkForm.Lowpass), nameof(NetworkForm.Highpass),
          nameof(NetworkForm.Bandpass), nameof(NetworkForm.Bandstop)];
 
+    private static readonly string[] EllipticTypeOptions =
+        [nameof(EllipticType.A), nameof(EllipticType.B), nameof(EllipticType.C), nameof(EllipticType.Auto)];
+
+    private static readonly string[] FilterOrderModeOptions =
+        [nameof(FilterOrderMode.Minimum), nameof(FilterOrderMode.Specify)];
+
+    private static readonly string[] FilterFirstElementOptions =
+        [nameof(FilterFirstElement.Series), nameof(FilterFirstElement.Parallel)];
+
+    private static readonly string[] FilterValuesOptions =
+        [nameof(FilterSeriesKind.Exact), nameof(FilterSeriesKind.E6), nameof(FilterSeriesKind.E12),
+         nameof(FilterSeriesKind.E24), nameof(FilterSeriesKind.E96)];
+
+    /// <summary>
+    /// The Filter parameters only the Filter Designer reads: its mask, its order mode and how it
+    /// builds the ladder. <c>NetExtractor</c> drops them, so the block's netlist line is the same
+    /// with or without them and a blank one is never written as <c>Name=</c> (the empty-value
+    /// trap in <c>src/Core/CLAUDE.md</c>).
+    /// </summary>
+    public static bool IsFilterDesignerParameter(SymbolKind kind, string name) =>
+        kind == SymbolKind.Filter && FilterDesignerParameters.Contains(name);
+
+    private static readonly HashSet<string> FilterDesignerParameters = new(StringComparer.Ordinal)
+    {
+        "Ap", "Fp", "Fs", "Fp1", "Fs1", "Fs2", "Fp2", "OrderMode", "First", "Values",
+        "LSeries", "CSeries", "Parts",
+    };
+
     private static readonly string[] CirculatorDirectionOptions =
         [nameof(CirculatorDirection.CW), nameof(CirculatorDirection.CCW)];
 
@@ -3826,6 +3906,10 @@ public static class ComponentTypeRegistry
         (SymbolKind.SwitchD, "State")                             => SwitchDStateOptions,
         (SymbolKind.Filter, "Response")                           => FilterResponseOptions,
         (SymbolKind.Filter, "Form")                               => NetworkFormOptions,
+        (SymbolKind.Filter, "EllipticType")                       => EllipticTypeOptions,
+        (SymbolKind.Filter, "OrderMode")                          => FilterOrderModeOptions,
+        (SymbolKind.Filter, "First")                              => FilterFirstElementOptions,
+        (SymbolKind.Filter, "Values")                             => FilterValuesOptions,
         (SymbolKind.Duplexer, "TxResponse" or "RxResponse")       => FilterResponseOptions,
         (SymbolKind.Duplexer, "TxForm" or "RxForm")               => NetworkFormOptions,
         (SymbolKind.Amp, "IP3Ref")                                => Ip3ReferenceOptions,
