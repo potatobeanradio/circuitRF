@@ -6,7 +6,7 @@ using CircuitRF.Ui.Controls;
 namespace CircuitRF.Ui.Views.Filters;
 
 /// <summary>
-/// Lays the Filter Designer's magnitude and phase plots out for whichever are on. One plot fills
+/// Lays the LC Filter Designer's magnitude and phase plots out for whichever are on. One plot fills
 /// the pane (S-parameter viewer's lone-rect aspect). Both on sit side by side with a gap — the
 /// same row the window used before the toggles existed.
 /// </summary>

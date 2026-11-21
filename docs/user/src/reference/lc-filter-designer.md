@@ -1,8 +1,8 @@
 ---
-title: The Filter Designer
-slug: reference/filter-designer.html
+title: The LC Filter Designer
+slug: reference/lc-filter-designer.html
 doc-kind: Reference Guide
-breadcrumb: Docs > Reference > Filter Designer
+breadcrumb: Docs > Reference > LC Filter Designer
 lede: An LC ladder from a filter specification, drawn on the Data Display's own plots.
 keywords: filter, ladder, bandstop, Butterworth, Chebyshev, Gaussian, preferred values
 ---
@@ -21,10 +21,10 @@ keywords: filter, ladder, bandstop, Butterworth, Chebyshev, Gaussian, preferred 
 
 ## What it is {#what}
 
-**Filter Designer** (Tools ▸ Filter Designer) synthesises a doubly terminated LC ladder from a
+**LC Filter Designer** (Tools ▸ LC Filter Designer) synthesises a doubly terminated LC ladder from a
 prototype and shows the response on the same plots a Data Display uses. To open it on a placed
-[Filter](components.html#filter), right-click the Filter and choose **Synthesize…**, or press
-**Synthesize…** in its properties. Both open the same window, and opening it a second time on the
+[Filter](components.html#filter), right-click the Filter and choose **Synthesise…**, or press
+**Synthesise…** in its properties. Both open the same window, and opening it a second time on the
 same Filter brings that window forward. **Apply to Filter** writes the design back onto the ideal
 block, and **Place filter** puts the ladder itself on the schematic.
 
@@ -35,7 +35,7 @@ already uses: the run glyph for Design, an edit glyph for Apply to Filter, the M
 network glyph for Place filter, a block with a plus for Place component, Swap Line Type's arrows
 for Replace this Filter, and Generate Netlist's glyph for the netlist.
 
-{{ui: filter-designer-toolbar}}
+{{ui: lc-filter-designer-toolbar}}
 
 The ideal Filter and the ladder answer different questions. The block is a rational scattering
 matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
@@ -129,13 +129,13 @@ onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic 
 impedances, so the ideal block and the ladder are the same response. It also writes the window's
 own settings, which the block keeps for the Designer and does not simulate: Ap, every mask edge
 (`Fp`, `Fs` or `Fp1`, `Fs1`, `Fs2`, `Fp2`), Minimum or Specify for the order, the first element, the
-value series and the library series and parts. **Synthesize…** on that Filter later reopens the
+value series and the library series and parts. **Synthesise…** on that Filter later reopens the
 window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
 because the block has no elements.
 
 **A Filter that carries a design is locked.** Its properties and its parameter dialog show the same
 fields the window does, in the window's order, but greyed: every change goes through
-**Synthesize…** and Apply, so the block never drifts from the design behind it. `IL` stays editable,
+**Synthesise…** and Apply, so the block never drifts from the design behind it. `IL` stays editable,
 because the window does not set it. A Filter placed from the palette carries no design; it shows
 only the block's own fields and is edited directly.
 
@@ -146,7 +146,7 @@ ladder follows the pointer on the connection grid until you click, exactly as a 
 Escape drops it. **Place component** places one Filter block carrying the specification and the
 settings, written by the same function Apply uses.
 
-Both go into the schematic the window was opened on. A window opened from Tools ▸ Filter Designer
+Both go into the schematic the window was opened on. A window opened from Tools ▸ LC Filter Designer
 places into the schematic you last worked in, and both buttons are disabled when there is no
 schematic or no design; the tooltip says which.
 
@@ -162,6 +162,6 @@ same netlist the plot was drawn from.
 
 ## The same thing from the command line {#headless}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>
 
-The verb calls the same synthesis the window calls. The options are in [CLI › filter](cli.html#filter).
+The verb calls the same synthesis the window calls. The options are in [CLI › filter lc](cli.html#filter-lc).

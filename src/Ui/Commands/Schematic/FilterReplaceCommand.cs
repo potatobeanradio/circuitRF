@@ -3,7 +3,7 @@ using CircuitRF.Ui.Schematic;
 namespace CircuitRF.Ui.Commands.Schematic;
 
 /// <summary>
-/// The Filter Designer's <b>Replace this Filter</b> as ONE undoable operation (brief FD-P §1.2):
+/// The LC Filter Designer's <b>Replace this Filter</b> as ONE undoable operation (brief FD-P §1.2):
 /// the block is removed, each of its two pins keeps its net through a label, and the ladder is
 /// pasted with its ends on the same names. Undo puts the block back exactly.
 /// </summary>

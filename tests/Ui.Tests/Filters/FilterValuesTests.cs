@@ -5,7 +5,7 @@ using Xunit;
 
 namespace CircuitRF.Ui.Tests.Filters;
 
-/// <summary>The snap the Filter Designer and <c>circuitrf filter --series</c> share.</summary>
+/// <summary>The snap the LC Filter Designer and <c>circuitrf filter lc --series</c> share.</summary>
 public class FilterValuesTests
 {
     [Fact]

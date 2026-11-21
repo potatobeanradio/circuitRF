@@ -2859,7 +2859,7 @@ public static class NetExtractor
             // A Filter's Designer settings (mask, order mode, value series) are read by the Filter
             // Designer and by nothing downstream. Dropped, so the line is the same with or without
             // them and a blank mask edge never reaches the .cnl as `Fs=`.
-            .Where(p => !ComponentTypeRegistry.IsFilterDesignerParameter(comp.Symbol, p.Name))
+            .Where(p => !ComponentTypeRegistry.IsLcFilterDesignerParameter(comp.Symbol, p.Name))
             // CLIN's Eo is optional and placed blank (blank = "same as E"). It is DROPPED rather than
             // emitted: `Eo=` with nothing after it is the empty-parameter-value trap, where the .cnl
             // reader takes the next token as the value.

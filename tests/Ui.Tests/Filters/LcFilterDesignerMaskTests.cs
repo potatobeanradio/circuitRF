@@ -16,12 +16,12 @@ namespace CircuitRF.Ui.Tests.Filters;
 /// a refused specification still draws its mask, the mask is drawn by role over its own bands, and
 /// Apply then Seed gives back the edges the ladder was built at.
 /// </summary>
-public class FilterDesignerMaskTests
+public class LcFilterDesignerMaskTests
 {
-    private static async Task<FilterDesignerViewModel> Designed(
-        FilterResponse response, NetworkForm form, Action<FilterDesignerViewModel>? edit = null)
+    private static async Task<LcFilterDesignerViewModel> Designed(
+        FilterResponse response, NetworkForm form, Action<LcFilterDesignerViewModel>? edit = null)
     {
-        var vm = new FilterDesignerViewModel { Response = response, Form = form };
+        var vm = new LcFilterDesignerViewModel { Response = response, Form = form };
         edit?.Invoke(vm);
         await vm.DesignAsync(0);
         return vm;
@@ -86,7 +86,7 @@ public class FilterDesignerMaskTests
     [Fact]
     public void TheMaskIsDrawnByRoleOverItsOwnBands()
     {
-        var bs = FilterDesignerViewModel.MaskLinesFor(
+        var bs = LcFilterDesignerViewModel.MaskLinesFor(
             new(NetworkForm.Bandstop, 0.5, 30, 1e9, 2e9, 3e9, 4e9), "Fp1", "Fs1", "Fs2", "Fp2");
         var edges = bs.Where(l => l.Vertical).ToList();
         Assert.Equal([FilterMaskColors.Pass, FilterMaskColors.Stop, FilterMaskColors.Stop, FilterMaskColors.Pass],
@@ -100,13 +100,13 @@ public class FilterDesignerMaskTests
         Assert.True(apLimits[1].X0 == 4e9 && double.IsNaN(apLimits[1].X1));
         Assert.All(apLimits, l => Assert.Equal(-1, l.Forbid));
 
-        var bp = FilterDesignerViewModel.MaskLinesFor(
+        var bp = LcFilterDesignerViewModel.MaskLinesFor(
             new(NetworkForm.Bandpass, 0.5, 30, 1e9, 2e9, 3e9, 4e9), "Fs1", "Fp1", "Fp2", "Fs2");
         var ap = bp.Single(l => l.Label == "Ap");
         Assert.Equal((2e9, 3e9), (ap.X0, ap.X1));
         Assert.Equal(2, bp.Count(l => l.Label == "As"));
 
-        var lp = FilterDesignerViewModel.MaskLinesFor(
+        var lp = LcFilterDesignerViewModel.MaskLinesFor(
             new(NetworkForm.Lowpass, 0.5, 30, 1e9, 2e9, 0, 0), "Fp", "Fs", "", "");
         Assert.Equal(2, lp.Count(l => l.Vertical));
         Assert.Equal(2e9, lp.Single(l => l.Label == "As").X0);
@@ -142,7 +142,7 @@ public class FilterDesignerMaskTests
             if (name is "Fc" or "F1" or "F2") p.Unit = "GHz";
         }
 
-        var second = new FilterDesignerViewModel();
+        var second = new LcFilterDesignerViewModel();
         second.SeedFrom(filter);
         await second.DesignAsync(0);
         Assert.True(second.Elements.Count > 0, second.Status);

@@ -84,7 +84,7 @@ public sealed record MatchLadderElement(
 
     /// <summary>
     /// True when this shunt element's lower pin is NOT ground — a leg of a parallel pair partway
-    /// down a Filter Designer stub. <see cref="MatchLadderLayout.GroundYFor"/> draws no ground under it.
+    /// down an LC Filter Designer stub. <see cref="MatchLadderLayout.GroundYFor"/> draws no ground under it.
     /// </summary>
     public bool NoGround { get; init; }
 
@@ -161,7 +161,7 @@ public sealed record MatchLadderTermination(int End, string InstanceName, string
 /// <summary>
 /// A through-path parallel arm drawn above the spine: vertical drops at <see cref="X0"/> /
 /// <see cref="X1"/> from the spine up to <see cref="Y"/>, with horizontal runs in the gaps the
-/// element glyph does not cover. Used by the Filter Designer for L∥C in a series arm; the Match
+/// element glyph does not cover. Used by the LC Filter Designer for L∥C in a series arm; the Match
 /// Designer never emits these (its shunt drops were designed away).
 /// </summary>
 /// <param name="X0">Left drop, world units.</param>
@@ -282,14 +282,14 @@ public sealed class MatchLadderLayout
     public IReadOnlyList<MatchTransformBracket> Brackets { get; init; } = [];
 
     /// <summary>
-    /// Parallel through-path arms above the spine (Filter Designer elliptic / inverse-Chebyshev).
+    /// Parallel through-path arms above the spine (LC Filter Designer elliptic / inverse-Chebyshev).
     /// Empty for every Match Designer layout.
     /// </summary>
     public IReadOnlyList<MatchParallelArm> ParallelArms { get; init; } = [];
 
     /// <summary>
     /// Wires beyond the spine and the parallel arms — the bars that join a parallel pair partway
-    /// down a Filter Designer stub to its column. Empty for every Match Designer layout.
+    /// down an LC Filter Designer stub to its column. Empty for every Match Designer layout.
     /// </summary>
     public IReadOnlyList<(double X0, double Y0, double X1, double Y1)> ExtraWires { get; init; } = [];
 

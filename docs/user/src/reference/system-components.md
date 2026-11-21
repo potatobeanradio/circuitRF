@@ -451,9 +451,9 @@ A two-port filter synthesised from a prototype: `Response` picks the family — 
 **Chebyshev**, **InvChebyshev**, **Bessel**, **Gaussian** or **Elliptic** — and `Form` picks
 Lowpass, Highpass, Bandpass or Bandstop. A parameter the chosen family does not read is ignored
 rather than refused, so changing family never means clearing a field first. The
-[Filter Designer](filter-designer.html) builds the LC ladder for every family; this block stays the
+[LC Filter Designer](lc-filter-designer.html) builds the LC ladder for every family; this block stays the
 rational response, which is what an arbitrary impedance pair and a complex port need. Right-click a
-Filter and choose **Synthesize…** to open the Designer on it; it can apply the design back onto the
+Filter and choose **Synthesise…** to open the Designer on it; it can apply the design back onto the
 block, place the ladder beside it, or replace the block with the ladder.
 
 <div class="callout note">
@@ -479,7 +479,7 @@ keeps a finite floor at infinite frequency, which no LC ladder reaches; `B` move
 transmission zero to infinity (the terminations come out unequal) and `C` also moves its lowest
 reflection zero to DC (equal terminations). `Auto` is A at odd order and C at even order. The
 default is `A`, so every Filter placed before the parameter existed keeps its response; the
-[Filter Designer](filter-designer.html) writes the type its ladder was built as.
+[LC Filter Designer](lc-filter-designer.html) writes the type its ladder was built as.
 
 How much that selectivity is worth, at order 5 with 0.1 dB of passband ripple and a 60 dB floor: the
 elliptic reaches &minus;60 dB at 2.04 × the band edge, against Chebyshev's 3.41, Butterworth's 3.98

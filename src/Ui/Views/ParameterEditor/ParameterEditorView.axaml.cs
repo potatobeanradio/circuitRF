@@ -121,7 +121,7 @@ public partial class ParameterEditorView : UserControl
             _boundVm.PropertyChanged -= OnVmPropertyChanged;
             _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested -= OnOpenMatchDesigner;
-            _boundVm.OpenFilterDesignerRequested -= OnOpenFilterDesigner;
+            _boundVm.OpenLcFilterDesignerRequested -= OnOpenLcFilterDesigner;
             _boundVm.OpenSignalDesignerRequested -= OnOpenSignalDesigner;
             _boundVm.OpenSnpViewerRequested -= OnOpenSnpViewer;
         }
@@ -131,7 +131,7 @@ public partial class ParameterEditorView : UserControl
             _boundVm.PropertyChanged += OnVmPropertyChanged;
             _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested += OnOpenMatchDesigner;
-            _boundVm.OpenFilterDesignerRequested += OnOpenFilterDesigner;
+            _boundVm.OpenLcFilterDesignerRequested += OnOpenLcFilterDesigner;
             _boundVm.OpenSignalDesignerRequested += OnOpenSignalDesigner;
             _boundVm.OpenSnpViewerRequested += OnOpenSnpViewer;
         }
@@ -162,10 +162,10 @@ public partial class ParameterEditorView : UserControl
         Views.Match.MatchDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
     }
 
-    private void OnOpenFilterDesigner(CircuitRF.Design.Schematic.EditableComponent comp)
+    private void OnOpenLcFilterDesigner(CircuitRF.Design.Schematic.EditableComponent comp)
     {
         if (Vm?.SchematicVm is not { } schematicVm) return;
-        Views.Filters.FilterDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
+        Views.Filters.LcFilterDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
     }
 
     /// <summary>Opens the Signal Designer for the selected MOD_Source.</summary>

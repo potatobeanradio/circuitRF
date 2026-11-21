@@ -807,14 +807,14 @@ public partial class SchematicView : UserControl
     }
 
     /// <summary>
-    /// Context menu ▸ Synthesize… — the Filter Designer on the clicked Filter, through the same
-    /// <c>FilterDesignerWindow.Show</c> the Properties panel's Synthesize… calls, so a second
+    /// Context menu ▸ Synthesise… — the LC Filter Designer on the clicked Filter, through the same
+    /// <c>LcFilterDesignerWindow.Show</c> the Properties panel's Synthesise… calls, so a second
     /// request brings the open window forward rather than opening another (brief FD-P §2).
     /// </summary>
     private void OnCtxSynthesizeFilter(object? sender, RoutedEventArgs e)
     {
         if (Vm is null || Vm.SynthesizeTarget(SchematicCanvasCtrl.ContextMenuTargetId) is not { } comp) return;
-        Views.Filters.FilterDesignerWindow.Show(Vm, comp, TopLevel.GetTopLevel(this) as Window);
+        Views.Filters.LcFilterDesignerWindow.Show(Vm, comp, TopLevel.GetTopLevel(this) as Window);
     }
 
     /// <summary>

@@ -11,11 +11,11 @@ public sealed partial class ParameterEditorViewModel
 {
     /// <summary>What a locked row says: the Filter carries a Designer design.</summary>
     internal const string FilterLockedReason =
-        "This Filter was designed in the Filter Designer. Use Synthesize… to change it, so the "
+        "This Filter was designed in the LC Filter Designer. Use Synthesise… to change it, so the "
       + "specification and the design stay the same.";
 
     /// <summary>
-    /// The order a Filter's rows are shown in: the Filter Designer's own, card by card —
+    /// The order a Filter's rows are shown in: the LC Filter Designer's own, card by card —
     /// impedances, topology, shape, edges, values — so the dialog and the window read alike.
     /// <c>IL</c> is the block's own and comes last. A name not listed keeps its place after them.
     /// </summary>
@@ -38,7 +38,7 @@ public sealed partial class ParameterEditorViewModel
     {
         bool designed = FilterPlacement.IsDesigned(comp);
         return comp.Parameters
-            .Where(p => designed || !ComponentTypeRegistry.IsFilterDesignerParameter(SymbolKind.Filter, p.Name))
+            .Where(p => designed || !ComponentTypeRegistry.IsLcFilterDesignerParameter(SymbolKind.Filter, p.Name))
             .Select((p, i) => (p, i))
             .OrderBy(t => Array.IndexOf(FilterRowOrder, t.p.Name) is var k and >= 0 ? k : FilterRowOrder.Length + t.i)
             .Select(t => t.p)
@@ -48,7 +48,7 @@ public sealed partial class ParameterEditorViewModel
     /// <summary>
     /// A Filter's rows its <c>Response</c> and <c>Form</c> do not read, greyed with the reason
     /// (brief FD-P §3.2) — and on a Filter that carries a Designer design, EVERY row the Designer
-    /// writes, locked (owner, 2026-11-21): a change has to go through Synthesize…, so the block and
+    /// writes, locked (owner, 2026-11-21): a change has to go through Synthesise…, so the block and
     /// the design behind it cannot drift apart. <c>IL</c> stays editable; the Designer does not
     /// write it, so locking it would leave it unchangeable. The test pad's mechanism: greying never
     /// touches a value, and it runs at build and on every refresh.

@@ -4184,13 +4184,13 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   Gate: `SnpStampTests.SeriesMeasuredFile_OnAndBetweenItsOwnSamples_IsTheSeriesElement`, which fails with the old
   stamp at the exact sample (S21 0 + 0.566j against 0.701 + 0.458j).
 
-## Filter Designer — high-order ladders and compact elliptic tanks (2026-11-18)
+## LC Filter Designer — high-order ladders and compact elliptic tanks (2026-11-18)
 
 - **Butterworth / Chebyshev have no order ceiling in the ladder path.** `FilterPrototype.Create`
   overflows its spectral factorisation around order 10; the ladder never needed that polynomial.
   `FilterLadder.ClosedFormG` / `ButterworthG` / `ChebyshevG` feed `BuildFromG` directly, so N=80 is a
   routine result. The ideal transfer plot can still refuse at high N — the Designer keeps the ladder
-  and plots it alone (`FilterDesignerViewModel.Design`).
+  and plots it alone (`LcFilterDesignerViewModel.Design`).
 - **Bessel / Gaussian Cauer leftover degree.** After `a − g·s·b` the algebraic degree drops by two,
   but a ~1e−9 leading residual kept `MatchPoly.Trim` from dropping it, so the next step saw equal
   degrees and aborted around order 8. `ExtractCore` now forces the expected remainder length;
@@ -4204,7 +4204,7 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   mid-X, two rails). `PlaceParallelTank` is C on the spine with L on one short rail above. Elevated
   labels sit beside the glyph so stacked rails do not cover each other.
 
-## Filter Designer — elliptic ladder rebuilt from roots, any order, types b and c (2026-11-21)
+## LC Filter Designer — elliptic ladder rebuilt from roots, any order, types b and c (2026-11-21)
 
 Reported: elliptic ladders failed above about order 9, were slow, and even orders were refused.
 Brief: `docs/sonnet-briefs/brief-filter-designer-elliptic-ladder.md`.

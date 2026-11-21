@@ -562,15 +562,15 @@ else if (standalone)
 }
 else if (filterForm is not null)
 {
-    // The Filter Designer as Synthesize… opens it: a default Filter on a sheet, seeded, at the given form.
+    // The LC Filter Designer as Synthesise… opens it: a default Filter on a sheet, seeded, at the given form.
     var model = new SchematicEditModel { GridSize = 100 };
     var filter = new EditableComponent { InstanceName = "FLT1", Symbol = SymbolKind.Filter };
     filter.Parameters.AddRange(CircuitRF.Ui.Filters.FilterPlacement.DefaultParameters());
     model.Components.Add(filter);
-    var designer = new CircuitRF.Ui.Filters.FilterDesignerViewModel { Schematic = new SchematicViewModel(model, messageSink: null), Target = filter };
+    var designer = new CircuitRF.Ui.Filters.LcFilterDesignerViewModel { Schematic = new SchematicViewModel(model, messageSink: null), Target = filter };
     designer.SeedFrom(filter);
     designer.Form = Enum.Parse<CircuitRF.Core.Matching.NetworkForm>(filterForm, ignoreCase: true);
-    host = new CircuitRF.Ui.Views.Filters.FilterDesignerWindow { DataContext = designer };
+    host = new CircuitRF.Ui.Views.Filters.LcFilterDesignerWindow { DataContext = designer };
     if (sizeGiven) { host.Width = width; host.Height = height; }
     host.Show();
     Pump();

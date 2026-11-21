@@ -131,7 +131,7 @@ convention behind both.</p>
 | `model new`, `import`, `deembed`, `fit`, `check-charge`, `explain`, `export`, `validate`, `report` | a `.cmc` | The [Model Composer](#model)'s steps — the same functions its window calls | The `.cmc`, its cache, a `.cmodel` or a cell, a report folder — as the noun says |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
-| `filter` | a specification on the command line | The same ladder the Filter Designer draws | The element table to stdout; `-o` a `.cnl` of the ladder |
+| `filter lc` | a specification on the command line | The same ladder the LC Filter Designer draws | The element table to stdout; `-o` a `.cnl` of the ladder |
 | `snp` | a Touchstone `.sNp` | The same reading and plots the [S-Parameter Viewer](sparameter-viewer.html) shows | What the file states, to stdout; `-o .svg/.pdf/.png` for the four plots, `-o .cdd` for a Data Display of them |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
 | `recognize` | a `.clay`, a cell folder, or a workspace with `--cell` | Reads the board's copper as a circuit — ground, vias, ports, parts and lines as native components | **Nothing** — the report and the parts table to stdout; `-o circuit.cnl`, `--into new:<name>` for a schematic, `--parts-out parts.csv` |
@@ -1434,11 +1434,11 @@ and `date`), then `staleAcceptances`. With `--list-checks` the result is `review
 an unaccepted finding remains; **130** on a cancellation, reporting the checks that finished. `review`
 writes nothing but `-o`'s PDF.
 
-## `filter` — an LC ladder from a specification {#filter}
+## `filter lc` — an LC ladder from a specification {#filter-lc}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --form bandpass --response Chebyshev --order 5 --f1 1GHz --f2 2GHz --ap 0.1 --series e24 -o filter.cnl</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandpass --response Chebyshev --order 5 --f1 1GHz --f2 2GHz --ap 0.1 --series e24 -o filter.cnl</code></pre>
 
-`filter` is the Filter Designer with no window. It synthesises the same ladder the window does —
+`filter lc` is the LC Filter Designer with no window. It synthesises the same ladder the window does —
 Maximally Flat, Chebyshev, inverse Chebyshev, elliptic, Bessel or Gaussian, as a lowpass, highpass,
 bandpass or bandstop — and prints each element as exact value and, with `--series`, the nearest
 IEC preferred number.

@@ -65,12 +65,12 @@ public sealed record FilterPlotRangeChoice(FilterPlotRangeMode Value, string Lab
 }
 
 /// <summary>
-/// The Filter Assistant. The specification is the one on the assistant screenshots — source and
+/// The LC Filter Designer. The specification is the one on the assistant screenshots — source and
 /// load, first element, order, the mask frequencies, Ap and As, and the response family — and the
 /// curves are the Data Display's own plots, filled from the ideal response and from the ladder run
 /// through the S-parameter engine.
 /// </summary>
-public sealed partial class FilterDesignerViewModel : ObservableObject
+public sealed partial class LcFilterDesignerViewModel : ObservableObject
 {
     /// <summary>The response list, in the names the specification uses.</summary>
     public IReadOnlyList<FilterResponseChoice> ResponseChoices { get; } =
@@ -298,7 +298,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     /// <summary>
     /// The schematic Place filter / Place component go into when the window was opened standalone
-    /// (Tools ▸ Filter Designer): the workspace's last active schematic, read when the button is
+    /// (Tools ▸ LC Filter Designer): the workspace's last active schematic, read when the button is
     /// pressed, not when the window opened. Opened on a Filter, it is that Filter's schematic.
     /// </summary>
     public Func<global::CircuitRF.Ui.ViewModels.SchematicViewModel?>? SchematicProvider { get; set; }
@@ -406,7 +406,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         return $"Replaced {target.InstanceName} with the ladder. Undo puts the Filter back.";
     }
 
-    public FilterDesignerViewModel()
+    public LcFilterDesignerViewModel()
     {
         ResponseChoice = ResponseChoices[0];
         EllipticTypeChoice = EllipticTypeChoices[0];
@@ -1587,7 +1587,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public string NetlistText()
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"* Filter Assistant  {Response} {Form} order {OrderText}");
+        sb.AppendLine($"* LC Filter Designer  {Response} {Form} order {OrderText}");
         sb.Append(Cnl);
         return sb.ToString();
     }

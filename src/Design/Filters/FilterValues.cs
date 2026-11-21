@@ -26,7 +26,7 @@ public enum FilterSeriesKind
 }
 
 /// <summary>
-/// Whether the Filter Designer sizes the order to the mask or takes a typed one. The Filter block
+/// Whether the LC Filter Designer sizes the order to the mask or takes a typed one. The Filter block
 /// stores it (<c>OrderMode</c>) so the Designer reopens the way it was left; the block's own
 /// response reads <c>Order</c> either way.
 /// </summary>

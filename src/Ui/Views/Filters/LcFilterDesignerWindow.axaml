@@ -1,4 +1,4 @@
-<!-- The Filter Designer: a specification column, the two response plots side by side with the
+<!-- The LC Filter Designer: a specification column, the two response plots side by side with the
      response choice above them, and the ladder drawn by the schematic editor's own renderer. -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -8,9 +8,9 @@
         xmlns:fv="using:CircuitRF.Ui.Views.Filters"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-        x:Class="CircuitRF.Ui.Views.Filters.FilterDesignerWindow"
-        x:DataType="flt:FilterDesignerViewModel"
-        Title="Filter Designer"
+        x:Class="CircuitRF.Ui.Views.Filters.LcFilterDesignerWindow"
+        x:DataType="flt:LcFilterDesignerViewModel"
+        Title="LC Filter Designer"
         Width="1199" Height="741"
         MinWidth="1000" MinHeight="700"
         CanResize="True">

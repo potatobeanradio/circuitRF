@@ -10397,14 +10397,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Views.Match.MatchDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null));
 
     /// <summary>
-    /// Tools ▸ Filter Designer. No schematic is required: the assistant synthesises from the
+    /// Tools ▸ LC Filter Designer. No schematic is required: the assistant synthesises from the
     /// specification. A workspace, when one is open, is where Load library series looks.
     /// Place filter / Place component go into the schematic last made active, read when the
     /// button is pressed rather than when the window opened.
     /// </summary>
     [RelayCommand]
-    private void NewFilterDesigner() =>
-        Views.Filters.FilterDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null),
+    private void NewLcFilterDesigner() =>
+        Views.Filters.LcFilterDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null),
                                                           () => _lastActiveSchematicDoc?.ActiveViewModel);
 
     /// <summary>

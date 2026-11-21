@@ -106,7 +106,7 @@ Drawing circuits, the component library, and synthesis.
 
 {{ui: cv-editor}}
 
-## The Filter Designer
+## The LC Filter Designer
 
 - A specification — form, family, order, the mask edges, source and load — and the LC ladder that realises it.
 - Lowpass, highpass, bandpass and **bandstop**. Maximally flat, Chebyshev, inverse Chebyshev, elliptic, Bessel and Gaussian as ladders. An even-order inverse Chebyshev or elliptic keeps a floor at infinite frequency, which a ladder cannot.

@@ -104,7 +104,7 @@ public sealed partial class SchematicViewModel
     }
 
     /// <summary>
-    /// The Filter the context menu's Synthesize… opens the Filter Designer on: the component
+    /// The Filter the context menu's Synthesise… opens the LC Filter Designer on: the component
     /// <paramref name="id"/> names when it is a Filter, else null — which hides the item.
     /// </summary>
     public EditableComponent? SynthesizeTarget(string? id) =>

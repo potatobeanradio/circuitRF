@@ -12,7 +12,7 @@ internal readonly record struct FilterMaskLine(
     double X0 = double.NaN, double X1 = double.NaN, int Forbid = 0);
 
 /// <summary>
-/// Dashed mask lines on the Filter Designer's magnitude plot: vertical edges (Fp/Fs) and horizontal
+/// Dashed mask lines on the LC Filter Designer's magnitude plot: vertical edges (Fp/Fs) and horizontal
 /// floors (−Ap / −As). Colours match the legend strokes next to the Edges / Ap / As labels.
 /// Drawn as overlay chrome so Autoscale stays on the real S21 traces.
 /// </summary>

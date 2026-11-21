@@ -5,7 +5,7 @@ using CircuitRF.Ui.Matching;
 namespace CircuitRF.Ui.Filters;
 
 /// <summary>
-/// What the Filter Designer's Place filter and Place component hand a schematic (brief FD-P §1). It
+/// What the LC Filter Designer's Place filter and Place component hand a schematic (brief FD-P §1). It
 /// builds fragments only; landing them is <c>SchematicViewModel.ArmFragmentPlacement</c>, the paste
 /// ghost Ctrl+V uses, so nothing here places, renames or snaps.
 /// </summary>
@@ -150,10 +150,10 @@ public static class FilterPlacement
     }
 
     /// <summary>
-    /// True when <paramref name="filter"/> carries a Filter Designer design: Apply to Filter and
+    /// True when <paramref name="filter"/> carries an LC Filter Designer design: Apply to Filter and
     /// Place component always write <c>Ap</c> and the mask edges, and nothing else writes them
     /// (their rows are hidden on a Filter without a design). A designed Filter's rows are locked;
-    /// it changes through Synthesize….
+    /// it changes through Synthesise….
     /// </summary>
     public static bool IsDesigned(EditableComponent filter) =>
         filter.Symbol == SymbolKind.Filter

@@ -17,7 +17,7 @@ public interface IHierarchyHost
 
     /// <summary>
     /// Selects <paramref name="doc"/>'s tab and brings the window showing it to the front — what a
-    /// placement handed over from another window (the Filter Designer) needs. Does nothing by
+    /// placement handed over from another window (the LC Filter Designer) needs. Does nothing by
     /// default, which is the right answer for a host with no windows.
     /// </summary>
     void BringToFront(SchematicDocument doc) { }

@@ -17,7 +17,7 @@ namespace CircuitRF.Ui.Tests.Filters;
 /// <summary>
 /// Brief FD-P: the Filter tile (bandstop glyph, pickers, greyed rows, the Designer's settings kept on
 /// the block), placing the designed filter (Place filter, Place component, Replace this Filter) and
-/// Synthesize… on a Filter.
+/// Synthesise… on a Filter.
 /// </summary>
 public class FilterPlaceAndTileTests
 {
@@ -39,10 +39,10 @@ public class FilterPlaceAndTileTests
         return comp;
     }
 
-    private static async Task<FilterDesignerViewModel> Designed(
-        FilterResponse response, NetworkForm form, Action<FilterDesignerViewModel>? edit = null)
+    private static async Task<LcFilterDesignerViewModel> Designed(
+        FilterResponse response, NetworkForm form, Action<LcFilterDesignerViewModel>? edit = null)
     {
-        var vm = new FilterDesignerViewModel { Response = response, Form = form };
+        var vm = new LcFilterDesignerViewModel { Response = response, Form = form };
         edit?.Invoke(vm);
         await vm.DesignAsync(0);
         Assert.True(vm.Elements.Count > 0, vm.Status);
@@ -160,7 +160,7 @@ public class FilterPlaceAndTileTests
     {
         var editor = EditorOn(NewFilter(), out _);
         Assert.False(FilterPlacement.IsDesigned(NewFilter()));
-        Assert.DoesNotContain(editor.Rows, r => ComponentTypeRegistry.IsFilterDesignerParameter(SymbolKind.Filter, r.Name));
+        Assert.DoesNotContain(editor.Rows, r => ComponentTypeRegistry.IsLcFilterDesignerParameter(SymbolKind.Filter, r.Name));
         Assert.Equal(["Zin", "Zout", "Order", "Response", "Form", "Ripple", "Astop", "EllipticType", "Fc", "F1", "F2", "IL"],
                      editor.Rows.Select(r => r.Name));
         Assert.All(editor.Rows.Where(r => r.Name is "Zin" or "Order" or "Form"), r => Assert.True(r.ExpressionEnabled));
@@ -168,7 +168,7 @@ public class FilterPlaceAndTileTests
 
     /// <summary>
     /// A Filter carrying a Designer design is locked: every row but IL is greyed and read-only, a
-    /// picker included, so the only way to change it is Synthesize….
+    /// picker included, so the only way to change it is Synthesise….
     /// </summary>
     [Fact]
     public async Task ADesignedFilterLocksEveryRowButIL()
@@ -208,7 +208,7 @@ public class FilterPlaceAndTileTests
     [InlineData(FilterResponse.Bessel, false)]
     public void TheDesignersRippleBoxIsEnabledOnlyWhereTheResponseReadsIt(FilterResponse response, bool enabled)
     {
-        var vm = new FilterDesignerViewModel { Response = FilterResponse.Gaussian };
+        var vm = new LcFilterDesignerViewModel { Response = FilterResponse.Gaussian };
         vm.Response = response;
         Assert.Equal(enabled, vm.RippleRelevant);
     }
@@ -216,7 +216,7 @@ public class FilterPlaceAndTileTests
     [Fact]
     public void TheDesignersActionsAreOnItsToolbar_AndTheMaskLabelToggleIsGone()
     {
-        string xaml = File.ReadAllText(Source("src", "Ui", "Views", "Filters", "FilterDesignerWindow.axaml"));
+        string xaml = File.ReadAllText(Source("src", "Ui", "Views", "Filters", "LcFilterDesignerWindow.axaml"));
         int bar = xaml.IndexOf("<Border DockPanel.Dock=\"Top\"", StringComparison.Ordinal);
         Assert.True(bar >= 0);
         string toolbar = xaml[bar..xaml.IndexOf("</Border>", xaml.IndexOf("SaveNetlistButton", bar, StringComparison.Ordinal), StringComparison.Ordinal)];
@@ -259,7 +259,7 @@ public class FilterPlaceAndTileTests
         var full = NewFilter();
         Assert.Equal(Line(bare), Line(full));
         Assert.DoesNotContain("Fs=", Line(full));
-        foreach (var p in full.Parameters.Where(p => ComponentTypeRegistry.IsFilterDesignerParameter(SymbolKind.Filter, p.Name)))
+        foreach (var p in full.Parameters.Where(p => ComponentTypeRegistry.IsLcFilterDesignerParameter(SymbolKind.Filter, p.Name)))
             Assert.DoesNotContain(p.Name + "=", Line(full).Split(' ').Select(t => t[..(t.IndexOf('=') + 1)]));
     }
 
@@ -306,7 +306,7 @@ public class FilterPlaceAndTileTests
         block.Parameters.Clear();
         block.Parameters.AddRange(first.AppliedParameters(FilterPlacement.DefaultParameters())!);
 
-        var second = new FilterDesignerViewModel();
+        var second = new LcFilterDesignerViewModel();
         second.SeedFrom(block);
         await second.DesignAsync(0);
 
@@ -351,7 +351,7 @@ public class FilterPlaceAndTileTests
         var block = NewFilter();
         block.Parameters.Clear();
         block.Parameters.AddRange(first.AppliedParameters(FilterPlacement.DefaultParameters())!);
-        var second = new FilterDesignerViewModel();
+        var second = new LcFilterDesignerViewModel();
         second.SeedFrom(block);
         Assert.Equal(("MHz", "GHz", "GHz", "kHz"), (second.UnitA, second.UnitB, second.UnitC, second.UnitD));
         Assert.Equal((first.FaText, first.FbText, first.FcText, first.FdText),
@@ -361,9 +361,9 @@ public class FilterPlaceAndTileTests
     [Fact]
     public void ThePartsSettingReadsBackWhatIsWritten()
     {
-        var parsed = FilterDesignerViewModel.ParseParts("L1=Lib: IndA|IndA-10N; C2=Lib: CapB|CapB-1p0").ToList();
+        var parsed = LcFilterDesignerViewModel.ParseParts("L1=Lib: IndA|IndA-10N; C2=Lib: CapB|CapB-1p0").ToList();
         Assert.Equal([("L1", "Lib: IndA", "IndA-10N"), ("C2", "Lib: CapB", "CapB-1p0")], parsed);
-        Assert.Empty(FilterDesignerViewModel.ParseParts("garbage; =x|y; L1=|p"));
+        Assert.Empty(LcFilterDesignerViewModel.ParseParts("garbage; =x|y; L1=|p"));
     }
 
     // ── §1: placing ─────────────────────────────────────────────────────────
@@ -551,7 +551,7 @@ public class FilterPlaceAndTileTests
         string before = SchematicPersistence.Serialize(model, "s");
         var beforeNets = NetExtractor.Extract(model).TestBench.Instances.ToDictionary(i => i.InstanceName);
 
-        var designer = new FilterDesignerViewModel { Schematic = sheet, Target = filter };
+        var designer = new LcFilterDesignerViewModel { Schematic = sheet, Target = filter };
         designer.SeedFrom(filter);
         await designer.DesignAsync(0);
         Assert.True(designer.CanReplaceTarget);
@@ -575,7 +575,7 @@ public class FilterPlaceAndTileTests
         Assert.Equal(before, SchematicPersistence.Serialize(model, "s"));
     }
 
-    // ── §2: Synthesize… ─────────────────────────────────────────────────────
+    // ── §2: Synthesise… ─────────────────────────────────────────────────────
 
     [Fact]
     public void SynthesizeIsOfferedOnAFilterOnly()
@@ -597,17 +597,17 @@ public class FilterPlaceAndTileTests
         int handler = view.IndexOf("private void OnCtxSynthesizeFilter(", StringComparison.Ordinal);
         Assert.True(handler >= 0);
         int end = view.IndexOf("    private ", handler + 1, StringComparison.Ordinal);
-        Assert.Contains("FilterDesignerWindow.Show(", view[handler..end]);
+        Assert.Contains("LcFilterDesignerWindow.Show(", view[handler..end]);
         string panel = File.ReadAllText(Source("src", "Ui", "Views", "ParameterEditor", "ParameterEditorView.axaml.cs"));
-        Assert.Contains("FilterDesignerWindow.Show(", panel);
-        Assert.Contains("Header=\"Synthesize…\"", File.ReadAllText(Source("src", "Ui", "Views", "Content", "SchematicView.axaml")));
-        Assert.Contains("Content=\"Synthesize…\"", File.ReadAllText(Source("src", "Ui", "Views", "ParameterEditor", "ParameterEditorView.axaml")));
+        Assert.Contains("LcFilterDesignerWindow.Show(", panel);
+        Assert.Contains("Header=\"Synthesise…\"", File.ReadAllText(Source("src", "Ui", "Views", "Content", "SchematicView.axaml")));
+        Assert.Contains("Content=\"Synthesise…\"", File.ReadAllText(Source("src", "Ui", "Views", "ParameterEditor", "ParameterEditorView.axaml")));
     }
 
     [Fact]
     public void ASecondSynthesizeOnTheSameFilterBringsTheFirstWindowForward()
     {
-        var windows = new FilterDesignerWindows<object>();
+        var windows = new LcFilterDesignerWindows<object>();
         var filter = NewFilter();
         int created = 0, activated = 0;
         var (first, made1) = windows.Show(filter, () => { created++; return new object(); }, _ => activated++);

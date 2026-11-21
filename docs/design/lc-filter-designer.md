@@ -1,8 +1,8 @@
-# circuitRF — Filter Designer
+# circuitRF — LC Filter Designer
 
 **Status:** Built · **Date:** 2026-11-13 · elliptic ladder rebuilt 2026-11-21 · placing and the tile (FD-P) 2026-11-21
 
-The Filter Designer is a tool window (Tools ▸ Filter Designer) and a `filter` verb. It synthesises
+The LC Filter Designer is a tool window (Tools ▸ LC Filter Designer) and the `filter lc` verb. It synthesises
 a doubly terminated LC ladder from the ideal Filter's own prototype and draws the response with the
 Data Display's plots. The ideal Filter stays a transfer function.
 
@@ -78,7 +78,7 @@ the value by name.
 
 ## The window and the verb
 
-`FilterDesignerViewModel.DesignAsync` is the rebuild: it reads the boxes on the UI thread after an
+`LcFilterDesignerViewModel.DesignAsync` is the rebuild: it reads the boxes on the UI thread after an
 80 ms debounce, evaluates `FilterNetwork` for the ideal curve, builds and snaps the ladder,
 elaborates the `.cnl` and runs `SParameterEngine` on the thread pool, and applies the result back on
 the UI thread — only the latest request's, a superseded one is cancelled or dropped. Both curves go on
@@ -92,16 +92,16 @@ the spine, C below), adjacent shunt legs, or a stub column whose parallel sectio
 side of it joined by bars. The pane and its Copy wire from one routine,
 `MatchLadderLayout.WireSegments`, which only ever fills a rail between its own drops.
 
-`circuitrf filter` parses the specification and calls `FilterLadder.Synthesize` and
+`circuitrf filter lc` parses the specification and calls `FilterLadder.Synthesize` and
 `FilterValues.Snap`. It writes no second synthesis. Exit 0 with a ladder, 1 when the family has
 none, 2 when an argument does not parse.
 
 Apply to Filter writes the specification onto a placed Filter through one `SetParametersCommand`.
 The snap stays in the netlist, not on the block.
 
-## Placing, Synthesize…, and the Designer's settings on the block (FD-P, 2026-11-21)
+## Placing, Synthesise…, and the Designer's settings on the block (FD-P, 2026-11-21)
 
-**One parameter list, two writers.** `FilterDesignerViewModel.AppliedParameters` is the only place
+**One parameter list, two writers.** `LcFilterDesignerViewModel.AppliedParameters` is the only place
 the window turns a design into Filter parameters. Apply to Filter writes it onto the target; Place
 component writes it onto a fresh block. A parameter a Filter does not carry yet (placed before it
 existed) is added with the registry's own unit and dimension.
@@ -109,7 +109,7 @@ existed) is added with the registry's own unit and dimension.
 **The Designer's settings live on the block, and nothing downstream sees them.** Appended after
 `EllipticType`: `Ap` (blank = Ripple), the six mask edges `Fp`, `Fs`, `Fp1`, `Fs1`, `Fs2`, `Fp2`
 (the other form's edges are written blank), `OrderMode`, `First`, `Values`, `LSeries`, `CSeries`
-and `Parts` (`element=library: series|part; …`). `ComponentTypeRegistry.IsFilterDesignerParameter`
+and `Parts` (`element=library: series|part; …`). `ComponentTypeRegistry.IsLcFilterDesignerParameter`
 names them and `NetExtractor` drops them, so the netlist line is identical with or without them and a
 blank edge never reaches the `.cnl` as `Fs=` — the empty-value trap. The edges are written in the
 window's frequency unit and the unit rides on the parameter, so Seed reopens in that unit.
@@ -133,14 +133,14 @@ block was would lay its spine over the wires that ran into the block and short a
 label name when it has one), and pastes the ladder below with its ends on the same names: one undo
 step, and undo reinserts the block at its own index so the sheet saves byte for byte.
 
-**Synthesize…** is the Properties button (renamed) and a schematic context-menu item shown on a
-Filter only (`SchematicViewModel.SynthesizeTarget`). Both call `FilterDesignerWindow.Show`, which
-keeps one window per Filter (`FilterDesignerWindows<T>`) and brings an open one forward.
+**Synthesise…** is the Properties button (renamed) and a schematic context-menu item shown on a
+Filter only (`SchematicViewModel.SynthesizeTarget`). Both call `LcFilterDesignerWindow.Show`, which
+keeps one window per Filter (`LcFilterDesignerWindows<T>`) and brings an open one forward.
 
 **A designed Filter is locked** (owner decision, 2026-11-21). `FilterPlacement.IsDesigned` is true
 when `Ap` or a mask edge is non-blank, which only Apply / Place component write. Such a Filter's
 rows are all read-only and greyed except `IL` (the Designer does not write it), pickers included, so
-a change goes through Synthesize…. A Filter without a design hides the Designer rows. Rows follow the
+a change goes through Synthesise…. A Filter without a design hides the Designer rows. Rows follow the
 window's card order (`ParameterEditorViewModel.FilterRowOrder`), and the same ordered list is what
 the editor's rebuild check compares, so a reorder does not rebuild on every edit.
 
@@ -156,7 +156,7 @@ forms (`filter-form-glyphs`).
 
 ## Documentation
 
-User page `docs/user/src/reference/filter-designer.md`, registered in `_nav.txt` immediately after
+User page `docs/user/src/reference/lc-filter-designer.md`, registered in `_nav.txt` immediately after
 Match. The Filter entries in `components.md`, `system-components.md` and `dynamic-symbols.md` name
 bandstop and point at the designer. The parameter descriptions live on the registry, which is what
 the parameter editor and `{{table: components/Filter}}` both read.

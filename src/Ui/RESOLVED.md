@@ -41507,7 +41507,7 @@ headlessly — the same dialog File ▸ Import ▸ Technology asks, and both now
 `WorkspaceViewModel.WriteImportedTechnologyAsync`. The constructor now applies the panel's visibility once
 after the handlers are attached.
 
-## Filter Designer — the copied schematic shorted adjacent elliptic tanks (2026-11-21)
+## LC Filter Designer — the copied schematic shorted adjacent elliptic tanks (2026-11-21)
 
 Reported: a bandpass elliptic placed as a schematic was drawn wrongly (labels on the wrong parts,
 one part unlabelled, rails running between arms).
@@ -41530,7 +41530,7 @@ one part unlabelled, rails running between arms).
   the pane's own font. At the Match pitch a shunt label beside its symbol touched the next column's
   label; the filter drawing uses a wider column step and always puts shunt labels beside.
 
-## Filter Designer — a bandstop never had an order, and the mask drew nothing on a refusal (2026-11-21)
+## LC Filter Designer — a bandstop never had an order, and the mask drew nothing on a refusal (2026-11-21)
 
 Reported: choosing Bandstop said the mask edges did not form a transition.
 
@@ -41556,10 +41556,10 @@ Reported: choosing Bandstop said the mask edges did not form a transition.
 - **Still open:** the minimum order is sized from Ap while the ladder is built at the separate
   Ripple box; with Ripple below Ap a Chebyshev or elliptic misses As at Fs.
 
-## Filter Designer — placing the design, Synthesize…, and the Filter tile (brief FD-P, 2026-11-21)
+## LC Filter Designer — placing the design, Synthesise…, and the Filter tile (brief FD-P, 2026-11-21)
 
 Reported: the Filter tile showed no bandstop anywhere; asked for Place filter / Place component, a
-Synthesize… entry on the Filter, and the Filter's fields to carry every Designer setting.
+Synthesise… entry on the Filter, and the Filter's fields to carry every Designer setting.
 
 - **The missing bandstop was the build, not the code.** The installed AppImage
   (`~/Applications/circuitRF`, built 2026-11-20) is from `main`, which does not contain `a4eb5336d`:
@@ -41567,12 +41567,12 @@ Synthesize… entry on the Filter, and the Filter's fields to carry every Design
   bundle finds `Lowpass`, `Highpass`, `InvChebyshev` and no `Bandstop`). On this branch the `Form`
   picker offers it and the glyph strikes the middle wave; `SettingFormToBandstopRedrawsTheGlyph` holds
   the redraw through `SetParametersCommand`. The docs now draw all four forms (`filter-form-glyphs`).
-  **`main` also carries a different, distributed "Filter Designer"** (MLAD ladder realisers), so the two
+  **`main` also carries a different, distributed "LC Filter Designer"** (MLAD ladder realisers), so the two
   lines will meet at merge.
 - **Designer-only parameters must never reach the `.cnl`.** The mask edges are blank when unset, and a
   blank value written as `Fs=` is the empty-value trap (`src/Core/CLAUDE.md`): the reader glues the next
   token on. A library series name may hold a space, which would split into phantom nets.
-  `ComponentTypeRegistry.IsFilterDesignerParameter` names them and `NetExtractor` drops them, so a
+  `ComponentTypeRegistry.IsLcFilterDesignerParameter` names them and `NetExtractor` drops them, so a
   Filter extracts the same line with or without them — no `ResolveEnumNamedParameters` entry needed.
 - **The window's settings are read back with the block's own cutoff winning.** Seed fills the boxes
   from the stored mask, then `SeedEdges` puts `Fc`/`F1`/`F2` over the edge they name, so an edit made
@@ -41595,10 +41595,10 @@ Synthesize… entry on the Filter, and the Filter's fields to carry every Design
   `src/Cli/bin/Debug/net10.0/runtimes/` holds osx and win folders only, so `libSkiaSharp.so` is not
   found.
 
-## Filter Designer — a toolbar, and a designed Filter is locked (2026-11-21)
+## LC Filter Designer — a toolbar, and a designed Filter is locked (2026-11-21)
 
 Asked for: the window's buttons on a toolbar, the mask-label toggle removed, irrelevant controls
-disabled, and a Filter that carries a design edited only through Synthesize….
+disabled, and a Filter that carries a design edited only through Synthesise….
 
 - **A greyed PICKER was still live.** `SetDisabledByMode` greyed a row's text box and unit combo,
   but the choice `ComboBox` bound only `IsVisible`, so a greyed `Form` or `Response` could still be
@@ -41616,7 +41616,7 @@ disabled, and a Filter that carries a design edited only through Synthesize….
   beside the file's existing invariant lines — a factorisation that cannot come back empty in
   practice, not a message a user acts on.
 
-## Filter Designer — a prefix per frequency box, and legible toolbar glyphs (2026-11-21)
+## LC Filter Designer — a prefix per frequency box, and legible toolbar glyphs (2026-11-21)
 
 - **Owner request:** each frequency box (the mask edges, and Fmin/Fmax) gets its own prefix picker
   instead of one shared one; the toolbar glyphs were reworked from the application's existing set.

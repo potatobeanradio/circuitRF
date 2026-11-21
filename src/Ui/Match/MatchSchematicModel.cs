@@ -99,7 +99,7 @@ public static class MatchSchematicModel
             dots.Add(new SchematicDot(s.X, MatchLadderLayout.SpineY));
         foreach (var (dx, dy) in layout.ExtraDots)
             dots.Add(new SchematicDot(dx, dy));
-        // Parallel through-path arms (Filter Designer) drop onto the spine at both ends.
+        // Parallel through-path arms (LC Filter Designer) drop onto the spine at both ends.
         foreach (var arm in layout.ParallelArms)
         {
             dots.Add(new SchematicDot(arm.X0, MatchLadderLayout.SpineY));
@@ -151,7 +151,7 @@ public static class MatchSchematicModel
         // A shunt arm's labels go beside it, or — when the text is wider than the gap to the next
         // column — underneath its own ground. The decision is MatchShuntLabels', so the flattened
         // cell makes it the same way (owner, 2026-08-20).
-        // A through-path element above the spine (Filter Designer's parallel tank) puts its labels
+        // A through-path element above the spine (LC Filter Designer's parallel tank) puts its labels
         // above the glyph so they do not sit on the pink rail wires.
         List<(double Dx, double Dy)> offsets;
         if (e.IsShunt)
@@ -165,7 +165,7 @@ public static class MatchSchematicModel
         }
         else if (e.LabelAbove)
         {
-            // Above the body: a Filter Designer arm draws another branch underneath this glyph.
+            // Above the body: an LC Filter Designer arm draws another branch underneath this glyph.
             offsets = labels.Select(_ => (0.0, MatchLadderLayout.LabelAboveDy)).ToList();
         }
         else

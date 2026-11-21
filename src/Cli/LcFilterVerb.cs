@@ -7,10 +7,10 @@ using CircuitRF.Design.Filters;
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf filter</c> — the Filter Assistant with no window. The ladder and the netlist are
+/// <c>circuitrf filter lc</c> — the LC Filter Designer with no window. The ladder and the netlist are
 /// <see cref="FilterLadder"/>'s; a series snap is <see cref="FilterValues"/>'s.
 /// </summary>
-public static class FilterVerb
+public static class LcFilterVerb
 {
     /// <summary>Runs one specification and writes the ladder. Exit 0 when a ladder was produced.</summary>
     public static int Run(string[] args)
@@ -67,7 +67,7 @@ public static class FilterVerb
                     Console.WriteLine(Help());
                     return 0;
                 default:
-                    return Fail($"Unrecognised argument '{a}'. filter --help lists them.");
+                    return Fail($"Unrecognised argument '{a}'. filter lc --help lists them.");
             }
         }
 
@@ -123,7 +123,7 @@ public static class FilterVerb
     }
 
     private static string Help() => """
-        circuitrf filter — an LC ladder from a filter specification.
+        circuitrf filter lc — an LC ladder from a filter specification.
 
           --form lowpass|highpass|bandpass|bandstop
           --response Butterworth|Chebyshev|InvChebyshev|Bessel|Gaussian|Elliptic

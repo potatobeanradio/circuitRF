@@ -3,7 +3,7 @@ using Xunit;
 
 namespace CircuitRF.Ui.Tests.Filters;
 
-/// <summary>The Filter Designer's mag/phase pane — one plot fills; both sit side by side.</summary>
+/// <summary>The LC Filter Designer's mag/phase pane — one plot fills; both sit side by side.</summary>
 public class FilterPlotLayoutTests
 {
     [Fact]

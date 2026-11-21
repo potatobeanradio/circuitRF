@@ -16,14 +16,14 @@ using CircuitRF.Ui.ViewModels;
 namespace CircuitRF.Ui.Views.Filters;
 
 /// <summary>
-/// The Filter Designer. Unowned, like the Match Designer, so it can sit behind the workspace.
+/// The LC Filter Designer. Unowned, like the Match Designer, so it can sit behind the workspace.
 /// The plots are the Data Display's <see cref="PlotControl"/>.
 /// </summary>
-public partial class FilterDesignerWindow : Window, ICrfMenuWindow
+public partial class LcFilterDesignerWindow : Window, ICrfMenuWindow
 {
     private bool _wired;
 
-    public FilterDesignerWindow()
+    public LcFilterDesignerWindow()
     {
         InitializeComponent();
         DataContextChanged += (_, _) => WirePlots();
@@ -31,22 +31,22 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         Activated += (_, _) => Vm?.RefreshPlacement();
     }
 
-    public string WindowMenuHeader => "Filter Designer";
+    public string WindowMenuHeader => "LC Filter Designer";
 
-    private FilterDesignerViewModel? Vm => DataContext as FilterDesignerViewModel;
+    private LcFilterDesignerViewModel? Vm => DataContext as LcFilterDesignerViewModel;
 
     /// <summary>The windows open on placed Filters, one each.</summary>
-    private static readonly FilterDesignerWindows<FilterDesignerWindow> OnFilter = new();
+    private static readonly LcFilterDesignerWindows<LcFilterDesignerWindow> OnFilter = new();
 
     /// <summary>
-    /// Tools ▸ Filter Designer, on no component. <paramref name="schematic"/> is where Place filter
+    /// Tools ▸ LC Filter Designer, on no component. <paramref name="schematic"/> is where Place filter
     /// and Place component go, read when the button is pressed.
     /// </summary>
-    public static FilterDesignerWindow ShowStandalone(string? workspaceRoot, Window? owner,
+    public static LcFilterDesignerWindow ShowStandalone(string? workspaceRoot, Window? owner,
                                                       Func<SchematicViewModel?>? schematic = null)
     {
-        var vm = new FilterDesignerViewModel { WorkspaceRoot = workspaceRoot, SchematicProvider = schematic };
-        var window = new FilterDesignerWindow { DataContext = vm };
+        var vm = new LcFilterDesignerViewModel { WorkspaceRoot = workspaceRoot, SchematicProvider = schematic };
+        var window = new LcFilterDesignerWindow { DataContext = vm };
         ShowUnowned(window, owner);
         vm.Design();
         return window;
@@ -56,18 +56,18 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
     /// Opens on a placed Filter and can write the specification back onto it — or, when a window
     /// is already open on that Filter, brings it forward instead of opening a second one.
     /// </summary>
-    public static FilterDesignerWindow Show(SchematicViewModel schematic, EditableComponent component, Window? owner)
+    public static LcFilterDesignerWindow Show(SchematicViewModel schematic, EditableComponent component, Window? owner)
     {
         var (window, created) = OnFilter.Show(component, () =>
         {
-            var vm = new FilterDesignerViewModel
+            var vm = new LcFilterDesignerViewModel
             {
                 Schematic = schematic,
                 Target = component,
                 WorkspaceRoot = schematic.WorkspaceRoot,
             };
             vm.SeedFrom(component);
-            return new FilterDesignerWindow { DataContext = vm };
+            return new LcFilterDesignerWindow { DataContext = vm };
         }, w => w.Activate());
         if (created)
         {
@@ -77,7 +77,7 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         return window;
     }
 
-    private static void ShowUnowned(FilterDesignerWindow window, Window? owner)
+    private static void ShowUnowned(LcFilterDesignerWindow window, Window? owner)
     {
         window.WindowStartupLocation = WindowStartupLocation.Manual;
         if (owner is not null)
@@ -107,11 +107,11 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
                 string t = Vm.PlotBandPercentText.Trim().TrimEnd('%').Trim();
                 return t + "%";
             },
-            t => Vm.CommitPlotWindow(FilterDesignerViewModel.ParseBandPercent(t), null));
+            t => Vm.CommitPlotWindow(LcFilterDesignerViewModel.ParseBandPercent(t), null));
         BindNumericBox(
             "PlotPointsBox",
             () => Vm.PlotPointsText,
-            t => Vm.CommitPlotWindow(null, FilterDesignerViewModel.ParsePlotPoints(t)));
+            t => Vm.CommitPlotWindow(null, LcFilterDesignerViewModel.ParsePlotPoints(t)));
         BindNumericBox(
             "PlotFminBox",
             () => Vm.PlotFminText,

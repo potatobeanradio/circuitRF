@@ -7,7 +7,7 @@ namespace CircuitRF.Ui.Filters;
 /// <summary>One row of the realization table — Series / Part are editable when library parts are loaded.</summary>
 public sealed partial class FilterElementRow : ObservableObject
 {
-    private readonly FilterDesignerViewModel _host;
+    private readonly LcFilterDesignerViewModel _host;
     private bool _suppress;
 
     /// <summary>The element name in the netlist.</summary>
@@ -45,7 +45,7 @@ public sealed partial class FilterElementRow : ObservableObject
     [ObservableProperty] private FilterPart? _selectedPart;
 
     public FilterElementRow(
-        FilterDesignerViewModel host,
+        LcFilterDesignerViewModel host,
         string name,
         string kind,
         string exact,

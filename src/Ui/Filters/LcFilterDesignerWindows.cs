@@ -3,13 +3,13 @@ using System.Runtime.CompilerServices;
 namespace CircuitRF.Ui.Filters;
 
 /// <summary>
-/// One Filter Designer per placed Filter (brief FD-P §2): opening the designer on a Filter that
+/// One LC Filter Designer per placed Filter (brief FD-P §2): opening the designer on a Filter that
 /// already has one brings that one forward instead of opening a second window bound to the same
 /// instance — two windows applying to one block would each overwrite the other. The Match Designer
 /// keeps the same rule (<c>MatchDesignerWindow.Show</c>). Generic over the window so the rule is
 /// testable without a display.
 /// </summary>
-public sealed class FilterDesignerWindows<TWindow> where TWindow : class
+public sealed class LcFilterDesignerWindows<TWindow> where TWindow : class
 {
     private readonly ConditionalWeakTable<EditableComponent, TWindow> _open = new();
 

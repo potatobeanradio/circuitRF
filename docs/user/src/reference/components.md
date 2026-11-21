@@ -2264,9 +2264,9 @@ following the `Form` parameter:
 
 {{ui: filter-form-glyphs}}
 
-The [Filter Designer](filter-designer.html) builds the LC ladder for every family — elliptic of any
+The [LC Filter Designer](lc-filter-designer.html) builds the LC ladder for every family — elliptic of any
 practical order and type included — and can snap each value onto a standard series or a library
-part. This block stays the ideal response. Right-click a Filter and choose **Synthesize…** (or press
+part. This block stays the ideal response. Right-click a Filter and choose **Synthesise…** (or press
 it in the properties) to open the Designer on it.
 
 The parameters from `Ap` on are the **Designer's own settings**: the mask it sized the order for, how
@@ -2274,7 +2274,7 @@ it chose the order, how it built the ladder. Apply to Filter writes them so the 
 exactly what it applied. The block's response reads none of them, and none of them reaches the
 netlist, so a Filter simulates the same with or without them. They appear only on a Filter that
 carries a design, and such a Filter is **locked**: every field but `IL` is greyed, and a change goes
-through **Synthesize…**. On a Filter without a design, a row the chosen `Response` or `Form` does not
+through **Synthesise…**. On a Filter without a design, a row the chosen `Response` or `Form` does not
 read is greyed, with the reason as its tooltip. The rows are listed in the Designer's own order.
 
 Tell a filter from a matching network by its type label and its instance name — `FLT1` against `MN1`
