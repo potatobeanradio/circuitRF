@@ -1013,6 +1013,10 @@ public static class FigureCatalog
             "The five Match glyphs. A slash across a wave means that part of the spectrum is blocked; "
           + "two or three smaller bandpass groups mean two or three bands."),
 
+        new("filter-designer-toolbar", DocMatchFixtures.FilterDesignerToolbar, 250, 36, null,
+            "The Filter Designer's toolbar, opened on a placed Filter: Design; Apply to Filter, Place "
+          + "filter, Place component and Replace this Filter; Save netlist."),
+
         new("filter-form-glyphs", DocMatchFixtures.FilterFormGlyphs, 625, 150, null,
             "The four Filter glyphs, one per Form. A slash across a wave means that part of the "
           + "spectrum is blocked: the top two for a lowpass, the bottom two for a highpass, the outer "

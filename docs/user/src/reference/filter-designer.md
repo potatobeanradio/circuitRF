@@ -30,7 +30,12 @@ block, and **Place filter** puts the ladder itself on the schematic.
 
 The window's actions are on its toolbar, as icons with their names in the tooltips: **Design**,
 **Apply to Filter** (only when opened on a Filter), **Place filter**, **Place component**,
-**Replace this Filter** (likewise) and **Save netlist…**.
+**Replace this Filter** (likewise) and **Save netlist…**. The glyphs are ones the application
+already uses: the run glyph for Design, an edit glyph for Apply to Filter, the Match Designer's
+network glyph for Place filter, a block with a plus for Place component, Swap Line Type's arrows
+for Replace this Filter, and Generate Netlist's glyph for the netlist.
+
+{{ui: filter-designer-toolbar}}
 
 The ideal Filter and the ladder answer different questions. The block is a rational scattering
 matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
@@ -53,7 +58,7 @@ the existing optimizer's problem, on an E-series or on a part.
 | Form | Lowpass, highpass, bandpass, bandstop. |
 | Order | **Minimum** is the smallest prototype order that meets Ap, As and the mask edges. **Specify** types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder). |
 | Ap, Ripple, As | Passband attenuation, synthesis ripple and stopband attenuation, in dB. Ripple is enabled only for Chebyshev and elliptic, the two families that have one; the others build at a fixed ripple. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording. |
-| Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. The unit sits on the row. |
+| Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. Each edge has its own prefix (Hz, kHz, MHz, GHz) beside it; changing one rescales that box only, so the frequency it states is unchanged. The plot's axis reads in the passband edge's prefix. |
 
 The cutoff the ladder is built at is Fp for a lowpass or highpass, the passband edges for a
 bandpass, and Fp1 and Fp2 for a bandstop — the passband edges either side of the rejected band.

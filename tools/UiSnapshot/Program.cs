@@ -145,6 +145,7 @@ var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
 string? snp = null;
+string? filterForm = null;
 int plotIndex = 1, previewTab = 0;
 bool sizeGiven = false;
 double width = 1000, height = 700;
@@ -159,6 +160,7 @@ for (int i = 0; i < args.Length; i++)
         case "--results" when i + 1 < args.Length: results = args[++i]; break;
         case "--signal" when i + 1 < args.Length: signal.Add(args[++i]); break;
         case "--snp" when i + 1 < args.Length: snp = Path.GetFullPath(args[++i]); break;
+        case "--filter" when i + 1 < args.Length: filterForm = args[++i]; break;
         case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
         case "--standalone": standalone = true; break;
         case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
@@ -231,12 +233,13 @@ if (reviewPanel is not null && output is not null)
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
-if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && filterForm is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
                           + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]\n"
+                          + "       UiSnapshot --filter <Lowpass|Highpass|Bandpass|Bandstop> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
                           + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]\n"
@@ -555,6 +558,24 @@ else if (standalone)
     Pump();
     Await(designer.PreviewAsync());
     designer.PreviewTab = previewTab;
+    Console.WriteLine(designer.Status);
+}
+else if (filterForm is not null)
+{
+    // The Filter Designer as Synthesize… opens it: a default Filter on a sheet, seeded, at the given form.
+    var model = new SchematicEditModel { GridSize = 100 };
+    var filter = new EditableComponent { InstanceName = "FLT1", Symbol = SymbolKind.Filter };
+    filter.Parameters.AddRange(CircuitRF.Ui.Filters.FilterPlacement.DefaultParameters());
+    model.Components.Add(filter);
+    var designer = new CircuitRF.Ui.Filters.FilterDesignerViewModel { Schematic = new SchematicViewModel(model, messageSink: null), Target = filter };
+    designer.SeedFrom(filter);
+    designer.Form = Enum.Parse<CircuitRF.Core.Matching.NetworkForm>(filterForm, ignoreCase: true);
+    host = new CircuitRF.Ui.Views.Filters.FilterDesignerWindow { DataContext = designer };
+    if (sizeGiven) { host.Width = width; host.Height = height; }
+    host.Show();
+    Pump();
+    Await(designer.DesignAsync(0));
+    designer.RefreshPlacement();
     Console.WriteLine(designer.Status);
 }
 else if (snp is not null)

@@ -53,6 +53,14 @@ dotnet run --project tools/UiSnapshot --no-build -- --snp <file.sNp> -o out.png 
 
 The status line prints after the file is read and drawn.
 
+**The Filter Designer** opens as Synthesize… opens it, on a default Filter block, at one form:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --filter <Lowpass|Highpass|Bandpass|Bandstop> -o out.png [--size WxH] [steps]
+```
+
+The status line prints after the design has run.
+
 **The Tuning window** opens on a schematic's ticked Tune rows, the way the shell hosts it:
 
 ```

@@ -71,10 +71,18 @@
             <Setter Property="MinWidth"            Value="140"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
-        <!-- Unit picker on the Edges header stays compact; it is not a value-column control. -->
+        <!-- The prefix picker beside each frequency box stays compact; it is not a value-column control. -->
         <Style Selector="Border.card ComboBox.unitpick">
-            <Setter Property="MinWidth"            Value="72"/>
+            <Setter Property="MinWidth"            Value="0"/>
+            <Setter Property="Width"               Value="70"/>
+            <Setter Property="Margin"              Value="4,0,0,0"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        <!-- A frequency box shares the value column with its prefix picker (Grid.withunit), so it
+             gives up the value column's minimum width rather than pushing the picker past the
+             pane: a third grid column here squeezed the shared label column in every card. -->
+        <Style Selector="Grid.withunit TextBox.num">
+            <Setter Property="MinWidth" Value="0"/>
         </Style>
         <Style Selector="TextBlock.tblhdr">
             <Setter Property="FontSize"          Value="11"/>
@@ -122,21 +130,31 @@
     </Window.Styles>
 
     <DockPanel>
-    <!-- ── Toolbar (owner, 2026-11-21): the window's actions, as icons in the Match Designer's
-         toolbar style — a bare 16 px glyph in a Padding="6,3" button, its name in the tooltip.
-         Design first; then what the design does to a schematic; then the file. -->
-    <Border DockPanel.Dock="Top" Padding="6,4"
+    <!-- ── Toolbar (owner, 2026-11-21) ─────────────────────────────────────────
+         The schematic editor's toolbar, in shape: a StackPanel.Toolbar (so the icons take its
+         softened colour), one 16 px Material glyph per Padding="6,3" button, the name in the
+         tooltip, and the same separators. A composite of part glyphs reads as noise at 16 px, so
+         each action is ONE glyph:
+           Design           PlayCircleOutline — the workspace toolbar's run glyph.
+           Apply to Filter  SquareEditOutline — the block's parameters edited in place.
+           Place filter     TransitConnectionVariant — the Match Designer's glyph for an LC network.
+           Place component  ShapeRectanglePlus — one block added.
+           Replace          SwapHorizontal — Swap Line Type's glyph, one part for another.
+           Save netlist     FileExportOutline — Generate Netlist's glyph. -->
+    <Border DockPanel.Dock="Top" Padding="6,3"
             BorderThickness="0,0,0,1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-        <StackPanel Orientation="Horizontal" Spacing="4">
+        <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
             <Button Name="DesignButton" Padding="6,3" Command="{Binding DesignCommand}"
-                    ToolTip.Tip="Design — rebuild the ladder and redraw the response">
-                <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                    ToolTip.Tip="Design — synthesise the ladder and redraw the response">
+                <mi:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"/>
             </Button>
+
             <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                     Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
             <Button Name="ApplyButton" Padding="6,3" Click="OnApply" IsVisible="{Binding CanApply}"
                     ToolTip.Tip="Apply to Filter — write this specification and the Designer's settings onto the Filter">
-                <mi:MaterialIcon Kind="CheckBold" Width="16" Height="16"/>
+                <mi:MaterialIcon Kind="SquareEditOutline" Width="16" Height="16"/>
             </Button>
             <Button Name="PlaceFilterButton" Padding="6,3" Click="OnPlaceFilter" IsEnabled="{Binding CanPlace}"
                     ToolTip.ShowOnDisabled="True">
@@ -147,7 +165,7 @@
                         <Run Text="{Binding PlaceTip}"/>
                     </TextBlock>
                 </ToolTip.Tip>
-                <mi:MaterialIcon Kind="VectorPolyline" Width="16" Height="16"/>
+                <mi:MaterialIcon Kind="TransitConnectionVariant" Width="16" Height="16"/>
             </Button>
             <Button Name="PlaceComponentButton" Padding="6,3" Click="OnPlaceComponent" IsEnabled="{Binding CanPlace}"
                     ToolTip.ShowOnDisabled="True">
@@ -158,7 +176,7 @@
                         <Run Text="{Binding PlaceTip}"/>
                     </TextBlock>
                 </ToolTip.Tip>
-                <mi:MaterialIcon Kind="PackageVariantClosed" Width="16" Height="16"/>
+                <mi:MaterialIcon Kind="ShapeRectanglePlus" Width="16" Height="16"/>
             </Button>
             <!-- Lit = Place filter replaces the Filter this window was opened on. A Button bound to
                  Classes.ToolActive, as the Match Designer's panel lamps are: the view model owns the
@@ -168,11 +186,13 @@
                     ToolTip.Tip="Replace this Filter — when lit, Place filter removes the Filter block and puts the ladder in its place, on the block's nets, as one undo step">
                 <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
             </Button>
+
             <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                     Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
             <Button Name="SaveNetlistButton" Padding="6,3" Click="OnSave"
                     ToolTip.Tip="Save netlist… — the ladder as a .cnl, at the values the table shows">
-                <mi:MaterialIcon Kind="ContentSaveOutline" Width="16" Height="16"/>
+                <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
             </Button>
         </StackPanel>
     </Border>
@@ -271,12 +291,10 @@
 
                     <Border Classes="card">
                         <StackPanel Spacing="3">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="cardhdr" Text="Edges"/>
-                                <ComboBox Grid.Column="1" ItemsSource="{Binding Units}" SelectedItem="{Binding Unit}"
-                                          MinWidth="72" HorizontalAlignment="Right"
-                                          Classes="unitpick"/>
-                            </Grid>
+                            <TextBlock Classes="cardhdr" Text="Edges"/>
+                            <!-- One prefix per box (owner, 2026-11-21), so a 900 MHz passband edge and a
+                                 2.5 GHz stop edge are each typed in their own unit. Changing a prefix
+                                 rescales that box only; the frequency it states is unchanged. -->
                             <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
@@ -286,28 +304,38 @@
                                     <TextBlock Classes="lbl" Text="{Binding LabelA}"/>
                                     <Line Classes="maskleg" Stroke="{Binding SwatchA}"/>
                                 </StackPanel>
-                                <TextBox Grid.Column="1" Classes="num" Text="{Binding FaText}"
+                                <Grid Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto">
+                                    <TextBox Classes="num" Text="{Binding FaText}"
                                          ToolTip.Tip="{Binding TipA}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitA}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
                                 <StackPanel Grid.Row="1" Classes="lblrow" ToolTip.Tip="{Binding TipB}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelB}"/>
                                     <Line Classes="maskleg" Stroke="{Binding SwatchB}"/>
                                 </StackPanel>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding FbText}"
+                                <Grid Grid.Row="1" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto">
+                                    <TextBox Classes="num" Text="{Binding FbText}"
                                          ToolTip.Tip="{Binding TipB}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitB}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
                                 <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding ShowC}"
                                             ToolTip.Tip="{Binding TipC}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelC}"/>
                                     <Line Classes="maskleg" Stroke="{Binding SwatchC}"/>
                                 </StackPanel>
-                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding FcText}"
-                                         IsVisible="{Binding ShowC}" ToolTip.Tip="{Binding TipC}"/>
+                                <Grid Grid.Row="2" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding ShowC}">
+                                    <TextBox Classes="num" Text="{Binding FcText}" ToolTip.Tip="{Binding TipC}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitC}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
                                 <StackPanel Grid.Row="3" Classes="lblrow" IsVisible="{Binding ShowD}"
                                             ToolTip.Tip="{Binding TipD}">
                                     <TextBlock Classes="lbl" Text="{Binding LabelD}"/>
                                     <Line Classes="maskleg" Stroke="{Binding SwatchD}"/>
                                 </StackPanel>
-                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding FdText}"
-                                         IsVisible="{Binding ShowD}" ToolTip.Tip="{Binding TipD}"/>
+                                <Grid Grid.Row="3" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding ShowD}">
+                                    <TextBox Classes="num" Text="{Binding FdText}" ToolTip.Tip="{Binding TipD}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitD}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -344,14 +372,14 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Plot range"/>
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow">
                                     <TextBlock Classes="lbl" Text="Mode"
-                                               ToolTip.Tip="± band widens the mask edges. Manual sets Fmin and Fmax in the unit above."/>
+                                               ToolTip.Tip="± band widens the mask edges. Manual sets Fmin and Fmax, each in its own unit."/>
                                 </StackPanel>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding PlotRangeChoices}"
                                           SelectedItem="{Binding PlotRangeChoice}"/>
@@ -361,18 +389,22 @@
                                 <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Name="BandFractionBox"
                                          IsVisible="{Binding !PlotRangeIsManual}"
                                          ToolTip.Tip="Percent of the outer mask span. Recomputes the response over the whole widened range."/>
-                                <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
+                                <StackPanel Grid.Row="1" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
                                     <TextBlock Classes="lbl" Text="Fmin"/>
                                 </StackPanel>
-                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Name="PlotFminBox"
-                                         IsVisible="{Binding PlotRangeIsManual}"/>
-                                <StackPanel Grid.Row="3" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
+                                <Grid Grid.Row="1" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBox Classes="num" Name="PlotFminBox"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitFmin}" ToolTip.Tip="The prefix Fmin is typed in"/>
+                                </Grid>
+                                <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
                                     <TextBlock Classes="lbl" Text="Fmax"/>
                                 </StackPanel>
-                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Name="PlotFmaxBox"
-                                         IsVisible="{Binding PlotRangeIsManual}"/>
-                                <StackPanel Grid.Row="4" Classes="lblrow"><TextBlock Classes="lbl" Text="points"/></StackPanel>
-                                <TextBox Grid.Row="4" Grid.Column="1" Classes="num" Name="PlotPointsBox"/>
+                                <Grid Grid.Row="2" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBox Classes="num" Name="PlotFmaxBox"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitFmax}" ToolTip.Tip="The prefix Fmax is typed in"/>
+                                </Grid>
+                                <StackPanel Grid.Row="3" Classes="lblrow"><TextBlock Classes="lbl" Text="points"/></StackPanel>
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Name="PlotPointsBox"/>
                             </Grid>
                         </StackPanel>
                     </Border>

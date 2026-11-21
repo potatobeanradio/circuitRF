@@ -314,6 +314,45 @@ public static class DocMatchFixtures
         return new FigureScene(row);
     }
 
+    /// <summary>
+    /// The Filter Designer's toolbar, opened on a placed Filter so Apply to Filter and Replace this
+    /// Filter show, with a design and a schematic so the place buttons are live. The toolbar is
+    /// detached from the real window, carrying the window's styles across as
+    /// <see cref="WholeWindow"/> does.
+    /// </summary>
+    public static FigureScene FilterDesignerToolbar()
+    {
+        var model = new SchematicEditModel { GridSize = 100 };
+        var filter = new EditableComponent { InstanceName = "FLT1", Symbol = SymbolKind.Filter };
+        filter.Parameters.AddRange(CircuitRF.Ui.Filters.FilterPlacement.DefaultParameters());
+        model.Components.Add(filter);
+        var sheet = new SchematicViewModel(model);
+        var vm = new CircuitRF.Ui.Filters.FilterDesignerViewModel { Schematic = sheet, Target = filter };
+        vm.SeedFrom(filter);
+        // Pump rather than block: DesignAsync resumes on the UI thread, which GetResult() would hold.
+        var design = vm.DesignAsync(0);
+        var until = DateTime.UtcNow.AddSeconds(60);
+        while (!design.IsCompleted && DateTime.UtcNow < until)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            System.Threading.Thread.Sleep(5);
+        }
+        vm.RefreshPlacement();
+
+        var window = new CircuitRF.Ui.Views.Filters.FilterDesignerWindow { DataContext = vm };
+        var dock = window.Content as DockPanel
+            ?? throw new InvalidOperationException("FilterDesignerWindow's content is no longer a DockPanel with its toolbar on top.");
+        var toolbar = dock.Children.OfType<Border>().First();
+        var styles = window.Styles.ToList();
+        dock.Children.Remove(toolbar);
+        window.Content = null;
+        window.Styles.Clear();
+        foreach (var style in styles) toolbar.Styles.Add(style);
+        toolbar.DataContext = vm;
+        toolbar.HorizontalAlignment = HorizontalAlignment.Left;
+        return new FigureScene(toolbar);
+    }
+
     private static Control GlyphTile(NetworkForm form, int bands, string caption,
                                      SymbolKind kind = SymbolKind.Match) => new StackPanel
     {

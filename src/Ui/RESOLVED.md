@@ -41615,3 +41615,23 @@ disabled, and a Filter that carries a design edited only through Synthesize….
 - **Firewall gate:** the two Gaussian-prototype invariants in `FilterPrototype.cs` were allow-listed
   beside the file's existing invariant lines — a factorisation that cannot come back empty in
   practice, not a message a user acts on.
+
+## Filter Designer — a prefix per frequency box, and legible toolbar glyphs (2026-11-21)
+
+- **Owner request:** each frequency box (the mask edges, and Fmin/Fmax) gets its own prefix picker
+  instead of one shared one; the toolbar glyphs were reworked from the application's existing set.
+- **A prefix picker belongs INSIDE the value column, not in a third grid column.** The side panel is
+  292 px; a third `Auto` column (label + 140 px box + 72 px picker) asked for more than the pane has, so
+  the grid squeezed the `FltLbl` shared label column and the Edges and Plot range cards fell out of line
+  with every other card. Each box and its picker now share the value column in a `Grid.withunit`
+  (`*,Auto`), and that class drops the box's 140 px minimum. Held by
+  `TheDesignersActionsAreOnItsToolbar_AndTheMaskLabelToggleIsGone`.
+- **A composite of schematic part glyphs is noise at 16 px.** An L and a C side by side, or the Filter
+  symbol with a badge, rendered as a vertical smear. Each action is now ONE Material glyph the
+  application already uses for the same idea (the run glyph, the Match Designer's network glyph, Swap
+  Line Type's arrows, Generate Netlist's export).
+- **Trap — a fixture must not block on `DesignAsync`.** It resumes on the UI thread, so
+  `.GetAwaiter().GetResult()` on that thread hangs DocGen forever with no output (a one-figure run that
+  takes 5 s sat for over 10 minutes). Pump `Dispatcher.UIThread.RunJobs()` until the task completes.
+- **`tools/UiSnapshot --filter <form>`** opens the real window on a default Filter, so the Designer can
+  be looked at headlessly.

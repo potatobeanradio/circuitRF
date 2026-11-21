@@ -176,7 +176,34 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private bool _rippleRelevant;
     [ObservableProperty] private FilterSeriesKind _series = FilterSeriesKind.Exact;
     [ObservableProperty] private FilterOrderMode _orderMode = FilterOrderMode.Minimum;
-    [ObservableProperty] private string _unit = "GHz";
+    /// <summary>The prefix each edge box is typed in (owner, 2026-11-21: one per box, not one for all).</summary>
+    [ObservableProperty] private string _unitA = "GHz";
+    [ObservableProperty] private string _unitB = "GHz";
+    [ObservableProperty] private string _unitC = "GHz";
+    [ObservableProperty] private string _unitD = "GHz";
+
+    /// <summary>The prefixes of the manual plot range's Fmin and Fmax boxes.</summary>
+    [ObservableProperty] private string _unitFmin = "GHz";
+    [ObservableProperty] private string _unitFmax = "GHz";
+
+    /// <summary>
+    /// The unit the plot's frequency axis is drawn in: the passband edge's own box (Fp, or Fp1 on a
+    /// band form). Setting it sets every box's prefix at once, converting each box's text so the
+    /// frequency it states is unchanged.
+    /// </summary>
+    public string Unit
+    {
+        get => Form switch
+        {
+            NetworkForm.Lowpass or NetworkForm.Bandstop => UnitA,
+            _                                           => UnitB,
+        };
+        set
+        {
+            UnitA = value; UnitB = value; UnitC = value; UnitD = value;
+            UnitFmin = value; UnitFmax = value;
+        }
+    }
     [ObservableProperty] private string _orderText = "5";
     [ObservableProperty] private string _apText = "3";
     [ObservableProperty] private string _rippleText = "0.1";
@@ -232,8 +259,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>Manual plot stop, in the current frequency unit.</summary>
     [ObservableProperty] private string _plotFmaxText = "2.8";
 
-    /// <summary>The unit the edge boxes were last shown in — used to rescale when the unit changes.</summary>
-    private string _unitForEdges = "GHz";
 
     /// <summary>True while Design rebuilds rows — suppresses per-row redesign loops.</summary>
     private bool _fillingRows;
@@ -418,14 +443,13 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     partial void OnFirstChanged(FilterFirstElement value) => Design();
     partial void OnSeriesChanged(FilterSeriesKind value) => Design();
-    partial void OnUnitChanged(string value)
-    {
-        ConvertEdgeTexts(_unitForEdges, value);
-        PlotFminText = ConvertEdge(PlotFminText, ScaleOf(_unitForEdges), ScaleOf(value));
-        PlotFmaxText = ConvertEdge(PlotFmaxText, ScaleOf(_unitForEdges), ScaleOf(value));
-        _unitForEdges = value;
-        Design();
-    }
+    // A prefix change rescales its own box, so the frequency it states is unchanged, and redraws.
+    partial void OnUnitAChanged(string? oldValue, string newValue) { FaText = ConvertEdge(FaText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
+    partial void OnUnitBChanged(string? oldValue, string newValue) { FbText = ConvertEdge(FbText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
+    partial void OnUnitCChanged(string? oldValue, string newValue) { FcText = ConvertEdge(FcText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
+    partial void OnUnitDChanged(string? oldValue, string newValue) { FdText = ConvertEdge(FdText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
+    partial void OnUnitFminChanged(string? oldValue, string newValue) { PlotFminText = ConvertEdge(PlotFminText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); UpdatePlots(); }
+    partial void OnUnitFmaxChanged(string? oldValue, string newValue) { PlotFmaxText = ConvertEdge(PlotFmaxText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); UpdatePlots(); }
 
     partial void OnPlotRangeModeChanged(FilterPlotRangeMode value)
     {
@@ -709,8 +733,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         if (Enum.TryParse<FilterFirstElement>(Expr("First"), true, out var first)) First = first;
         if (Enum.TryParse<FilterSeriesKind>(Expr("Values"), true, out var values)) Series = values;
 
-        // The boxes are filled in GHz and shown in the unit the edges were applied in.
-        string unit = UnitOf(Param(Form is NetworkForm.Lowpass or NetworkForm.Highpass ? "Fc" : "F1")?.Unit);
+        // The boxes are filled in GHz, then each is shown in the unit its edge was applied in.
         Unit = "GHz";
         double? Ghz(string name)
         {
@@ -746,8 +769,20 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             AsText = ast.ToString("0.####", CultureInfo.InvariantCulture);
         SourceText = Ohms("Zin", 50).ToString("0.####", CultureInfo.InvariantCulture);
         LoadText = Ohms("Zout", 50).ToString("0.####", CultureInfo.InvariantCulture);
-        _unitForEdges = Unit;
-        if (unit != Unit) Unit = unit;
+        // Each box's prefix: its own mask edge's unit, else the cutoff it holds, else GHz. Setting
+        // it converts the box out of GHz.
+        string BoxUnit(int i, string cutoff)
+        {
+            var p = boxes[i].Length > 0 ? Param(boxes[i]) : null;
+            if (p is not null && !string.IsNullOrWhiteSpace(p.Expression)) return UnitOf(p.Unit);
+            return UnitOf(Param(cutoff)?.Unit);
+        }
+        bool edgeForm = Form is NetworkForm.Lowpass or NetworkForm.Highpass;
+        UnitA = BoxUnit(0, edgeForm ? "Fc" : "F1");
+        UnitB = BoxUnit(1, edgeForm ? "Fc" : "F1");
+        UnitC = BoxUnit(2, "F2");
+        UnitD = BoxUnit(3, "F2");
+        UnitFmin = UnitFmax = Unit;
         SeedLibrary(Expr("LSeries"), Expr("CSeries"), Expr("Parts"));
         ApplyLabels();
     }
@@ -886,9 +921,17 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public IReadOnlyList<FilterAssignment>? FilterAssignments()
     {
         if (_lastSpec is not { } spec) return null;
-        double scale = UnitScale();
-        string F(double hz) => (hz / scale).ToString("0.#########", CultureInfo.InvariantCulture);
-        string u = Unit;
+        // Each edge is written in the prefix of the box it was typed in.
+        string[] units = [UnitA, UnitB, UnitC, UnitD];
+        double[] boxHz = [spec.EdgeAHz, spec.EdgeBHz, spec.EdgeCHz, spec.EdgeDHz];
+        string In(double hz, int box) =>
+            (hz / ScaleOf(units[box])).ToString("0.#########", CultureInfo.InvariantCulture);
+        // A cutoff is one of the boxes (which one depends on form and family): the box it equals.
+        int BoxOf(double hz, int fallback)
+        {
+            for (int i = 0; i < 4; i++) if (boxHz[i] == hz) return i;
+            return fallback;
+        }
         var list = new List<FilterAssignment>
         {
             new("Response", spec.Response.ToString()),
@@ -909,24 +952,30 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         };
         bool edge = spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass;
         if (edge)
-            list.Add(new("Fc", F(spec.FcHz), u));
+        {
+            int k = BoxOf(spec.FcHz, 0);
+            list.Add(new("Fc", In(spec.FcHz, k), units[k]));
+        }
         else
         {
-            list.Add(new("F1", F(spec.F1Hz), u));
-            list.Add(new("F2", F(spec.F2Hz), u));
+            int k1 = BoxOf(spec.F1Hz, 1), k2 = BoxOf(spec.F2Hz, 2);
+            list.Add(new("F1", In(spec.F1Hz, k1), units[k1]));
+            list.Add(new("F2", In(spec.F2Hz, k2), units[k2]));
         }
-        var (a, b, c, d) = (F(spec.EdgeAHz), F(spec.EdgeBHz), F(spec.EdgeCHz), F(spec.EdgeDHz));
-        var mask = spec.Form switch
+        string[] boxNames = spec.Form switch
         {
-            NetworkForm.Lowpass  => new[] { ("Fp", a), ("Fs", b) },
-            NetworkForm.Highpass => [("Fs", a), ("Fp", b)],
-            NetworkForm.Bandstop => [("Fp1", a), ("Fs1", b), ("Fs2", c), ("Fp2", d)],
-            _                    => [("Fs1", a), ("Fp1", b), ("Fp2", c), ("Fs2", d)],
+            NetworkForm.Lowpass  => ["Fp", "Fs", "", ""],
+            NetworkForm.Highpass => ["Fs", "Fp", "", ""],
+            NetworkForm.Bandstop => ["Fp1", "Fs1", "Fs2", "Fp2"],
+            _                    => ["Fs1", "Fp1", "Fp2", "Fs2"],
         };
+        var mask = Enumerable.Range(0, 4).Where(i => boxNames[i].Length > 0)
+            .Select(i => (Name: boxNames[i], Value: In(boxHz[i], i), Unit: units[i])).ToList();
         foreach (string name in (string[])["Fp", "Fs", "Fp1", "Fs1", "Fs2", "Fp2"])
         {
-            string value = mask.FirstOrDefault(m => m.Item1 == name).Item2 ?? "";
-            list.Add(new(name, value, u));
+            var m = mask.FirstOrDefault(m => m.Name == name);
+            // The other form's edges are written blank, in the passband box's unit.
+            list.Add(m.Name is null ? new(name, "", Unit) : new(name, m.Value, m.Unit));
         }
         return list;
     }
@@ -1060,11 +1109,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         { error = "The source impedance is a positive number of ohms."; return false; }
         if (!double.TryParse(LoadText, NumberStyles.Float, CultureInfo.InvariantCulture, out double rl) || !(rl > 0))
         { error = "The load impedance is a positive number of ohms."; return false; }
-        double scale = UnitScale();
-        if (!Hz(FaText, scale, out double a) || !Hz(FbText, scale, out double b))
+        if (!Hz(FaText, ScaleOf(UnitA), out double a) || !Hz(FbText, ScaleOf(UnitB), out double b))
         { error = "A frequency edge is a positive number."; return false; }
-        Hz(FcText, scale, out double c);
-        Hz(FdText, scale, out double d);
+        Hz(FcText, ScaleOf(UnitC), out double c);
+        Hz(FdText, ScaleOf(UnitD), out double d);
 
         double fc, f1, f2, passLo, passHi, fp = 0, fs = 0, fp1 = 0, fp2 = 0, fs1 = 0, fs2 = 0;
         bool outside;
@@ -1157,7 +1205,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         return true;
     }
 
-    private double UnitScale() => ScaleOf(Unit);
 
     /// <summary>
     /// The value each element is built with — the exact one, the series' nearest preferred value,
@@ -1250,8 +1297,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
         double lo, hi;
         if (PlotRangeMode == FilterPlotRangeMode.Manual
-            && Hz(PlotFminText, UnitScale(), out double manLo)
-            && Hz(PlotFmaxText, UnitScale(), out double manHi)
+            && Hz(PlotFminText, ScaleOf(UnitFmin), out double manLo)
+            && Hz(PlotFmaxText, ScaleOf(UnitFmax), out double manHi)
             && manHi > manLo)
         {
             lo = manLo;
@@ -1304,18 +1351,6 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         for (int i = 0; i < n; i++)
             f[i] = lo + (hi - lo) * i / (n - 1.0);
         return f;
-    }
-
-    private void ConvertEdgeTexts(string fromUnit, string toUnit)
-    {
-        if (string.Equals(fromUnit, toUnit, StringComparison.Ordinal)) return;
-        double from = ScaleOf(fromUnit);
-        double to = ScaleOf(toUnit);
-        if (!(from > 0) || !(to > 0)) return;
-        FaText = ConvertEdge(FaText, from, to);
-        FbText = ConvertEdge(FbText, from, to);
-        FcText = ConvertEdge(FcText, from, to);
-        FdText = ConvertEdge(FdText, from, to);
     }
 
     private static string ConvertEdge(string text, double fromScale, double toScale)

@@ -220,6 +220,10 @@ public class FilterPlaceAndTileTests
         int bar = xaml.IndexOf("<Border DockPanel.Dock=\"Top\"", StringComparison.Ordinal);
         Assert.True(bar >= 0);
         string toolbar = xaml[bar..xaml.IndexOf("</Border>", xaml.IndexOf("SaveNetlistButton", bar, StringComparison.Ordinal), StringComparison.Ordinal)];
+        // Each frequency box carries its own prefix picker; the one shared picker is gone.
+        foreach (string unit in (string[])["UnitA", "UnitB", "UnitC", "UnitD", "UnitFmin", "UnitFmax"])
+            Assert.Contains($"SelectedItem=\"{{Binding {unit}}}\"", xaml);
+        Assert.DoesNotContain("SelectedItem=\"{Binding Unit}\"", xaml);
         foreach (string name in (string[])["DesignButton", "ApplyButton", "PlaceFilterButton", "PlaceComponentButton", "ReplaceButton", "SaveNetlistButton"])
         {
             Assert.Contains($"Name=\"{name}\"", toolbar);
@@ -228,6 +232,13 @@ public class FilterPlaceAndTileTests
         Assert.DoesNotContain("Content=\"Place filter\"", xaml);
         Assert.DoesNotContain("ShowMaskLabels", xaml);
         Assert.DoesNotContain("FormatText", xaml);
+        // One plain glyph per action: composites of part glyphs were illegible at 16 px.
+        Assert.DoesNotContain("PaletteGlyphControl", toolbar);
+        Assert.Equal(6, System.Text.RegularExpressions.Regex.Matches(toolbar, "<mi:MaterialIcon ").Count);
+        // A prefix picker shares its box's value column; a third side-panel column squeezed the
+        // shared label column out of line with every other card.
+        Assert.DoesNotContain("SharedSizeGroup=\"FltUnit\"", xaml);
+        Assert.Equal(6, System.Text.RegularExpressions.Regex.Matches(xaml, "Classes=\"withunit\"").Count);
     }
 
     // ── §3.3: the Designer's settings on the block, invisible downstream ──
@@ -310,6 +321,41 @@ public class FilterPlaceAndTileTests
         Assert.Equal(FilterFirstElement.Series, second.First);
         Assert.Equal(FilterSeriesKind.E24, second.Series);
         Assert.Equal(first.Elements.Select(e => e.Used), second.Elements.Select(e => e.Used));
+    }
+
+    /// <summary>
+    /// Each edge box has its own prefix: changing one rescales only that box, the specification
+    /// does not move, and Apply then reopen gives every box back in its own prefix.
+    /// </summary>
+    [Fact]
+    public async Task EachEdgeKeepsItsOwnPrefix_ThroughApplyAndReopen()
+    {
+        var first = await Designed(FilterResponse.Chebyshev, NetworkForm.Bandpass);
+        var before = first.FilterAssignments()!.ToDictionary(a => a.Name);
+        string fb = first.FbText, fc = first.FcText;
+
+        first.UnitA = "MHz";
+        first.UnitD = "kHz";
+        Assert.Equal(double.Parse(before["Fs1"].Expression, CultureInfo.InvariantCulture) * 1e3,
+                     double.Parse(first.FaText, CultureInfo.InvariantCulture), 6);
+        Assert.Equal((fb, fc), (first.FbText, first.FcText));   // the other boxes did not move
+        await first.DesignAsync(0);
+
+        var applied = first.FilterAssignments()!.ToDictionary(a => a.Name);
+        Assert.Equal(("MHz", "GHz", "GHz", "kHz"),
+                     (applied["Fs1"].Unit, applied["Fp1"].Unit, applied["Fp2"].Unit, applied["Fs2"].Unit));
+        Assert.Equal(("GHz", "GHz"), (applied["F1"].Unit, applied["F2"].Unit));
+        foreach (string n in (string[])["F1", "F2", "Order"])
+            Assert.Equal(before[n].Expression, applied[n].Expression);
+
+        var block = NewFilter();
+        block.Parameters.Clear();
+        block.Parameters.AddRange(first.AppliedParameters(FilterPlacement.DefaultParameters())!);
+        var second = new FilterDesignerViewModel();
+        second.SeedFrom(block);
+        Assert.Equal(("MHz", "GHz", "GHz", "kHz"), (second.UnitA, second.UnitB, second.UnitC, second.UnitD));
+        Assert.Equal((first.FaText, first.FbText, first.FcText, first.FdText),
+                     (second.FaText, second.FbText, second.FcText, second.FdText));
     }
 
     [Fact]
