@@ -43,8 +43,9 @@ the existing optimizer's problem, on an E-series or on a part.
 | First element | Series or parallel. Parallel starts the ladder on a shunt arm. |
 | Order | The **prototype** order. A bandpass or bandstop replaces each element by a resonator, so an all-pole order 3 is six elements and a tank becomes four. |
 | Response | In Shape. Maximally Flat, Chebyshev, Inverse Chebyshev, Elliptic, Bessel-Thomson, Gaussian. |
+| Type | In Shape, for Elliptic only. **Auto** (a at odd order, c at even order), **a** (classical), **b** (even order, unequal terminations), **c** (even order, equal terminations). |
 | Form | Lowpass, highpass, bandpass, bandstop. |
-| Order | **Minimum** is the smallest prototype order that meets Ap, As and the mask edges. **Specify** types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. An even-order inverse Chebyshev or elliptic steps to the next odd (those even orders have no LC ladder). |
+| Order | **Minimum** is the smallest prototype order that meets Ap, As and the mask edges. **Specify** types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder). |
 | Ap, As | Passband and stopband attenuation, in dB. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording. |
 | Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. The unit sits on the row. |
 
@@ -55,21 +56,36 @@ you want the stopband floor, not a second cutoff.
 Gaussian is scaled so the cutoff is the −3.01 dB point at every order. Bessel is chosen for its
 group delay, which is the second plot.
 
-Inverse Chebyshev and elliptic of an odd order are ladders of tanks: a finite transmission zero is
-a parallel LC in the through path or a series LC to ground. An even order of either family keeps a
-finite floor at infinite frequency, and a ladder cannot, so the window keeps the ideal curve and
-says so.
+Inverse Chebyshev and elliptic are ladders of tanks: a finite transmission zero is a parallel LC in
+the through path or a series LC to ground. Elliptic ladders reach any practical order — the
+reference set runs to order 31 — and every one the window shows has been checked against the
+ideal response before it is shown. An even-order elliptic of type a keeps a finite floor at
+infinite frequency, which a ladder cannot reach; types **b** and **c** move that zero to infinity
+and are ladders at every even order, b with the load ratio its DC mismatch implies and c with
+equal terminations. **Auto** builds c at an even order.
+
+A handful of specifications have no ladder with every element positive: a very narrow transition
+at high order with a shallow stopband, and an inverse Chebyshev whose stopband floor is shallow for
+its order. The window says so in words and keeps the ideal curve; a deeper stopband, a wider
+transition or a lower order is the remedy. A ladder is never shown that does not reproduce the
+response.
 
 ## The plot {#mask}
 
 The two plots sit side by side across the top. Both are Data Display plots. The magnitude plot
 carries the ideal |S21|, the ladder's |S21|, and the ladder's |S11| on the right axis. The phase
 plot is the ladder's phase and its group delay, in the same nanoseconds the rest of the application
-uses. The ladder is drawn underneath: a series LC stub shares one column, and a parallel LC in the
-through path shares one series column so the pins meet.
+uses. The ladder is drawn underneath, arm by arm: a series LC to ground is one column; a parallel
+LC in the through path is its capacitor on the line with the inductor on a short rail above; a
+bandpass or bandstop series arm with a transmission zero is a box of three parallel branches — the
+series resonator on top, its inductor on the line, its capacitor below; and a parallel resonator to
+ground is two adjacent legs. Every label sits beside its own symbol. **Copy** puts the same drawing
+on the clipboard, and pasted into a schematic it extracts to exactly the ladder in the table.
 
-**Design** and **Redraw** both rebuild the ladder and the curves. The synthesis is closed form, so
-there is no separate long step to wait for.
+**Design** and **Redraw** both rebuild the ladder and the curves. Every edit redesigns after a
+short pause, off the window's thread, so typing an order of 25 does not freeze the window; the
+status line says *Designing…* until the new ladder is drawn. A design whose specification has not
+changed (a new frequency or impedance level on the same response) is reused, not resynthesised.
 
 Design information reports the order, the ladder's load, and the minimum insertion loss in the
 passband — 0 for a lossless ladder that touches 0 dB, and the passband's worst-case best
@@ -91,7 +107,8 @@ back to an E-series. The power-integrity part library is a different drawer and 
 ## Where the result goes {#place}
 
 **Apply to Filter**, when the window was opened on a placed Filter, writes Response, Form, Order,
-the cutoff, Ap, As and the two impedances onto that instance. The snap is not applied to the
+the cutoff, Ap, As, the elliptic type and the two impedances onto that instance, so the ideal
+block and the ladder are the same response. The snap is not applied to the
 block, because the block has no elements.
 
 **Save netlist…** writes the ladder as a `.cnl`: two terminations and the inductors and capacitors

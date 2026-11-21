@@ -185,13 +185,35 @@ public class FilterLadderTests
     }
 
     [Fact]
-    public void AnEvenEllipticIsRefusedBecauseTheFloorDoesNotReachZero()
+    public void AnEvenTypeAEllipticIsRefusedAndNamesTypesBAndC()
     {
         var built = FilterLadder.Synthesize(
             FilterResponse.Elliptic, NetworkForm.Lowpass, 4,
-            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series, 40);
+            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series, 40, EllipticType.A);
         Assert.False(built.Ok);
-        Assert.Contains("even order", built.Refusal!.Message);
+        Assert.Contains("Types b and c", built.Refusal!.Message);
+    }
+
+    /// <summary>
+    /// Types b and c are ladders at even order: c with equal terminations, b with the ratio its
+    /// DC mismatch implies, <c>4r/(1+r)² = 1/(1+ε²)</c>. Auto at even order is c.
+    /// </summary>
+    [Theory]
+    [InlineData(EllipticType.B)] [InlineData(EllipticType.C)] [InlineData(EllipticType.Auto)]
+    public void AnEvenEllipticOfTypeBOrCIsALadder(EllipticType type)
+    {
+        var built = FilterLadder.Synthesize(
+            FilterResponse.Elliptic, NetworkForm.Lowpass, 6,
+            1e9, 0, 0, 0.1, 50, FilterFirstElement.Series, 40, type);
+        Assert.True(built.Ok, built.Refusal?.Message);
+        double r = built.Realization!.LoadOhms / 50.0;
+        if (type == EllipticType.B)
+        {
+            double eps2 = Math.Pow(10, 0.01) - 1;
+            Assert.Equal(1.0 / (1.0 + eps2), 4 * r / ((1 + r) * (1 + r)), 9);
+        }
+        else
+            Assert.Equal(1.0, r, 9);
     }
 
     [Fact]

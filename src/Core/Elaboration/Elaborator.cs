@@ -1252,7 +1252,7 @@ public sealed class Elaborator
         // The filter pair's Response and Form are the same kind of value, twice over on the duplexer
         // because it carries two complete filter specifications (brief-sys-6).
         if (inst.Reference.Equals("Filter", StringComparison.OrdinalIgnoreCase))
-            return ResolveEnumNamedParameters(inst, parentScope, "Response", "Form");
+            return ResolveEnumNamedParameters(inst, parentScope, "Response", "Form", "EllipticType");
         if (inst.Reference.Equals("Duplexer", StringComparison.OrdinalIgnoreCase))
             return ResolveEnumNamedParameters(inst, parentScope,
                                               "TxResponse", "TxForm", "RxResponse", "RxForm");

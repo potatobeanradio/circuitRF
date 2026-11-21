@@ -94,10 +94,15 @@ public static class MatchSchematicCopy
         // under its ground.
         if (e.IsShunt)
         {
-            var (dx, dy) = MatchShuntLabels.Offsets(
-                [type, e.Name, $"{type} = {e.ValueText}"],
-                MatchLadderLayout.Pitch, MatchSchematicGeometry.LeadHalf);
+            var (dx, dy) = e.LabelBeside
+                ? (MatchSchematicModel.ShuntLabelDx, MatchSchematicModel.ShuntLabelDy)
+                : MatchShuntLabels.Offsets([type, e.Name, $"{type} = {e.ValueText}"],
+                                           MatchLadderLayout.Pitch, MatchSchematicGeometry.LeadHalf);
             for (int i = 0; i < 3; i++) c.LabelOffsets.Add((dx, dy));
+        }
+        else if (e.LabelAbove)
+        {
+            for (int i = 0; i < 3; i++) c.LabelOffsets.Add((0.0, MatchLadderLayout.LabelAboveDy));
         }
 
         return c;
@@ -133,41 +138,8 @@ public static class MatchSchematicCopy
     /// same reason (a built-in glyph carries its own leads, so a port-to-port line would lay a second
     /// wire across every series body).
     /// </summary>
-    private static IEnumerable<EditableWire> SpineSegments(MatchLadderLayout layout)
-    {
-        const double lead = MatchSchematicGeometry.LeadHalf;
-        double y = MatchLadderLayout.SpineY;
-        double cursor = layout.PortLeftX;
-
-        foreach (var e in layout.Elements
-                     .Where(e => !e.IsShunt && e.Y == MatchLadderLayout.SpineY)
-                     .OrderBy(e => e.X))
-        {
-            double left = e.X - lead;
-            if (left > cursor) yield return Wire(cursor, y, left, y);
-            cursor = Math.Max(cursor, e.X + lead);
-        }
-        if (layout.PortRightX > cursor) yield return Wire(cursor, y, layout.PortRightX, y);
-
-        foreach (var arm in layout.ParallelArms)
-        {
-            if (arm.Y != y)
-            {
-                yield return Wire(arm.X0, y, arm.X0, arm.Y);
-                yield return Wire(arm.X1, y, arm.X1, arm.Y);
-            }
-            double run = arm.X0;
-            foreach (var e in layout.Elements
-                         .Where(e => !e.IsShunt && Math.Abs(e.Y - arm.Y) < 1e-9)
-                         .OrderBy(e => e.X))
-            {
-                double left = e.X - lead;
-                if (left > run) yield return Wire(run, arm.Y, left, arm.Y);
-                run = Math.Max(run, e.X + lead);
-            }
-            if (arm.X1 > run) yield return Wire(run, arm.Y, arm.X1, arm.Y);
-        }
-    }
+    private static IEnumerable<EditableWire> SpineSegments(MatchLadderLayout layout) =>
+        MatchLadderLayout.WireSegments(layout).Select(w => Wire(w.X0, w.Y0, w.X1, w.Y1));
 
     private static EditableWire Wire(double x0, double y0, double x1, double y1)
     {

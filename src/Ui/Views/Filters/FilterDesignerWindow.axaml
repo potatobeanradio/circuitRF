@@ -172,7 +172,7 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Shape"/>
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
                                     <ColumnDefinition Width="*"/>
@@ -200,6 +200,14 @@
                                 </StackPanel>
                                 <TextBox Grid.Row="4" Grid.Column="1" Classes="num" Text="{Binding AsText}"
                                          ToolTip.Tip="{Binding TipAs}"/>
+                                <StackPanel Grid.Row="5" Classes="lblrow" IsVisible="{Binding IsElliptic}"
+                                            ToolTip.Tip="{Binding TipEllipticType}">
+                                    <TextBlock Classes="lbl" Text="Type"/>
+                                </StackPanel>
+                                <ComboBox Grid.Row="5" Grid.Column="1" IsVisible="{Binding IsElliptic}"
+                                          ItemsSource="{Binding EllipticTypeChoices}"
+                                          SelectedItem="{Binding EllipticTypeChoice}"
+                                          ToolTip.Tip="{Binding TipEllipticType}"/>
                             </Grid>
                         </StackPanel>
                     </Border>

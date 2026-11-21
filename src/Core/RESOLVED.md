@@ -4203,3 +4203,40 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   on one elevated rail wired them in series. `PlaceBridged` now stacks a true L∥C rectangle (both at
   mid-X, two rails). `PlaceParallelTank` is C on the spine with L on one short rail above. Elevated
   labels sit beside the glyph so stacked rails do not cover each other.
+
+## Filter Designer — elliptic ladder rebuilt from roots, any order, types b and c (2026-11-21)
+
+Reported: elliptic ladders failed above about order 9, were slow, and even orders were refused.
+Brief: `docs/sonnet-briefs/brief-filter-designer-elliptic-ladder.md`.
+
+- **The old synthesis could return a ladder several percent wrong.** It divided expanded
+  coefficient polynomials in double with a 1e-3 remainder tolerance, accepted residues with a 1e-4
+  imaginary part, and accepted any ladder within `3e-3 × order` of the prototype's input impedance,
+  ranked by an ad-hoc score; an exhaustive search over removal orders (exponential in the zero count)
+  ran on every edit. Tightening those tolerances was tried and reverted (`87995bd0e`). Replaced, not
+  tuned: `FilterLadder.Zeros.cs`.
+- **Prototype as roots.** `FilterRoots` holds zeros/poles; elliptic poles are closed form
+  (complex-argument Jacobi `cd`, `v0` via Carlson's `R_F`) and polished by Newton on the
+  characteristic equation as products, then again in double-double. The closed form matched the old
+  spectral factorisation on every existing equiripple test unchanged. `k'` must come from the
+  complementary nome when `k` is near 1; `√(1−k²)` lost up to 7 digits at order 21.
+- **Zero shifting by point evaluation.** At a transmission zero the doubly-terminated input
+  function is purely reactive, so the partial element is `Im f(jω)/ω` and the next residue is
+  `1/f'(jω)` — no polynomial division anywhere. In double this reproduced the reference to ~1e-10 up
+  to order ~13 and drifted to ~1e-8 at order 18 with 80 dB floors; the same code in double-double is
+  exact to 1.1e-10 relative on all 654 reference ladders and verifies at order 31.
+- **The verification itself has to be double-double.** Deep in the stopband S21 is a cancellation
+  of chain entries of order 1/|S21|; a double ABCD chain contributed ~1e-8 of its own error at 80 dB
+  and failed correct ladders.
+- **Zero order.** Lowest zero in the centre section, the rest alternating outward, realises every
+  elliptic in the table except a few very narrow transitions (`n=7..11` at 0.01/20 dB, `n=16` c at
+  0.01/40 dB), where no order of the zeros gives positive elements — the reference agrees; those
+  are refused by name. Inverse Chebyshev with a shallow floor for its order has the same property.
+- **Even order: types b and c.** A Möbius map in `Ω²` (pass edge fixed, highest zero to infinity,
+  and for c the lowest reflection zero to DC). b's load ratio is `4r/(1+r)² = 1/(1+ε²)`. Minimum
+  order for b/c is checked against the mapped stop edge, which sits above type a's.
+- **Cost.** One pass per order of zeros instead of a search: order 15 ~5.5 ms, order 31 ~16 ms
+  uncached (Release); the normalised ladder is cached per specification, so changing form,
+  frequency or impedance costs ~0.05 ms.
+- **A tank at its own resonance is a NaN in an ABCD chain**; verification samples either side of
+  each zero.

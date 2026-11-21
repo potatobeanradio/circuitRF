@@ -1861,6 +1861,13 @@ public static class ComponentTypeRegistry
         (SymbolKind.Filter, "Zout") =>
             "The impedance port 2 PRESENTS. See Zin — the two are independent, and an unequal pair "
           + "is a lossless transformer as well as a filter.",
+        (SymbolKind.Filter, "EllipticType") =>
+            "Which elliptic response, for Elliptic only: A is the classical one; B and C modify an "
+          + "EVEN order, whose type A keeps a finite floor at infinite frequency. B moves the "
+          + "highest transmission zero to infinity (the terminations come out unequal); C also "
+          + "moves the lowest reflection zero to DC (equal terminations). Auto is A at odd order "
+          + "and C at even order. B and C at odd order are A. The Filter Designer's LC ladder is "
+          + "the same response as this block's when the two name the same type.",
         (SymbolKind.Filter, "IL") =>
             "A flat insertion loss laid on top of the ideal response, in dB. It multiplies S21 and "
           + "leaves S11 alone, so the block genuinely dissipates rather than reflecting what it "
@@ -2196,7 +2203,9 @@ public static class ComponentTypeRegistry
                         new("Astop",    "40",        "dB",  false, UnitDimension.None),
                         new("Zin",      "50",        "Ω",   false, UnitDimension.Resistance),
                         new("Zout",     "50",        "Ω",   false, UnitDimension.Resistance),
-                        new("IL",       "0",         "dB",  false, UnitDimension.None)];
+                        new("IL",       "0",         "dB",  false, UnitDimension.None),
+                        // Appended, so every existing Filter line keeps its meaning (type a).
+                        new("EllipticType", "A",     "",    false, UnitDimension.None)];
 
             // The duplexer is two complete filter specifications plus one shared antenna impedance,
             // and deliberately NO Isolation: the isolation a duplexer achieves is what its two

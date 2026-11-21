@@ -41506,3 +41506,26 @@ list appeared only after clicking another choice and back. Found rendering Impor
 headlessly — the same dialog File ▸ Import ▸ Technology asks, and both now share
 `WorkspaceViewModel.WriteImportedTechnologyAsync`. The constructor now applies the panel's visibility once
 after the handlers are attached.
+
+## Filter Designer — the copied schematic shorted adjacent elliptic tanks (2026-11-21)
+
+Reported: a bandpass elliptic placed as a schematic was drawn wrongly (labels on the wrong parts,
+one part unlabelled, rails running between arms).
+
+- **It was a different circuit, not just a messy picture.** `MatchSchematicModel.AddWiring` and
+  `MatchSchematicCopy.SpineSegments` filled a parallel arm's rail by walking EVERY glyph at the
+  rail's height, not only those between the arm's own drops. Two tanks share a rail height, so arm 1
+  wired its glyph to arm 2's (joining two internal nets) and never reached its own right-hand drop.
+  The window's plot simulated the `.cnl`, which was right, so nothing on screen disagreed. Both now
+  use `MatchLadderLayout.WireSegments`, which is clamped to the arm.
+- **The drawing guessed which elements formed an arm** (`TryBridged`/`TryStub`) and the guesses
+  drew series chains as tanks and a four-element stub as a four-high column. `FilterLadder` now
+  returns `Arms`, and `FilterLadderDrawing` draws each arm from its own topology.
+- **A stub's middle element got a ground** (`GroundYFor` grounds the lowest symbol in a column, and
+  a parallel section drawn as legs left the series element above it lowest in its column).
+  `MatchLadderElement.NoGround` marks it. The topology gate found it immediately.
+- **Gate:** `FilterLadderDrawingTests.TheCopiedSchematicIsTheLadder` extracts the copied schematic
+  with `NetExtractor` and requires one consistent map from ladder nodes to drawn nets, every form,
+  orders 3–15, both first elements. `EveryLabelIsClearAndBesideItsOwnGlyph` measures label text with
+  the pane's own font. At the Match pitch a shunt label beside its symbol touched the next column's
+  label; the filter drawing uses a wider column step and always puts shunt labels beside.

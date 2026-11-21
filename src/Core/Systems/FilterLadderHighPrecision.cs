@@ -41,49 +41,6 @@ internal static class FilterLadderHighPrecision
         return [.. g];
     }
 
-    /// <summary>Unevaluated double-double: hi + lo with |lo| ≤½ ulp(hi) when normalised.</summary>
-    private readonly struct Dd
-    {
-        public readonly double Hi, Lo;
-        public Dd(double hi, double lo = 0) { Hi = hi; Lo = lo; }
-        public bool IsZero => Hi == 0 && Lo == 0;
-        public static Dd From(double x) => new(x);
-        public static Dd operator +(Dd a, Dd b) => Add(a.Hi, a.Lo, b.Hi, b.Lo);
-        public static Dd operator -(Dd a, Dd b) => Add(a.Hi, a.Lo, -b.Hi, -b.Lo);
-        public static Dd operator *(Dd a, Dd b)
-        {
-            var p = Mul(a.Hi, b.Hi);
-            double t = a.Hi * b.Lo + a.Lo * b.Hi + p.Lo;
-            return Renorm(p.Hi, t);
-        }
-        public static Dd operator /(Dd a, Dd b)
-        {
-            double q1 = a.Hi / b.Hi;
-            var p = Mul(q1, b.Hi);
-            double dh = a.Hi - p.Hi;
-            double dl = a.Lo - p.Lo - q1 * b.Lo;
-            return Renorm(q1, (dh + dl) / b.Hi);
-        }
-        private static Dd Mul(double a, double b)
-        {
-            double p = a * b;
-            return new Dd(p, Math.FusedMultiplyAdd(a, b, -p));
-        }
-        private static Dd Add(double ah, double al, double bh, double bl)
-        {
-            double s = ah + bh;
-            double v = s - ah;
-            double t = (bh - v) + (ah - (s - v)) + al + bl;
-            return Renorm(s, t);
-        }
-        private static Dd Renorm(double hi, double lo)
-        {
-            double s = hi + lo;
-            return new Dd(s, lo - (s - hi));
-        }
-        public override string ToString() => Hi.ToString("G17", CultureInfo.InvariantCulture);
-    }
-
     private sealed class DdPoly
     {
         public Dd[] Coef; // descending

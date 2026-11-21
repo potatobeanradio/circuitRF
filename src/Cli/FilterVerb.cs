@@ -50,6 +50,10 @@ public static class FilterVerb
                 case "--ripple": spec.Ap = Num(Next()); break;
                 case "--as":
                 case "--astop": spec.As = Num(Next()); break;
+                case "--elliptic-type":
+                    if (!EllipticTypes.TryParse(Next(), out spec.EllipticType))
+                        return Fail("--elliptic-type is auto, a, b or c.");
+                    break;
                 case "--series":
                     if (!Enum.TryParse<FilterSeriesKind>(Next(), true, out spec.Series))
                         return Fail("--series is exact, e6, e12, e24 or e96.");
@@ -78,7 +82,7 @@ public static class FilterVerb
         double fc = spec.Fc ?? 0, f1 = spec.F1 ?? 0, f2 = spec.F2 ?? 0;
         var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order, fc, f1, f2,
                                              spec.Ap > 0 ? spec.Ap : 0.1, spec.Rs, spec.First,
-                                             spec.As > 0 ? spec.As : 40);
+                                             spec.As > 0 ? spec.As : 40, spec.EllipticType);
         if (!built.Ok)
         {
             Console.Error.WriteLine(built.Refusal!.Message);
@@ -88,7 +92,11 @@ public static class FilterVerb
         var real = built.Realization!;
         var used = new List<FilterElement>(real.Elements.Count);
         var text = new StringBuilder();
-        text.AppendLine($"# {spec.Response} {spec.Form} order {spec.Order}, first {spec.First}");
+        text.Append($"# {spec.Response} {spec.Form} order {spec.Order}, first {real.First}");
+        if (spec.Response == FilterResponse.Elliptic)
+            text.Append($", type {EllipticTypes.Letter(EllipticTypes.Resolve(spec.EllipticType, spec.Order))}");
+        text.AppendLine();
+        if (real.Note.Length > 0) Console.Error.WriteLine(real.Note);
         text.AppendLine($"# source {real.SourceOhms:0.###} ohm, load {real.LoadOhms:0.###} ohm");
         foreach (var e in real.Elements)
         {
@@ -127,11 +135,15 @@ public static class FilterVerb
           --rs 50 --rl 50    ohms. The ladder's load is the family's own ratio when that differs.
           --ap 0.1           passband ripple, dB, for Chebyshev and elliptic
           --as 40            stopband floor, dB, for inverse Chebyshev and elliptic
+          --elliptic-type auto|a|b|c
+                             auto (default) is a at odd order and c at even order
           --series exact|e6|e12|e24|e96
           -o out.cnl         the ladder as a netlist
 
-        Inverse Chebyshev and elliptic of odd order are ladders of tanks. An even order of either
-        keeps a finite floor at infinite frequency, which a ladder cannot, and is refused.
+        Inverse Chebyshev and elliptic are ladders of tanks. An even-order inverse Chebyshev, or an
+        even-order elliptic of type a, keeps a finite floor at infinite frequency, which a ladder
+        cannot, and is refused. Elliptic types b and c are ladders at every even order: b with
+        unequal terminations, c with equal ones.
         A frequency is a number and a unit (Hz, kHz, MHz, GHz).
         """;
 
@@ -164,6 +176,7 @@ public static class FilterVerb
         public double? Fc, F1, F2;
         public double Rs = 50, Rl = 50, Ap = 0.1, As = 40;
         public FilterSeriesKind Series = FilterSeriesKind.Exact;
+        public EllipticType EllipticType = EllipticType.Auto;
         public string? Out;
     }
 }

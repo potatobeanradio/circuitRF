@@ -470,6 +470,13 @@ wild; this one is the prototype's. On a bandstop, `F1` and `F2` are the stopband
 InvChebyshev and Elliptic put transmission zeros on the jω axis instead, which is what buys their
 sharp transition and why their stopbands **level off** at `Astop` rather than continuing to fall.
 
+**`EllipticType`** picks which elliptic response: `A` is the classical one. An even-order type A
+keeps a finite floor at infinite frequency, which no LC ladder reaches; `B` moves its highest
+transmission zero to infinity (the terminations come out unequal) and `C` also moves its lowest
+reflection zero to DC (equal terminations). `Auto` is A at odd order and C at even order. The
+default is `A`, so every Filter placed before the parameter existed keeps its response; the
+[Filter Designer](filter-designer.html) writes the type its ladder was built as.
+
 How much that selectivity is worth, at order 5 with 0.1 dB of passband ripple and a 60 dB floor: the
 elliptic reaches &minus;60 dB at 2.04 × the band edge, against Chebyshev's 3.41, Butterworth's 3.98
 and Bessel's 15.57. Bessel is not competing — it is chosen for **group delay**, which it holds

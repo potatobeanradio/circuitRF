@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using CircuitRF.Core.Matching;
+using CircuitRF.Core.Systems;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.DataDisplay.Controls;
@@ -183,6 +184,14 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         Set("Astop", Vm.AsText.Trim());
         Set("Zin", Vm.SourceText.Trim());
         Set("Zout", Vm.LoadText.Trim());
+        if (Vm.Response == FilterResponse.Elliptic)
+        {
+            // A Filter placed before the parameter existed does not carry it; add it rather than
+            // leave the block on type a while the ladder beside it is b or c.
+            string letter = Vm.DesignedEllipticType.ToString();
+            if (updated.Any(x => x.Name == "EllipticType")) Set("EllipticType", letter);
+            else updated.Add(new EditableParameter { Name = "EllipticType", Expression = letter });
+        }
         string g(string t) => ToGHz(t).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
         if (Vm.Form is NetworkForm.Lowpass)
             Set("Fc", g(Vm.FaText));

@@ -28,6 +28,12 @@ public sealed record FilterResponseChoice(FilterResponse Value, string Label)
 }
 
 /// <summary>Whether the order is the smallest that meets the mask, or a typed override.</summary>
+/// <summary>One row of the Elliptic type picker.</summary>
+public sealed record EllipticTypeChoice(EllipticType Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
 public enum FilterOrderMode
 {
     /// <summary>The closed-form minimum for the family and the mask edges.</summary>
@@ -79,6 +85,15 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     /// <summary>Series or parallel first arm.</summary>
     public IReadOnlyList<FilterFirstElement> FirstElements { get; } = Enum.GetValues<FilterFirstElement>();
+
+    /// <summary>The elliptic types: Auto is a at odd order and c at even order.</summary>
+    public IReadOnlyList<EllipticTypeChoice> EllipticTypeChoices { get; } =
+    [
+        new(EllipticType.Auto, "Auto"),
+        new(EllipticType.A, "a — classical"),
+        new(EllipticType.B, "b — even, unequal terminations"),
+        new(EllipticType.C, "c — even, equal terminations"),
+    ];
 
     /// <summary>Exact, or an IEC series.</summary>
     public IReadOnlyList<FilterSeriesKind> SeriesKinds { get; } = Enum.GetValues<FilterSeriesKind>();
@@ -150,6 +165,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [ObservableProperty] private FilterResponseChoice? _responseChoice;
     [ObservableProperty] private NetworkForm _form = NetworkForm.Bandpass;
     [ObservableProperty] private FilterFirstElement _first = FilterFirstElement.Parallel;
+    [ObservableProperty] private EllipticTypeChoice? _ellipticTypeChoice;
+    [ObservableProperty] private bool _isElliptic;
     [ObservableProperty] private FilterSeriesKind _series = FilterSeriesKind.Exact;
     [ObservableProperty] private FilterOrderMode _orderMode = FilterOrderMode.Minimum;
     [ObservableProperty] private string _unit = "GHz";
@@ -221,6 +238,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>As — stopband attenuation floor.</summary>
     public string TipAs { get; } = "Stopband attenuation, in dB.";
 
+    /// <summary>Tooltip for the elliptic type picker.</summary>
+    public string TipEllipticType { get; } =
+        "Elliptic type. An even order of type a has no LC ladder; b moves its highest transmission " +
+        "zero to infinity (unequal terminations) and c also moves the lowest reflection zero to DC " +
+        "(equal terminations). Auto is a at odd order and c at even order.";
+
     /// <summary>The ladder as the Match Designer's own schematic canvas draws it.</summary>
     [ObservableProperty] private MatchLadderLayout _ladder = MatchLadderLayout.Empty;
 
@@ -233,6 +256,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public FilterDesignerViewModel()
     {
         ResponseChoice = ResponseChoices[0];
+        EllipticTypeChoice = EllipticTypeChoices[0];
         PlotRangeChoice = PlotRangeChoices[0];
         OrderEditable = false;
         PlotRangeIsManual = false;
@@ -252,8 +276,11 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         if (!Equals(ResponseChoice, match)) ResponseChoice = match;
         OrderEditable = OrderMode == FilterOrderMode.Specify
                         || value is FilterResponse.Bessel or FilterResponse.Gaussian;
+        IsElliptic = value == FilterResponse.Elliptic;
         Design();
     }
+
+    partial void OnEllipticTypeChoiceChanged(EllipticTypeChoice? value) => Design();
 
     partial void OnResponseChoiceChanged(FilterResponseChoice? value)
     {
@@ -325,63 +352,126 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Design();
     }
 
-    /// <summary>Builds the realization and redraws both plots. Redraw and Design are this one step:
-    /// the ladder is closed form, so there is nothing to defer.</summary>
+    /// <summary>
+    /// Rebuilds the realization and redraws both plots. Every edit calls this; the work runs off
+    /// the UI thread after a short debounce, and only the latest request's result is applied —
+    /// a superseded one is cancelled or dropped.
+    /// </summary>
     [RelayCommand]
-    public void Design()
+    public void Design() => _ = DesignAsync();
+
+    private CancellationTokenSource? _designCts;
+    private int _designGeneration;
+
+    /// <summary>The debounce before a design starts, so a burst of edits designs once.</summary>
+    internal const int DesignDebounceMs = 80;
+
+    /// <summary>
+    /// The design pipeline. Reads the boxes on the calling (UI) thread, synthesises and simulates
+    /// on the thread pool, and applies the result back on the calling thread.
+    /// </summary>
+    public async Task DesignAsync(int debounceMs = DesignDebounceMs)
     {
-        Elements.Clear();
-        Cnl = "";
-        Ladder = MatchLadderLayout.Empty;
-        _lastSpec = null;
-        _lastIdeal = null;
+        _designCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _designCts = cts;
+        int generation = ++_designGeneration;
+        if (debounceMs > 0)
+        {
+            try { await Task.Delay(debounceMs, cts.Token); }
+            catch (OperationCanceledException) { return; }
+        }
+        if (generation != _designGeneration) return;
+
         if (!TrySpec(out var spec, out string? error))
         {
+            Elements.Clear();
+            Cnl = "";
+            Ladder = MatchLadderLayout.Empty;
+            _lastSpec = null;
+            _lastIdeal = null;
             Status = error ?? "";
             DesignInfo = "";
             ClearPlots();
             return;
         }
 
-        // The ideal transfer can fail to factor at very high order in double while the ladder still
-        // has closed-form g-values (Butterworth / Chebyshev). Prefer the ladder over a blank window.
+        var freqs = Frequencies(spec);
+        var snap = new SnapInputs(Series, new Dictionary<string, (FilterLibrarySeries, FilterPart)>(_partOverrides),
+                                  InductorChoice, CapacitorChoice);
+        Status = "Designing…";
+        DesignOutcome outcome;
+        try
+        {
+            outcome = await Task.Run(() => Compute(spec, freqs, snap, cts.Token), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        if (generation != _designGeneration) return;
+        Apply(spec, outcome);
+    }
+
+    /// <summary>What one design produced, ready to be shown.</summary>
+    private sealed record DesignOutcome(
+        FilterNetwork? Ideal, FilterRealization? Real, List<FilterElement>? Used, List<SnapRow> Rows,
+        string Cnl, SNP? IdealSnp, SNP? LadderSnp, double Rs, double Rl, string Status, bool Failed);
+
+    /// <summary>The window state the snap reads, copied so the pool thread never touches the view model.</summary>
+    private sealed record SnapInputs(
+        FilterSeriesKind Series, Dictionary<string, (FilterLibrarySeries Series, FilterPart Part)> Overrides,
+        FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors);
+
+    /// <summary>One table row's content, before it becomes a <see cref="FilterElementRow"/>.</summary>
+    private sealed record SnapRow(
+        FilterElement Exact, double Used, string SeriesName, string PartName, string Tolerance,
+        FilterLibrarySeries? Series, FilterPart? Chosen);
+
+    private static DesignOutcome Compute(Spec spec, double[] freqs, SnapInputs snap, CancellationToken ct)
+    {
+        // The ideal transfer can fail at an order the ladder still reaches; prefer the ladder over a
+        // blank window.
         FilterNetwork? ideal = null;
         string idealNote = "";
         try
         {
             ideal = FilterNetwork.Create(spec.Response, spec.Form, spec.Order,
-                                          spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb, spec.AsDb, 0);
+                                          spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb, spec.AsDb, 0,
+                                          spec.EllipticType);
         }
         catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException)
         {
             idealNote = e.Message;
         }
+        ct.ThrowIfCancellationRequested();
 
         var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
                                              spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
-                                             spec.SourceOhms, spec.First, spec.AsDb);
+                                             spec.SourceOhms, spec.First, spec.AsDb, spec.EllipticType);
         if (ideal is null && !built.Ok)
-        {
-            Status = idealNote.Length > 0 ? idealNote : (built.Refusal?.Message ?? "No ladder.");
-            ClearPlots();
-            return;
-        }
+            return new DesignOutcome(null, null, null, [], "", null, null, 0, 0,
+                                     idealNote.Length > 0 ? idealNote : (built.Refusal?.Message ?? "No ladder."),
+                                     Failed: true);
+        ct.ThrowIfCancellationRequested();
+
         double rs = spec.SourceOhms;
         double rl = built.Realization?.LoadOhms ?? spec.LoadOhms;
-        var freqs = Frequencies(spec);
         SNP? idealSnp = ideal is null ? null : IdealSnp(ideal, freqs, rs, rl);
 
+        string note = "", cnl = "";
         SNP? ladderSnp = null;
-        string note = "";
+        List<FilterElement>? used = null;
+        var rows = new List<SnapRow>();
         if (built.Realization is { } real)
         {
-            var used = ApplyValues(real, spec);
-            Cnl = FilterLadder.ToCnl(used, real.SourceOhms, real.LoadOhms);
+            used = Snap(real, snap, rows);
+            cnl = FilterLadder.ToCnl(used, real.SourceOhms, real.LoadOhms);
             rs = real.SourceOhms;
             rl = real.LoadOhms;
             try
             {
-                ladderSnp = Run(Cnl, freqs, real.SourceOhms);
+                ladderSnp = Run(cnl, freqs, real.SourceOhms);
             }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
             {
@@ -391,27 +481,53 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                 note = $"The ladder's load is {real.LoadOhms:0.###} Ω. The requested load is " +
                        $"{spec.LoadOhms:0.###} Ω, which Place as Filter keeps; the ladder is built " +
                        "for the ratio the family produces. " + note;
-            FillRows(real.Elements, used);
-            Ladder = LadderOf(used, real.SourceOhms, real.LoadOhms);
+            if (real.Note.Length > 0) note = real.Note + " " + note;
         }
         else
         {
             note = built.Refusal?.Message ?? "";
         }
+        return new DesignOutcome(ideal, built.Realization, used, rows, cnl, idealSnp, ladderSnp, rs, rl,
+                                 note.Length > 0 ? note.Trim() : idealNote, Failed: false);
+    }
+
+    /// <summary>Shows one design. Runs on the UI thread.</summary>
+    private void Apply(Spec spec, DesignOutcome r)
+    {
+        Elements.Clear();
+        Cnl = r.Cnl;
+        Ladder = MatchLadderLayout.Empty;
+        _lastSpec = null;
+        _lastIdeal = null;
+        if (r.Failed)
+        {
+            Status = r.Status;
+            DesignInfo = "";
+            ClearPlots();
+            return;
+        }
+
+        if (r.Real is { } real && r.Used is { } used)
+        {
+            FillRows(r.Rows);
+            Ladder = LadderOf(used, real.Arms, real.SourceOhms, real.LoadOhms);
+        }
 
         _lastSpec = spec;
-        _lastIdeal = ideal;
-        _lastRs = rs;
-        _lastRl = rl;
+        _lastIdeal = r.Ideal;
+        _lastRs = r.Rs;
+        _lastRl = r.Rl;
 
-        SNP? response = ladderSnp ?? idealSnp;
-        double minIl = response is null ? 0 : MinimumInsertionLoss(response, freqs, spec);
+        SNP? response = r.LadderSnp ?? r.IdealSnp;
+        double minIl = response is null ? 0 : MinimumInsertionLoss(response, Frequencies(spec), spec);
         DesignInfo = $"Order: {spec.Order}" +
                      (spec.OrderFromMinimum ? " (minimum for the mask)" : "") +
+                     (spec.Response == FilterResponse.Elliptic
+                         ? $"\nElliptic type: {EllipticTypes.Letter(spec.EllipticType)}" : "") +
                      $"\nMinimum insertion loss: {minIl:0.0000} dB" +
-                     (built.Realization is { } r ? $"\nLoad: {r.LoadOhms:0.###} Ω" : "");
-        Status = note.Length > 0 ? note : idealNote;
-        BuildPlots(idealSnp, ladderSnp, spec);
+                     (r.Real is { } rr ? $"\nLoad: {rr.LoadOhms:0.###} Ω" : "");
+        Status = r.Status;
+        BuildPlots(r.IdealSnp, r.LadderSnp, spec);
     }
 
     /// <summary>Indexes the workspace's vendor libraries into inductor and capacitor series.</summary>
@@ -469,6 +585,8 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             RippleText = ripple.ToString("0.####", CultureInfo.InvariantCulture);
             ApText = RippleText;
         }
+        if (EllipticTypes.TryParse(Expr("EllipticType"), out var et))
+            EllipticTypeChoice = EllipticTypeChoices.First(c => c.Value == et);
         if (double.TryParse(Expr("Astop"), NumberStyles.Float, CultureInfo.InvariantCulture, out double ast))
             AsText = ast.ToString("0.####", CultureInfo.InvariantCulture);
         SourceText = Ohms("Zin", 50).ToString("0.####", CultureInfo.InvariantCulture);
@@ -547,9 +665,15 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     private void ApplyLabelsWithoutDesign() { }
 
+    private EllipticType SelectedEllipticType => EllipticTypeChoice?.Value ?? EllipticType.Auto;
+
+    /// <summary>The elliptic type the last design was built as — what Apply writes to the Filter.</summary>
+    public EllipticType DesignedEllipticType =>
+        _lastSpec?.EllipticType ?? EllipticTypes.Resolve(SelectedEllipticType, int.TryParse(OrderText, out int n) ? n : 1);
+
     private sealed record Spec(
         FilterResponse Response, NetworkForm Form, int Order, bool OrderFromMinimum,
-        FilterFirstElement First,
+        FilterFirstElement First, EllipticType EllipticType,
         double FcHz, double F1Hz, double F2Hz, double RippleDb, double AsDb,
         double SourceOhms, double LoadOhms,
         double PassLoHz, double PassHiHz, bool PassIsOutside,
@@ -558,7 +682,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     private bool TrySpec(out Spec spec, out string? error)
     {
         spec = new Spec(FilterResponse.Butterworth, NetworkForm.Lowpass, 1, false,
-                        FilterFirstElement.Series, 1, 0, 0, 0.1, 20, 50, 50, 0, 1, false,
+                        FilterFirstElement.Series, EllipticType.A, 1, 0, 0, 0.1, 20, 50, 50, 0, 1, false,
                         3, 0, 0, 0, 0);
         error = null;
         if (!double.TryParse(ApText, NumberStyles.Float, CultureInfo.InvariantCulture, out double ap) || ap < 0)
@@ -608,15 +732,19 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         if (OrderMode == FilterOrderMode.Minimum
             && Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
         {
-            var n = FilterOrder.Minimum(Response, Form, ap, astop, fp, fs, fp1, fp2, fs1, fs2);
+            var n = FilterOrder.Minimum(Response, Form, ap, astop, fp, fs, fp1, fp2, fs1, fs2,
+                                        SelectedEllipticType);
             if (n is null)
             {
                 error = "The mask edges do not form a transition (Fs must sit outside the passband).";
                 return false;
             }
             order = n.Value;
-            // Even-order inverse Chebyshev and elliptic have no LC ladder; step to the next odd.
-            if ((Response is FilterResponse.InvChebyshev or FilterResponse.Elliptic) && (order & 1) == 0)
+            // An even-order inverse Chebyshev, or a type-a elliptic, has no LC ladder; step to the
+            // next odd. Auto, b and c already answered an order that builds.
+            if ((Response == FilterResponse.InvChebyshev
+                 || (Response == FilterResponse.Elliptic && SelectedEllipticType == EllipticType.A))
+                && (order & 1) == 0)
                 order++;
             fromMin = true;
             OrderText = order.ToString(CultureInfo.InvariantCulture);
@@ -634,7 +762,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         double ripple = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic
             ? (rippleIn > 0 ? rippleIn : 0.1)
             : 0.1;
-        spec = new Spec(Response, Form, order, fromMin, First, fc, f1, f2, ripple, astop, rs, rl,
+        var type = Response == FilterResponse.Elliptic
+            ? EllipticTypes.Resolve(SelectedEllipticType, order)
+            : EllipticType.A;
+        spec = new Spec(Response, Form, order, fromMin, First, type, fc, f1, f2, ripple, astop, rs, rl,
                         passLo, passHi, outside, ap, a, b, c, d);
         return true;
     }
@@ -650,58 +781,72 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     private double UnitScale() => ScaleOf(Unit);
 
-    private List<FilterElement> ApplyValues(FilterRealization real, Spec spec)
+    /// <summary>
+    /// The value each element is built with — the exact one, the series' nearest preferred value,
+    /// or a library part — and what its table row says. Pure: reads only <paramref name="snap"/>.
+    /// </summary>
+    private static List<FilterElement> Snap(FilterRealization real, SnapInputs snap, List<SnapRow> rows)
     {
         var used = new List<FilterElement>(real.Elements.Count);
+        foreach (var e in real.Elements)
+        {
+            double value = FilterValues.Snap(e.Inductor, e.Value, snap.Series);
+            string partName = "";
+            string seriesName = snap.Series == FilterSeriesKind.Exact ? "" : snap.Series.ToString();
+            string tolerance = FilterValues.ToleranceOf(snap.Series);
+            FilterLibrarySeries? series = e.Inductor ? snap.Inductors : snap.Capacitors;
+            FilterPart? chosen = null;
+
+            if (snap.Overrides.TryGetValue(e.Name, out var ov) && ov.Series.Inductors == e.Inductor)
+            {
+                series = ov.Series;
+                chosen = ov.Part;
+                value = chosen.Value;
+                partName = chosen.Name;
+                seriesName = series.Label;
+                tolerance = chosen.Tolerance;
+            }
+            else if (series is not null && FilterValues.Nearest(e.Value, series.Parts) is { } near)
+            {
+                chosen = near;
+                value = near.Value;
+                partName = near.Name;
+                seriesName = series.Label;
+                tolerance = near.Tolerance;
+            }
+
+            used.Add(e with { Value = value });
+            rows.Add(new SnapRow(e, value, seriesName, partName, tolerance, series, chosen));
+        }
+        return used;
+    }
+
+    /// <summary>Fills the element table from a design's rows. UI thread.</summary>
+    private void FillRows(List<SnapRow> rows)
+    {
+        bool library = LibraryAvailable && (InductorSeries.Count > 0 || CapacitorSeries.Count > 0);
         int row = 0;
         _fillingRows = true;
         try
         {
-            foreach (var e in real.Elements)
+            foreach (var r in rows)
             {
-                double value = FilterValues.Snap(e.Inductor, e.Value, Series);
-                string partName = "";
-                string seriesName = Series == FilterSeriesKind.Exact ? "" : Series.ToString();
-                string tolerance = FilterValues.ToleranceOf(Series);
-                FilterLibrarySeries? series = e.Inductor ? InductorChoice : CapacitorChoice;
-                FilterPart? chosen = null;
-                bool library = LibraryAvailable && (InductorSeries.Count > 0 || CapacitorSeries.Count > 0);
-
-                if (_partOverrides.TryGetValue(e.Name, out var ov) && ov.Series.Inductors == e.Inductor)
-                {
-                    series = ov.Series;
-                    chosen = ov.Part;
-                    value = chosen.Value;
-                    partName = chosen.Name;
-                    seriesName = series.Label;
-                    tolerance = chosen.Tolerance;
-                }
-                else if (series is not null && FilterValues.Nearest(e.Value, series.Parts) is { } near)
-                {
-                    chosen = near;
-                    value = near.Value;
-                    partName = near.Name;
-                    seriesName = series.Label;
-                    tolerance = near.Tolerance;
-                }
-
-                used.Add(e with { Value = value });
+                var e = r.Exact;
                 var choices = e.Inductor ? InductorSeries : CapacitorSeries;
                 Elements.Add(new FilterElementRow(
                     this, e.Name,
                     (e.Shunt ? "shunt " : "series ") + (e.Inductor ? "L" : "C"),
                     Eng(e.Inductor, e.Value), e.Value, e.Inductor,
-                    Eng(e.Inductor, value), seriesName, partName, tolerance,
+                    Eng(e.Inductor, r.Used), r.SeriesName, r.PartName, r.Tolerance,
                     (row++ & 1) == 0 ? "#FFFFFF" : "#F0F0F0",
                     library && choices.Count > 0,
-                    series, chosen, choices));
+                    r.Series, r.Chosen, choices));
             }
         }
         finally
         {
             _fillingRows = false;
         }
-        return used;
     }
 
     private static string Eng(bool inductor, double v)
@@ -716,15 +861,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// The same placement the Match Designer uses, so the filter is a circuitRF schematic rather
     /// than a table of numbers.
     /// </summary>
-    private static MatchLadderLayout LadderOf(IReadOnlyList<FilterElement> used, double rs, double rl) =>
-        FilterLadderDrawing.Build(used, rs, rl, Eng);
-
-    private void FillRows(IReadOnlyList<FilterElement> exact, List<FilterElement> used)
-    {
-        // ApplyValues already filled the rows as it snapped. Nothing further.
-        _ = exact;
-        _ = used;
-    }
+    private static MatchLadderLayout LadderOf(IReadOnlyList<FilterElement> used,
+                                              IReadOnlyList<FilterArm> arms, double rs, double rl) =>
+        FilterLadderDrawing.Build(used, arms, rs, rl, Eng);
 
     private double[] Frequencies(Spec spec)
     {

@@ -2262,8 +2262,9 @@ following the `Form` parameter:
 | `Highpass` | the bottom two | the highest |
 | `Bandstop` | the middle | the lowest and the highest |
 
-The [Filter Designer](filter-designer.html) builds the LC ladder for the all-pole families and can
-snap each value onto a standard series or a library part. This block stays the ideal response.
+The [Filter Designer](filter-designer.html) builds the LC ladder for every family — elliptic of any
+practical order and type included — and can snap each value onto a standard series or a library
+part. This block stays the ideal response.
 
 Tell a filter from a matching network by its type label and its instance name — `FLT1` against `MN1`
 — the same way the five FET laws, which also share one glyph, are told apart. `Order` is the

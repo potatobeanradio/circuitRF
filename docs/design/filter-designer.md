@@ -1,6 +1,6 @@
 # circuitRF — Filter Designer
 
-**Status:** Built · **Date:** 2026-11-13
+**Status:** Built · **Date:** 2026-11-13 · elliptic ladder rebuilt 2026-11-21
 
 The Filter Designer is a tool window (Tools ▸ Filter Designer) and a `filter` verb. It synthesises
 a doubly terminated LC ladder from the ideal Filter's own prototype and draws the response with the
@@ -39,23 +39,57 @@ Gaussian is the partial exponential `Σ α^k/k! · Ω^{2k}`, with `α` chosen so
 2. `E` is the Hurwitz factor scaled to `E(0) = 1`, so `|S21| = 1/|E|` and the cutoff is −3.01 dB
 at every order. `F` is the Feldtkeller step Bessel already uses.
 
-Inverse Chebyshev and elliptic put zeros on the axis. Each finite zero is removed as a tank — a
-parallel LC in the through path, or a series LC to ground — after a partial removal at infinity
-when that zero is not yet a pole of the open-circuit reactance. An even order of either family
-keeps a finite floor at infinite frequency. A ladder of inductors and capacitors is an open there,
-so that order is refused and the window says why. The ideal block still has the response.
+Inverse Chebyshev and elliptic put zeros on the axis, and are held as ROOTS (`FilterRoots`), not
+expanded polynomials. Elliptic zeros and poles are closed form (`EllipticPrototype`): the
+selectivity modulus from the nome — whichever of `q`, `q'` is smaller, so `k'` is never `√(1−k²)` of
+a `k` near 1 — reflection zeros `cd(u_i K, k)`, transmission zeros `1/(k ζ_i)`, poles
+`j·cd((u_i − j v0) K, k)` with complex-argument Jacobi functions by the addition formulas, and
+`v0` from Carlson's `R_F`. Each pole is then polished by Newton on `D² + ε²c² x^r N²` evaluated as
+products, in double and then in double-double (`Dd`, `DdComplex`). The ideal block evaluates
+products too, so its response exists at every order the ladder does.
+
+**Types b and c** (even order) are a Möbius map in `x = Ω²` that keeps the passband edge, sends the
+largest transmission zero to infinity, and (c) the smallest reflection zero to DC. Every zero and
+pole maps in closed form. b's load ratio solves `4r/(1+r)² = 1/(1+ε²)`; c's is 1. Type a at even
+order has no ladder and is refused naming b and c. `EllipticType.Auto` is a at odd order, c at
+even. The `Filter` block carries `EllipticType` (appended, default `A`).
+
+**The ladder** is one-pass zero shifting on the input function `f = (1+S11)/(1−S11)` EVALUATED AT
+POINTS, never divided as polynomials: at each zero `jω_k`, `f(jω_k)` is purely reactive (no power
+reaches the load), so the partial element is `Im f/ω_k`; the residue of the next pole is
+`1/f'(jω_k)`, from a derivative carried alongside every removal step. The remainder after the last
+finite zero is one element and the load (odd), or two and the load (b/c), solved from `f(0)` and one
+more point. All of it runs in double-double. Zero order: centre-out (lowest zero in the middle
+section), ascending, descending, then every permutation for up to six zeros; the first all-positive
+ladder whose S21 matches the prototype to 1e-8 (double-double ABCD chain, a log sweep plus every
+reflection zero, the midpoints between them and both sides of each transmission zero) is the
+answer. Nothing else is ever returned. The normalised ladder is cached per specification, so a
+change of form, frequency or impedance only re-denormalises.
+
+Gate: `testdata/filter-elliptic/` — an independent 120-digit mpmath reference (polynomial roots,
+polynomial zero shifting) for 654 ladders, orders 3–21, ripple 0.01–1 dB, Astop 20–80 dB, types a/b/c,
+both first elements, plus inverse Chebyshev; every row matches to 1e-8 (worst 1.1e-10) and every
+row the reference cannot realise is refused. Orders 22–31 are checked against the ideal block by an
+independent nodal solve.
 
 `NetworkForm.Bandstop` is appended, so existing Match payloads keep their meaning. Match refuses
 the value by name.
 
 ## The window and the verb
 
-`FilterDesignerViewModel.Design` is the rebuild. It evaluates `FilterNetwork` for the ideal curve,
-builds the ladder, snaps it, elaborates the `.cnl` and runs `SParameterEngine`. Both curves go on
+`FilterDesignerViewModel.DesignAsync` is the rebuild: it reads the boxes on the UI thread after an
+80 ms debounce, evaluates `FilterNetwork` for the ideal curve, builds and snaps the ladder,
+elaborates the `.cnl` and runs `SParameterEngine` on the thread pool, and applies the result back on
+the UI thread — only the latest request's, a superseded one is cancelled or dropped. Both curves go on
 one magnitude plot; phase and group delay go on the second. `FilterOrder.Minimum` is the closed-form
-order for Butterworth, Chebyshev, inverse Chebyshev and elliptic against the mask; the window can
-take that or a typed override. `FilterLadderDrawing` maps tanks onto the Match layout so a series
-LC stub and a through-path parallel LC each occupy one column rather than a broken chain of shunts.
+order for Butterworth, Chebyshev, inverse Chebyshev and elliptic against the mask (for elliptic
+Auto/b/c, the smallest order whose type as built meets the stop edge); the window can
+take that or a typed override. `FilterLadderDrawing` places by ARM — `FilterRealization.Arms` names the elements each arm became —
+and reads the arm's own topology: a spine element or chain, a through-path L∥C (C on the spine, L
+on a rail above), the three-branch bandpass/bandstop box ((series L–C) ∥ L ∥ C: pair above, L on
+the spine, C below), adjacent shunt legs, or a stub column whose parallel sections are legs either
+side of it joined by bars. The pane and its Copy wire from one routine,
+`MatchLadderLayout.WireSegments`, which only ever fills a rail between its own drops.
 
 `circuitrf filter` parses the specification and calls `FilterLadder.Synthesize` and
 `FilterValues.Snap`. It writes no second synthesis. Exit 0 with a ladder, 1 when the family has

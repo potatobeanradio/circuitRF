@@ -72,12 +72,38 @@ public enum FilterResponse
 public sealed class FilterPrototype
 {
     private FilterPrototype(FilterResponse response, int order,
-                            double[] e, double[] f, double[] p, double alpha, double beta)
+                            double[] e, double[] f, double[] p, double alpha, double beta,
+                            FilterRoots? roots = null)
     {
         Response = response;
         Order    = order;
         E = e; F = f; P = p;
         Alpha = alpha; Beta = beta;
+        Roots = roots;
+    }
+
+    /// <summary>
+    /// The zeros and poles, for the families with zeros on the axis (inverse Chebyshev and
+    /// elliptic). When set, <see cref="At"/> evaluates products of these rather than the expanded
+    /// coefficients, which is what keeps a high-order response exact.
+    /// </summary>
+    internal FilterRoots? Roots { get; }
+
+    /// <summary>Which elliptic response this is; <see cref="EllipticType.A"/> for every other family.</summary>
+    public EllipticType EllipticType { get; private init; } = EllipticType.A;
+
+    /// <summary>The prototype stopband edge for the families that have one, else NaN.</summary>
+    public double StopEdge => Roots?.StopEdge ?? double.NaN;
+
+    /// <summary>A prototype held as roots, with its coefficients expanded for the readers that want them.</summary>
+    internal static FilterPrototype FromRoots(FilterResponse response, FilterRoots roots,
+                                              EllipticType type = EllipticType.A)
+    {
+        var (e, f, p) = roots.Expand();
+        return new FilterPrototype(response, roots.Order, e, f, p, roots.KF, roots.KP, roots)
+        {
+            EllipticType = type,
+        };
     }
 
     /// <summary>The family this was built from.</summary>
@@ -108,6 +134,7 @@ public sealed class FilterPrototype
     public (Complex S11, Complex S21, Complex S22) At(double omega)
     {
         if (double.IsInfinity(omega)) return AtInfinity();
+        if (Roots is not null) return Roots.At(omega);
 
         var jw = new Complex(0.0, omega);
         Complex e = MatchPoly.Eval(E, jw);
@@ -154,8 +181,10 @@ public sealed class FilterPrototype
     /// <param name="order">Prototype order, ≥ 1.</param>
     /// <param name="rippleDb">Passband ripple, dB. Read by Chebyshev and Elliptic.</param>
     /// <param name="astopDb">Stopband floor, dB. Read by inverse Chebyshev and Elliptic.</param>
+    /// <param name="ellipticType">Read by Elliptic only; b and c modify an even order.</param>
     public static FilterPrototype Create(FilterResponse response, int order,
-                                         double rippleDb = 0.1, double astopDb = 40.0)
+                                         double rippleDb = 0.1, double astopDb = 40.0,
+                                         EllipticType ellipticType = EllipticType.A)
     {
         if (order < 1)
             throw new ArgumentOutOfRangeException(nameof(order),
@@ -166,11 +195,12 @@ public sealed class FilterPrototype
             FilterResponse.Butterworth  => FromCharacteristic(response, order, [1.0], Monomial(order), 1.0),
             FilterResponse.Chebyshev    => FromCharacteristic(response, order, [1.0],
                                                MatchPoly.ChebyshevT(order), EpsFromDb(rippleDb, nameof(rippleDb))),
-            FilterResponse.InvChebyshev => FromCharacteristic(response, order,
-                                               InverseChebyshevDenominator(order), Monomial(order),
-                                               EpsFromDb(astopDb, nameof(astopDb))),
+            FilterResponse.InvChebyshev => FromRoots(response,
+                                               FilterRoots.InverseChebyshev(order, EpsFromDb(astopDb, nameof(astopDb)))),
             FilterResponse.Bessel       => BuildBessel(order),
-            FilterResponse.Elliptic     => EllipticPrototype.Build(order, rippleDb, astopDb),
+            FilterResponse.Elliptic     => FromRoots(response,
+                                               EllipticPrototype.Roots(order, rippleDb, astopDb, ellipticType),
+                                               EllipticTypes.Resolve(ellipticType, order)),
             FilterResponse.Gaussian     => BuildGaussian(order),
             _ => throw new ArgumentOutOfRangeException(nameof(response), response, "unknown response family"),
         };
@@ -354,27 +384,6 @@ public sealed class FilterPrototype
         var a = new double[n + 1];
         a[0] = 1.0;
         return a;
-    }
-
-    /// <summary>
-    /// The inverse-Chebyshev denominator <c>U(Ω) = Ω^n·T_n(1/Ω)</c>, which is <c>T_n</c>'s own
-    /// coefficient array REVERSED — and whose roots are the filter's transmission zeros,
-    /// <c>Ω_k = 1/cos((2k−1)π/2n)</c>, sitting in the stopband on the jΩ axis where the family's
-    /// whole character comes from.
-    ///
-    /// <para>At odd <paramref name="n"/>, <c>T_n</c> has no constant term, so the reversal has a
-    /// leading zero and <c>U</c> is genuinely of degree <c>n−1</c>: one transmission zero has gone
-    /// to infinity, which is why an odd-order inverse Chebyshev keeps rolling off in the far
-    /// stopband and an even-order one does not. <see cref="MatchPoly.Trim"/> is what makes that a
-    /// degree rather than a leading zero — and it is a RELATIVE trim, which is the trap
-    /// <see cref="MatchPoly.Trim"/>'s own remark was written for.</para>
-    /// </summary>
-    internal static double[] InverseChebyshevDenominator(int n)
-    {
-        double[] t = MatchPoly.ChebyshevT(n);
-        var u = new double[t.Length];
-        for (int i = 0; i < t.Length; i++) u[i] = t[t.Length - 1 - i];
-        return MatchPoly.Trim(u);
     }
 
     /// <summary>

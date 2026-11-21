@@ -4685,8 +4685,9 @@ following the <code>Form</code> parameter:</p>
 </tr>
 </tbody>
 </table>
-<p>The <a href="filter-designer.html">Filter Designer</a> builds the LC ladder for the all-pole families and can
-snap each value onto a standard series or a library part. This block stays the ideal response.</p>
+<p>The <a href="filter-designer.html">Filter Designer</a> builds the LC ladder for every family — elliptic of any
+practical order and type included — and can snap each value onto a standard series or a library
+part. This block stays the ideal response.</p>
 <p>Tell a filter from a matching network by its type label and its instance name — <code>FLT1</code> against <code>MN1</code>
 — the same way the five FET laws, which also share one glyph, are told apart. <code>Order</code> is the
 <strong>prototype</strong> order, so a 3rd-order bandpass is a 6th-degree network.</p>
@@ -4711,6 +4712,7 @@ snap each value onto a standard series or a library part. This block stays the i
 <tr><td>Zin</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>The impedance port 1 PRESENTS - so a complex value is conjugate-matched by a Term at its conjugate: Zin = 5+j100 wants Z = 5-j100 across it for maximum power transfer. This block is stamped as its scattering matrix rather than synthesised as a ladder, so Zin and Zout may differ freely: the filter is then also an ideal lossless impedance transformer, matched at BOTH ports in its passband. Measured in a uniform 50 ohm system an unequal pair shows the transformer&#39;s mismatch, which is the answer and not a fault.</td></tr>
 <tr><td>Zout</td><td><code>50</code></td><td>Ω</td><td>&mdash;</td><td>The impedance port 2 PRESENTS. See Zin — the two are independent, and an unequal pair is a lossless transformer as well as a filter.</td></tr>
 <tr><td>IL</td><td><code>0</code></td><td>dB</td><td>&mdash;</td><td>A flat insertion loss laid on top of the ideal response, in dB. It multiplies S21 and leaves S11 alone, so the block genuinely dissipates rather than reflecting what it loses — which is what a real filter&#39;s loss does. 0 is the lossless ideal.</td></tr>
+<tr><td>EllipticType</td><td><code>A</code></td><td>&mdash;</td><td>&mdash;</td><td>Which elliptic response, for Elliptic only: A is the classical one; B and C modify an EVEN order, whose type A keeps a finite floor at infinite frequency. B moves the highest transmission zero to infinity (the terminations come out unequal); C also moves the lowest reflection zero to DC (equal terminations). Auto is A at odd order and C at even order. B and C at odd order are A. The Filter Designer&#39;s LC ladder is the same response as this block&#39;s when the two name the same type.</td></tr>
 </tbody></table>
 <h3 id="atten">Attenuator</h3>
 <figure class="symbol"><span class="frame">

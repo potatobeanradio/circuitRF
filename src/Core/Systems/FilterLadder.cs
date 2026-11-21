@@ -32,6 +32,28 @@ public sealed record FilterElement(
     public string Component => Inductor ? "L" : "C";
 }
 
+/// <summary>The role of one arm of the normalised lowpass ladder, before the form's transformation.</summary>
+public enum FilterArmKind
+{
+    /// <summary>A series element: an L in the lowpass prototype.</summary>
+    Series,
+
+    /// <summary>A shunt element: a C to ground in the lowpass prototype.</summary>
+    Shunt,
+
+    /// <summary>A parallel LC in the through path (a finite transmission zero).</summary>
+    SeriesTank,
+
+    /// <summary>A series LC to ground (a finite transmission zero).</summary>
+    ShuntStub,
+}
+
+/// <summary>
+/// One arm of a realised ladder: its prototype role and the indices of the
+/// <see cref="FilterRealization.Elements"/> the form turned it into, in placement order.
+/// </summary>
+public sealed record FilterArm(FilterArmKind Kind, IReadOnlyList<int> Elements);
+
 /// <summary>Why a specification did not become a ladder. The ideal response is unaffected.</summary>
 public sealed record FilterLadderRefusal(string Message);
 
@@ -58,6 +80,15 @@ public sealed class FilterRealization
 
     /// <summary>The normalised g-values, source resistance first and load ratio last.</summary>
     public IReadOnlyList<double> G { get; init; } = [];
+
+    /// <summary>
+    /// The arms, source end first, each naming the elements it became. The drawing places by arm
+    /// rather than rediscovering which elements belong together.
+    /// </summary>
+    public IReadOnlyList<FilterArm> Arms { get; init; } = [];
+
+    /// <summary>Something the caller should say about this ladder, or empty.</summary>
+    public string Note { get; init; } = "";
 
     /// <summary>The ladder as a <c>.cnl</c> fragment: two Terms and the elements between them.</summary>
     public string Cnl { get; init; } = "";
@@ -93,7 +124,7 @@ public sealed class FilterLadderResult
 /// inductor of <c>R /(g ω)</c>. Bandpass replaces each arm by a resonator at the geometric centre.
 /// Bandstop replaces each arm by the dual resonator.</para>
 /// </remarks>
-public static class FilterLadder
+public static partial class FilterLadder
 {
     /// <summary>
     /// The ladder for <paramref name="response"/> at <paramref name="order"/>, scaled to
@@ -107,7 +138,8 @@ public static class FilterLadder
     public static FilterLadderResult Synthesize(
         FilterResponse response, NetworkForm form, int order,
         double fcHz, double f1Hz, double f2Hz,
-        double rippleDb, double sourceOhms, FilterFirstElement first, double astopDb = 40)
+        double rippleDb, double sourceOhms, FilterFirstElement first, double astopDb = 40,
+        EllipticType ellipticType = EllipticType.Auto)
     {
         if (order < 1)
             return Refuse($"A filter order is at least 1; got {order}.");
@@ -120,6 +152,10 @@ public static class FilterLadder
         if (ClosedFormG(response, order, rippleDb) is { } closed)
             return BuildFromG(closed, response, form, order, fcHz, f1Hz, f2Hz, sourceOhms, first);
 
+        if (SynthesizeWithZeros(response, order, rippleDb, astopDb, ellipticType,
+                                form, fcHz, f1Hz, f2Hz, sourceOhms, first) is { } withZeros)
+            return withZeros;
+
         FilterPrototype proto;
         try
         {
@@ -129,9 +165,6 @@ public static class FilterLadder
         {
             return Refuse(e.Message);
         }
-
-        if (proto.P.Length > 1)
-            return SynthesizeWithZeros(proto, form, fcHz, f1Hz, f2Hz, sourceOhms, first);
 
         double[]? g = PrototypeG(proto);
         if (g is null)
@@ -165,6 +198,7 @@ public static class FilterLadder
         double rl = loadNorm * sourceOhms;
 
         var elements = new List<FilterElement>();
+        var arms = new List<FilterArm>();
         string node = "p1";
         var ids = new Ids();
         for (int k = 1; k <= order; k++)
@@ -173,7 +207,10 @@ public static class FilterLadder
             double gk = g[k];
             if (!(gk > 0) || !double.IsFinite(gk))
                 return Refuse($"{response} order {order} produced a non-positive element.");
+            int from = elements.Count;
             node = AddArm(elements, form, gk, shunt, rs, wEdge, w0, bw, node, ref ids);
+            arms.Add(new FilterArm(shunt ? FilterArmKind.Shunt : FilterArmKind.Series,
+                                   [.. Enumerable.Range(from, elements.Count - from)]));
         }
 
         return new FilterLadderResult
@@ -184,6 +221,7 @@ public static class FilterLadder
                 SourceOhms = rs,
                 LoadOhms = rl,
                 Elements = elements,
+                Arms = arms,
                 G = g,
                 Cnl = ToCnl(elements, rs, rl),
             },
@@ -462,583 +500,6 @@ public static class FilterLadder
     private readonly record struct NormArm(NormKind Kind, double L, double C);
 
     private enum NormKind { SeriesL, ShuntC, SeriesC, ShuntL, SeriesParallel, ShuntSeries }
-
-    /// <summary>
-    /// A ladder whose transmission zeros sit on the jω axis. The open-circuit impedance of the
-    /// lossless two-port is a reactance, built from the even and odd parts of <c>E</c> and
-    /// <c>F</c>, and each finite zero is removed as a tank: a parallel LC in the through path or
-    /// a series LC to ground. Poles at infinity come off as a single L or C, which is the Cauer
-    /// step the all-pole families already use.
-    /// </summary>
-    private static FilterLadderResult SynthesizeWithZeros(
-        FilterPrototype proto, NetworkForm form, double fcHz, double f1Hz, double f2Hz,
-        double sourceOhms, FilterFirstElement first)
-    {
-        if (!Cutoff(form, fcHz, f1Hz, f2Hz, out double wEdge, out double w0, out double bw, out string? why))
-            return Refuse(why!);
-
-        // An even order keeps |S21| finite at infinite frequency. Every LC ladder is an open
-        // there, so the two cannot be the same network.
-        if (proto.P.Length == proto.E.Length &&
-            Math.Abs(proto.Beta * proto.P[0] / proto.E[0]) > 1e-8)
-            return Refuse(
-                $"{proto.Response} of even order keeps a finite floor at infinite frequency, and a " +
-                "ladder of inductors and capacitors is an open there. An odd order is the ladder.");
-
-        double[] f = Scale(proto.F, proto.Alpha);
-        var zeros = StopZeros(proto.P);
-        bool wantShunt = first == FilterFirstElement.Parallel;
-
-        List<NormArm>? tight = null, fit = null;
-        double best = double.PositiveInfinity, bestFit = double.PositiveInfinity;
-        void Consider(List<NormArm> got)
-        {
-            got.RemoveAll(a => a.L < 1e-8 && a.C < 1e-8);
-            if (got.Count == 0 || !ZerosLand(got, zeros)) return;
-            double err = ZinError(got, proto);
-            if (!double.IsFinite(err)) return;
-            // A full-order arm count with slightly worse Zin beats a short ladder that only
-            // looks AllPositive — the short ones are what used to "succeed" at order 9.
-            double rank = err + (got.Count < proto.Order ? 1.0 : 0.0);
-            double tightRank = best + (tight is { Count: var tc } && tc < proto.Order ? 1.0 : 0.0);
-            if (rank < tightRank || (Math.Abs(rank - tightRank) < 1e-15 && err < best))
-            { best = err; tight = got; }
-            bool startsShunt = got[0].Kind is NormKind.ShuntC or NormKind.ShuntL or NormKind.ShuntSeries;
-            double fitRank = bestFit + (fit is { Count: var fc } && fc < proto.Order ? 1.0 : 0.0);
-            if (startsShunt == wantShunt
-                && (rank < fitRank || (Math.Abs(rank - fitRank) < 1e-15 && err < bestFit)))
-            { bestFit = err; fit = got; }
-        }
-
-        // Fast path: first AllPositive finish per reactance (keeps InvCheby / elliptic ≤ 7).
-        foreach (var (n, d) in Reactances(proto.E, f))
-        {
-            if (TryExtractFirst(n, d, zeros, out var got)) Consider(got);
-        }
-
-        double zinCap = Math.Max(1e-2, 3e-3 * proto.Order);
-        // High-order elliptic: the first finish is often a short wrong ladder. Exhaust every
-        // AllPositive completion (and a frequency-scaled plane) so a full-order path can score.
-        if ((tight is null || best > zinCap) && zeros.Length > 0 && proto.Order >= 9)
-        {
-            foreach (var (n, d) in Reactances(proto.E, f))
-                TryExtractAll(n, d, zeros, proto.Order, Consider);
-
-            double wScale = Math.Exp(zeros.Average(z => Math.Log(z)));
-            if (wScale > 0 && double.IsFinite(wScale) && Math.Abs(wScale - 1.0) > 1e-6)
-            {
-                var zerosS = zeros.Select(z => z / wScale).ToArray();
-                foreach (var (n, d) in Reactances(proto.E, f))
-                {
-                    TryExtractAll(ScaleFreq(n, wScale), ScaleFreq(d, wScale), zerosS, proto.Order,
-                                  got => Consider(UnscaleArms(got, wScale)));
-                }
-            }
-        }
-
-        // The end the user asked for, when that extraction is the same impedance. Otherwise the
-        // tightest one, which is the other end of the same ladder.
-        List<NormArm>? arms = fit is not null && bestFit <= Math.Max(1e-4, best * 50) ? fit : tight;
-        // High-order elliptic / inverse-Chebyshev leave a slightly larger Zin residual in double;
-        // accept anything that still carries the zeros and stays under a few percent.
-        if (arms is not null && Math.Min(best, bestFit) > zinCap) arms = null;
-        if (arms is null)
-            return Refuse((proto.Order & 1) == 0
-                ? $"{proto.Response} of even order keeps a finite floor at infinite frequency, and a " +
-                  "ladder of inductors and capacitors is an open there. An odd order is the ladder."
-                : $"{proto.Response} order {proto.Order} did not produce a ladder with positive elements.");
-
-        var elements = new List<FilterElement>();
-        string node = "p1";
-        var ids = new Ids();
-        foreach (var arm in arms)
-            node = PlaceNorm(elements, arm, form, sourceOhms, wEdge, w0, bw, node, ref ids);
-
-        // The reactance is the open-circuit impedance of a network terminated in 1 Ω, so the load
-        // is the source resistance. An even-order elliptic can want a different ratio; the plotted
-        // ladder says which load it was built for, and the ideal block still takes the typed pair.
-        return new FilterLadderResult
-        {
-            Realization = new FilterRealization
-            {
-                First = first,
-                SourceOhms = sourceOhms,
-                LoadOhms = sourceOhms,
-                Elements = elements,
-                G = [],
-                Cnl = ToCnl(elements, sourceOhms, sourceOhms),
-            },
-        };
-    }
-
-    /// <summary>Positive stopband zeros, one per conjugate pair, ascending.</summary>
-    private static double[] StopZeros(double[] p)
-    {
-        var found = new List<double>();
-        foreach (var r in MatchPoly.Roots(p))
-        {
-            if (Math.Abs(r.Real) > 1e-6 * (1.0 + r.Magnitude)) continue;
-            double w = Math.Abs(r.Imaginary);
-            if (w < 1e-6) continue;
-            if (found.Any(z => Math.Abs(z - w) < 1e-5 * (1 + w))) continue;
-            found.Add(w);
-        }
-        found.Sort();
-        return [.. found];
-    }
-
-    /// <summary>The four reactance candidates: both even/odd splits, and <c>F</c> with either sign.</summary>
-    private static IEnumerable<(double[] N, double[] D)> Reactances(double[] e, double[] f)
-    {
-        foreach (double sign in (double[])[1.0, -1.0])
-        {
-            var fs = Scale(f, sign);
-            Split(e, out var ee, out var eo);
-            Split(fs, out var fe, out var fo);
-            var a = MatchPoly.Trim(MatchPoly.Add(ee, fe));
-            var b = MatchPoly.Trim(MatchPoly.Sub(eo, fo));
-            var c = MatchPoly.Trim(MatchPoly.Add(eo, fo));
-            var d = MatchPoly.Trim(MatchPoly.Sub(ee, fe));
-            yield return (a, b);
-            yield return (b, a);
-            yield return (c, d);
-            yield return (d, c);
-        }
-    }
-
-    private static void Split(double[] p, out double[] even, out double[] odd)
-    {
-        even = new double[p.Length];
-        odd = new double[p.Length];
-        int deg = p.Length - 1;
-        for (int i = 0; i < p.Length; i++)
-        {
-            if (((deg - i) & 1) == 0) even[i] = p[i];
-            else odd[i] = p[i];
-        }
-    }
-
-    /// <summary>
-    /// <c>p(s) → p(w·s')</c> as a descending coefficient array — used to pull clustered elliptic
-    /// zeros away from the passband edge before Cauer removal.
-    /// </summary>
-    private static double[] ScaleFreq(double[] p, double w)
-    {
-        int deg = p.Length - 1;
-        var r = new double[p.Length];
-        for (int i = 0; i < p.Length; i++)
-            r[i] = p[i] * Math.Pow(w, deg - i);
-        return MatchPoly.Trim(r);
-    }
-
-    /// <summary>
-    /// Maps arms extracted in the <c>s' = s/w</c> plane back to the prototype's own frequency.
-    /// Every L and C scales as <c>/w</c> for an impedance that is homogeneous of degree one in
-    /// <c>s</c> (series L, shunt C, and both tank readings).
-    /// </summary>
-    private static List<NormArm> UnscaleArms(List<NormArm> arms, double w) =>
-        arms.Select(a => new NormArm(a.Kind,
-                                     a.L == 0 ? 0 : a.L / w,
-                                     a.C == 0 ? 0 : a.C / w)).ToList();
-
-    /// <summary>First AllPositive Cauer finish (historical default — ascending zeros).</summary>
-    private static bool TryExtractFirst(double[] n0, double[] d0, double[] zeros, out List<NormArm> arms)
-    {
-        arms = [];
-        return RecurFirst(n0, d0, [.. zeros], arms, 0);
-    }
-
-    /// <summary>
-    /// Exhaustive Cauer search (both zero orders). Every AllPositive finish is handed to
-    /// <paramref name="onFound"/> so ZinError can pick among them.
-    /// </summary>
-    private static void TryExtractAll(
-        double[] n0, double[] d0, double[] zeros, int order, Action<List<NormArm>> onFound)
-    {
-        int minEmit = Math.Max(1, order - 1);
-        foreach (var ordered in new[]
-                 {
-                     zeros.ToList(),
-                     zeros.OrderByDescending(z => z).ToList(),
-                 })
-        {
-            RecurSearch(n0, d0, ordered, [], 0, minEmit, onFound);
-        }
-    }
-
-    /// <summary>Depth-first extract that returns on the first AllPositive finish.</summary>
-    private static bool RecurFirst(double[] n, double[] d, List<double> left, List<NormArm> arms, int depth)
-    {
-        if (depth > 48) return false;
-        Normalise(ref n, ref d);
-        n = MatchPoly.Trim(n);
-        d = MatchPoly.Trim(d);
-        if (Degree(n) <= 0 && Degree(d) <= 0)
-            return left.Count == 0 && arms.Count > 0 && AllPositive(arms);
-
-        for (int i = 0; i < left.Count; i++)
-        {
-            double w = left[i], wz2 = w * w;
-            if (Divides(d, wz2, out var q) && Tank(n, q, w) is { } series)
-            {
-                var removed = MatchPoly.Sub(n, Scale(MulByS(q), 1.0 / series.C));
-                if (Divides(removed, wz2, out var n2))
-                {
-                    var next = new List<double>(left); next.RemoveAt(i);
-                    arms.Add(series);
-                    if (RecurFirst(n2, q, next, arms, depth + 1)) return true;
-                    arms.RemoveAt(arms.Count - 1);
-                }
-            }
-            if (Divides(n, wz2, out q) && Tank(d, q, w) is { } asSeriesForm)
-            {
-                double k = 1.0 / asSeriesForm.C;
-                var removed = MatchPoly.Sub(d, Scale(MulByS(q), k));
-                var shunt = new NormArm(NormKind.ShuntSeries, asSeriesForm.C, asSeriesForm.L);
-                if (Divides(removed, wz2, out var d2))
-                {
-                    var next = new List<double>(left); next.RemoveAt(i);
-                    arms.Add(shunt);
-                    if (RecurFirst(q, d2, next, arms, depth + 1)) return true;
-                    arms.RemoveAt(arms.Count - 1);
-                }
-            }
-        }
-
-        int dn = Degree(n), dd = Degree(d);
-        if (left.Count == 0)
-        {
-            if (dn == dd + 1)
-            {
-                double l = n[0] / d[0];
-                if (!(l > 0) || !double.IsFinite(l)) return false;
-                arms.Add(new NormArm(NormKind.SeriesL, l, 0));
-                return RecurFirst(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1)
-                       || Pop(arms);
-            }
-            if (dd == dn + 1)
-            {
-                double c = d[0] / n[0];
-                if (!(c > 0) || !double.IsFinite(c)) return false;
-                arms.Add(new NormArm(NormKind.ShuntC, 0, c));
-                return RecurFirst(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1)
-                       || Pop(arms);
-            }
-            return false;
-        }
-
-        if (dn == dd + 1 && n[0] / d[0] is var lFull && lFull > 0 && double.IsFinite(lFull))
-        {
-            for (int i = 0; i < left.Count; i++)
-            {
-                if (Partial(n, d, left[i]) is not { } l || !(l > 1e-9) || l >= lFull * 0.999) continue;
-                arms.Add(new NormArm(NormKind.SeriesL, l, 0));
-                if (RecurFirst(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1)) return true;
-                if (!Pop(arms)) return false;
-            }
-        }
-        if (dd == dn + 1 && d[0] / n[0] is var cFull && cFull > 0 && double.IsFinite(cFull))
-        {
-            for (int i = 0; i < left.Count; i++)
-            {
-                var y = AdmittanceAt(n, d, left[i]);
-                if (y is null) continue;
-                double c = y.Value.Imaginary / left[i];
-                if (!(c > 1e-9) || c >= cFull * 0.999) continue;
-                arms.Add(new NormArm(NormKind.ShuntC, 0, c));
-                if (RecurFirst(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1)) return true;
-                if (!Pop(arms)) return false;
-            }
-        }
-        return false;
-    }
-
-    private static bool Pop(List<NormArm> arms)
-    {
-        if (arms.Count == 0) return false;
-        arms.RemoveAt(arms.Count - 1);
-        return false;
-    }
-
-    /// <summary>
-    /// One extraction step. A finite zero that is already a pole of the reactance comes off whole,
-    /// as a parallel LC in the through path or a series LC to ground. A zero that is not yet a pole
-    /// is brought there by a partial removal at infinity — a series L or a shunt C small enough
-    /// that the remainder is zero at that frequency — and the next step takes the tank. With no
-    /// zeros left, the rest is the ordinary Cauer step.
-    /// </summary>
-    private static void RecurSearch(
-        double[] n, double[] d, List<double> left, List<NormArm> arms, int depth, int minEmit,
-        Action<List<NormArm>> onFound)
-    {
-        if (depth > 48) return;
-        Normalise(ref n, ref d);
-        n = MatchPoly.Trim(n);
-        d = MatchPoly.Trim(d);
-        if (Degree(n) <= 0 && Degree(d) <= 0)
-        {
-            if (left.Count == 0 && arms.Count >= minEmit && AllPositive(arms))
-                onFound([.. arms]);
-            return;
-        }
-
-        for (int i = 0; i < left.Count; i++)
-        {
-            double w = left[i], wz2 = w * w;
-            if (Divides(d, wz2, out var q) && Tank(n, q, w) is { } series)
-            {
-                var removed = MatchPoly.Sub(n, Scale(MulByS(q), 1.0 / series.C));
-                if (Divides(removed, wz2, out var n2))
-                    TryArm(n2, q, left, i, series, arms, depth, minEmit, onFound);
-            }
-            if (Divides(n, wz2, out q) && Tank(d, q, w) is { } asSeriesForm)
-            {
-                // Tank() answers the parallel-tank reading of the residue. A pole of the admittance
-                // is the dual: a series LC to ground, L and C exchanged.
-                double k = 1.0 / asSeriesForm.C;
-                var removed = MatchPoly.Sub(d, Scale(MulByS(q), k));
-                var shunt = new NormArm(NormKind.ShuntSeries, asSeriesForm.C, asSeriesForm.L);
-                if (Divides(removed, wz2, out var d2))
-                    TryArm(q, d2, left, i, shunt, arms, depth, minEmit, onFound);
-            }
-        }
-
-        int dn = Degree(n), dd = Degree(d);
-        if (left.Count == 0)
-        {
-            if (dn == dd + 1)
-            {
-                double l = n[0] / d[0];
-                if (l > 0 && double.IsFinite(l))
-                {
-                    arms.Add(new NormArm(NormKind.SeriesL, l, 0));
-                    RecurSearch(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1, minEmit, onFound);
-                    arms.RemoveAt(arms.Count - 1);
-                }
-            }
-            else if (dd == dn + 1)
-            {
-                double c = d[0] / n[0];
-                if (c > 0 && double.IsFinite(c))
-                {
-                    arms.Add(new NormArm(NormKind.ShuntC, 0, c));
-                    RecurSearch(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1, minEmit, onFound);
-                    arms.RemoveAt(arms.Count - 1);
-                }
-            }
-            return;
-        }
-
-        // Partial removal at infinity, toward one remaining zero. Every positive partial is tried.
-        if (dn == dd + 1 && n[0] / d[0] is var lFull && lFull > 0 && double.IsFinite(lFull))
-        {
-            for (int i = 0; i < left.Count; i++)
-            {
-                if (Partial(n, d, left[i]) is not { } l || !(l > 1e-9) || l >= lFull * 0.999) continue;
-                arms.Add(new NormArm(NormKind.SeriesL, l, 0));
-                RecurSearch(MatchPoly.Sub(n, Scale(MulByS(d), l)), d, left, arms, depth + 1, minEmit, onFound);
-                arms.RemoveAt(arms.Count - 1);
-            }
-        }
-        if (dd == dn + 1 && d[0] / n[0] is var cFull && cFull > 0 && double.IsFinite(cFull))
-        {
-            for (int i = 0; i < left.Count; i++)
-            {
-                var y = AdmittanceAt(n, d, left[i]);
-                if (y is null) continue;
-                double c = y.Value.Imaginary / left[i];
-                if (!(c > 1e-9) || c >= cFull * 0.999) continue;
-                arms.Add(new NormArm(NormKind.ShuntC, 0, c));
-                RecurSearch(n, MatchPoly.Sub(d, Scale(MulByS(n), c)), left, arms, depth + 1, minEmit, onFound);
-                arms.RemoveAt(arms.Count - 1);
-            }
-        }
-    }
-
-    private static void TryArm(
-        double[] n, double[] d, List<double> left, int index, NormArm arm,
-        List<NormArm> arms, int depth, int minEmit, Action<List<NormArm>> onFound)
-    {
-        var next = new List<double>(left);
-        next.RemoveAt(index);
-        arms.Add(arm);
-        RecurSearch(n, d, next, arms, depth + 1, minEmit, onFound);
-        arms.RemoveAt(arms.Count - 1);
-    }
-
-    /// <summary>Series inductance that puts a zero of the remainder at <paramref name="w"/>.</summary>
-    private static double? Partial(double[] n, double[] d, double w)
-    {
-        var z = ImpedanceAt(n, d, w);
-        if (z is null) return null;
-        if (Math.Abs(z.Value.Real) > 1e-3 * (1.0 + z.Value.Magnitude)) return null;
-        return z.Value.Imaginary / w;
-    }
-
-    private static Complex? ImpedanceAt(double[] n, double[] d, double w)
-    {
-        var den = MatchPoly.Eval(d, new Complex(0, w));
-        if (den.Magnitude < 1e-14) return null;
-        return MatchPoly.Eval(n, new Complex(0, w)) / den;
-    }
-
-    private static Complex? AdmittanceAt(double[] n, double[] d, double w)
-    {
-        var num = MatchPoly.Eval(n, new Complex(0, w));
-        if (num.Magnitude < 1e-14) return null;
-        return MatchPoly.Eval(d, new Complex(0, w)) / num;
-    }
-
-    private static void Normalise(ref double[] n, ref double[] d)
-    {
-        double m = 0;
-        foreach (double c in n) m = Math.Max(m, Math.Abs(c));
-        foreach (double c in d) m = Math.Max(m, Math.Abs(c));
-        if (m == 0 || Math.Abs(m - 1.0) < 1e-15) return;
-        n = Scale(n, 1.0 / m);
-        d = Scale(d, 1.0 / m);
-    }
-
-    /// <summary>A parallel tank <c>z = (s/C)/(s²+ω²)</c> when <paramref name="numer"/>/<c>(s²+ω²)·quot</c>
-    /// has a real positive residue. <see cref="NormArm.L"/> and <see cref="NormArm.C"/> are that tank.</summary>
-    private static NormArm? Tank(double[] numer, double[] quot, double w)
-    {
-        var nj = MatchPoly.Eval(numer, new Complex(0, w));
-        var qj = MatchPoly.Eval(quot, new Complex(0, w));
-        var denom = new Complex(0, w) * qj;
-        if (denom.Magnitude < 1e-14) return null;
-        var k = nj / denom;
-        if (Math.Abs(k.Imaginary) > 1e-4 * (1.0 + Math.Abs(k.Real))) return null;
-        if (!(k.Real > 0) || !double.IsFinite(k.Real)) return null;
-        double c = 1.0 / k.Real;
-        double l = 1.0 / (w * w * c);
-        if (!(l > 0) || !(c > 0)) return null;
-        return new NormArm(NormKind.SeriesParallel, l, c);
-    }
-
-    /// <summary>
-    /// How far the ladder's input impedance, terminated in 1 Ω, sits from the prototype's. The
-    /// prototype impedance is <c>(E ± αF)/(E ∓ αF)</c>; both signs are tried and the closer one
-    /// is the score. A wrong extraction has the zeros and still fails this.
-    /// </summary>
-    private static double ZinError(List<NormArm> arms, FilterPrototype proto)
-    {
-        double[] f = Scale(proto.F, proto.Alpha);
-        double best = double.PositiveInfinity;
-        foreach (double sign in (double[])[1.0, -1.0])
-        {
-            var num = MatchPoly.Add(proto.E, Scale(f, sign));
-            var den = MatchPoly.Sub(proto.E, Scale(f, sign));
-            double err = 0;
-            foreach (double w in (double[])[0.2, 0.5, 0.9, 1.4, 2.5])
-            {
-                var s = new Complex(0, w);
-                var got = Drive(arms, s);
-                var want = MatchPoly.Eval(num, s) / MatchPoly.Eval(den, s);
-                double scale = Math.Max(1e-6, want.Magnitude);
-                err = Math.Max(err, (got - want).Magnitude / scale);
-            }
-            if (err < best) best = err;
-        }
-        return best;
-    }
-
-    /// <summary>Input impedance of a normalised ladder terminated in 1 Ω, from the source end.</summary>
-    private static Complex Drive(List<NormArm> arms, Complex s)
-    {
-        Complex z = Complex.One;
-        for (int i = arms.Count - 1; i >= 0; i--)
-        {
-            var a = arms[i];
-            switch (a.Kind)
-            {
-                case NormKind.SeriesL:
-                    z += s * a.L;
-                    break;
-                case NormKind.SeriesC:
-                    z += 1.0 / (s * a.C);
-                    break;
-                case NormKind.ShuntC:
-                    z = 1.0 / (s * a.C + 1.0 / z);
-                    break;
-                case NormKind.ShuntL:
-                    z = 1.0 / (1.0 / (s * a.L) + 1.0 / z);
-                    break;
-                case NormKind.SeriesParallel:
-                    z += (s * a.L) / (1.0 + s * s * a.L * a.C);
-                    break;
-                default:
-                    var series = s * a.L + 1.0 / (s * a.C);
-                    z = 1.0 / (1.0 / series + 1.0 / z);
-                    break;
-            }
-        }
-        return z;
-    }
-
-    /// <summary>Every finite zero is a tank resonance, and there is no extra tank.</summary>
-    private static bool ZerosLand(List<NormArm> arms, double[] zeros)
-    {
-        var got = new List<double>();
-        foreach (var a in arms)
-        {
-            if (a.Kind is not (NormKind.SeriesParallel or NormKind.ShuntSeries)) continue;
-            if (!(a.L > 0) || !(a.C > 0)) return false;
-            got.Add(1.0 / Math.Sqrt(a.L * a.C));
-        }
-        if (got.Count != zeros.Length) return false;
-        got.Sort();
-        for (int i = 0; i < got.Count; i++)
-            if (Math.Abs(got[i] - zeros[i]) > 1e-3 * zeros[i]) return false;
-        return true;
-    }
-
-    private static bool AllPositive(List<NormArm> arms) =>
-        arms.All(a => (a.L == 0 || a.L > 0) && (a.C == 0 || a.C > 0) && double.IsFinite(a.L + a.C));
-
-    private static int Degree(double[] p) => p.Length <= 1 && (p.Length == 0 || Math.Abs(p[0]) < 1e-12) ? -1 : p.Length - 1;
-
-    private static bool Divides(double[] poly, double wz2, out double[] quot)
-    {
-        var (q, r) = Div(MatchPoly.Trim(poly), [1.0, 0.0, wz2]);
-        quot = q;
-        double scale = 0;
-        foreach (double c in poly) scale = Math.Max(scale, Math.Abs(c));
-        // High-order characteristic polynomials leave larger synthetic-division residuals in double;
-        // accept a zero that still evaluates small on the axis.
-        double limit = 1e-3 * Math.Max(1.0, scale);
-        foreach (double c in r)
-            if (Math.Abs(c) > limit)
-            {
-                double w = Math.Sqrt(wz2);
-                var at = MatchPoly.Eval(poly, new Complex(0, w));
-                int deg = Math.Max(Degree(poly), 0);
-                double term = Math.Max(1.0, scale) * Math.Pow(Math.Max(w, 1.0), deg);
-                return q.Length > 0 && at.Magnitude < 1e-4 * term;
-            }
-        return q.Length > 0;
-    }
-
-    private static (double[] Quot, double[] Rem) Div(double[] num, double[] den)
-    {
-        num = MatchPoly.Trim(num);
-        den = MatchPoly.Trim(den);
-        if (den.Length == 0 || Math.Abs(den[0]) < 1e-18) return ([0.0], num);
-        if (num.Length < den.Length) return ([0.0], num);
-        var r = (double[])num.Clone();
-        var q = new double[num.Length - den.Length + 1];
-        for (int i = 0; i < q.Length; i++)
-        {
-            double coef = r[i] / den[0];
-            q[i] = coef;
-            for (int j = 0; j < den.Length; j++) r[i + j] -= coef * den[j];
-        }
-        int rem = den.Length - 1;
-        var rest = rem <= 0 ? new[] { 0.0 } : r[^rem..];
-        return (MatchPoly.Trim(q), MatchPoly.Trim(rest));
-    }
-
-    private static double[] MulByS(double[] p) => [.. p, 0.0];
 
     private static string PlaceNorm(List<FilterElement> elements, NormArm arm, NetworkForm form,
                                     double rs, double wEdge, double w0, double bw, string node, ref Ids ids)

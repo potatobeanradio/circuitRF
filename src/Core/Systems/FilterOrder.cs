@@ -19,11 +19,18 @@ public static class FilterOrder
     /// <param name="fp2Hz">Upper passband edge.</param>
     /// <param name="fs1Hz">Lower stopband edge.</param>
     /// <param name="fs2Hz">Upper stopband edge.</param>
+    /// <param name="ellipticType">
+    /// Read by Elliptic. <see cref="EllipticType.A"/> is the degree equation's own answer, which
+    /// may be an even order with no LC ladder. Auto, b and c answer the smallest order whose type
+    /// AS BUILT meets the mask: an even order is a type b or c, whose stop edge sits above type
+    /// a's, so it is checked against the mask and the order steps up when it misses.
+    /// </param>
     public static int? Minimum(
         FilterResponse response, NetworkForm form,
         double apDb, double asDb,
         double fpHz, double fsHz,
-        double fp1Hz, double fp2Hz, double fs1Hz, double fs2Hz)
+        double fp1Hz, double fp2Hz, double fs1Hz, double fs2Hz,
+        EllipticType ellipticType = EllipticType.A)
     {
         if (!(asDb > 0) || !double.IsFinite(asDb)) return null;
         if (!(apDb >= 0) || !double.IsFinite(apDb)) return null;
@@ -41,7 +48,10 @@ public static class FilterOrder
             FilterResponse.Butterworth  => Ceil(Math.Log(epsS / epsP) / Math.Log(omegaS) / 2.0),
             FilterResponse.Chebyshev    => Ceil(Acosh(epsS / epsP) / Acosh(omegaS)),
             FilterResponse.InvChebyshev => Ceil(Acosh(epsS / epsP) / Acosh(omegaS)),
-            FilterResponse.Elliptic     => EllipticMinimum(epsP, epsS, omegaS),
+            FilterResponse.Elliptic     => EllipticMinimum(epsP, epsS, omegaS) is { } n
+                                           ? BuildableElliptic(n, apDb <= 0 ? 3.0102999566 : apDb,
+                                                               asDb, omegaS, ellipticType)
+                                           : null,
             _                           => null,
         };
     }
@@ -54,6 +64,33 @@ public static class FilterOrder
         double ratio = (EllipticPrototype.EllipK(Math.Sqrt(1 - k1 * k1)) / EllipticPrototype.EllipK(k1))
                      * (EllipticPrototype.EllipK(k) / EllipticPrototype.EllipK(Math.Sqrt(1 - k * k)));
         return Ceil(ratio);
+    }
+
+    /// <summary>
+    /// The smallest order from <paramref name="n"/> up whose resolved type meets the stop edge.
+    /// An odd order is type a, which meets it by the degree equation.
+    /// </summary>
+    private static int? BuildableElliptic(int n, double apDb, double asDb, double omegaS, EllipticType type)
+    {
+        if (type == EllipticType.A) return n;
+        for (int m = n; m <= n + 2; m++)
+        {
+            var t = EllipticTypes.Resolve(type, m);
+            if (t == EllipticType.A)
+            {
+                if (m % 2 == 1) return m;
+                continue;
+            }
+            try
+            {
+                if (EllipticPrototype.Roots(m, apDb, asDb, t).StopEdge <= omegaS * (1 + 1e-12)) return m;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return null;
+            }
+        }
+        return null;
     }
 
     /// <summary>

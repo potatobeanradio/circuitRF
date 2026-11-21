@@ -92,8 +92,13 @@ public static class MatchSchematicModel
         // A DC block does not tap the spine — its inductor does, and the two share a column, so a dot
         // per element would draw the same dot twice.
         var dots = new List<SchematicDot>();
-        foreach (var s in layout.Elements.Where(e => e.IsShunt && e.DcBlockEnd == 0))
+        // Only an element whose upper pin IS on the spine taps it; a symbol further down a Filter
+        // Designer stub column does not.
+        foreach (var s in layout.Elements.Where(e => e.IsShunt && e.DcBlockEnd == 0
+                                                     && Math.Abs(e.Y - MatchLadderLayout.ShuntY) < 1e-9))
             dots.Add(new SchematicDot(s.X, MatchLadderLayout.SpineY));
+        foreach (var (dx, dy) in layout.ExtraDots)
+            dots.Add(new SchematicDot(dx, dy));
         // Parallel through-path arms (Filter Designer) drop onto the spine at both ends.
         foreach (var arm in layout.ParallelArms)
         {
@@ -151,16 +156,17 @@ public static class MatchSchematicModel
         List<(double Dx, double Dy)> offsets;
         if (e.IsShunt)
         {
+            var beside = (ShuntLabelDx, ShuntLabelDy);
             offsets = Enumerable.Repeat(
-                MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
-                                         MatchSchematicGeometry.LeadHalf),
+                e.LabelBeside ? beside
+                              : MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
+                                                         MatchSchematicGeometry.LeadHalf),
                 labels.Count).ToList();
         }
-        else if (e.Y < MatchLadderLayout.SpineY - 1.0)
+        else if (e.LabelAbove)
         {
-            // Beside the body — stacked L∥C rails both need clear text, and "above" on the lower
-            // rail lands inside the upper glyph (Filter Designer's bridged elliptic arm).
-            offsets = labels.Select((_, i) => (110.0, -20.0 - 18.0 * i)).ToList();
+            // Above the body: a Filter Designer arm draws another branch underneath this glyph.
+            offsets = labels.Select(_ => (0.0, MatchLadderLayout.LabelAboveDy)).ToList();
         }
         else
             offsets = [];
@@ -288,42 +294,8 @@ public static class MatchSchematicModel
     /// </remarks>
     private static void AddWiring(MatchLadderLayout layout, List<SchematicWire> wires)
     {
-        double y = MatchLadderLayout.SpineY;
-
-        // Only elements ON the spine open a gap. A parallel arm sits above it and must not punch a
-        // hole in the through-path wire under its glyph.
-        double cursor = layout.PortLeftX;
-        foreach (var e in layout.Elements
-                     .Where(e => !e.IsShunt && e.Y == MatchLadderLayout.SpineY)
-                     .OrderBy(e => e.X))
-        {
-            double left = e.X - LeadHalf;
-            if (left > cursor) wires.Add(Wire(cursor, y, left, y));
-            cursor = Math.Max(cursor, e.X + LeadHalf);
-        }
-        if (layout.PortRightX > cursor) wires.Add(Wire(cursor, y, layout.PortRightX, y));
-
-        // Filter Designer's L∥C (and bridged series-parallel) arms: vertical drops at both ends,
-        // then horizontal runs in the gaps the glyphs do not cover — the same gap rule as the spine.
-        foreach (var arm in layout.ParallelArms)
-        {
-            if (arm.Y != y)
-            {
-                wires.Add(Wire(arm.X0, y, arm.X0, arm.Y));
-                wires.Add(Wire(arm.X1, y, arm.X1, arm.Y));
-            }
-
-            double run = arm.X0;
-            foreach (var e in layout.Elements
-                         .Where(e => !e.IsShunt && Math.Abs(e.Y - arm.Y) < 1e-9)
-                         .OrderBy(e => e.X))
-            {
-                double left = e.X - LeadHalf;
-                if (left > run) wires.Add(Wire(run, arm.Y, left, arm.Y));
-                run = Math.Max(run, e.X + LeadHalf);
-            }
-            if (arm.X1 > run) wires.Add(Wire(run, arm.Y, arm.X1, arm.Y));
-        }
+        foreach (var (x0, y0, x1, y1) in MatchLadderLayout.WireSegments(layout))
+            wires.Add(Wire(x0, y0, x1, y1));
     }
 
     private static SchematicWire Wire(double x0, double y0, double x1, double y1) => new()

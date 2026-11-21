@@ -73,11 +73,13 @@ public sealed class FilterNetwork
     /// <param name="rippleDb">Passband ripple, dB.</param>
     /// <param name="astopDb">Stopband floor, dB.</param>
     /// <param name="ilDb">A flat insertion loss laid on top of the ideal response, dB.</param>
+    /// <param name="ellipticType">Read by Elliptic only; see <see cref="EllipticType"/>.</param>
     public static FilterNetwork Create(FilterResponse response, NetworkForm form, int order,
                                        double fcHz, double f1Hz, double f2Hz,
-                                       double rippleDb, double astopDb, double ilDb)
+                                       double rippleDb, double astopDb, double ilDb,
+                                       EllipticType ellipticType = EllipticType.A)
     {
-        var proto = FilterPrototype.Create(response, order, rippleDb, astopDb);
+        var proto = FilterPrototype.Create(response, order, rippleDb, astopDb, ellipticType);
         double ilAmp = Math.Pow(10.0, -ilDb / 20.0);
 
         if (form is NetworkForm.Bandpass or NetworkForm.Bandstop)

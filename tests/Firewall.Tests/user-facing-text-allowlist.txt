@@ -248,6 +248,7 @@ src/Core/Netlist/Spice/SpiceBehaviouralSource.cs|its expression contains a const
 src/Core/Pdk/PdkImporter.cs|not a number
 src/Core/Systems/FilterPrototype.cs|A response polynomial in Ω has mixed parity; it cannot be rewritten in s as a 
 src/Core/Systems/FilterPrototype.cs|Spectral factorisation produced a non-positive scale ({lambda:G6}); the response 
+src/Core/Systems/FilterRoots.cs|The response of order {order} produced {guess.Count} poles.
 src/Design/Cells/CellCreate.cs|A Data Display must be a JSON object.
 src/Design/Cells/CellCreate.cs|The template's Data Display names no data source to repoint.
 src/Design/Cells/CellFolder.cs|Invalid cell name '{cellName}': {reason}

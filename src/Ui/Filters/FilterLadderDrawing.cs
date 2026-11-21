@@ -6,103 +6,77 @@ using CircuitRF.Ui.Matching;
 namespace CircuitRF.Ui.Filters;
 
 /// <summary>
-/// Turns a synthesised ladder into the Match Designer's layout. Series LC stubs share a column
-/// (the capacitor sits under the inductor, the same stack Match uses for a DC block). Parallel LC
-/// in the through path sits above the spine on vertical drops at both pins — consecutive series
-/// columns would put a wire between them and draw a series pair instead. A bandpass series-parallel
-/// arm (series resonator ∥ parallel resonator) is one compact column: series LC on the spine,
-/// parallel LC side-by-side on a single rail above — not a stretched multi-tier box.
+/// Turns a synthesised ladder into the Match Designer's layout, ARM BY ARM. The ladder says which
+/// elements each arm became (<see cref="FilterRealization.Arms"/>); the drawing reads that arm's
+/// own topology — which of its elements run straight between its two nodes, which form a chain —
+/// and places one of a handful of pictures:
+/// <list type="bullet">
+/// <item>one through-path element, or a series chain of them, on the spine;</item>
+/// <item>a parallel LC in the through path: C on the spine, L on one rail above;</item>
+/// <item>a bandpass/bandstop series arm, (series L–C) ∥ L ∥ C: a box with the series pair on a
+/// rail above, the L on the spine and the C on a rail below;</item>
+/// <item>one shunt element, or a parallel L∥C to ground as two adjacent legs;</item>
+/// <item>a stub to ground: a column of sections, each one element or a parallel pair drawn as two
+/// legs either side of the column, joined by bars.</item>
+/// </list>
 /// </summary>
 internal static class FilterLadderDrawing
 {
     private const double Lead = MatchSchematicGeometry.LeadHalf;
     /// <summary>
-    /// Vertical gap from spine centre to the parallel-tank rail. One lead-length of clear wire
-    /// between the horizontal glyph bodies (each ±65 around its centre) — a short rectangle, not
-    /// a tall bridge.
+    /// Column step: the Match pitch plus room for a shunt symbol's labels, which the filter always
+    /// puts beside the symbol, to clear the next column's own labels.
     /// </summary>
-    private const double ParallelStep = 2.0 * Lead;
-    /// <summary>
-    /// Half-spacing of two series glyphs that share one arm. Centres must be ≥ 2·Lead apart or
-    /// the ±Lead bodies overlap; a little air keeps the pin dots from merging.
-    /// </summary>
-    private const double PairHalf = Lead * 1.05;
-    /// <summary>Column width for a bridged series-parallel arm (two glyphs side by side).</summary>
-    private const double BridgedSpan = 2.0 * PairHalf + 2.0 * Lead;
+    private const double Pitch = MatchLadderLayout.Pitch + 150.0;
 
-    /// <summary>The Match layout for <paramref name="elements"/>, terminated in <paramref name="rs"/> / <paramref name="rl"/>.</summary>
+    /// <summary>Rail height of a through-path tank's inductor.</summary>
+    internal const double TankRailY = MatchLadderLayout.SpineY - 2.0 * Lead;
+
+    /// <summary>Rail heights of the three-branch box: the series pair above, the C below.</summary>
+    internal const double BoxTopY = MatchLadderLayout.SpineY - 2.5 * Lead;
+
+    /// <inheritdoc cref="BoxTopY"/>
+    internal const double BoxBottomY = MatchLadderLayout.SpineY + 2.0 * Lead;
+
+    /// <summary>Half the spacing of the box's top pair — wide enough for two label blocks side by side.</summary>
+    private const double BoxHalf = 2.0 * Lead;
+
+    /// <summary>Half the spacing of a parallel pair in a stub column — one Pitch between the legs.</summary>
+    private const double LegHalf = MatchLadderLayout.Pitch / 2.0 + 50.0;
+
+    /// <summary>The Match layout for a realised ladder, terminated in <paramref name="rs"/> / <paramref name="rl"/>.</summary>
     public static MatchLadderLayout Build(
-        IReadOnlyList<FilterElement> elements, double rs, double rl,
+        IReadOnlyList<FilterElement> elements, IReadOnlyList<FilterArm> arms, double rs, double rl,
         Func<bool, double, string> valueText)
     {
-        var placed = new List<MatchLadderElement>();
-        var arms = new List<MatchParallelArm>();
-        var consumed = new bool[elements.Count];
-        double x = MatchLadderLayout.Pitch;
+        if (arms.Count == 0)
+            arms = [.. elements.Select((e, i) => new FilterArm(
+                e.Shunt ? FilterArmKind.Shunt : FilterArmKind.Series, [i]))];
 
-        for (int i = 0; i < elements.Count; i++)
+        var ctx = new Context(valueText);
+        double x = Pitch;
+        string node = "p1";
+        foreach (var arm in arms)
         {
-            if (consumed[i]) continue;
-            var e = elements[i];
-
-            // Series LC to ground (lowpass / highpass tank), or a bandpass stub that is a series
-            // resonator into a parallel tank to ground — both hang from one spine node.
-            if (e.Shunt && e.NodeB != "0" && TryStub(elements, consumed, i, out var stubParts))
+            var parts = arm.Elements.Select(i => elements[i]).ToList();
+            if (parts.Count == 0) continue;
+            if (parts.All(p => p.Shunt))
+                x = PlaceShunt(ctx, parts, node, x);
+            else
             {
-                foreach (var p in stubParts) consumed[IndexOf(elements, p)] = true;
-                PlaceShuntStack(placed, stubParts, x, valueText);
-                x += MatchLadderLayout.Pitch;
-                continue;
+                string far = FarNode(parts, node);
+                x = PlaceSeries(ctx, parts, node, far, x);
+                node = far;
             }
-
-            // Bandpass / bandstop series-parallel arm: series LC chain ∥ parallel LC, same outer nodes.
-            if (!e.Shunt && TryBridged(elements, consumed, i, out var chain, out var tank))
-            {
-                foreach (var p in chain) consumed[IndexOf(elements, p)] = true;
-                foreach (var p in tank) consumed[IndexOf(elements, p)] = true;
-                PlaceBridged(placed, arms, chain, tank, x + BridgedSpan * 0.5, valueText);
-                x += BridgedSpan + MatchLadderLayout.Pitch * 0.15;
-                continue;
-            }
-
-            // Parallel LC in the through path: same two nodes, neither to ground.
-            if (!e.Shunt
-                && Find(elements, consumed, i, o => !o.Shunt && o.Inductor != e.Inductor
-                                                    && SamePair(e, o)) is { } other)
-            {
-                consumed[i] = consumed[IndexOf(elements, other)] = true;
-                var L = e.Inductor ? e : other;
-                var C = e.Inductor ? other : e;
-                PlaceParallelTank(placed, arms, L, C, x, valueText);
-                x += MatchLadderLayout.Pitch;
-                continue;
-            }
-
-            // Shunt parallel resonator (bandpass): L and C both to ground from the same spine node.
-            if (e.Shunt && e.NodeB == "0"
-                && Find(elements, consumed, i, o => o.Shunt && o.NodeB == "0" && o.Inductor != e.Inductor
-                                                    && o.NodeA == e.NodeA) is { } shuntMate)
-            {
-                consumed[i] = consumed[IndexOf(elements, shuntMate)] = true;
-                // Match's own bandpass drawing: two consecutive shunt columns, spine through —
-                // electrically the same node.
-                PlaceOne(placed, e, x, valueText);
-                x += MatchLadderLayout.Pitch;
-                PlaceOne(placed, shuntMate, x, valueText);
-                x += MatchLadderLayout.Pitch;
-                continue;
-            }
-
-            consumed[i] = true;
-            PlaceOne(placed, e, x, valueText);
-            x += MatchLadderLayout.Pitch;
         }
 
         return new MatchLadderLayout
         {
-            Elements = placed,
+            Elements = ctx.Placed,
             Brackets = [],
-            ParallelArms = arms,
+            ParallelArms = ctx.Arms,
+            ExtraWires = ctx.Wires,
+            ExtraDots = ctx.Dots,
             PortLeftX = 0.0,
             PortRightX = x,
             Terminations =
@@ -113,231 +87,196 @@ internal static class FilterLadderDrawing
         };
     }
 
-    /// <summary>
-    /// Series resonator on the spine and parallel resonator above it, same outer nodes.
-    /// Series L–C sit left/right on the spine. The parallel tank is a short L∥C rectangle —
-    /// both parts share the mid-X and span the full arm on their own rails. Side-by-side on one
-    /// rail wired them in series and drew the tall “two series-LC legs” box.
-    /// </summary>
-    private static void PlaceBridged(
-        List<MatchLadderElement> placed, List<MatchParallelArm> arms,
-        List<FilterElement> chain, List<FilterElement> tank, double x0,
-        Func<bool, double, string> valueText)
+    private sealed class Context(Func<bool, double, string> valueText)
     {
-        double xL = x0 - PairHalf;
-        double xR = x0 + PairHalf;
-        double left = xL - Lead;
-        double right = xR + Lead;
-        // Prefer L then C on the spine when both are present.
-        var series = chain.OrderBy(p => p.Inductor ? 0 : 1).ToList();
-        if (series.Count >= 2)
-        {
-            PlaceOne(placed, series[0], xL, valueText);
-            PlaceOne(placed, series[1], xR, valueText);
-        }
-        else
-            PlaceOne(placed, series[0], x0, valueText);
+        public List<MatchLadderElement> Placed { get; } = [];
+        public List<MatchParallelArm> Arms { get; } = [];
+        public List<(double, double, double, double)> Wires { get; } = [];
+        public List<(double, double)> Dots { get; } = [];
+        public Func<bool, double, string> ValueText { get; } = valueText;
 
-        var tankL = tank.FirstOrDefault(t => t.Inductor) ?? tank[0];
-        var tankC = tank.FirstOrDefault(t => !t.Inductor) ?? tank[^1];
-        // Compact parallel rectangle above the spine: L on the upper rail, C just under it —
-        // both centred so each glyph bridges left↔right (true parallel, not a series pair).
-        double yL = MatchLadderLayout.SpineY - ParallelStep;
-        double yC = MatchLadderLayout.SpineY - ParallelStep * 0.55;
-        placed.Add(El(tankL.Name, ElementType.L, false, tankL.Value,
-                      x0, yL, valueText(true, tankL.Value)));
-        placed.Add(El(tankC.Name, ElementType.C, false, tankC.Value,
-                      x0, yC, valueText(false, tankC.Value)));
-        arms.Add(new MatchParallelArm(left, right, yL));
-        arms.Add(new MatchParallelArm(left, right, yC));
-    }
-
-    /// <summary>
-    /// L∥C in the through path as a short rectangle: C on the spine, L on one rail above —
-    /// the usual compact series-arm tank (not a tall bridge).
-    /// </summary>
-    private static void PlaceParallelTank(
-        List<MatchLadderElement> placed, List<MatchParallelArm> arms,
-        FilterElement L, FilterElement C, double x, Func<bool, double, string> valueText)
-    {
-        placed.Add(El(C.Name, ElementType.C, false, C.Value, x, MatchLadderLayout.SpineY,
-                      valueText(false, C.Value)));
-        double y = MatchLadderLayout.SpineY - ParallelStep;
-        placed.Add(El(L.Name, ElementType.L, false, L.Value, x, y, valueText(true, L.Value)));
-        arms.Add(new MatchParallelArm(x - Lead, x + Lead, y));
-    }
-
-    /// <summary>
-    /// A stub chain from the spine to ground. Two elements (series LC) use the Match DC-block
-    /// stack. Four (bandpass tank) stack further down the same column.
-    /// </summary>
-    private static void PlaceShuntStack(
-        List<MatchLadderElement> placed, List<FilterElement> parts, double x,
-        Func<bool, double, string> valueText)
-    {
-        double y = MatchLadderLayout.ShuntY;
-        double step = ParallelStep;
-        for (int k = 0; k < parts.Count; k++)
-        {
-            var p = parts[k];
-            bool last = k == parts.Count - 1;
-            var role = k == 0 ? MatchElementRole.Normal : MatchElementRole.DcBlock;
-            // DcBlockEnd ≠ 0: no second spine tap. GroundYFor still grounds the lowest in the column.
-            placed.Add(El(p.Name, p.Inductor ? ElementType.L : ElementType.C, true, p.Value,
-                          x, y, valueText(p.Inductor, p.Value), role)
-                       with { DcBlockEnd = last ? 0 : 1 });
-            y += step;
-        }
-    }
-
-    /// <summary>
-    /// Walks a shunt-marked chain that ends at ground: either L→C→0, or L→C→(L∥C→0) for a
-    /// bandpass-transformed series-LC stub.
-    /// </summary>
-    private static bool TryStub(
-        IReadOnlyList<FilterElement> elements, bool[] consumed, int start,
-        out List<FilterElement> parts)
-    {
-        parts = [];
-        var first = elements[start];
-        if (!first.Shunt || first.NodeB == "0") return false;
-
-        var chain = new List<FilterElement> { first };
-        string tip = first.NodeB;
-        bool grew = true;
-        while (grew)
-        {
-            grew = false;
-            for (int j = 0; j < elements.Count; j++)
+        public void Add(FilterElement e, double x, double y, bool shunt,
+                        bool labelAbove = false, bool noGround = false) =>
+            Placed.Add(new MatchLadderElement(
+                e.Name, e.Inductor ? ElementType.L : ElementType.C, shunt, e.Value,
+                MatchElementRole.Normal, x, y, ValueText(e.Inductor, e.Value))
             {
-                if (consumed[j] || j == start) continue;
-                var e = elements[j];
-                if (!e.Shunt) continue;
-                if (e.NodeA == tip && e.NodeB != "0" && e.NodeB != first.NodeA
-                    && chain.All(c => c.NodeB != e.NodeB))
+                LabelAbove = labelAbove,
+                NoGround = noGround,
+                LabelBeside = shunt,
+            });
+    }
+
+    // ── through-path arms ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The arm's far through-path node. Besides the entry, a series arm touches its far node and
+    /// the private nodes of its chains; a private node joins exactly two elements, while the far
+    /// node joins an odd number (one for a chain, three for a box) — or is the only other node.
+    /// </summary>
+    private static string FarNode(List<FilterElement> parts, string a)
+    {
+        var degree = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var p in parts)
+        {
+            degree[p.NodeA] = degree.GetValueOrDefault(p.NodeA) + 1;
+            degree[p.NodeB] = degree.GetValueOrDefault(p.NodeB) + 1;
+        }
+        var others = degree.Keys.Where(k => k != a && k != "0").ToList();
+        if (others.Count == 1) return others[0];
+        return others.FirstOrDefault(k => degree[k] % 2 == 1) ?? others.LastOrDefault() ?? a;
+    }
+
+    private static double PlaceSeries(Context ctx, List<FilterElement> parts, string a, string b, double x)
+    {
+        var direct = parts.Where(p => Touches(p, a, b)).ToList();
+        var chain = parts.Except(direct).ToList();
+        if (chain.Count > 0) chain = ChainFrom(chain, a, out _);
+        double y = MatchLadderLayout.SpineY;
+
+        if (direct.Count == 2 && chain.Count == 2)
+        {
+            // (series L–C) ∥ L ∥ C: the series pair on a rail above, L on the spine, C below.
+            double x0 = x + BoxHalf + Lead;
+            var dl = direct.FirstOrDefault(d => d.Inductor) ?? direct[0];
+            var dc = direct.First(d => !ReferenceEquals(d, dl));
+            ctx.Add(chain[0], x0 - BoxHalf, BoxTopY, false, labelAbove: true);
+            ctx.Add(chain[1], x0 + BoxHalf, BoxTopY, false, labelAbove: true);
+            ctx.Add(dl, x0, y, false, labelAbove: true);
+            ctx.Add(dc, x0, BoxBottomY, false);
+            double left = x0 - BoxHalf - Lead, right = x0 + BoxHalf + Lead;
+            ctx.Arms.Add(new MatchParallelArm(left, right, BoxTopY));
+            ctx.Arms.Add(new MatchParallelArm(left, right, BoxBottomY));
+            return right + Pitch;
+        }
+
+        if (direct.Count == 2 && chain.Count == 0)
+        {
+            // L∥C in the through path: C on the spine, L on a short rail above.
+            var dl = direct.FirstOrDefault(d => d.Inductor) ?? direct[0];
+            var dc = direct.First(d => !ReferenceEquals(d, dl));
+            ctx.Add(dc, x, y, false);
+            ctx.Add(dl, x, TankRailY, false, labelAbove: true);
+            ctx.Arms.Add(new MatchParallelArm(x - Lead, x + Lead, TankRailY));
+            return x + Pitch + Lead / 2.0;
+        }
+
+        // One element, or a chain of them: consecutive spine columns.
+        foreach (var p in direct.Concat(chain))
+        {
+            ctx.Add(p, x, y, false);
+            x += Pitch;
+        }
+        return x;
+    }
+
+    // ── shunt arms ────────────────────────────────────────────────────────────
+
+    private static double PlaceShunt(Context ctx, List<FilterElement> parts, string a, double x)
+    {
+        var sections = Sections(parts, a);
+        if (sections is null)
+        {
+            // Not a column this drawing knows: one column per element, which is at least every
+            // element drawn once from the node it hangs on.
+            foreach (var p in parts)
+            {
+                ctx.Add(p, x, MatchLadderLayout.ShuntY, true);
+                x += Pitch;
+            }
+            return x;
+        }
+
+        // A single section of parallel elements straight to ground: adjacent legs on the spine.
+        if (sections.Count == 1)
+        {
+            foreach (var p in sections[0])
+            {
+                ctx.Add(p, x, MatchLadderLayout.ShuntY, true);
+                x += Pitch;
+            }
+            return x;
+        }
+
+        bool anyPair = sections.Any(sec => sec.Count > 1);
+        double cx = anyPair ? x + LegHalf : x;
+        double yc = MatchLadderLayout.ShuntY;
+        for (int k = 0; k < sections.Count; k++)
+        {
+            var sec = sections[k];
+            bool last = k == sections.Count - 1;
+            if (sec.Count == 1)
+                ctx.Add(sec[0], cx, yc, true, noGround: !last);
+            else
+            {
+                double top = yc - Lead, bottom = yc + Lead;
+                double xl = cx - LegHalf, xr = cx + LegHalf;
+                ctx.Add(sec[0], xl, yc, true, noGround: !last);
+                ctx.Add(sec[1], xr, yc, true, noGround: !last);
+                if (k > 0)
                 {
-                    chain.Add(e);
-                    tip = e.NodeB;
-                    grew = true;
-                    break;
+                    ctx.Wires.Add((xl, top, xr, top));
+                    ctx.Dots.Add((cx, top));
+                }
+                if (!last)
+                {
+                    ctx.Wires.Add((xl, bottom, xr, bottom));
+                    ctx.Dots.Add((cx, bottom));
                 }
             }
+            yc += 2.0 * Lead;
         }
-        var toGround = new List<FilterElement>();
-        for (int j = 0; j < elements.Count; j++)
-        {
-            if (consumed[j] || j == start) continue;
-            var e = elements[j];
-            if (e.Shunt && e.NodeA == tip && e.NodeB == "0") toGround.Add(e);
-        }
-        if (toGround.Count == 0) return false;
-        if (chain.Count == 1 && toGround.Count == 1)
-        {
-            parts = [chain[0], toGround[0]];
-            return true;
-        }
-        if (chain.Count >= 1 && toGround.Count >= 1)
-        {
-            parts = [.. chain, .. toGround];
-            return parts.Count >= 2;
-        }
-        return false;
+        return anyPair ? x + 2.0 * Pitch : x + Pitch;
     }
 
     /// <summary>
-    /// Series LC (a→mid→b) in parallel with L∥C (a→b). The mid node is private to the chain.
+    /// The stub from <paramref name="a"/> to ground as series sections, each one element or a
+    /// parallel group sharing the same two nodes. Null when the arm is not such a column.
     /// </summary>
-    private static bool TryBridged(
-        IReadOnlyList<FilterElement> elements, bool[] consumed, int start,
-        out List<FilterElement> chain, out List<FilterElement> tank)
+    private static List<List<FilterElement>>? Sections(List<FilterElement> parts, string a)
     {
-        chain = [];
-        tank = [];
-        var e = elements[start];
-        if (e.Shunt || e.NodeB is "0" or null) return false;
-
-        // Find the unique continuation mid → b (exactly one unused series element leaving NodeB).
-        FilterElement? next = null;
-        for (int j = 0; j < elements.Count; j++)
+        var left = new List<FilterElement>(parts);
+        var sections = new List<List<FilterElement>>();
+        string at = a;
+        while (left.Count > 0)
         {
-            if (consumed[j] || j == start) continue;
-            var o = elements[j];
-            if (o.Shunt) continue;
-            if (o.NodeA == e.NodeB && o.NodeB != e.NodeA && o.NodeB != "0")
-            {
-                if (next is not null) return false;
-                next = o;
-            }
-            else if (o.NodeB == e.NodeB && o.NodeA != e.NodeA && o.NodeA != "0")
-            {
-                if (next is not null) return false;
-                next = o;
-            }
+            var here = left.Where(p => p.NodeA == at || p.NodeB == at).ToList();
+            if (here.Count == 0) return null;
+            string Other(FilterElement p) => p.NodeA == at ? p.NodeB : p.NodeA;
+            string next = Other(here[0]);
+            if (here.Any(p => Other(p) != next)) return null;
+            sections.Add(here.OrderBy(p => p.Inductor ? 0 : 1).ToList());
+            foreach (var p in here) left.Remove(p);
+            at = next;
+            if (at == "0") break;
         }
-        if (next is null) return false;
+        return left.Count == 0 && at == "0" ? sections : null;
+    }
 
-        string a = e.NodeA;
-        string b = next.NodeA == e.NodeB ? next.NodeB : next.NodeA;
-        if (b is "0" || b == a) return false;
+    // ── helpers ───────────────────────────────────────────────────────────────
 
-        // Tank: unused series L and C both directly between a and b.
-        FilterElement? tankL = null, tankC = null;
-        for (int j = 0; j < elements.Count; j++)
+    /// <summary>The elements of <paramref name="parts"/> in chain order away from <paramref name="a"/>.</summary>
+    private static List<FilterElement> ChainFrom(List<FilterElement> parts, string a, out string end)
+    {
+        var chain = new List<FilterElement>();
+        var left = new List<FilterElement>(parts);
+        end = a;
+        while (true)
         {
-            if (consumed[j] || j == start) continue;
-            var o = elements[j];
-            if (o.Shunt || ReferenceEquals(o, next)) continue;
-            if (!Touches(o, a, b)) continue;
-            if (o.Inductor) { if (tankL is not null) return false; tankL = o; }
-            else { if (tankC is not null) return false; tankC = o; }
+            string at = end;
+            var next = left.FirstOrDefault(p => p.NodeA == at || p.NodeB == at);
+            if (next is null) break;
+            chain.Add(next);
+            left.Remove(next);
+            end = next.NodeA == at ? next.NodeB : next.NodeA;
         }
-        if (tankL is null || tankC is null) return false;
-
-        chain = [e, next];
-        tank = [tankL, tankC];
-        return true;
+        chain.AddRange(left);   // anything not on the walk still gets drawn
+        return chain;
     }
 
     private static bool Touches(FilterElement o, string a, string b) =>
         (o.NodeA == a && o.NodeB == b) || (o.NodeA == b && o.NodeB == a);
 
-    private static void PlaceOne(
-        List<MatchLadderElement> placed, FilterElement e, double x,
-        Func<bool, double, string> valueText)
-    {
-        placed.Add(El(e.Name, e.Inductor ? ElementType.L : ElementType.C, e.Shunt, e.Value, x,
-                      e.Shunt ? MatchLadderLayout.ShuntY : MatchLadderLayout.SpineY,
-                      valueText(e.Inductor, e.Value)));
-    }
-
-    private static MatchLadderElement El(
-        string name, ElementType type, bool shunt, double value, double x, double y, string text,
-        MatchElementRole role = MatchElementRole.Normal) =>
-        new(name, type, shunt, value, role, x, y, text);
-
     private static string Ohms(double r) =>
         r.ToString("0.###", CultureInfo.InvariantCulture) + " Ω";
-
-    private static bool SamePair(FilterElement a, FilterElement b) =>
-        (a.NodeA == b.NodeA && a.NodeB == b.NodeB)
-        || (a.NodeA == b.NodeB && a.NodeB == b.NodeA);
-
-    private static FilterElement? Find(
-        IReadOnlyList<FilterElement> elements, bool[] consumed, int from,
-        Func<FilterElement, bool> pred)
-    {
-        for (int j = from + 1; j < elements.Count; j++)
-        {
-            if (consumed[j]) continue;
-            if (pred(elements[j])) return elements[j];
-        }
-        return null;
-    }
-
-    private static int IndexOf(IReadOnlyList<FilterElement> elements, FilterElement e)
-    {
-        for (int i = 0; i < elements.Count; i++)
-            if (ReferenceEquals(elements[i], e) || elements[i] == e) return i;
-        return -1;
-    }
 }

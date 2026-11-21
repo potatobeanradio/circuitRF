@@ -1450,9 +1450,13 @@ The load the ladder prints is the one the family produces. An even-order Chebysh
 out equal to the source; that ratio is the family's. The ideal Filter block can take any pair of
 port impedances, and the verb says so rather than building a ladder that does not have them.
 
-Inverse Chebyshev and elliptic of odd order are ladders of tanks. `--as` is their stopband floor.
-An even order of either keeps a finite floor at infinite frequency, which a ladder cannot, and the
-verb refuses it. A frequency is a number and a unit (`1GHz`, `100MHz`). Exit 0 when a ladder was
+Inverse Chebyshev and elliptic are ladders of tanks. `--as` is their stopband floor.
+`--elliptic-type auto|a|b|c` picks the elliptic response: `auto` (the default) is type a at odd
+order and type c at even order; b and c are the even-order types that are ladders (b with unequal
+terminations, c with equal ones). An even-order inverse Chebyshev, or an even-order elliptic of
+type a, keeps a finite floor at infinite frequency, which a ladder cannot, and the verb refuses it.
+A specification with no all-positive ladder is refused with the reason, never answered
+approximately. A frequency is a number and a unit (`1GHz`, `100MHz`). Exit 0 when a ladder was
 written, 1 when the family has no ladder, 2 when an argument does not parse.
 
 ## `smith` — a matching network, headless {#smith}
