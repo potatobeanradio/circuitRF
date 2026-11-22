@@ -92,28 +92,28 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.9.3-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.9.3-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.9.3-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.9.4-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.9.4-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.9.4-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.9.3-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.9.3-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.9.4-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.9.4-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.9.3-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.9.3-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-linux-arm64.tar.gz) |
-| Linux, Intel/AMD, AppImage | [circuitRF-1.9.3-linux-x64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-linux-x64.AppImage) |
-| Linux, ARM, AppImage | [circuitRF-1.9.3-linux-arm64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.3/circuitRF-1.9.3-linux-arm64.AppImage) |
+| Linux, Intel/AMD | [circuitRF-1.9.4-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.9.4-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-linux-arm64.tar.gz) |
+| Linux, Intel/AMD, AppImage | [circuitRF-1.9.4-linux-x64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-linux-x64.AppImage) |
+| Linux, ARM, AppImage | [circuitRF-1.9.4-linux-arm64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.9.4/circuitRF-1.9.4-linux-arm64.AppImage) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.9.3-linux-x64.tar.gz
-./circuitRF-1.9.3/install.sh
+tar xzf circuitRF-1.9.4-linux-x64.tar.gz
+./circuitRF-1.9.4/install.sh
 ```
 
-**Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.9.3-linux-x64.AppImage`)
+**Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.9.4-linux-x64.AppImage`)
 and run it. AppImageUpdate can update it too. Use the tarball if you want updates
 installed automatically.
 
