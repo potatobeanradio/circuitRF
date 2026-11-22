@@ -156,6 +156,8 @@ string? reviewPanel = null;
 string? netsPanel = null;
 string? ipc2581Steps = null, ipc2581Report = null;
 string? netsHighlight = null;
+// --figure <id>: one row of the docs' figure catalogue (FigureCatalog), rendered as DocGen renders it, light unless --dark.
+string? figureId = null;
 string? netsFilter = null;
 bool netsDim = false, netsZoom = false;
 bool planarMemoryDialog = false;
@@ -395,6 +397,7 @@ for (int i = 0; i < args.Length; i++)
         case "--csym" when i + 1 < args.Length: csym = Path.GetFullPath(args[++i]); break;
         case "--pick" when i + 1 < args.Length: csymPick = args[++i]; break;
         case "--dark": dark = true; break;
+        case "--figure" when i + 1 < args.Length: figureId = args[++i]; break;
         case "--messages" or "--film-prompt" or "--run-progress": break;
         case "--run-messages" when i + 1 < args.Length: i++; break;
         case "--category" when i + 1 < args.Length: paletteCategory = args[++i]; break;
@@ -462,6 +465,33 @@ for (int i = 0; i < args.Length; i++)
             break;
         default: cdd = args[i]; break;
     }
+}
+// A catalogue figure: the same Build and RenderScene call DocGen makes for a {{ui: …}} figure, into -o (an .svg).
+if (figureId is not null && output is not null)
+{
+    SnapshotApp.DocsRemap = true;
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    CircuitRF.Ui.Diagnostics.UiArtworkGenerator.AdvanceFrames = frames => AvaloniaHeadlessPlatform.ForceRenderTimerTick(frames);
+    CircuitRF.Ui.Diagnostics.UiArtworkGenerator.HeadlessCapture = true;
+    var rows = CircuitRF.Ui.Diagnostics.FigureCatalog.Catalog;
+    var row = rows.FirstOrDefault(r => r.Id == figureId);
+    if (row.Id is null)
+    {
+        Console.Error.WriteLine($"no figure '{figureId}'. Figures: {string.Join(", ", rows.Select(r => r.Id))}");
+        return 1;
+    }
+    using var scene = row.Build();
+    CircuitRF.Ui.Diagnostics.UiArtworkGenerator.RenderScene(scene, sizeGiven ? (int)width : row.Width, sizeGiven ? (int)height : row.Height,
+        dark ? CircuitRF.Render.ColorVariant.Dark : CircuitRF.Render.ColorVariant.Light, output, row.Chrome, row.MustContainPopup);
+    Console.WriteLine($"wrote {output} ({row.Caption})");
+    return 0;
+}
+// An .svg output: controls that rasterise for live-frame speed draw as geometry, as in a docs figure.
+if (output is not null && SnapshotSave.IsSvg(output))
+{
+    CircuitRF.Ui.Diagnostics.UiArtworkGenerator.HeadlessCapture = true;
+    SnapshotApp.DocsRemap = true;
 }
 if (args.Contains("--film-prompt") && output is not null)
 {
@@ -1938,7 +1968,7 @@ void PrintTech(string when)
 void Capture(string path)
 {
     Pump();
-    host.CaptureRenderedFrame()!.Save(path);
+    SnapshotSave.Save(host, path);
     Console.WriteLine($"wrote {path}");
     if (TopDialog() is { } dialog)
     {
@@ -3214,10 +3244,17 @@ sealed class SnapshotApp : Application
             new ResourceInclude(baseUri) { Source = new Uri("avares://CircuitRF.Ui/Styles/CircuitRfResources.axaml") });
         Styles.Add(
             new StyleInclude(baseUri) { Source = new Uri("avares://CircuitRF.Ui/Styles/CircuitRfStyles.axaml") });
+        // An .svg capture takes the docs factory's black-alpha remap (DocsPaintRemap): Skia's SVG device drops the
+        // fill of a translucent pure-black brush, which then draws as an opaque black slab. Merged last so it wins;
+        // a PNG capture never takes it, so it stays exactly the application's paint.
+        if (DocsRemap) Resources.MergedDictionaries.Add(CircuitRF.Ui.Diagnostics.DocsPaintRemap.Build(this));
         var app = new App();
         app.Initialize();
         foreach (var template in app.DataTemplates) DataTemplates.Add(template);
     }
+
+    /// <summary>Set before the platform starts when the output is an .svg.</summary>
+    public static bool DocsRemap { get; set; }
 }
 
 /// <summary>What the shell gives a hosted schematic for Push In and the library-part commands: the answers, printed

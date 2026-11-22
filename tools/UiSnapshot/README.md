@@ -29,6 +29,24 @@ dotnet run --project tools/UiSnapshot --no-build -- <file.cdd> -o out.png [--vie
 | `--size WxH` | The headless window, in DIPs. Default 1000x700. The inspector scrolls inside its own region, so a taller window does not show more cards. |
 | `--results <dir>` | Where a relative trace source resolves — a workspace's `results/` folder in the application. Default: the `.cdd`'s own folder, which is where `circuitrf plot --write-cdd` puts a document beside its result. |
 
+**Vector output.** Any window capture whose `-o` ends in `.svg` is written as vector SVG instead of a PNG, through
+`UiArtworkGenerator.RenderShownWindow` — the SVG device, post-pass and lints the docs' `{{ui: …}}` figures go through,
+so text, borders and circuitRF's own Skia canvases (Smith charts, plots, schematics) stay vectors. It is the window
+exactly as the steps left it; light unless `--dark`. An SVG run also merges the docs factory's black-alpha remap
+(`DocsPaintRemap`) into the application's resources and sets `HeadlessCapture`, as DocGen does, so a translucent black
+brush does not become an opaque slab; a PNG run takes neither. A lint finding is printed (`lint: …`) rather than
+thrown. The 3D view (`--c3d`) is a GPU capture and stays a PNG.
+
+**A docs figure**, by its catalogue id (`FigureCatalog`), rendered by the same `Build` and `RenderScene` call DocGen
+makes, into any path — for a picture of a view this tool does not otherwise open (the Match Designer, the Analyses
+panel):
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --figure match-dualband -o match.svg [--dark] [--size WxH]
+```
+
+An unknown id prints every id. `--size` overrides the row's capture size.
+
 **The Signal Designer** is the other view it opens. It takes no `.cdd`:
 
 ```

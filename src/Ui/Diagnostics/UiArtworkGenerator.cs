@@ -223,6 +223,46 @@ public static class UiArtworkGenerator
     }
 
     /// <summary>
+    /// Write an ALREADY SHOWN and laid-out top level (a tool's window, after whatever clicks put it in the state
+    /// worth photographing) to <paramref name="path"/> as vector SVG, through the same SVG device, post-pass and
+    /// lints as a catalogue figure. Unlike <see cref="RenderScene"/> it does not re-host anything, so a window
+    /// captured this way is exactly the one on screen. The lints are reported, not thrown: a snapshot of a live
+    /// window may legitimately show a measured time.
+    /// </summary>
+    /// <returns>Each lint finding as a sentence; empty when there were none.</returns>
+    public static IReadOnlyList<string> RenderShownWindow(TopLevel window, string path)
+    {
+        SuppressContextualAlternates(window);
+        Pump();
+        SettleAnimations(window);
+        var b = window.Bounds;
+        string raw;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        using (var stream = new SKDynamicMemoryWStream())
+        {
+            using var _document = CircuitRF.Render.DataDisplay.PlotDocumentScope.Enter(budgetSurfaces: true);
+            using (var canvas = SKSvgCanvas.Create(new SKRect(0, 0, (float)b.Width, (float)b.Height), stream))
+                DrawingContextHelper.RenderAsync(canvas, window);
+            using var data = stream.DetachAsData();
+            raw = System.Text.Encoding.UTF8.GetString(data.ToArray());
+        }
+        if (!SvgLint.HasDrawingElements(raw))
+            throw new InvalidOperationException(
+                $"'{Path.GetFileName(path)}' rendered to an SVG with no drawing elements: the headless platform needs "
+              + "UseHeadlessDrawing = false, and the window a size.");
+
+        string svg = SvgPostPass.Run(raw, Path.GetFileNameWithoutExtension(path), out var report);
+        LastReport = report;
+        var notes = new List<string>();
+        var dropped = SvgLint.DroppedPaint(svg);
+        if (dropped.Count > 0) notes.Add(SvgLint.Explain(Path.GetFileName(path), dropped));
+        var measured = SvgLint.Measurements(svg);
+        if (measured.Count > 0) notes.Add(SvgLint.ExplainMeasurements(Path.GetFileName(path), measured));
+        File.WriteAllText(path, Banner(path) + svg + "\n");
+        return notes;
+    }
+
+    /// <summary>
     /// Turn OFF the font's contextual alternates for everything in this capture.
     ///
     /// <para><b>Inter substitutes a case-height hyphen — and case-height parentheses — beside an

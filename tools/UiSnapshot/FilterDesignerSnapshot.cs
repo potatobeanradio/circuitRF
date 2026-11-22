@@ -64,7 +64,7 @@ static class FilterDesignerSnapshot
             Settle();
         }
         Console.WriteLine(vm.Status);
-        window.CaptureRenderedFrame()!.Save(output);
+        SnapshotSave.Save(window, output);
         Console.WriteLine($"wrote {output}");
         return 0;
     }
