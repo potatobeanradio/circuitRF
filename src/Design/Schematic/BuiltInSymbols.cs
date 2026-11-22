@@ -2075,6 +2075,8 @@ public static class BuiltInSymbols
         {
             NetworkForm.Lowpass  => [true,  true,  false],
             NetworkForm.Highpass => [false, true,  true ],
+            // The middle wave is the stopband. The two outer waves pass.
+            NetworkForm.Bandstop => [false, true,  false],
             _                    => [true,  false, true ],
         };
 

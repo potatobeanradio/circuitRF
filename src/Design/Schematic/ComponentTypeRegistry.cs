@@ -24,6 +24,7 @@ using LumpedArm = CircuitRF.Core.Devices.Microstrip.LumpedArm;
 using ResistivePadForm = CircuitRF.Core.Devices.Microstrip.ResistivePadForm;
 
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Filters;
 using CircuitRF.Design.Layout.PCells;
 namespace CircuitRF.Design.Schematic;
 
@@ -383,8 +384,8 @@ public static class ComponentTypeRegistry
             IsCommon: false),
         [SymbolKind.Filter]        = new("Filter", "FLT",
             Category: ComponentCategory.System,
-            SearchTerms: ["Filter", "flt", "lowpass", "highpass", "bandpass", "Butterworth",
-                          "Chebyshev", "passband", "stopband"],
+            SearchTerms: ["Filter", "flt", "lowpass", "highpass", "bandpass", "bandstop",
+                          "Butterworth", "Chebyshev", "Gaussian", "passband", "stopband"],
             IsCommon: true),
         [SymbolKind.Atten]         = new("Attenuator", "ATT",
             Category: ComponentCategory.System,
@@ -2658,33 +2659,40 @@ public static class ComponentTypeRegistry
         (SymbolKind.Switch or SymbolKind.SwitchD, "RL") =>
             "Return loss of the closed path. 200 dB means the closed switch is exactly matched.",
         (SymbolKind.Filter, "Form") =>
-            "Lowpass, Bandpass or Highpass. The symbol strikes a line through every wave the "
-          + "network blocks, so the shape is read off the glyph. Lowpass and Highpass read Fc; "
-          + "Bandpass reads F1 and F2 and ignores it.",
+            "Lowpass, Highpass, Bandpass or Bandstop. The symbol strikes a line through every wave "
+          + "the network blocks, so the shape is read off the glyph. Lowpass and Highpass read Fc; "
+          + "Bandpass and Bandstop read F1 and F2. For a Bandstop those two edges bound the rejected "
+          + "band from OUTSIDE: they are its passband edges, at the ripple (3.01 dB for "
+          + "Butterworth), and the floor is reached between them.",
         (SymbolKind.Filter, "Response") =>
             "Which prototype family the response comes from: Butterworth (maximally flat "
           + "magnitude), Chebyshev (equiripple passband, reads Ripple), InvChebyshev (flat "
           + "passband and an equiripple stopband floor, reads Astop), Bessel (maximally flat GROUP "
-          + "DELAY — chosen for its phase, not its shape) or Elliptic (equiripple in both bands, "
-          + "reads Ripple and Astop). A parameter the family does not read is ignored, so you never "
-          + "have to clear a field to change family.",
+          + "DELAY — the Bessel-Thomson response, chosen for its phase), Gaussian (a Gaussian "
+          + "magnitude, −3.01 dB at the cutoff) or Elliptic (equiripple in both bands, reads Ripple "
+          + "and Astop). A parameter the family does not read is ignored, so you never have to "
+          + "clear a field to change family.",
         (SymbolKind.Filter, "Order") =>
-            "The PROTOTYPE order. A Bandpass transformation doubles the degree, so Order = 3 as a "
-          + "bandpass is a 6th-degree network — both conventions exist in the wild, and this one is "
-          + "the prototype's. The stopband slope of an all-pole family is 20 x Order dB per decade; "
-          + "InvChebyshev and Elliptic level off at their own floor instead.",
+            "The PROTOTYPE order. A Bandpass or Bandstop transformation doubles the degree, so "
+          + "Order = 3 as a bandpass or a bandstop is a 6th-degree network — both conventions exist "
+          + "in the wild, and this one is the prototype's. The stopband slope of an all-pole family "
+          + "is 20 x Order dB per decade; InvChebyshev and Elliptic level off at their own floor "
+          + "instead.",
         (SymbolKind.Filter, "Fc") =>
             "The cutoff, for Lowpass and Highpass. For Chebyshev and Elliptic it is the RIPPLE "
-          + "bandwidth edge (where the response leaves the ripple band), for Butterworth the 3.01 dB "
-          + "point, for InvChebyshev the STOPBAND edge — where Astop is first met — and for Bessel "
-          + "the reciprocal of the group delay. Ignored when Form is Bandpass.",
+          + "bandwidth edge (where the response leaves the ripple band), for Butterworth and "
+          + "Gaussian the 3.01 dB point, for InvChebyshev the STOPBAND edge — where Astop is first "
+          + "met — and for Bessel the reciprocal of the group delay. Ignored for Bandpass and "
+          + "Bandstop.",
         (SymbolKind.Filter, "F1") =>
-            "Lower band edge, for Bandpass. The band centre is the GEOMETRIC mean of F1 and F2 and "
-          + "the response is geometrically symmetric about it, not arithmetically. Ignored for "
-          + "Lowpass and Highpass.",
+            "Lower edge, for Bandpass and Bandstop. On a Bandpass it is the passband edge; on a "
+          + "Bandstop it is the passband edge below the rejected band. Both are where the response sits "
+          + "at its passband level (Ripple, or 3.01 dB for Butterworth) — except InvChebyshev, whose "
+          + "edges are where Astop is first met, as its Fc is. The centre is the GEOMETRIC mean of F1 and F2 and "
+          + "the response is geometrically symmetric about it. Ignored for Lowpass and Highpass.",
         (SymbolKind.Filter, "F2") =>
-            "Upper band edge, for Bandpass. Read with F1 — the two set both the centre and the "
-          + "width. Ignored for Lowpass and Highpass.",
+            "Upper edge, for Bandpass and Bandstop. Read with F1 — the two set both the centre and "
+          + "the width. Ignored for Lowpass and Highpass.",
         (SymbolKind.Filter, "Ripple") =>
             "Passband ripple, in dB, for Chebyshev and Elliptic. The passband swings between 0 and "
           + "-Ripple exactly this many times, which is what the order buys. Ignored by the other "
@@ -2704,6 +2712,46 @@ public static class ComponentTypeRegistry
         (SymbolKind.Filter, "Zout") =>
             "The impedance port 2 PRESENTS. See Zin — the two are independent, and an unequal pair "
           + "is a lossless transformer as well as a filter.",
+        (SymbolKind.Filter, "EllipticType") =>
+            "Which elliptic response, for Elliptic only: A is the classical one; B and C modify an "
+          + "EVEN order, whose type A keeps a finite floor at infinite frequency. B moves the "
+          + "highest transmission zero to infinity (the terminations come out unequal); C also "
+          + "moves the lowest reflection zero to DC (equal terminations). Auto is A at odd order "
+          + "and C at even order. B and C at odd order are A. The LC Filter Designer's LC ladder is "
+          + "the same response as this block's when the two name the same type.",
+        (SymbolKind.Filter, "Ap") =>
+            "LC Filter Designer: the passband attenuation, in dB, the order was sized for. Blank means "
+          + "the Ripple value. The block's response does not read it.",
+        (SymbolKind.Filter, "Fp") =>
+            "LC Filter Designer: the passband edge of a Lowpass or Highpass mask. Blank means Fc. The "
+          + "block's response does not read it.",
+        (SymbolKind.Filter, "Fs") =>
+            "LC Filter Designer: the stopband edge of a Lowpass or Highpass mask, where As has to be "
+          + "met. Blank, the Designer derives one. The block's response does not read it.",
+        (SymbolKind.Filter, "Fp1" or "Fp2") =>
+            "LC Filter Designer: a passband edge of a Bandpass or Bandstop mask (1 the lower, 2 the "
+          + "upper). Blank means F1 or F2. The block's response does not read it.",
+        (SymbolKind.Filter, "Fs1" or "Fs2") =>
+            "LC Filter Designer: a stopband edge of a Bandpass or Bandstop mask (1 the lower, 2 the "
+          + "upper), where As has to be met. Blank, the Designer derives one. The block's response "
+          + "does not read it.",
+        (SymbolKind.Filter, "OrderMode") =>
+            "LC Filter Designer: Minimum sizes the order to the mask (Ap, As and the edges); Specify "
+          + "keeps Order as typed. The block's response reads Order either way.",
+        (SymbolKind.Filter, "First") =>
+            "LC Filter Designer: whether the LC ladder starts with a Series arm or a Parallel (shunt) "
+          + "arm. The block's response is the same either way.",
+        (SymbolKind.Filter, "Values") =>
+            "LC Filter Designer: the values the ladder is built with: Exact, or the nearest IEC "
+          + "preferred number (E6, E12, E24, E96). A library series in LSeries or CSeries takes "
+          + "precedence for its kind.",
+        (SymbolKind.Filter, "LSeries" or "CSeries") =>
+            "LC Filter Designer: the vendor-library series the inductors (LSeries) or capacitors "
+          + "(CSeries) were snapped to, as library: series. Blank means none. The Designer loads "
+          + "the workspace's libraries to find it again.",
+        (SymbolKind.Filter, "Parts") =>
+            "LC Filter Designer: elements given a library part by hand, as element=library: "
+          + "series|part, separated by ';'. Blank means every element takes the nearest part.",
         (SymbolKind.Filter, "IL") =>
             "A flat insertion loss laid on top of the ideal response, in dB. It multiplies S21 and "
           + "leaves S11 alone, so the block genuinely dissipates rather than reflecting what it "
@@ -3440,7 +3488,27 @@ public static class ComponentTypeRegistry
                         new("Astop",    "40",        "dB",  false, UnitDimension.None),
                         new("Zin",      "50",        "Ω",   false, UnitDimension.Resistance),
                         new("Zout",     "50",        "Ω",   false, UnitDimension.Resistance),
-                        new("IL",       "0",         "dB",  false, UnitDimension.None)];
+                        new("IL",       "0",         "dB",  false, UnitDimension.None),
+                        // Appended, so every existing Filter line keeps its meaning (type a).
+                        new("EllipticType", "A",     "",    false, UnitDimension.None),
+                        // The LC Filter Designer's own settings, appended so the Designer reopens on
+                        // exactly what it applied rather than deriving the mask again. The block's
+                        // response reads none of them and NetExtractor drops them
+                        // (IsLcFilterDesignerParameter), so a Filter extracts the same netlist with or
+                        // without them, and a blank one is never written as `Name=`.
+                        new("Ap",        "",        "dB",  false, UnitDimension.None),
+                        new("Fp",        "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fs",        "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fp1",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fs1",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fs2",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("Fp2",       "",        "GHz", false, UnitDimension.Frequency),
+                        new("OrderMode", "Specify", "",    false, UnitDimension.None),
+                        new("First",     "Parallel", "",   false, UnitDimension.None),
+                        new("Values",    "Exact",   "",    false, UnitDimension.None),
+                        new("LSeries",   "",        "",    false, UnitDimension.None),
+                        new("CSeries",   "",        "",    false, UnitDimension.None),
+                        new("Parts",     "",        "",    false, UnitDimension.None)];
 
             // The duplexer is two complete filter specifications plus one shared antenna impedance,
             // and deliberately NO Isolation: the isolation a duplexer achieves is what its two
@@ -5328,10 +5396,39 @@ public static class ComponentTypeRegistry
     private static readonly string[] FilterResponseOptions =
         [nameof(FilterResponse.Butterworth), nameof(FilterResponse.Chebyshev),
          nameof(FilterResponse.InvChebyshev), nameof(FilterResponse.Bessel),
-         nameof(FilterResponse.Elliptic)];
+         nameof(FilterResponse.Gaussian), nameof(FilterResponse.Elliptic)];
 
     private static readonly string[] NetworkFormOptions =
-        [nameof(NetworkForm.Lowpass), nameof(NetworkForm.Highpass), nameof(NetworkForm.Bandpass)];
+        [nameof(NetworkForm.Lowpass), nameof(NetworkForm.Highpass),
+         nameof(NetworkForm.Bandpass), nameof(NetworkForm.Bandstop)];
+
+    private static readonly string[] EllipticTypeOptions =
+        [nameof(EllipticType.A), nameof(EllipticType.B), nameof(EllipticType.C), nameof(EllipticType.Auto)];
+
+    private static readonly string[] FilterOrderModeOptions =
+        [nameof(FilterOrderMode.Minimum), nameof(FilterOrderMode.Specify)];
+
+    private static readonly string[] FilterFirstElementOptions =
+        [nameof(FilterFirstElement.Series), nameof(FilterFirstElement.Parallel)];
+
+    private static readonly string[] FilterValuesOptions =
+        [nameof(FilterSeriesKind.Exact), nameof(FilterSeriesKind.E6), nameof(FilterSeriesKind.E12),
+         nameof(FilterSeriesKind.E24), nameof(FilterSeriesKind.E96)];
+
+    /// <summary>
+    /// The Filter parameters only the LC Filter Designer reads: its mask, its order mode and how it
+    /// builds the ladder. <c>NetExtractor</c> drops them, so the block's netlist line is the same
+    /// with or without them and a blank one is never written as <c>Name=</c> (the empty-value
+    /// trap in <c>src/Core/CLAUDE.md</c>).
+    /// </summary>
+    public static bool IsLcFilterDesignerParameter(SymbolKind kind, string name) =>
+        kind == SymbolKind.Filter && LcFilterDesignerParameters.Contains(name);
+
+    private static readonly HashSet<string> LcFilterDesignerParameters = new(StringComparer.Ordinal)
+    {
+        "Ap", "Fp", "Fs", "Fp1", "Fs1", "Fs2", "Fp2", "OrderMode", "First", "Values",
+        "LSeries", "CSeries", "Parts",
+    };
 
     // brief-paa-3 R-paa3-8 — the Phased Antenna Array's words. Level's auto is "follow the record" (a blank means the same).
     private static readonly string[] PhasedArrayModeOptions     = ["elements", "feed"];
@@ -5439,6 +5536,10 @@ public static class ComponentTypeRegistry
         (SymbolKind.SwitchD, "State")                             => SwitchDStateOptions,
         (SymbolKind.Filter, "Response")                           => FilterResponseOptions,
         (SymbolKind.Filter, "Form")                               => NetworkFormOptions,
+        (SymbolKind.Filter, "EllipticType")                       => EllipticTypeOptions,
+        (SymbolKind.Filter, "OrderMode")                          => FilterOrderModeOptions,
+        (SymbolKind.Filter, "First")                              => FilterFirstElementOptions,
+        (SymbolKind.Filter, "Values")                             => FilterValuesOptions,
         (SymbolKind.Duplexer, "TxResponse" or "RxResponse")       => FilterResponseOptions,
         (SymbolKind.Duplexer, "TxForm" or "RxForm")               => NetworkFormOptions,
         (SymbolKind.Amp, "IP3Ref")                                => Ip3ReferenceOptions,

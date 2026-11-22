@@ -63,17 +63,19 @@ public sealed class FilterModel : IdealSBlockModel
     /// <param name="zIn">The impedance port 1 PRESENTS, ohms; may be complex.</param>
     /// <param name="zOut">The impedance port 2 PRESENTS, ohms; may be complex.</param>
     /// <param name="ilDb">A flat insertion loss laid on top of the ideal response, dB.</param>
+    /// <param name="ellipticType">Which elliptic response; read by elliptic only.</param>
     public FilterModel(FilterResponse response, NetworkForm form, int order,
                        double fcHz, double f1Hz, double f2Hz,
                        double rippleDb, double astopDb,
-                       Complex zIn, Complex zOut, double ilDb)
+                       Complex zIn, Complex zOut, double ilDb,
+                       EllipticType ellipticType = EllipticType.A)
         // CONJUGATED: Zin/Zout name what each port PRESENTS, and Kurokawa's S_pp = 0 is
         // Z_seen = conj(Z0), so the reference the stamp works in is their conjugate. This is the
         // whole of that conversion — see IdealSBlockModel's remarks for the rule and why the name
         // decides it. A real pair passes through untouched, being its own conjugate.
         : base([Complex.Conjugate(zIn), Complex.Conjugate(zOut)])
         => _network = FilterNetwork.Create(response, form, order, fcHz, f1Hz, f2Hz,
-                                           rippleDb, astopDb, ilDb);
+                                           rippleDb, astopDb, ilDb, ellipticType);
 
     /// <summary>The whole electrical answer, for a test or a plot that wants it without a solve.</summary>
     public FilterNetwork Network => _network;

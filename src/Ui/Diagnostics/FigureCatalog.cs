@@ -1113,6 +1113,15 @@ public static class FigureCatalog
             "The five Match glyphs. A slash across a wave means that part of the spectrum is blocked; "
           + "two or three smaller bandpass groups mean two or three bands."),
 
+        new("lc-filter-designer-toolbar", DocMatchFixtures.LcFilterDesignerToolbar, 250, 36, null,
+            "The LC Filter Designer's toolbar, opened on a placed Filter: Design; Apply to Filter, Place "
+          + "filter, Place component and Replace this Filter; Save netlist."),
+
+        new("filter-form-glyphs", DocMatchFixtures.FilterFormGlyphs, 625, 150, null,
+            "The four Filter glyphs, one per Form. A slash across a wave means that part of the "
+          + "spectrum is blocked: the top two for a lowpass, the bottom two for a highpass, the outer "
+          + "two for a bandpass and the middle one for a bandstop."),
+
         // ── wBond: the views a WORKSPACE produces ─────────────────────────────────
         // In a workspace a wBond is the wire layer of a layout cell, not a separate application
         // window (owner, 2026-08-20). All three of these are built on ONE four-array design.

@@ -10848,6 +10848,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         MicrostripSubstrateInjection.ResolveWorkspaceTechnology(CurrentWorkspaceRoot));
 
     /// <summary>
+    /// Tools ▸ LC Filter Designer. No schematic is required: the assistant synthesises from the
+    /// specification. A workspace, when one is open, is where Load library series looks.
+    /// Place filter / Place component go into the schematic last made active, read when the
+    /// button is pressed rather than when the window opened.
+    /// </summary>
+    [RelayCommand]
+    private void NewLcFilterDesigner() =>
+        Views.Filters.LcFilterDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null),
+                                                          () => _lastActiveSchematicDoc?.ActiveViewModel);
+
+    /// <summary>
     /// Tools ▸ Signal Designer: the Designer on no MOD_Source, to design a signal — or read an I/Q file — preview it and
     /// export it. Needs no workspace; opens unowned and cascaded as the standalone Match Designer does.
     /// </summary>
@@ -12660,6 +12671,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// the window half, so the same double-click worked for a schematic and did nothing visible for
     /// a torn-off Data Display. A second copy is how that comes back.</para>
     /// </summary>
+    /// <inheritdoc cref="IHierarchyHost.BringToFront"/>
+    public void BringToFront(SchematicDocument doc) => ActivateOpenDocument(doc);
+
     private void ActivateOpenDocument(IDockable dockable)
     {
         _factory.SetActiveDockable(dockable);

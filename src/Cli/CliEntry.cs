@@ -278,7 +278,11 @@ return JsonRun.Finish(exit);
     "chain"  => CircuitRF.Cli.Chain.Run,
     // The Filter Designer, headless (filter-synthesis.md §6). It owns no synthesis: the realisers are Core's and the bench
     // src/Design/Filters' FilterSynthesisService, the calls the window's Place makes.
-    "filter" => CircuitRF.Cli.FilterVerb.Run,
+    // `filter lc …` is the LC ladder designer (LcFilterVerb: FilterLadder and FilterValues, the two the LC Filter
+    // Designer window calls); every other `filter …` is the spec-driven designer above.
+    "filter" => a => a.Length > 0 && a[0].Equals("lc", StringComparison.OrdinalIgnoreCase)
+                         ? CircuitRF.Cli.LcFilterVerb.Run(a[1..])
+                         : CircuitRF.Cli.FilterVerb.Run(a),
     // A plugin with no display (brief-plg-5): ONE verb with nouns. It owns no plugin logic — the run is
     // src/Design/Plugins' PluginHeadless, the process host and the placement the panel calls.
     "plugin" => CircuitRF.Cli.Plugin.Run,

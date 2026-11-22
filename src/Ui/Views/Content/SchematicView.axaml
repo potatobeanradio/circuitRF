@@ -624,6 +624,19 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- Synthesise… — a Filter only (brief FD-P §2): the LC Filter Designer on this
+                             Filter, the same window the Properties panel's Synthesise… opens. Hidden
+                             for every other component, as Flatten to Cell is. -->
+                        <MenuItem x:Name="CtxSynthesizeFilter"
+                                  Header="Synthesise…"
+                                  IsVisible="False"
+                                  ToolTip.Tip="Opens the LC Filter Designer on this Filter"
+                                  Click="OnCtxSynthesizeFilter">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="SineWave" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <Separator x:Name="CtxSep1"/>
 
                         <MenuItem Header="Rotate 90°"

@@ -20,6 +20,14 @@ public enum FilterResponse
 
     /// <summary>Equiripple in both bands. Reads <c>Ripple</c> and <c>Astop</c>.</summary>
     Elliptic,
+
+    /// <summary>
+    /// A Gaussian magnitude, approximated by the partial sum of the exponential and scaled so the
+    /// cutoff is the −3.01 dB point at every order. No shape parameter. All-pole, so the far
+    /// stopband still falls at 20·n dB/decade; what the partial sum buys is the Gaussian shape
+    /// through the passband and the transition.
+    /// </summary>
+    Gaussian,
 }
 
 /// <summary>
@@ -64,12 +72,38 @@ public enum FilterResponse
 public sealed class FilterPrototype
 {
     private FilterPrototype(FilterResponse response, int order,
-                            double[] e, double[] f, double[] p, double alpha, double beta)
+                            double[] e, double[] f, double[] p, double alpha, double beta,
+                            FilterRoots? roots = null)
     {
         Response = response;
         Order    = order;
         E = e; F = f; P = p;
         Alpha = alpha; Beta = beta;
+        Roots = roots;
+    }
+
+    /// <summary>
+    /// The zeros and poles, for the families with zeros on the axis (inverse Chebyshev and
+    /// elliptic). When set, <see cref="At"/> evaluates products of these rather than the expanded
+    /// coefficients, which is what keeps a high-order response exact.
+    /// </summary>
+    internal FilterRoots? Roots { get; }
+
+    /// <summary>Which elliptic response this is; <see cref="EllipticType.A"/> for every other family.</summary>
+    public EllipticType EllipticType { get; private init; } = EllipticType.A;
+
+    /// <summary>The prototype stopband edge for the families that have one, else NaN.</summary>
+    public double StopEdge => Roots?.StopEdge ?? double.NaN;
+
+    /// <summary>A prototype held as roots, with its coefficients expanded for the readers that want them.</summary>
+    internal static FilterPrototype FromRoots(FilterResponse response, FilterRoots roots,
+                                              EllipticType type = EllipticType.A)
+    {
+        var (e, f, p) = roots.Expand();
+        return new FilterPrototype(response, roots.Order, e, f, p, roots.KF, roots.KP, roots)
+        {
+            EllipticType = type,
+        };
     }
 
     /// <summary>The family this was built from.</summary>
@@ -100,6 +134,7 @@ public sealed class FilterPrototype
     public (Complex S11, Complex S21, Complex S22) At(double omega)
     {
         if (double.IsInfinity(omega)) return AtInfinity();
+        if (Roots is not null) return Roots.At(omega);
 
         var jw = new Complex(0.0, omega);
         Complex e = MatchPoly.Eval(E, jw);
@@ -146,8 +181,10 @@ public sealed class FilterPrototype
     /// <param name="order">Prototype order, ≥ 1.</param>
     /// <param name="rippleDb">Passband ripple, dB. Read by Chebyshev and Elliptic.</param>
     /// <param name="astopDb">Stopband floor, dB. Read by inverse Chebyshev and Elliptic.</param>
+    /// <param name="ellipticType">Read by Elliptic only; b and c modify an even order.</param>
     public static FilterPrototype Create(FilterResponse response, int order,
-                                         double rippleDb = 0.1, double astopDb = 40.0)
+                                         double rippleDb = 0.1, double astopDb = 40.0,
+                                         EllipticType ellipticType = EllipticType.A)
     {
         if (order < 1)
             throw new ArgumentOutOfRangeException(nameof(order),
@@ -158,11 +195,13 @@ public sealed class FilterPrototype
             FilterResponse.Butterworth  => FromCharacteristic(response, order, [1.0], Monomial(order), 1.0),
             FilterResponse.Chebyshev    => FromCharacteristic(response, order, [1.0],
                                                MatchPoly.ChebyshevT(order), EpsFromDb(rippleDb, nameof(rippleDb))),
-            FilterResponse.InvChebyshev => FromCharacteristic(response, order,
-                                               InverseChebyshevDenominator(order), Monomial(order),
-                                               EpsFromDb(astopDb, nameof(astopDb))),
+            FilterResponse.InvChebyshev => FromRoots(response,
+                                               FilterRoots.InverseChebyshev(order, EpsFromDb(astopDb, nameof(astopDb)))),
             FilterResponse.Bessel       => BuildBessel(order),
-            FilterResponse.Elliptic     => EllipticPrototype.Build(order, rippleDb, astopDb),
+            FilterResponse.Elliptic     => FromRoots(response,
+                                               EllipticPrototype.Roots(order, rippleDb, astopDb, ellipticType),
+                                               EllipticTypes.Resolve(ellipticType, order)),
+            FilterResponse.Gaussian     => BuildGaussian(order),
             _ => throw new ArgumentOutOfRangeException(nameof(response), response, "unknown response family"),
         };
     }
@@ -251,6 +290,77 @@ public sealed class FilterPrototype
     }
 
     /// <summary>
+    /// Gaussian magnitude from the partial sum of the exponential, scaled so <c>|S21|² = 1/2</c> at
+    /// <c>Ω = 1</c> at every order.
+    ///
+    /// <para>The infinite sum <c>Σ (ln 2)^k / k!</c> is 2, which is the −3.01 dB point. A finite
+    /// order stops early, so the same coefficients would put the cutoff past <c>Ω = 1</c>. The
+    /// coefficient <c>α</c> is the number whose partial sum equals 2, and
+    /// <c>G(Ω) = Σ α^k / k! · Ω^{2k}</c> is then the squared reciprocal of the magnitude. <c>E</c> is
+    /// its Hurwitz factor scaled to <c>E(0) = 1</c>, which makes <c>|S21| = 1/|E|</c> and
+    /// <c>S21(0) = 1</c>. <c>F</c> is the same Feldtkeller step Bessel uses.</para>
+    /// </summary>
+    private static FilterPrototype BuildGaussian(int order)
+    {
+        double alpha = GaussianAlpha(order);
+        var g = new double[2 * order + 1];
+        double fact = 1.0;
+        for (int k = 0; k <= order; k++)
+        {
+            if (k > 0) fact *= k;
+            g[2 * order - 2 * k] = Math.Pow(alpha, k) / fact;
+        }
+
+        double[] hurwitz = MatchPrototypes.Hurwitz(ToS(g));
+        if (hurwitz.Length == 0)
+            throw new InvalidOperationException(
+                $"The Gaussian prototype of order {order} has no Hurwitz factor.");
+
+        double e0 = hurwitz[^1];
+        if (!(Math.Abs(e0) > 0.0))
+            throw new InvalidOperationException(
+                $"The Gaussian prototype of order {order} is zero at DC.");
+        double[] e = Scale(hurwitz, 1.0 / e0);
+        const double beta = 1.0;
+
+        double[] ee = MatchPoly.Mul(e, Reflect(e));
+        double[] qf = (double[])ee.Clone();
+        qf[^1] -= beta * beta;
+
+        double[] r  = qf.Length > 2 ? qf[..^2] : [qf[0]];
+        double[] rh = r.Length <= 1 ? [1.0] : MatchPoly.Trim(MatchPrototypes.Hurwitz(r));
+        double[] f  = NormaliseLeading([.. rh, 0.0]);
+
+        double lambdaF = qf[0] / MatchPoly.Mul(f, Reflect(f))[0];
+        return new FilterPrototype(FilterResponse.Gaussian, order, e, f, [1.0],
+                                   Math.Sqrt(Math.Abs(lambdaF)), beta);
+    }
+
+    /// <summary>The <c>α</c> whose exponential partial sum of <paramref name="order"/> terms is 2.</summary>
+    private static double GaussianAlpha(int order)
+    {
+        double lo = 1e-9, hi = 4.0;
+        for (int i = 0; i < 60; i++)
+        {
+            double mid = 0.5 * (lo + hi);
+            if (ExponentialPartial(mid, order) < 2.0) lo = mid;
+            else hi = mid;
+        }
+        return 0.5 * (lo + hi);
+    }
+
+    private static double ExponentialPartial(double x, int order)
+    {
+        double sum = 1.0, term = 1.0;
+        for (int k = 1; k <= order; k++)
+        {
+            term *= x / k;
+            sum += term;
+        }
+        return sum;
+    }
+
+    /// <summary>
     /// The ratio <c>λ</c> in <c>Q(s) = λ·E(s)·E(−s)</c>, from the two leading coefficients.
     /// <c>α</c> and <c>β</c> are both <c>1/sqrt(λ)</c> times their own factor, so getting this
     /// wrong scales the whole response rather than distorting it — which is why it is computed
@@ -274,27 +384,6 @@ public sealed class FilterPrototype
         var a = new double[n + 1];
         a[0] = 1.0;
         return a;
-    }
-
-    /// <summary>
-    /// The inverse-Chebyshev denominator <c>U(Ω) = Ω^n·T_n(1/Ω)</c>, which is <c>T_n</c>'s own
-    /// coefficient array REVERSED — and whose roots are the filter's transmission zeros,
-    /// <c>Ω_k = 1/cos((2k−1)π/2n)</c>, sitting in the stopband on the jΩ axis where the family's
-    /// whole character comes from.
-    ///
-    /// <para>At odd <paramref name="n"/>, <c>T_n</c> has no constant term, so the reversal has a
-    /// leading zero and <c>U</c> is genuinely of degree <c>n−1</c>: one transmission zero has gone
-    /// to infinity, which is why an odd-order inverse Chebyshev keeps rolling off in the far
-    /// stopband and an even-order one does not. <see cref="MatchPoly.Trim"/> is what makes that a
-    /// degree rather than a leading zero — and it is a RELATIVE trim, which is the trap
-    /// <see cref="MatchPoly.Trim"/>'s own remark was written for.</para>
-    /// </summary>
-    internal static double[] InverseChebyshevDenominator(int n)
-    {
-        double[] t = MatchPoly.ChebyshevT(n);
-        var u = new double[t.Length];
-        for (int i = 0; i < t.Length; i++) u[i] = t[t.Length - 1 - i];
-        return MatchPoly.Trim(u);
     }
 
     /// <summary>
