@@ -121,6 +121,13 @@ The realization table has the theoretical value and the value that is written.
 A workspace with no vendor library leaves the series lists empty and says so. It does not fall
 back to an E-series. The power-integrity part library is a different drawer and is not read here.
 
+**Known limitation: a placed ladder does not use the library parts.** With a library series loaded,
+the table names each part and the ladder is drawn at that part's value, but **Place filter** and
+**Replace this Filter** put ordinary inductors and capacitors on the schematic, at those values.
+They are not the vendor parts, and nothing on the placed ladder refers back to the library part.
+The block written by **Apply to Filter** or **Place component** remembers the series and parts, so
+the window reopens on them. Placing the library parts themselves is planned for a later release.
+
 ## Where the result goes {#place}
 
 **Apply to Filter**, when the window was opened on a placed Filter, writes the whole specification
@@ -155,9 +162,9 @@ Place filter into a replacement. The block is removed, its two pins keep their n
 with its ends on the same names. It is one undo step, and the ladder arrives selected so you can
 move it.
 
-**Save netlist…** writes the ladder as a `.cnl`: two terminations and the inductors and capacitors
-between them, at the values the table shows. That file is what `sparam` simulates, and it is the
-same netlist the plot was drawn from.
+To get the ladder as a netlist, use `circuitrf filter lc … -o filter.cnl`: two terminations and the
+inductors and capacitors between them. That file is what `sparam` simulates, and it is the same
+netlist the plot was drawn from.
 
 ## The same thing from the command line {#headless}
 

@@ -1115,7 +1115,7 @@ public static class FigureCatalog
 
         new("lc-filter-designer-toolbar", DocMatchFixtures.LcFilterDesignerToolbar, 250, 36, null,
             "The LC Filter Designer's toolbar, opened on a placed Filter: Design; Apply to Filter, Place "
-          + "filter, Place component and Replace this Filter; Save netlist."),
+          + "filter, Place component and Replace this Filter."),
 
         new("filter-form-glyphs", DocMatchFixtures.FilterFormGlyphs, 625, 150, null,
             "The four Filter glyphs, one per Form. A slash across a wave means that part of the "

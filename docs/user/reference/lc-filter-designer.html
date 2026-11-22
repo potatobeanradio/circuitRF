@@ -77,7 +77,7 @@ Viewer uses. To write the ladder as a netlist, use <code>circuitrf filter lc …
 				</text><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(140 9)" d="M11.04 8L14.08 8" /><text fill="#C8C8C8" transform="translate(149.93 17)" font-size="1" font-family="IBM Plex Sans" x="-0.5" y="0.375">
 						2
 				</text></g><clipPath id="lc-filter-designer-toolbar-dark_cl_7"><rect x="165" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_7)"><use xlink:href="#lc-filter-designer-toolbar-dark_d0" fill="white" fill-opacity="0.2" transform="translate(165 5)" /><clipPath id="lc-filter-designer-toolbar-dark_cl_8"><rect x="172" y="9" width="16" height="16" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_8)"><path fill="white" fill-opacity="0.6" transform="matrix(0.6667 0 0 0.6667 172 9)" d="M21 9L17 5L17 8L10 8L10 10L17 10L17 13M7 11L3 15L7 19L7 16L14 16L14 14L7 14L7 11Z" fill-rule="evenodd" /></g></g></svg></span>
-</span><figcaption>The LC Filter Designer&#39;s toolbar, opened on a placed Filter: Design; Apply to Filter, Place filter, Place component and Replace this Filter; Save netlist.</figcaption></figure>
+</span><figcaption>The LC Filter Designer&#39;s toolbar, opened on a placed Filter: Design; Apply to Filter, Place filter, Place component and Replace this Filter.</figcaption></figure>
 <p>The ideal Filter and the ladder answer different questions. The block is a rational scattering
 matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
 that: its load is the ratio the family produces (1 for Butterworth, a particular ratio for an
@@ -198,6 +198,12 @@ transmission after a snap.</p>
 </table>
 <p>A workspace with no vendor library leaves the series lists empty and says so. It does not fall
 back to an E-series. The power-integrity part library is a different drawer and is not read here.</p>
+<p><strong>Known limitation: a placed ladder does not use the library parts.</strong> With a library series loaded,
+the table names each part and the ladder is drawn at that part's value, but <strong>Place filter</strong> and
+<strong>Replace this Filter</strong> put ordinary inductors and capacitors on the schematic, at those values.
+They are not the vendor parts, and nothing on the placed ladder refers back to the library part.
+The block written by <strong>Apply to Filter</strong> or <strong>Place component</strong> remembers the series and parts, so
+the window reopens on them. Placing the library parts themselves is planned for a later release.</p>
 <h2 id="place">Where the result goes</h2>
 <p><strong>Apply to Filter</strong>, when the window was opened on a placed Filter, writes the whole specification
 onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
@@ -226,9 +232,9 @@ Place filter into a replacement. The block is removed, its two pins keep their n
 (the net's own name when it already has one), and the ladder is placed below where the block was,
 with its ends on the same names. It is one undo step, and the ladder arrives selected so you can
 move it.</p>
-<p><strong>Save netlist…</strong> writes the ladder as a <code>.cnl</code>: two terminations and the inductors and capacitors
-between them, at the values the table shows. That file is what <code>sparam</code> simulates, and it is the
-same netlist the plot was drawn from.</p>
+<p>To get the ladder as a netlist, use <code>circuitrf filter lc … -o filter.cnl</code>: two terminations and the
+inductors and capacitors between them. That file is what <code>sparam</code> simulates, and it is the same
+netlist the plot was drawn from.</p>
 <h2 id="headless">The same thing from the command line</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>
 <p>The verb calls the same synthesis the window calls. The options are in <a href="cli.html#filter-lc">CLI › filter lc</a>.</p>

@@ -42824,3 +42824,20 @@ disabled, and a Filter that carries a design edited only through Synthesise….
   takes 5 s sat for over 10 minutes). Pump `Dispatcher.UIThread.RunJobs()` until the task completes.
 - **`tools/UiSnapshot --filter <form>`** opens the real window on a default Filter, so the Designer can
   be looked at headlessly.
+
+## LC Filter Designer — toolbar words and glyphs, and a known limitation (2026-11-22)
+
+- **Toolbar.** Design is the word; Place filter carries the `Ladder` glyph the Tools menu uses for this
+  designer; Place component carries the SnP part's library glyph (the S-Parameter Viewer's). Save
+  netlist is gone with its handler and the view model's `NetlistText()` — `circuitrf filter lc -o`
+  writes the netlist. The toolbar test asserts the word and both glyphs.
+- **Limitation, deliberately left for a later release: a placed ladder does not use the library
+  parts.** With a library series loaded the table snaps each element to a stated value and names the
+  part, and Apply to Filter stores `LSeries`/`CSeries`/`Parts` on the block so the window reopens on
+  them. Place filter and Replace this Filter build the ladder in `FilterPlacement.LadderFragment`
+  from `MatchSchematicCopy`'s generic inductor and capacitor symbols at the snapped value, with no
+  reference to the library part. Written up in the user page and the design doc.
+- **Two designers share the Tools menu.** Main's Filter Designer is spec-driven (planar realisers,
+  EM, Touchstone extraction); this one is the lumped LC ladder with standard part values. Names, icons
+  and the CLI noun (`filter lc`) are kept apart on purpose.
+

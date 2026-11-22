@@ -160,3 +160,12 @@ User page `docs/user/src/reference/lc-filter-designer.md`, registered in `_nav.t
 Match. The Filter entries in `components.md`, `system-components.md` and `dynamic-symbols.md` name
 bandstop and point at the designer. The parameter descriptions live on the registry, which is what
 the parameter editor and `{{table: components/Filter}}` both read.
+
+## Known limitation: library series are not carried onto the schematic
+
+When a library series is loaded (`LSeries`, `CSeries`, `Parts`), the realisation table snaps each
+element to the nearest stated value and names the part, and `Apply to Filter` stores the choice on the
+block so the window reopens on it. **Place filter** and **Replace this Filter** do not use it:
+`FilterPlacement.LadderFragment` builds the ladder from `MatchSchematicCopy`'s generic inductor and
+capacitor symbols at the snapped value, with no reference to the library part. Placing the
+library parts themselves is future work.
