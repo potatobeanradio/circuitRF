@@ -3,16 +3,17 @@ using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
+using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Filters;
 
 namespace CircuitRF.Ui.ViewModels;
 
 public sealed partial class ParameterEditorViewModel
 {
-    /// <summary>What a locked row says: the Filter carries a Designer design.</summary>
+    /// <summary>What a locked row says: the Filter is held to its Designer design.</summary>
     internal const string FilterLockedReason =
         "This Filter was designed in the LC Filter Designer. Use Synthesise… to change it, so the "
-      + "specification and the design stay the same.";
+      + "specification and the design stay the same, or untick Use Synthesis to edit it as a plain Filter.";
 
     /// <summary>
     /// The order a Filter's rows are shown in: the LC Filter Designer's own, card by card —
@@ -31,14 +32,16 @@ public sealed partial class ParameterEditorViewModel
 
     /// <summary>
     /// A Filter's parameters as rows: in <see cref="FilterRowOrder"/>, and without the Designer's
-    /// own settings on a Filter that carries no design — only the Designer writes those, so on a
-    /// plain block they would be empty rows nobody can fill in meaningfully.
+    /// own settings unless its design holds it — only the Designer writes those, so on a plain block
+    /// (or one with Use Synthesis off, which keeps them for Synthesise…) they would be rows nobody
+    /// can fill in meaningfully. <c>Synthesis</c> itself is never a row: it is the Use Synthesis box.
     /// </summary>
     internal static List<EditableParameter> FilterRowParameters(EditableComponent comp)
     {
-        bool designed = FilterPlacement.IsDesigned(comp);
+        bool locked = FilterPlacement.IsLocked(comp);
         return comp.Parameters
-            .Where(p => designed || !ComponentTypeRegistry.IsLcFilterDesignerParameter(SymbolKind.Filter, p.Name))
+            .Where(p => p.Name != "Synthesis"
+                        && (locked || !ComponentTypeRegistry.IsLcFilterDesignerParameter(SymbolKind.Filter, p.Name)))
             .Select((p, i) => (p, i))
             .OrderBy(t => Array.IndexOf(FilterRowOrder, t.p.Name) is var k and >= 0 ? k : FilterRowOrder.Length + t.i)
             .Select(t => t.p)
@@ -56,7 +59,9 @@ public sealed partial class ParameterEditorViewModel
     private void ConfigureFilterRows()
     {
         if (_target?.Symbol != SymbolKind.Filter) return;
-        bool designed = FilterPlacement.IsDesigned(_target);
+        OnPropertyChanged(nameof(FilterUseSynthesis));
+        OnPropertyChanged(nameof(FilterUseSynthesisTip));
+        bool designed = FilterPlacement.IsLocked(_target);
         string Expr(string name) =>
             _target.Parameters.FirstOrDefault(p => p.Name == name)?.Expression.Trim() ?? "";
         // An unreadable value greys nothing: the model reads it as its default, and hiding rows on
@@ -72,6 +77,39 @@ public sealed partial class ParameterEditorViewModel
             row.SetDisabledByMode(reason is not null, reason);
         }
     }
+
+    /// <summary>
+    /// Use Synthesis, beside Synthesise…: ticked while the Filter's design holds it
+    /// (<see cref="FilterPlacement.IsLocked"/>). Unticking writes <c>Synthesis=Off</c> as one undo
+    /// step, and the block is a plain Filter again: every row editable, a variable or a sweep allowed,
+    /// and the design kept for Synthesise… to reopen on. Ticking opens the LC Filter Designer, and its
+    /// Apply to Filter holds the block again — ticking alone would lock values that may have left the
+    /// design since, which is the drift the lock exists to prevent.
+    /// </summary>
+    public bool FilterUseSynthesis
+    {
+        get => _target is { Symbol: SymbolKind.Filter } t && FilterPlacement.IsLocked(t);
+        set
+        {
+            if (_target is not { Symbol: SymbolKind.Filter } t || _schematicVm is null || value == FilterUseSynthesis) return;
+            if (value) OpenLcFilterDesignerRequested?.Invoke(t);
+            else
+            {
+                var updated = t.Parameters.Select(p => p.Clone()).ToList();
+                if (updated.FirstOrDefault(p => p.Name == "Synthesis") is { } setting) setting.Expression = "Off";
+                else updated.Add(new EditableParameter { Name = "Synthesis", Expression = "Off" });
+                _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, t, updated));
+            }
+            // Ticked only once Apply has written the design; until then the box shows the block as it is.
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Use Synthesis' tooltip: what unticking or ticking does to this Filter.</summary>
+    public string FilterUseSynthesisTip => FilterUseSynthesis
+        ? "Untick to edit this Filter as a plain block. Its design is kept, and Synthesise… reopens on it."
+        : "Tick to open the LC Filter Designer on this Filter. Apply to Filter then holds the block to the design, "
+          + "and its values change through Synthesise… only.";
 
     /// <summary>Why <paramref name="name"/> is not read for this response and form, or null when it is.</summary>
     internal static string? FilterRowUnused(string name, FilterResponse? response, NetworkForm? form)

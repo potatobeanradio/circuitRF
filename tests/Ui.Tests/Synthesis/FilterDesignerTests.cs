@@ -202,6 +202,30 @@ public sealed class FilterDesignerTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("No schematic", vm.PlaceTip);
     }
 
+    /// <summary>Opened with no schematic but a Place target (Tools ▸ Filter Designer… in a workspace): Place is live, asks the
+    /// target only when clicked, and places into what it returns; a target that has nothing says so and places nothing.</summary>
+    [Fact]
+    public async Task WithNoSchematic_PlaceAsksItsTarget_WhenClicked()
+    {
+        var model = new SchematicEditModel();
+        int asked = 0;
+        ViewModels.SchematicViewModel? target = null;
+        var vm = new FilterDesignerViewModel(null, realisers: Realisers, placeTarget: () => { asked++; return target; })
+        { Band = FilterBand.Lowpass };
+        await vm.Realising;
+        Assert.True(vm.PlaceCommand.CanExecute(null));
+        Assert.Equal(0, asked);
+
+        vm.PlaceCommand.Execute(null);
+        Assert.Equal(1, asked);
+        Assert.StartsWith("Nothing to place into", vm.Status);
+
+        target = new ViewModels.SchematicViewModel(model);
+        vm.PlaceCommand.Execute(null);
+        Assert.Single(model.Components, c => c.Symbol == SymbolKind.Mlad);
+        Assert.Contains("Update Layout from Schematic", vm.Status);
+    }
+
     /// <summary>
     /// The Designer's own paths timed on a typical specification, the shipped realisers on the shipped RO4350B board: a
     /// 5-pole 0.1 dB Chebyshev bandpass, 2.28 to 2.52 GHz (10 % at 2.4 GHz). Opening is on the window's own default

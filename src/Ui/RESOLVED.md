@@ -1,5 +1,34 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Filter Designer: Place with no schematic open; LC Filter: Use Synthesis; tests that failed on Linux (2026-11-22, 1.9.4)
+
+**Place in a new workspace.** Tools ▸ Filter Designer… bound Place to the schematic active when the window OPENED and
+greyed it with none, with the reason only in a tooltip on the disabled button. A new workspace opens no schematic, so a user
+could design and run Planar EM there and never get the filter onto a schematic or a layout (user report). Opened with
+none, the Designer now asks `WorkspaceViewModel.FilterPlaceTarget` at the click: the active schematic, else a new cell
+`Filter1` (numbered on; plain `Filter` would read as the system block once instanced), written by `CellCreate.Create` and
+opened. Place's status names the schematic and points at Update Layout from Schematic, which is what draws the layout.
+
+**Use Synthesis.** #82 locked a designed Filter with no way back: the lock was inferred from a non-blank mask edge, and
+the mask rows were themselves locked. `Synthesis` (registry default blank, dropped from the netlist) now decides it with
+`IsDesigned`: Off frees the block and keeps the design; blank on a designed block is On, so #82's blocks stay locked. The
+lock also had a hole: the schematic's inline label editor wrote straight past it; `BeginInlineEditForHit` refuses
+`FilterPlacement.IsLockedParameter` now.
+
+**Tests that failed on a stock Linux container** (and three on every platform):
+- `RailCliVerbTests` ×2 compared the CLI's page with the in-process one and differed by `41 %` vs `41%`: rail report and map
+  strings formatted `P0` with the CURRENT culture, and the child process and the test host resolve it differently with no
+  locale set. Those strings write `{x * 100:0}%` under the invariant culture now (`RailExport`, `RailMapScene`,
+  `RailComparisonReport`). Other `P0`/`0.###` sites in railRF's stdout still follow the current culture.
+- `ProtectedModelTests.Sign_Refuses…` copied the git-ignored `fake_osdi.osdi` although signing refusals load no model; it
+  writes the placeholder the other signing tests use.
+- `ImageRoundTripTests.AnExampleSchematic…` and `PlotCliVerbTests.Y2Axis…` read text back out of a picture, and FreeType's
+  raster on Linux defeats the reader on some labels (a port's `Z=50` read as 60; one right-axis label found where macOS
+  finds several). They skip on Linux with that reason (`NonLinuxFact`/`NonLinuxTheory`) rather than the reader being tuned.
+- Every platform: `CliStructuredOutputTests`' committed id list lacked `filter.em.*`, `filter.extract.*` and
+  `netlist.flatten.*`; the four Output Wires SVGs under `docs/user/assets/fixed` had no `viewBox`, and the banner test now
+  skips that folder as it skips `assets/img` (DocGen never writes it); the search index lacked #82's page.
+
 ## A window's MaxHeight is invisible to an X11 window manager while its width is unbounded (2026-11-20, GitHub #78)
 
 Avalonia's X11 backend sends `PMaxSize` only when BOTH maximum dimensions are below 100000 px, so a window with a

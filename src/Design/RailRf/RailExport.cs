@@ -315,7 +315,7 @@ public static class RailExport
             sections.Add(new RailReportText(
                 $"Rail '{r.RailName}' — where the drop is",
                 [.. r.Breakdown.Take(shown).Select(
-                     row => $"{row.DropV * 1e3:0.###} mV ({row.ShareOfTotal:P0}) · {row.Label}")]));
+                     row => string.Create(CultureInfo.InvariantCulture, $"{row.DropV * 1e3:0.###} mV ({row.ShareOfTotal * 100:0}%) · {row.Label}"))]));
 
             if (r.ViaCheck.Transitions.Count > 0)
                 sections.Add(new RailReportText(

@@ -894,7 +894,7 @@ public sealed class RailMapScene
             string readout = share is null
                 ? origin.Description
                 : $"{share.Name}: delivering {share.CurrentA * 1e3:0.###} mA, " +
-                  $"{share.ShareOfTotal:P0} of this rail's total" +
+                  string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{share.ShareOfTotal * 100:0}% of this rail's total") +
                   (share.OpenCircuitVoltageV is { } v ? $", from {v:0.####} V open circuit" : "");
 
             markers.Add(new RailMapMarker(RailMarkerKind.Source, where.X, where.Y, label, readout));

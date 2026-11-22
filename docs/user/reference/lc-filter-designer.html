@@ -214,10 +214,14 @@ value series and the library series and parts. <strong>Synthesise…</strong> on
 window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
 because the block has no elements.</p>
 <p><strong>A Filter that carries a design is locked.</strong> Its properties and its parameter dialog show the same
-fields the window does, in the window's order, but greyed: every change goes through
-<strong>Synthesise…</strong> and Apply, so the block never drifts from the design behind it. <code>IL</code> stays editable,
-because the window does not set it. A Filter placed from the palette carries no design; it shows
-only the block's own fields and is edited directly.</p>
+fields the window does, in the window's order, but greyed, and its values cannot be edited on the
+schematic either: every change goes through <strong>Synthesise…</strong> and Apply, so the block never drifts from
+the design behind it. <code>IL</code> stays editable, because the window does not set it. A Filter placed from
+the palette carries no design; it shows only the block's own fields and is edited directly.</p>
+<p><strong>Use Synthesis</strong>, beside <strong>Synthesise…</strong> in the Filter's properties, is ticked while the design holds
+the block. Untick it to make the block a plain Filter again: every field is editable, so a variable or
+a sweep can drive it, and the design is kept, so <strong>Synthesise…</strong> still reopens on it. Ticking it opens
+the window, and <strong>Apply to Filter</strong> holds the block to the design again.</p>
 <p><strong>Place filter</strong> puts the realised ladder, at the values the table shows, on the schematic. It has no
 terminations: each end is a short wire with a net label, <code>IN</code> on port 1 and <code>OUT</code> on port 2 (<code>IN2</code> and
 <code>OUT2</code> onward when the schematic already has those names), ready to be wired into the design. The

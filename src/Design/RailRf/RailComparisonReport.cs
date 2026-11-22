@@ -171,7 +171,7 @@ public sealed record RailMountingComparison(
                (Math.Abs(b - a) < 1e-15
                    ? "unchanged"
                    : $"{(b > a ? "+" : "−")}{Math.Abs(b - a) * 1e12:0.#} pH" +
-                     (GrowthFraction is { } g ? $", {(g >= 0 ? "+" : "−")}{Math.Abs(g):P0}" : "")) +
+                     (GrowthFraction is { } g ? $", {(g >= 0 ? "+" : "−")}{Math.Abs(g) * 100:0}%" : "")) +
                basis + ".";
     }
 
@@ -715,7 +715,7 @@ public sealed record RailComparisonReport(
             return report.Mounting.Count == 0
                 ? "No part could be compared on both designs, so railRF has nothing to say about " +
                   "what the re-layout did to the mounting loops."
-                : $"No part's mounting loop grew by more than {MountingNoticeFraction:P0}: the " +
+                : $"No part's mounting loop grew by more than {MountingNoticeFraction * 100:0}%: the " +
                   "re-layout left the decoupling mounted about as well as the reference has it.";
 
         string named = string.Join(", ", worse.Take(3).Select(

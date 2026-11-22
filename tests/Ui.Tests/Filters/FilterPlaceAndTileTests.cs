@@ -9,6 +9,7 @@ using CircuitRF.Design.Filters;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Filters;
+using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
 using Xunit;
 
@@ -198,6 +199,44 @@ public class FilterPlaceAndTileTests
         // The view greys the picker too, not only the text box.
         string xaml = File.ReadAllText(Source("src", "Ui", "Views", "ParameterEditor", "ParameterEditorView.axaml"));
         Assert.Matches(@"ItemsSource=""\{Binding ChoiceOptions\}""\s+SelectedItem=""\{Binding SelectedChoice\}""\s+IsVisible=""\{Binding IsChoiceParam\}""\s+IsEnabled=""\{Binding ExpressionEnabled\}""", xaml);
+    }
+
+    /// <summary>
+    /// Use Synthesis: on a designed Filter it is ticked and the schematic label refuses an inline edit; unticking it is one
+    /// undo step that makes the block a plain Filter — every row editable, the Designer's rows gone, the design kept —
+    /// and the label edits again. Ticking it writes nothing: it opens the Designer, whose Apply
+    /// holds the block again.
+    /// </summary>
+    [Fact]
+    public async Task UseSynthesis_UntickedFreesTheBlock_AndTickingOpensTheDesigner()
+    {
+        var comp = await DesignedFilter();
+        var editor = EditorOn(comp, out var vm);
+        Assert.True(editor.FilterUseSynthesis);
+        var orderHit = new SchematicHitTest.HitResult(SchematicHitTest.HitKind.ComponentParam, comp.Id,
+                                                      comp.Parameters.FindIndex(p => p.Name == "Order"));
+        vm.BeginInlineEditForHit(orderHit, 0, 0);
+        Assert.False(vm.IsInlineEditing);
+
+        editor.FilterUseSynthesis = false;
+        Assert.Equal("Off", comp.Parameters.Single(p => p.Name == "Synthesis").Expression);
+        Assert.False(FilterPlacement.IsLocked(comp));
+        Assert.True(FilterPlacement.IsDesigned(comp));
+        Assert.False(editor.FilterUseSynthesis);
+        Assert.DoesNotContain(editor.Rows, r => ComponentTypeRegistry.IsLcFilterDesignerParameter(SymbolKind.Filter, r.Name));
+        Assert.All(editor.Rows.Where(r => r.Name is "Order" or "Form" or "Zin"), r => Assert.True(r.ExpressionEnabled, r.Name));
+        vm.BeginInlineEditForHit(orderHit, 0, 0);
+        Assert.True(vm.IsInlineEditing);
+        vm.CancelInlineEdit();
+
+        EditableComponent? opened = null;
+        editor.OpenLcFilterDesignerRequested += c => opened = c;
+        editor.FilterUseSynthesis = true;
+        Assert.Same(comp, opened);
+        Assert.False(editor.FilterUseSynthesis);
+
+        vm.UndoRedo.Undo();
+        Assert.True(FilterPlacement.IsLocked(comp));
     }
 
     [Theory]

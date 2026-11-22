@@ -151,14 +151,27 @@ public static class FilterPlacement
 
     /// <summary>
     /// True when <paramref name="filter"/> carries an LC Filter Designer design: Apply to Filter and
-    /// Place component always write <c>Ap</c> and the mask edges, and nothing else writes them
-    /// (their rows are hidden on a Filter without a design). A designed Filter's rows are locked;
-    /// it changes through Synthesise….
+    /// Place component always write <c>Ap</c> and the mask edges, and nothing else writes them.
+    /// Whether the design holds the block is <see cref="IsLocked"/>.
     /// </summary>
     public static bool IsDesigned(EditableComponent filter) =>
         filter.Symbol == SymbolKind.Filter
         && filter.Parameters.Any(p => p.Name is "Ap" or "Fp" or "Fs" or "Fp1" or "Fs1" or "Fs2" or "Fp2"
                                       && !string.IsNullOrWhiteSpace(p.Expression));
+
+    /// <summary>
+    /// True when <paramref name="filter"/>'s design holds it (Use Synthesis): it carries a design
+    /// and its <c>Synthesis</c> is not <c>Off</c>. Its rows are locked and its values change
+    /// through Synthesise… only; with Use Synthesis off it is a plain Filter that keeps the design.
+    /// </summary>
+    public static bool IsLocked(EditableComponent filter) =>
+        IsDesigned(filter)
+        && !string.Equals(filter.Parameters.FirstOrDefault(p => p.Name == "Synthesis")?.Expression.Trim(), "Off",
+                          StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when <paramref name="name"/> is a value <see cref="IsLocked"/> holds: every one but <c>IL</c>,
+    /// which the Designer does not write.</summary>
+    public static bool IsLockedParameter(EditableComponent filter, string name) => name != "IL" && IsLocked(filter);
 
     /// <summary>The registry's default Filter parameters, as editable ones.</summary>
     public static List<EditableParameter> DefaultParameters() =>

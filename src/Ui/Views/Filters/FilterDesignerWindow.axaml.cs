@@ -52,9 +52,12 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
     /// <summary>The Designer over <paramref name="schematicVm"/> (Place's target; none when null), the family of
     /// <paramref name="family"/> preselected; <paramref name="technology"/> gives the substrate when the schematic's own does not.</summary>
     public static FilterDesignerWindow Show(ViewModels.SchematicViewModel? schematicVm, SymbolKind? family, Window? owner,
-        Technology? technology = null)
+        Technology? technology = null, Func<ViewModels.SchematicViewModel?>? placeTarget = null)
     {
-        var window = new FilterDesignerWindow { DataContext = new FilterDesignerViewModel(schematicVm, family, technology: technology) };
+        var window = new FilterDesignerWindow
+        {
+            DataContext = new FilterDesignerViewModel(schematicVm, family, technology: technology, placeTarget: placeTarget),
+        };
         if (owner is null) window.Show();
         else
         {

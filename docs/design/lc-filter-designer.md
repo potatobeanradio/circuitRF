@@ -138,9 +138,20 @@ Filter only (`SchematicViewModel.SynthesizeTarget`). Both call `LcFilterDesigner
 keeps one window per Filter (`LcFilterDesignerWindows<T>`) and brings an open one forward.
 
 **A designed Filter is locked** (owner decision, 2026-11-21). `FilterPlacement.IsDesigned` is true
-when `Ap` or a mask edge is non-blank, which only Apply / Place component write. Such a Filter's
-rows are all read-only and greyed except `IL` (the Designer does not write it), pickers included, so
-a change goes through Synthesise…. A Filter without a design hides the Designer rows. Rows follow the
+when `Ap` or a mask edge is non-blank, which only Apply / Place component write. `IsLocked` is that
+and `Synthesis` not `Off`: such a Filter's rows are all read-only and greyed except `IL` (the
+Designer does not write it), pickers included, and the schematic's inline label editor refuses the
+same parameters (`IsLockedParameter`, checked in `BeginInlineEditForHit`), so a change goes through
+Synthesise…. A Filter that is not locked hides the Designer rows.
+
+**Use Synthesis unlocks it** (2026-11-22). A checkbox beside Synthesise… in Properties,
+`ParameterEditorViewModel.FilterUseSynthesis`, backed by `Synthesis` (appended, blank, dropped from the
+netlist with the other settings). Unticking writes `Off` as one undo step: the block is a plain
+Filter (every row editable, so a variable or a sweep can drive it) and keeps the design for
+Synthesise… to reopen on. Ticking writes nothing and opens the Designer; Apply writes `On`. Locking on
+the tick alone would hold values that may have been edited away from the design, which is the drift
+the lock exists to prevent. Blank on a designed block reads as On, which is what a block applied before
+the setting existed meant. Rows follow the
 window's card order (`ParameterEditorViewModel.FilterRowOrder`), and the same ordered list is what
 the editor's rebuild check compares, so a reorder does not rebuild on every edit.
 

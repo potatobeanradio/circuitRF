@@ -345,7 +345,7 @@ public sealed class ProtectedModelTests : IDisposable
     public void Sign_RefusesAKeyInsideTheLibrary_ABrokenLibrary_AndOverwritingAKey()
     {
         string lib = Path.Combine(_dir, "lib");
-        string model = WriteCompiledModel(lib, [Here]);
+        string model = WriteCompiledModel(lib, [Here], realBinary: false);   // signing refusals load no model, so this needs no built fixture
         ModelLibraryManifest.Write(Path.Combine(lib, ModelFolder.LibraryFileName), new ModelLibraryManifest { Name = "TST", Publisher = "TST Devices" });
 
         string inside = Path.Combine(lib, "key.pem");

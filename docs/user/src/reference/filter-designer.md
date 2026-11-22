@@ -42,7 +42,8 @@ part you placed yourself.
 
 There are three ways in:
 - **Tools ▸ Filter Designer…** opens it on its default specification with every family listed. **Place** puts the filter into
-  the schematic that was active when you opened it. With no schematic open, **Place** is greyed, and its tooltip says why.
+  the schematic that was active when you opened it. Opened with no schematic, **Place** puts it into the schematic active when
+  you press it, and with none open into a new cell, `Filter1`, which it creates in the workspace and opens.
 - **Filter Designer…** on a schematic's right-click menu, on an empty spot of the canvas, does the same for that schematic.
 - Select an MLAD, MCRC or MCLA in a schematic and press **Synthesise…** in its Properties. The Designer opens with that
   part's family preselected, and **Place** puts the filter into that schematic.
@@ -142,7 +143,8 @@ against the EM response instead of the bench's, then solves the corrected part o
 
 **Place** puts the part to the right of everything already in the schematic. It then puts a part on each of its sites, the
 way [Place Site Parts](components.html#sites) does: an R, L or C of the site's value with the part's `Footprint` (or the board's
-default land), and a via on each grounded end. It is one step: one **Undo** takes it all off again.
+default land), and a via on each grounded end. It is one step: one **Undo** takes it all off again. Place writes the
+schematic only: **Update Layout from Schematic** then draws the filter's layout.
 
 <figure class="figure">
 <img src="../../images/filter-synthesis/placed-schematic.png" alt="The schematic after Place: the five-resonator hairpin MCRC between two 50 ohm ports, with its synthesised widths and gaps on the symbol." style="width:100%;height:auto">

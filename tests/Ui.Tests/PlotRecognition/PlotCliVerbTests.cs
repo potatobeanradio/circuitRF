@@ -33,7 +33,7 @@ public sealed class PlotCliVerbTests(PlotPictureSet pictures, ITestOutputHelper 
         Assert.False(File.Exists(target));
     }
 
-    [Fact]
+    [NonLinuxFact("Types the right axis from two labels the reader found, and on Linux's FreeType raster it finds one.")]
     public void Y2Axis_CalibratesTheRightAxis_AndAxisRight_MovesATrace()
     {
         // brief-pdg-1-two-y-axes.md §3 (6): the right axis typed from two of its own labels' pixels, and the left trace

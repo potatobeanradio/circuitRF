@@ -10839,13 +10839,44 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>
     /// Tools ▸ Filter Designer…: the Designer on no part, every family listed (docs/design/filter-synthesis.md §6). Place puts the
-    /// filter into the active schematic, and with none it is greyed with why. The substrate is that schematic's technology, else the
-    /// workspace's default; no workspace is needed.
+    /// filter into the schematic active when the Designer opened; opened with none, into the one active at Place, and with none
+    /// then into a new cell (<see cref="FilterPlaceTarget"/>) — a new workspace has no schematic open, and a Designer that could
+    /// only simulate there gave the user no way to keep the filter. The substrate is that schematic's technology, else the
+    /// workspace's default; no workspace is needed to design.
     /// </summary>
     [RelayCommand]
     private void NewFilterDesigner() => Views.Filters.FilterDesignerWindow.Show(
         (ResolveActiveDocumentForCommands() as SchematicDocument)?.ViewModel, null, ResolveOwner(null),
-        MicrostripSubstrateInjection.ResolveWorkspaceTechnology(CurrentWorkspaceRoot));
+        MicrostripSubstrateInjection.ResolveWorkspaceTechnology(CurrentWorkspaceRoot), FilterPlaceTarget);
+
+    /// <summary>
+    /// The schematic a Filter Designer opened with none places into: the active one, else a new cell <c>Filter1</c>
+    /// (<c>Filter2</c>, … when taken) in the open workspace, written by <see cref="CellCreate.Create"/> as New Cell writes it and
+    /// opened. Null with no workspace open.
+    /// </summary>
+    private SchematicViewModel? FilterPlaceTarget()
+    {
+        if (ResolveActiveDocumentForCommands() is SchematicDocument active) return active.ViewModel;
+        if (CurrentWorkspacePath is null) return null;
+        var workspaceDir = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        // Numbered from 1: a cell called plain "Filter" would read, once instanced, as the system Filter block.
+        int k = 1;
+        while (Directory.Exists(Path.Combine(workspaceDir, $"Filter{k}"))) k++;
+        string name = $"Filter{k}";
+
+        CellCreateResult cell;
+        try { cell = CellCreate.Create(workspaceDir, name); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            Messages.Error($"Filter Designer: {ex.Message}");
+            return null;
+        }
+        _factory.ProjectTreeTool?.Refresh();
+        Messages.Success("Created", cell.SchematicPath!);
+        OpenOrActivateSchematic(cell.SchematicPath!);
+        return _openDocsByPath.TryGetValue(Path.GetFullPath(cell.SchematicPath!), out var opened) && opened is SchematicDocument sd
+            ? sd.ViewModel : null;
+    }
 
     /// <summary>
     /// Tools ▸ LC Filter Designer. No schematic is required: the assistant synthesises from the

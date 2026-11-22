@@ -88,6 +88,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     internal static readonly TimeSpan EditDelay = TimeSpan.FromMilliseconds(250);
 
     private readonly SchematicViewModel? _schematic;
+    private readonly Func<SchematicViewModel?>? _placeTarget;
     private readonly IReadOnlyList<IFilterRealiser> _all;
     private readonly Technology? _technology;
     private readonly MicrostripSubstrate? _substrate;
@@ -103,10 +104,15 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <param name="realisers">The realisers to offer; <see cref="FilterRealisers.All"/> when null.</param>
     /// <param name="technology">The technology with no schematic (Tools ▸ Filter Designer… takes the workspace's); a
     /// schematic's own wins.</param>
+    /// <param name="placeTarget">With no <paramref name="schematic"/>: asked at Place for the schematic to place into
+    /// (Tools ▸ Filter Designer… gives the one active then, else a new cell), so a Designer opened before any schematic
+    /// was can still place. Null leaves Place greyed with no schematic.</param>
     public FilterDesignerViewModel(SchematicViewModel? schematic, SymbolKind? family = null,
-        IReadOnlyList<IFilterRealiser>? realisers = null, Technology? technology = null)
+        IReadOnlyList<IFilterRealiser>? realisers = null, Technology? technology = null,
+        Func<SchematicViewModel?>? placeTarget = null)
     {
         _schematic = schematic;
+        _placeTarget = schematic is null ? placeTarget : null;
         _all = realisers ?? FilterRealisers.All;
         _technology = schematic is null ? technology : SchematicTechnology.Of(schematic.EditModel) ?? technology;
         _substrate = FilterSynthesisService.Substrate(_technology, null, null, out _);
@@ -126,9 +132,11 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     public string Title => "Filter Designer" + (_schematic is null ? "" : " — " + _schematic.DocumentName);
 
     /// <summary>What Place does, or why it cannot.</summary>
-    public string PlaceTip => _schematic is null
-        ? "No schematic was open when the Designer started: open one, then start the Designer from it to place the filter."
-        : "Put the part and a part on each of its sites into the schematic, as one undo step";
+    public string PlaceTip => _schematic is not null
+        ? "Put the part and a part on each of its sites into the schematic, as one undo step"
+        : _placeTarget is not null
+            ? "Put the part and a part on each of its sites into the active schematic, as one undo step; with no schematic open, into a new cell"
+            : "No schematic was open when the Designer started: open one, then start the Designer from it to place the filter.";
 
     /// <summary>What the stack gives the realisers, or that there is none.</summary>
     public string SubstrateText => _substrate is { } s
@@ -741,7 +749,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         finally { Busy = false; }
     }
 
-    private bool CanPlace() => _realisation is not null && _schematic is not null;
+    private bool CanPlace() => _realisation is not null && (_schematic is not null || _placeTarget is not null);
 
     /// <summary>
     /// The realised part, right of everything already drawn, and a part on each of its sites, as Place Site Parts puts
@@ -750,9 +758,15 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanPlace))]
     public void Place()
     {
-        if (_schematic is null || _realisation is null) return;
-        var model = _schematic.EditModel;
-        var taken = _schematic.TakenInstanceNames().ToList();
+        if (_realisation is null) return;
+        var schematic = _schematic ?? _placeTarget?.Invoke();
+        if (schematic is null)
+        {
+            Status = "Nothing to place into: open a workspace, or a schematic, and Place again.";
+            return;
+        }
+        var model = schematic.EditModel;
+        var taken = schematic.TakenInstanceNames().ToList();
         var part = FilterSynthesisService.Part(_realisation, "F1");
         part.InstanceName = SchematicEditModel.NextAvailableName(taken, ComponentTypeRegistry.InstancePrefix(part.Symbol));
         part.X = model.Components.Count == 0 ? 0 : Math.Round(model.Components.Max(c => c.X) / 100.0) * 100 + 2000;
@@ -771,8 +785,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         }
         finally { model.Components.Remove(part); }
 
-        _schematic.Execute(new PlaceSitePartsCommand(model, new PassiveSites.Placement([part, .. sites.Parts], sites.Wires, sites.Notes)));
+        schematic.Execute(new PlaceSitePartsCommand(model, new PassiveSites.Placement([part, .. sites.Parts], sites.Wires, sites.Notes)));
         Status = $"Placed {part.InstanceName}" + (sites.Parts.Count > 0 ? $" and {string.Join(", ", sites.Parts.Where(p => p.Symbol != SymbolKind.Ground).Select(p => p.InstanceName))}." : ".")
-               + (refusal is null ? "" : $" Its sites could not be read: {refusal}") + string.Concat(sites.Notes.Select(n => " " + n));
+               + (refusal is null ? "" : $" Its sites could not be read: {refusal}") + string.Concat(sites.Notes.Select(n => " " + n))
+               + (_schematic is null ? $" In {schematic.DocumentName}; Update Layout from Schematic draws its layout." : "");
     }
 }

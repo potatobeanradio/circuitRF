@@ -140,10 +140,15 @@ window exactly as it was applied, with nothing derived again. The snap is not ap
 because the block has no elements.
 
 **A Filter that carries a design is locked.** Its properties and its parameter dialog show the same
-fields the window does, in the window's order, but greyed: every change goes through
-**Synthesise…** and Apply, so the block never drifts from the design behind it. `IL` stays editable,
-because the window does not set it. A Filter placed from the palette carries no design; it shows
-only the block's own fields and is edited directly.
+fields the window does, in the window's order, but greyed, and its values cannot be edited on the
+schematic either: every change goes through **Synthesise…** and Apply, so the block never drifts from
+the design behind it. `IL` stays editable, because the window does not set it. A Filter placed from
+the palette carries no design; it shows only the block's own fields and is edited directly.
+
+**Use Synthesis**, beside **Synthesise…** in the Filter's properties, is ticked while the design holds
+the block. Untick it to make the block a plain Filter again: every field is editable, so a variable or
+a sweep can drive it, and the design is kept, so **Synthesise…** still reopens on it. Ticking it opens
+the window, and **Apply to Filter** holds the block to the design again.
 
 **Place filter** puts the realised ladder, at the values the table shows, on the schematic. It has no
 terminations: each end is a short wire with a net label, `IN` on port 1 and `OUT` on port 2 (`IN2` and

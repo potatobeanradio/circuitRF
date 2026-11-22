@@ -5466,6 +5466,16 @@ public sealed partial class SchematicViewModel : ObservableObject
                     return;
                 }
 
+                // A Filter held to its LC Filter Designer design (Use Synthesis) takes these values from
+                // Synthesise… only; the dialog greys their rows, and the label would otherwise write past it.
+                if (Filters.FilterPlacement.IsLockedParameter(comp, param.Name))
+                {
+                    _messageSink?.Info(
+                        $"{comp.InstanceName}'s {param.Name} comes from its LC Filter Designer design: change it with "
+                      + "Synthesise…, or untick Use Synthesis in its Properties to edit it as a plain Filter.");
+                    return;
+                }
+
                 _inlineEditParam = param;
 
                 bool nameMode = comp.Symbol is SymbolKind.Var or SymbolKind.Meas or SymbolKind.Sdd;

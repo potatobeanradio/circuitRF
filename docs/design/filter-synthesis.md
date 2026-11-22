@@ -587,7 +587,10 @@ Designer is.
   from the `PolishAim` the part was solved for, so it builds on a polish rather than undoing it. One pass per click.
 - **Tools ▸ Filter Designer…** (both menu surfaces) opens it on no part: the default specification, every family. Place
   targets the schematic active when it opened, and its technology gives the substrate, else the workspace's default.
-  With no schematic, Place is greyed and its tooltip says why. **Filter Designer…** on a schematic's empty-canvas menu
+  Opened with no schematic, Place asks the workspace at the click (`WorkspaceViewModel.FilterPlaceTarget`): the schematic
+  active then, else a new cell `Filter1` (`CellCreate.Create`, as New Cell writes it), opened. A new workspace opens no
+  schematic, so a Designer that greyed Place there could simulate a filter but never keep it. With no workspace either,
+  Place says there is nothing to place into. **Filter Designer…** on a schematic's empty-canvas menu
   does the same for that schematic. The app has no command palette to add it to.
 - **Synthesise…** in the Properties of an MLAD, MCRC or MCLA opens it with that family preselected. A family is matched
   against the realiser's name, which by the contract's convention ends in the part type, e.g. "(MCRC)".
@@ -653,7 +656,8 @@ Chebyshev lowpass written as MLAD sites.
   and writes the netlist.
 - The Designer preselects the family and lists the realiser, plots four traces, and refuses Place on a band the realiser
   cannot build. Its Place adds the ladder, two inductors and a capacitor, and one Undo takes them all off.
-- Opened with no schematic, it lists every family and realises the filter, and Place is greyed with its reason.
+- Opened with no schematic, it lists every family and realises the filter, and Place is greyed with its reason; given a
+  Place target, Place asks it only when clicked and places into what it returns.
 - The timing harness above. It asserts that the UI thread's share of each path, and the ideal's drawing, stay under a
   second, and that the checked list is truthful: every row its check let through is realised, and the coupled-feed
   hairpin says "refuses:".

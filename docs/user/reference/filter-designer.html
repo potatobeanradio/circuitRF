@@ -69,7 +69,8 @@ part you placed yourself.</p>
 <p>There are three ways in:</p>
 <ul>
 <li><strong>Tools ▸ Filter Designer…</strong> opens it on its default specification with every family listed. <strong>Place</strong> puts the filter into
-the schematic that was active when you opened it. With no schematic open, <strong>Place</strong> is greyed, and its tooltip says why.</li>
+the schematic that was active when you opened it. Opened with no schematic, <strong>Place</strong> puts it into the schematic active when
+you press it, and with none open into a new cell, <code>Filter1</code>, which it creates in the workspace and opens.</li>
 <li><strong>Filter Designer…</strong> on a schematic's right-click menu, on an empty spot of the canvas, does the same for that schematic.</li>
 <li>Select an MLAD, MCRC or MCLA in a schematic and press <strong>Synthesise…</strong> in its Properties. The Designer opens with that
 part's family preselected, and <strong>Place</strong> puts the filter into that schematic.</li>
@@ -191,7 +192,8 @@ against the EM response instead of the bench's, then solves the corrected part o
 <h2 id="place">Place</h2>
 <p><strong>Place</strong> puts the part to the right of everything already in the schematic. It then puts a part on each of its sites, the
 way <a href="components.html#sites">Place Site Parts</a> does: an R, L or C of the site's value with the part's <code>Footprint</code> (or the board's
-default land), and a via on each grounded end. It is one step: one <strong>Undo</strong> takes it all off again.</p>
+default land), and a via on each grounded end. It is one step: one <strong>Undo</strong> takes it all off again. Place writes the
+schematic only: <strong>Update Layout from Schematic</strong> then draws the filter's layout.</p>
 <figure class="figure">
 <img src="../../images/filter-synthesis/placed-schematic.png" alt="The schematic after Place: the five-resonator hairpin MCRC between two 50 ohm ports, with its synthesised widths and gaps on the symbol." style="width:100%;height:auto">
 <img src="../../images/filter-synthesis/placed-layout.png" alt="The same filter after Update Layout from Schematic: five hairpin resonators, tapped at the outer ones, on the board's top copper." style="width:100%;height:auto">

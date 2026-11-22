@@ -614,8 +614,10 @@ public class DocsFactoryTests
     {
         foreach (var svg in AllSvgs())
         {
-            // The brand artwork under assets/img is authored, not generated.
-            if (Path.GetRelativePath(DocsRoot(), svg).Replace('\\', '/').StartsWith("assets/img/")) continue;
+            // The brand artwork under assets/img is authored, not generated; assets/fixed holds pictures
+            // DocGen links to and never writes (its README names the command that made each one).
+            var rel = Path.GetRelativePath(DocsRoot(), svg).Replace('\\', '/');
+            if (rel.StartsWith("assets/img/") || rel.StartsWith("assets/fixed/")) continue;
 
             var head = File.ReadAllText(svg);
             Assert.True(head.Contains("GENERATED FILE", StringComparison.Ordinal),

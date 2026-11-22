@@ -949,6 +949,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             new("LSeries", InductorChoice?.Key ?? ""),
             new("CSeries", CapacitorChoice?.Key ?? ""),
             new("Parts", PartsText()),
+            new("Synthesis", "On"),
         };
         bool edge = spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass;
         if (edge)

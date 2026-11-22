@@ -2753,6 +2753,10 @@ public static class ComponentTypeRegistry
         (SymbolKind.Filter, "Parts") =>
             "LC Filter Designer: elements given a library part by hand, as element=library: "
           + "series|part, separated by ';'. Blank means every element takes the nearest part.",
+        (SymbolKind.Filter, "Synthesis") =>
+            "LC Filter Designer: On holds the block to its design, so its values change through "
+          + "Synthesise… only; Off is a plain Filter that keeps the design. Set by the Use Synthesis box "
+          + "beside Synthesise…, and On by Apply. Blank on a block with a design means On.",
         (SymbolKind.Filter, "IL") =>
             "A flat insertion loss laid on top of the ideal response, in dB. It multiplies S21 and "
           + "leaves S11 alone, so the block genuinely dissipates rather than reflecting what it "
@@ -3509,7 +3513,12 @@ public static class ComponentTypeRegistry
                         new("Values",    "Exact",   "",    false, UnitDimension.None),
                         new("LSeries",   "",        "",    false, UnitDimension.None),
                         new("CSeries",   "",        "",    false, UnitDimension.None),
-                        new("Parts",     "",        "",    false, UnitDimension.None)];
+                        new("Parts",     "",        "",    false, UnitDimension.None),
+                        // Use Synthesis: On holds the block to its design (Apply writes it), Off is a
+                        // plain Filter that keeps the design for Synthesise… to reopen on. Blank on a
+                        // block with a design means On, which is what a block applied before the
+                        // setting existed meant.
+                        new("Synthesis", "",        "",    false, UnitDimension.None)];
 
             // The duplexer is two complete filter specifications plus one shared antenna impedance,
             // and deliberately NO Isolation: the isolation a duplexer achieves is what its two
@@ -5428,7 +5437,7 @@ public static class ComponentTypeRegistry
     private static readonly HashSet<string> LcFilterDesignerParameters = new(StringComparer.Ordinal)
     {
         "Ap", "Fp", "Fs", "Fp1", "Fs1", "Fs2", "Fp2", "OrderMode", "First", "Values",
-        "LSeries", "CSeries", "Parts",
+        "LSeries", "CSeries", "Parts", "Synthesis",
     };
 
     // brief-paa-3 R-paa3-8 — the Phased Antenna Array's words. Level's auto is "follow the record" (a blank means the same).

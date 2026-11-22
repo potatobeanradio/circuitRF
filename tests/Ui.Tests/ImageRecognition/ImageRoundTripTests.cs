@@ -200,7 +200,7 @@ public sealed class ImageRoundTripTests(ArtworkRoundTripBoard board, ITestOutput
 
     // ── schematic ───────────────────────────────────────────────────────────────────────────────────────────────
 
-    [Theory]
+    [NonLinuxTheory("Reads the drawn labels back as text, and FreeType's glyph raster on Linux misreads some of them (a port's Z=50 as 60).")]
     [InlineData("Optimization/LSectionMatch/schematic/LSectionMatch.csch", 3.0)]
     [InlineData("Optimization/LSectionMatch/schematic/LSectionMatch.csch", 4.5)]
     [InlineData("LVS/Attenuator/schematic/Attenuator.csch", 3.0)]
