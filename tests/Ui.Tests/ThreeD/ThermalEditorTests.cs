@@ -48,6 +48,27 @@ public sealed class ThermalEditorTests : IDisposable
 
     // ── 1. round trips ───────────────────────────────────────────────────────────────────────────
 
+    /// <summary>The toolbar's Probe clicked on a bond wire makes a WIRE probe — the record the context menu's Add Probe ▸ Wire
+    /// writes — rather than a point on the wire's surface.</summary>
+    [Fact]
+    public void ProbeTool_ClickOnAWire_MakesAWireProbe()
+    {
+        var vm = Open(new C3dWire
+        {
+            Name = "bond", Material = "Gold", DiameterUm = 2,
+            Points = [new C3dPoint3(5 * Um, 10 * Um, 20 * Um), new C3dPoint3(10 * Um, 10 * Um, 32 * Um), new C3dPoint3(15 * Um, 10 * Um, 20 * Um)],
+        });
+        var wire = vm.Viewer.Scene.Objects.Single(o => o.Kind == Scene3DKind.Wire);
+        vm.Arm(C3dToolKind.ProbePoint);
+        ClickAt(vm, 10, 10, 32);
+        Settle(vm);
+        var probe = Assert.Single(vm.Document.Probes);
+        Assert.Equal(wire.Name, probe.Wire);
+        Assert.Null(probe.Point);
+        Assert.Equal(C3dProbeStat.Max, probe.Stat);
+    }
+
+
     /// <summary>A heat source, a line probe, a point probe and a mesh region, each drawn with its tool: each is ONE entry
     /// writing exactly the record brief 73 defines (compared with the record built by hand, through the file's own spelling),
     /// it survives Save and reopen, and undoing all four puts the document back byte for byte.</summary>
@@ -223,7 +244,7 @@ public sealed class ThermalEditorTests : IDisposable
 
     private string Results => Path.Combine(_root, "results");
 
-    private C3dEditorViewModel Open()
+    private C3dEditorViewModel Open(params C3dObject[] more)
     {
         string ws = Path.Combine(_root, "ws" + Guid.NewGuid().ToString("N")[..6]);
         Directory.CreateDirectory(ws);
@@ -244,7 +265,7 @@ public sealed class ThermalEditorTests : IDisposable
         C3dPersistence.SaveToFile(path, new C3dDocument
         {
             SnapDbu = 1 * Um,
-            Objects = [new C3dBox { Name = "block", Material = "Gold", Min = new C3dPoint3(0, 0, 0), Size = new C3dPoint3(20 * Um, 20 * Um, 20 * Um) }],
+            Objects = [new C3dBox { Name = "block", Material = "Gold", Min = new C3dPoint3(0, 0, 0), Size = new C3dPoint3(20 * Um, 20 * Um, 20 * Um) }, .. more],
             Setups = [EmSetupPersistence.ToEmbedded(setup)],
         });
         var fake = new PatchRecordingBackend();

@@ -5,7 +5,8 @@
 //     C3dRectangleTool: the same two snapped clicks, the same typed width and depth), or a polygon with the Polygon tool's
 //     (C3dChainTool). The power is asked afterwards (the editor's), defaulting to the document's.
 //   * Probe — a point (one click on a face), a spot (its centre on a face, then its diameter: a second click or typed), or a
-//     line (two clicks, anywhere a snap reaches). A face, solid or wire probe is a context-menu command on what is selected.
+//     line (two clicks, anywhere a snap reaches). A Point click on a bond wire makes a wire probe instead. A face or solid
+//     probe is a context-menu command on what is selected.
 //   * Mesh Region — a box drawn as the Box tool draws one (two corners, then the height); its element size is asked after.
 //   * Temperature Along — two points, as a line probe takes them, that make NOTHING: the editor plots T between them
 //     (R-em3d75-4d), the owner's by-hand Rth.
@@ -134,7 +135,7 @@ public sealed class ProbeTool(IC3dDrawHost host, C3dProbeShape shape) : C3dDrawT
 
     public override string Prompt => (Shape, Step) switch
     {
-        (C3dProbeShape.Point, _) => "Probe: click the point on a face where the temperature is read.",
+        (C3dProbeShape.Point, _) => "Probe: click the point on a face where the temperature is read, or a bond wire to read the wire.",
         (C3dProbeShape.Spot, 0) => "Spot probe: click the spot's centre on a face.",
         (C3dProbeShape.Spot, _) => "Spot probe: click at the spot's edge (or type its diameter). Esc cancels.",
         (_, 0) => "Line probe: click the line's first end.",
@@ -164,6 +165,10 @@ public sealed class ProbeTool(IC3dDrawHost host, C3dProbeShape shape) : C3dDrawT
         {
             C3dPoint3? p;
             string? why;
+            // A Point probe clicked on a bond wire reads the wire (T along it, and its maximum): the context menu's
+            // Add Probe ▸ Wire, from the one toolbar button.
+            if (Shape == C3dProbeShape.Point && Host.WireUnderCursor(input) is { } wire)
+                return Done(new C3dProbe { Name = Host.NextName("probe"), Wire = wire, Stat = C3dProbeStat.Max });
             if (Shape == C3dProbeShape.Line) p = Host.FreePoint(input, out why);
             else
             {

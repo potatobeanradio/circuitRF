@@ -232,7 +232,7 @@
                     <mi:MaterialIcon Kind="FireCircle" Width="16" Height="16"/>
                 </ToggleButton>
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsProbeArmed}"
-                              ToolTip.Tip="Probe: click the point on a face where temperature is read (3D ▸ Draw ▸ Probe for a spot or a line; right-click a face, solid or wire for those)  (Shift+A, T)">
+                              ToolTip.Tip="Probe: click the point on a face where temperature is read, or a bond wire to read the wire (3D ▸ Draw ▸ Probe for a spot or a line; right-click a face or solid for those)  (Shift+A, T)">
                     <mi:MaterialIcon Kind="ThermometerProbe" Width="16" Height="16"/>
                 </ToggleButton>
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsMeshRegionArmed}"

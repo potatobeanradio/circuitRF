@@ -87,6 +87,10 @@ public interface IC3dDrawHost
     /// <summary>brief-em3d-75 — the cursor's point ON a face (a geometry snap, or the surface under the cursor) and that face
     /// as the document names it (<c>object/face</c>); null, with the reason, off every face.</summary>
     C3dPoint3? SurfacePoint(in C3dDrawInput input, out string? face, out string? refusal);
+
+    /// <summary>The bond wire under the cursor as the document names it, or null: the Probe tool makes a wire probe of a click
+    /// on one.</summary>
+    string? WireUnderCursor(in C3dDrawInput input) => null;
 }
 
 public abstract class C3dDrawTool(IC3dDrawHost host)

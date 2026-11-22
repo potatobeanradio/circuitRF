@@ -1,88 +1,88 @@
 {
   "About": "Every number README.md and the Thermal page quote, in one place. Each value's Readme text appears verbatim in both pages (tests/Ui.Tests/Examples/ThermalExamplesTests.cs), and the Category=Benchmark tests re-run the shipped setups and hold Recorded to Tolerance. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, the Release build, Gmsh 4.15.2, Palace 0.18.1 on 10 processes. A time is the whole run's wall clock through `circuitrf em`; memory is the process's peak resident size, and for the EM run Palace's own peak over its processes.",
   "Mesh": {
-    "Size": "123,818 tetrahedra of order 1, 21,072 nodes",
-    "Readme": [ "123,818 tetrahedra" ]
+    "Size": "123,416 tetrahedra of order 1, 20,984 nodes",
+    "Readme": [ "123,416 tetrahedra" ]
   },
   "DcSweep": {
-    "Time": "21 s, 0.46 GB",
-    "Readme": [ "21 s", "16.69 A", "16.62 A", "944 °C", "119.8 °C", "197.3 °C", "393.0 °C", "371.5 °C" ],
+    "Time": "24 s, 0.48 GB",
+    "Readme": [ "24 s", "16.79 A", "16.73 A", "944 °C", "119.3 °C", "195.4 °C", "385.6 °C", "364.4 °C" ],
     "Tolerance": 0.05,
     "Recorded": [
-      { "Idc": 6,  "Hottest": 119.788, "Edge": 117.00 },
-      { "Idc": 10, "Hottest": 197.339, "Edge": 188.74 },
-      { "Idc": 14, "Hottest": 393.048, "Edge": 371.48 },
+      { "Idc": 6,  "Hottest": 119.292, "Edge": 116.54 },
+      { "Idc": 10, "Hottest": 195.445, "Edge": 186.95 },
+      { "Idc": 14, "Hottest": 385.618, "Edge": 364.45 },
       { "Idc": 18, "Runaway": true }
     ],
-    "RunawayAbove": 16.69,
-    "LastConverged": 16.62
+    "RunawayAbove": 16.79,
+    "LastConverged": 16.73
   },
   "Balance": {
     "Name": "the switches at 10 A: the hottest wire",
-    "Readme": [ "197.3 °C", "194.8 °C", "158.7 °C" ],
-    "Recorded": { "Idc": 10, "Both": 197.339, "KOfTOff": 194.76, "SigmaOfTOff": 158.69 }
+    "Readme": [ "195.4 °C", "192.9 °C", "157.7 °C" ],
+    "Recorded": { "Idc": 10, "Both": 195.445, "KOfTOff": 192.88, "SigmaOfTOff": 157.73 }
   },
   "Equipotential": {
-    "Readme": [ "0.071 mΩ", "0.047 mΩ", "47.7 mΩ", "42 s", "393.3 °C" ],
-    "Recorded": { "PadMilliOhm": 0.0713, "LeadMilliOhm": 0.047, "WireMilliOhm": 47.7, "All3DHottestAt14A": 393.277, "All3DTime": "42 s" }
+    "Readme": [ "0.202 mΩ", "0.047 mΩ", "46.8 mΩ", "47 s", "386.0 °C" ],
+    "Recorded": { "PadMilliOhm": 0.202, "LeadMilliOhm": 0.047, "WireMilliOhm": 46.8, "All3DHottestAt14A": 386.043, "All3DTime": "47 s" }
   },
   "RfHarmonics": {
     "Time": "7 s",
-    "Readme": [ "7 s", "270.8 °C", "199.5 °C", "594.4 °C", "366.7 °C" ],
+    "Readme": [ "7 s", "265.8 °C", "198.4 °C", "576.6 °C", "363.2 °C" ],
     "Tolerance": 0.05,
     "Recorded": [
-      { "I1": 0,  "Edge": 104.538, "Centre": 103.41 },
-      { "I1": 4,  "Edge": 140.849, "Centre": 125.27 },
-      { "I1": 8,  "Edge": 270.775, "Centre": 199.46 },
-      { "I1": 12, "Edge": 594.411, "Centre": 366.73 }
+      { "I1": 0,  "Edge": 104.208, "Centre": 103.19 },
+      { "I1": 4,  "Edge": 139.621, "Centre": 124.90 },
+      { "I1": 8,  "Edge": 265.789, "Centre": 198.40 },
+      { "I1": 12, "Edge": 576.594, "Centre": 363.18 }
     ]
   },
   "FromHB": {
     "Time": "12 s",
-    "Readme": [ "12 s", "Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2).", "205.1 °C", "164.7 °C", "49.51 dBm", "4.43 A" ],
+    "Readme": [ "12 s", "Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.02 (Pout_dBm ≈ 47.22, Id_A ≈ 3.274, Eff ≈ 40.6).", "216.9 °C", "173.5 °C", "49.94 dBm", "4.63 A" ],
     "Tolerance": 0.05,
-    "Recorded": { "Pin": 28, "Edge": 205.108, "Centre": 164.69, "Pout_dBm": 49.5149, "Id_A": 4.42938, "LimitAtW1": 13.1093 }
+    "Recorded": { "Pin": 28, "Edge": 216.856, "Centre": 173.52, "Pout_dBm": 49.9362, "Id_A": 4.62511, "LimitAtW1": 13.0234 }
   },
   "AmplifierWires": {
     "Time": "0.4 s for the sweep through `circuitrf hb`",
-    "Readme": [ "0.4 s", "166.5 °C", "464.9 °C", "503.0 °C", "51.32 dBm", "5.37 A" ],
+    "Readme": [ "0.4 s", "163.9 °C", "446.1 °C", "486.5 °C", "51.37 dBm", "5.41 A" ],
     "Tolerance": 0.05,
     "Recorded": [
-      { "Pin": 10, "WireTemp": 166.455 },
-      { "Pin": 20, "WireTemp": 464.936 },
-      { "Pin": 28, "WireTemp": 503.044 }
+      { "Pin": 10, "WireTemp": 163.914 },
+      { "Pin": 20, "WireTemp": 446.100 },
+      { "Pin": 28, "WireTemp": 486.488 }
     ],
-    "At28": { "Pout_dBm": 51.3172, "Id_A": 5.36603 }
+    "At28": { "Pout_dBm": 51.3687, "Id_A": 5.40500 }
   },
   "DrawnWires": {
-    "Time": "23 s",
-    "Readme": [ "393.0 °C" ],
+    "Time": "24 s",
+    "Readme": [ "385.6 °C" ],
     "Tolerance": 0.05,
-    "Recorded": { "Idc": 14, "Hottest": 393.048, "RunawayAbove": 16.69 }
+    "Recorded": { "Idc": 14, "Hottest": 385.618, "RunawayAbove": 16.79 }
   },
   "Em": {
     "Preset": "Draft",
-    "Readme": [ "1 min 37 s", "5.8 GB", "228.5 pH" ],
-    "Recorded": { "SeriesInductancePh": 228.47, "At": "2 GHz" }
+    "Readme": [ "1 min 28 s", "5.8 GB", "226.6 pH" ],
+    "Recorded": { "SeriesInductancePh": 226.61, "At": "2 GHz" }
   },
   "External": [
     {
       "Name": "W1 closed form for one isolated wire",
-      "Formula": "Tc = Te + (1/αe)(1/cos(βL/2) − 1), β = I √(ρe αe / k) / A; gold ρ20 = 1/4.1E7 Ω·m, α20 = 0.0034 /K, k = 318 W/(m·K), d = 25.4 µm, L = 0.99 mm heel to heel, Te = 98.86 °C (the mean of the solved heels), I = 2.3084 A",
-      "Expected": 642.18,
-      "Readme": [ "642.2 °C", "3.15 A" ]
+      "Formula": "Tc = Te + (1/αe)(1/cos(βL/2) − 1), β = I √(ρe αe / k) / A; gold ρ20 = 1/4.1E7 Ω·m, α20 = 0.0034 /K, k = 318 W/(m·K), d = 25.4 µm, L = 0.9724 mm heel to heel, Te = 98.78 °C (the mean of the solved heels), I = 2.3088 A",
+      "Expected": 602.29,
+      "Readme": [ "602.3 °C", "3.21 A" ]
     },
     {
-      "Name": "the outer-EM question: each wire's RF current with its solved R_ac against the inductive share, at 8 A peak",
-      "Expected": 0.0083,
-      "Readme": [ "0.83 %" ]
+      "Name": "the outer-EM question: each wire's RF current with its solved R_ac against the inductive share, at 8 A peak (the complex change |ΔI|/|I|; R_ac at 2 GHz over the heel-to-heel length, at the wire's mean temperature)",
+      "Expected": 0.0080,
+      "Readme": [ "0.80 %" ]
     }
   ],
   "Alternatives": [
     {
       "Name": "Palace at the Standard preset",
-      "Readme": [ "10 min 10 s", "7.6 GB", "233.6 pH", "201.2 °C", "13.18" ],
-      "Recorded": { "SeriesInductancePh": 233.61, "FromHBEdgeAtPin28": 201.211, "LimitAtW1": 13.1814 }
+      "Readme": [ "7 min 59 s", "8.8 GB", "231.2 pH", "213.3 °C", "13.06" ],
+      "Recorded": { "SeriesInductancePh": 231.16, "FromHBEdgeAtPin28": 213.26, "LimitAtW1": 13.0603 }
     }
   ]
 }

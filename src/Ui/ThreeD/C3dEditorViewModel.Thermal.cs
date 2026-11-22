@@ -153,6 +153,9 @@ public sealed partial class C3dEditorViewModel
         return at;
     }
 
+    /// <summary>The bond wire a click at the cursor means (<see cref="Viewer3DViewModel.WireAtCursor"/>), by its name.</summary>
+    public string? WireUnderCursor(in C3dDrawInput input) => Viewer.WireAtCursor()?.Name;
+
     /// <summary>A record tool finished: its place inserted (one entry), and what it asks after — a heat source's name and
     /// power, a mesh region's element size.</summary>
     private void CommitRecordTool(IC3dRecordTool tool)

@@ -14,7 +14,7 @@ beside its EM ones. What each place is and how to draw it is in {{anchor: drawin
 Temperature}}; this page is what the run does with them, and what three worked examples measured.
 
 <figure class="figure fixed"><span class="frame">
-    <img src="../assets/fixed/output-wires-dc-along-wire.png" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
+    <img src="../assets/fixed/output-wires-dc-along-wire.svg" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
   </span><figcaption>What a thermal run shows: a bond wire carrying current inside a package's overmold, cut along its length
   (<em>Thermal Output Wires</em>, 14 A DC for six wires). The wire is coloured from its own solved temperature — hottest at
   mid-span, 85 °C flange below — and the mould compound around it from the 3D field.</figcaption></figure>
@@ -154,62 +154,62 @@ with no mould around them — see [wBond ▸ Wire temperature](wbond.html#wire-t
 *File ▸ New ▸ Examples ▸ Thermal ▸ Output Wires.* Six 1 mil gold wires, wedge-bonded from a drain pad on a SiC die to a copper package
 lead, **all of it embedded in a mould compound — the overmold** — over a copper–molybdenum flange held at 85 °C. The die, its
 pad and the lead finger are a layout; the wires are its `.wBond`; the rest is drawn in the 3D view. The mould's glass transition
-(150 °C) is every wire probe's *Limit*. Each setup runs in seconds on an Apple M4 (the Release build): `DcSweep` in 21 s, on
-123,818 tetrahedra.
+(150 °C) is every wire probe's *Limit*. Each setup runs in seconds on an Apple M4 (the Release build): `DcSweep` in 24 s, on
+123,416 tetrahedra.
 
 **DC, up to runaway.** The six wires share a DC current almost equally, and the centre ones run hottest — the mould between their
 neighbours is warmer:
 
 | Idc (six wires) | Hottest wire | An edge wire |
 |---|---|---|
-| 6 A | 119.8 °C | 117.0 °C |
-| 10 A | 197.3 °C | 188.7 °C |
-| 14 A | 393.0 °C | 371.5 °C |
+| 6 A | 119.3 °C | 116.5 °C |
+| 10 A | 195.4 °C | 186.9 °C |
+| 14 A | 385.6 °C | 364.4 °C |
 
-Above 16.69 A there is no steady state, and the run says so rather than failing: the last converged point is 16.62 A, with the
-hottest wire at 944 °C. At 10 A the switches show what drives it: the hottest wire reads 197.3 °C with both on, 194.8 °C with
-k(T) off and 158.7 °C with σ(T) off — nearly all of it is gold's resistance rising with temperature.
+Above 16.79 A there is no steady state, and the run says so rather than failing: the last converged point is 16.73 A, with the
+hottest wire at 944 °C. At 10 A the switches show what drives it: the hottest wire reads 195.4 °C with both on, 192.9 °C with
+k(T) off and 157.7 °C with σ(T) off — nearly all of it is gold's resistance rising with temperature.
 
 <figure class="figure fixed"><span class="frame">
-    <img src="../assets/fixed/output-wires-dc-across.png" alt="The six wires cut across at mid-span at 14 A DC: six hot spots of nearly equal temperature in the mould">
+    <img src="../assets/fixed/output-wires-dc-across.svg" alt="The six wires cut across at mid-span at 14 A DC: six hot spots of nearly equal temperature in the mould">
   </span><figcaption>DC, 14 A, cut across the six wires at mid-span. Each wire's section is coloured from its own solved
   temperature: at DC they share the current almost equally, and the centre ones run a little hotter.</figcaption></figure>
 
 **RF, at 2 GHz.** At RF the current divides by the wires' inductance, and **the edge wires carry the most**: at 8 A peak the edge
-wires reach 270.8 °C and the centre ones 199.5 °C; at 12 A, 594.4 °C against 366.7 °C.
+wires reach 265.8 °C and the centre ones 198.4 °C; at 12 A, 576.6 °C against 363.2 °C.
 
 <figure class="figure fixed"><span class="frame">
-    <img src="../assets/fixed/output-wires-rf-across.png" alt="The six wires cut across at 8 A peak RF: the two edge wires much hotter than the four in the middle">
+    <img src="../assets/fixed/output-wires-rf-across.svg" alt="The six wires cut across at 8 A peak RF: the two edge wires much hotter than the four in the middle">
   </span><figcaption>RF, 8 A peak at 2 GHz on 4 A DC, the same cut. The two edge wires run hottest: the inductive share gives them
   the most current.</figcaption></figure>
 
 <figure class="figure fixed"><span class="frame">
-    <img src="../assets/fixed/output-wires-rf-plan.png" alt="The same RF run seen from above, cut through the wires' loops: the heat concentrated along the two outer wires">
+    <img src="../assets/fixed/output-wires-rf-plan.svg" alt="The same RF run seen from above, cut through the wires' loops: the heat concentrated along the two outer wires">
   </span><figcaption>The same RF run from above, cut through the wires' loops 330 µm above the flange: each wire crosses the cut twice,
   and the heat gathers along the outer two.</figcaption></figure>
 
 **From a power amplifier.** `FromHB` takes its currents from a harmonic-balance drive sweep of the `Amplifier` test bench's schematic — a generic
 FET on this view's EM result, into a 5 Ω load — at every drive level. Both ports are referenced to the flange, so they are solved
-as a balanced pair. At 28 dBm drive the circuit gives 49.51 dBm from 4.43 A, and the edge wires reach 205.1 °C (the centre ones
-164.7 °C); the run takes 12 s, and states when each wire passes its limit:
-*"Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2)."* Run the `EM` setup first (1 min 37 s and 5.8 GB in Palace at the Draft preset;
-its series inductance for the six wires is 228.5 pH at 2 GHz).
+as a balanced pair. At 28 dBm drive the circuit gives 49.94 dBm from 4.63 A, and the edge wires reach 216.9 °C (the centre ones
+173.5 °C); the run takes 12 s, and states when each wire passes its limit:
+*"Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.02 (Pout_dBm ≈ 47.22, Id_A ≈ 3.274, Eff ≈ 40.6)."* Run the `EM` setup first (1 min 28 s and 5.8 GB in Palace at the Draft preset;
+its series inductance for the six wires is 226.6 pH at 2 GHz).
 
 **The quick check, with no 3D run.** The `Amplifier Wires` bench drives the same sweep through a wBond component carrying the six
 wires of `Pads.wBond`, its temperature solved between 125 °C at the die and 85 °C at the lead
-([wBond ▸ Wire temperature](wbond.html#wire-temperature)): the whole sweep takes 0.4 s, and `WireTemp` reads 166.5 °C at 10 dBm,
-464.9 °C at 20 dBm and 503.0 °C at 28 dBm. That is hotter than the 205.1 °C above because no heat leaves through a wire's sides —
-there is no mould — and from a circuit whose output network is the wires alone, which at 28 dBm gives 51.32 dBm from 5.37 A.
+([wBond ▸ Wire temperature](wbond.html#wire-temperature)): the whole sweep takes 0.4 s, and `WireTemp` reads 163.9 °C at 10 dBm,
+446.1 °C at 20 dBm and 486.5 °C at 28 dBm. That is hotter than the 216.9 °C above because no heat leaves through a wire's sides —
+there is no mould — and from a circuit whose output network is the wires alone, which at 28 dBm gives 51.37 dBm from 5.41 A.
 
-**Checks.** The same row drawn as 3D-view wires (the second cell, *Drawn Wires*) reads 393.0 °C at 14 A and runs away at the same
-current. Brief 72's closed form for one isolated wire in air, its ends at the heels' temperature, reads 642.2 °C at the same
-current and runs away at 3.15 A per wire: the overmold takes most of the rise. Recomputing the RF share with each wire's hot
-resistance moves any wire's current by at most 0.83 %.
+**Checks.** The same row drawn as 3D-view wires (the second cell, *Drawn Wires*) reads 385.6 °C at 14 A and runs away at the same
+current. Brief 72's closed form for one isolated wire in air, its ends at the heels' temperature, reads 602.3 °C at the same
+current and runs away at 3.21 A per wire: the overmold takes most of the rise. Recomputing the RF share with each wire's hot
+resistance moves any wire's current by at most 0.80 %.
 
-**What was traded for speed.** The die pad (0.071 mΩ) and the lead (0.047 mΩ) are solved as one potential each, below 1 % of a
-wire's 47.7 mΩ (*Balance ▸ EquipotentialBelow*; 0 solves them in 3D: 42 s, and 393.3 °C for the hottest wire at 14 A). The EM
-setup's *Standard* preset takes 10 min 10 s and 7.6 GB, reads 233.6 pH, and moves the edge wire at 28 dBm to 201.2 °C and its
-limit to `Pin` ≈ 13.18.
+**What was traded for speed.** The die pad (0.202 mΩ) and the lead (0.047 mΩ) are solved as one potential each, below 1 % of a
+wire's 46.8 mΩ (*Balance ▸ EquipotentialBelow*; 0 solves them in 3D: 47 s, and 386.0 °C for the hottest wire at 14 A). The EM
+setup's *Standard* preset takes 7 min 59 s and 8.8 GB, reads 231.2 pH, and moves the edge wire at 28 dBm to 213.3 °C and its
+limit to `Pin` ≈ 13.06.
 
 ## The mesh, and what a run costs {#mesh}
 

@@ -8,8 +8,8 @@ following the temperature; the rest of the package is solved in 3D.
 
 The chapter that teaches this is **Thermal** in **Help ▸ circuitRF Documentation**. It quotes the same numbers as this file.
 
-**What to expect when you press Run** (an Apple M4, the Release build): `DcSweep` about **21 s**, `RfHarmonics` about **7 s**,
-`FromHB` about **12 s** once the EM result exists, on a mesh of 123,818 tetrahedra. The EM setup takes **1 min 37 s** in Palace
+**What to expect when you press Run** (an Apple M4, the Release build): `DcSweep` about **24 s**, `RfHarmonics` about **7 s**,
+`FromHB` about **12 s** once the EM result exists, on a mesh of 123,416 tetrahedra. The EM setup takes **1 min 28 s** in Palace
 and **5.8 GB**. Thermal needs **Gmsh**, and the EM setup **Palace**; the first run without either offers to install it.
 
 ## What is here
@@ -33,8 +33,8 @@ as 150 °C, and every wire probe's *Limit* is set to it, so a run says when and 
 - **The wires** are the six wires of `Pads.wBond`, reached through the layout. Each is a chain of second-order line elements
   along its 3D path (feet included), its section πd²/4, its feet bonded perfectly to their pads — the pad's surface under a
   foot is one temperature and one potential with the wire's heel.
-- **The pad and the lead are one potential each.** Their resistance at 20 °C is 0.071 mΩ (the drain pad) and 0.047 mΩ (the lead
-  with its finger), against 47.7 mΩ for a wire, so the run solves no potential inside them and says so in its notes (below 1 %
+- **The pad and the lead are one potential each.** Their resistance at 20 °C is 0.202 mΩ (the drain pad) and 0.047 mΩ (the lead
+  with its finger), against 46.8 mΩ for a wire, so the run solves no potential inside them and says so in its notes (below 1 %
   of a wire, *Balance ▸ EquipotentialBelow*).
 - **The flange's bottom** is held at `Tcase`. Every other outer face is insulated.
 
@@ -45,29 +45,29 @@ for the six wires together.
 
 | Idc | Hottest wire | An edge wire |
 |---|---|---|
-| 6 A | 119.8 °C | 117.0 °C |
-| 10 A | 197.3 °C | 188.7 °C |
-| 14 A | 393.0 °C | 371.5 °C |
+| 6 A | 119.3 °C | 116.5 °C |
+| 10 A | 195.4 °C | 186.9 °C |
+| 14 A | 385.6 °C | 364.4 °C |
 | 18 A | runaway | runaway |
 
 At DC the six wires share the current almost equally, and the centre ones run hottest, because the mould between their neighbours
 is warmer. Every wire passes the 150 °C limit by 10 A.
 
-**Runaway is an answer, not a failure.** Above about 16.69 A there is no steady state: gold's resistance rises with temperature,
+**Runaway is an answer, not a failure.** Above about 16.79 A there is no steady state: gold's resistance rises with temperature,
 the heat rises with it, and past that current nothing balances. The run brackets it and reports it — *"No steady state above
-about 16.69 A: thermal runaway. The last converged point is 16.62 A (wire U1/wire/Out/3 at 944 °C)."* The 18 A point has no
+about 16.79 A: thermal runaway. The last converged point is 16.73 A (wire U1/wire/Out/3 at 944 °C)."* The 18 A point has no
 temperature. (The gold table ends at 1,027 °C, just below melting; a state hotter than a table states is not taken as a steady
 state.)
 
-**What the two switches contribute** (the setup's *Balance*), at 10 A: with both on the hottest wire reads **197.3 °C**; with
-k(T) off, **194.8 °C**; with σ(T) off, **158.7 °C**. Almost all of the temperature-dependence here is gold's resistance, not the
+**What the two switches contribute** (the setup's *Balance*), at 10 A: with both on the hottest wire reads **195.4 °C**; with
+k(T) off, **192.9 °C**; with σ(T) off, **157.7 °C**. Almost all of the temperature-dependence here is gold's resistance, not the
 conductivities.
 
 ## RfHarmonics: RF current at 2 GHz
 
 `Idc` = 4 A with a fundamental `I1` at 2 GHz stated as a **Peak** current, swept 0 → 12 A, and a second harmonic of 1 A stated as
 **RMS**. At RF the current does not share equally: it divides by the wires' inductance, and **the two edge wires carry the
-most**. At 8 A peak the edge wires reach **270.8 °C** and the centre ones **199.5 °C**; at 12 A, **594.4 °C** against **366.7 °C**.
+most**. At 8 A peak the edge wires reach **265.8 °C** and the centre ones **198.4 °C**; at 12 A, **576.6 °C** against **363.2 °C**.
 
 ## FromHB: the currents of a power amplifier
 
@@ -79,9 +79,9 @@ standoff, so the run solves them as a balanced pair.
 
 **Run `EM` first.** `FromHB` reads the S-parameters `EM` writes; without them it refuses and says so.
 
-- At `Pin` = 28 dBm the circuit gives **49.51 dBm** from **4.43 A**, and the edge wires reach **205.1 °C** (the centre ones
-  **164.7 °C**).
-- The limit sentence: *"Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2)."*
+- At `Pin` = 28 dBm the circuit gives **49.94 dBm** from **4.63 A**, and the edge wires reach **216.9 °C** (the centre ones
+  **173.5 °C**).
+- The limit sentence: *"Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.02 (Pout_dBm ≈ 47.22, Id_A ≈ 3.274, Eff ≈ 40.6)."*
 
 One way only: the circuit saw the wires at the temperature their S-parameters were solved at; the thermal run reports what they
 actually reach. The DC resistance of the EM block is its lowest frequency's (0.1 GHz), so the drain sits a few volts below the
@@ -97,31 +97,31 @@ the sweep reports **`WireTemp`**: the hottest wire, at its hottest point. It nee
 
 | Pin | WireTemp |
 |---|---|
-| 10 dBm | 166.5 °C |
-| 20 dBm | 464.9 °C |
-| 28 dBm | 503.0 °C |
+| 10 dBm | 163.9 °C |
+| 20 dBm | 446.1 °C |
+| 28 dBm | 486.5 °C |
 
-Against `FromHB`'s 205.1 °C at 28 dBm, **the quick check runs hotter because no heat leaves through a wire's sides**: it has no
+Against `FromHB`'s 216.9 °C at 28 dBm, **the quick check runs hotter because no heat leaves through a wire's sides**: it has no
 mould, so every watt flows along the wire to its ends, and it is an upper bound. The circuit is not quite `Amplifier`'s either —
 its output network is the wires alone, over the flange as their ground plane, not the EM block of the whole package — so at 28
-dBm it gives **51.32 dBm** from **5.37 A**. The component's `GroundPlane` is on: `Pads.wBond` stores it off, because the 3D EM
+dBm it gives **51.37 dBm** from **5.41 A**. The component's `GroundPlane` is on: `Pads.wBond` stores it off, because the 3D EM
 setup has its own flange, and a placed wBond needs a return path.
 
 ## Drawn Wires: one wire model, two ways to draw it
 
-The same DcSweep with the wires drawn in the 3D view instead of read from `Pads.wBond`: the hottest wire at 14 A reads 393.0 °C
+The same DcSweep with the wires drawn in the 3D view instead of read from `Pads.wBond`: the hottest wire at 14 A reads 385.6 °C
 and the runaway is the same, to every printed digit. The two are one thermal problem.
 
 ## Checks that are not circuitRF's
 
 **One isolated wire (brief 72's W1, a closed form).** A single wire of this span in AIR, its ends held at the heels' solved
-temperature (98.9 °C), gold's resistance linear in temperature and its conductivity constant, carrying 2.31 A: its centre reaches
-**642.2 °C**, and its own runaway is at **3.15 A**. The model's wire at the same current reads 393.0 °C: the overmold takes away
+temperature (98.8 °C), gold's resistance linear in temperature and its conductivity constant, carrying 2.31 A: its centre reaches
+**602.3 °C**, and its own runaway is at **3.21 A**. The model's wire at the same current reads 385.6 °C: the overmold takes away
 most of the rise. The two runaways are not the same limit — the closed form's is where a linear resistance goes infinite, the
 model's a fold of gold's measured resistance just below melting.
 
 **Would an outer EM loop change the RF answer?** The run shares each harmonic by the wires' inductance. Recomputing the share with
-each wire's AC resistance at its solved temperature added moves any wire's current by at most **0.83 %** at 8 A peak: the wires'
+each wire's AC resistance at its solved temperature added moves any wire's current by at most **0.80 %** at 8 A peak: the wires'
 reactance is fifty times their resistance.
 
 ## See it
@@ -132,12 +132,12 @@ temperature along its length, over the mould around it.
 
 ## The settings chosen for speed, and what they cost
 
-**The EM setup at the Draft preset.** *Standard* took **10 min 10 s** and **7.6 GB**, and read the wires' series inductance at
-2 GHz as **233.6 pH** against Draft's **228.5 pH**; driven from it, `FromHB`'s edge wire at 28 dBm reads **201.2 °C** and `w1`
-reaches its limit at `Pin` ≈ **13.18**. Draft is the setting for a run you repeat; Standard for the number you quote.
+**The EM setup at the Draft preset.** *Standard* took **7 min 59 s** and **8.8 GB**, and read the wires' series inductance at
+2 GHz as **231.2 pH** against Draft's **226.6 pH**; driven from it, `FromHB`'s edge wire at 28 dBm reads **213.3 °C** and `w1`
+reaches its limit at `Pin` ≈ **13.06**. Draft is the setting for a run you repeat; Standard for the number you quote.
 
 **The pad and the lead as one potential each.** With *Balance ▸ EquipotentialBelow* = 0 every conductor's potential is solved in
-3D: the DcSweep takes **42 s** instead of 21 s, and the hottest wire at 14 A reads **393.3 °C** against 393.0 °C.
+3D: the DcSweep takes **47 s** instead of 24 s, and the hottest wire at 14 A reads **386.0 °C** against 385.6 °C.
 
 **Element order 1** and one element through thin solids (`MinThroughThickness` 1). The 10 µm gold pads set the element size where
 they are; order 2 multiplies the unknowns by about eight.

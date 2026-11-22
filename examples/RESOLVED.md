@@ -1220,3 +1220,24 @@ capped at about 20 minutes per run. Line over Silicon was run on EMerge and open
 README and the user docs; and every figure in `expected-numbers.json` appears in the README. It also has one Benchmark test
 (Palace required) that reruns every recorded setup through the CLI and holds |ΔS|, ∠S21 and VSWR against the reference
 within the file's tolerance. Times are not held. No results are shipped.
+
+## Thermal Output Wires: a new wire profile (2026-11-21)
+
+The six wires keep their 150 µm pitch and their y; their path is now seven points from x = 523 µm (was five from 480 µm),
+a rounder loop whose apex is 396 µm above the reference (was 380). `Drawn Wires` carries the same profile, in the 3D frame:
+z = the `.wBond`'s z + 25 µm (the die attach's top), and the two feet at the pads' top surface (less the hexagon's
+half-height, 11.518 µm). Drawn Wires still reproduces Output to every printed digit.
+
+**The `Amplifier Wires` bench carries its OWN copy of the wires.** Its wBond component's `Design` parameter is the `.wBond`'s
+text, base64 with the trailing newline and the padding dropped (`Source` = Carried, no `File`). Editing `Pads.wBond` leaves
+the bench on the old wires with no warning: its numbers came back identical to the third decimal, which is what showed it.
+Re-embed the file whenever the wires change.
+
+**The outer-EM figure** (0.80 %, was 0.83 %) is the largest complex change |ΔI|/|I| of any wire's RF share when each
+wire's R_ac at 2 GHz — over the heel-to-heel length, at the wire's mean temperature at 8 A peak — is added to jωL from wBond's
+own inductance matrix. That recipe gives 0.817 % on the previous geometry against the recorded 0.83 %; the magnitude-only
+change is far smaller (0.03 %), because R mostly turns the current's phase. Nothing in the repo computes it.
+
+The series inductance quoted for the EM setup is Im(−1/Y12)/ω at 2 GHz from the setup's `.s2p`: 228.48 pH on the previous
+geometry against the recorded 228.47, so the definition is the recorded one. The four Output Wires figures on the Thermal page
+are SVG now (`docs/user/assets/fixed/README.md`).

@@ -477,6 +477,16 @@ public sealed partial class Viewer3DViewModel
         return Vector3.Dot(near.Point - o, d) <= front ? near.Id : null;
     }
 
+    /// <summary>The bond wire a click at the cursor means, by the rule an Object-mode click selects one: the ID pass's object
+    /// when it is a wire, else the selectable wire within the snap radius that nothing under the cursor hides. Null for none.
+    /// The Probe tool asks this first, so a probe clicked on a wire reads the wire.</summary>
+    public Scene3DObject? WireAtCursor()
+    {
+        uint under = LastPick.Object;
+        if (under != 0 && Scene.Object(under) is { Kind: Scene3DKind.Wire, Selectable: true } hit) return hit;
+        return WireNearCursor(under) is { } id ? Scene.Object(id) : null;
+    }
+
     /// <summary>B (<paramref name="direction"/> +1) or Shift+B (−1): the next thing behind, or in front, along
     /// the line of sight through the cursor (R-em3d43-4). True when the key did something. brief-em3d-90 — a face
     /// boundary's tint is in the list, just in front of the face it lies on, so B steps from a boundary to its solid.</summary>

@@ -3693,3 +3693,13 @@ installs; every verb that reads a schematic through `CircuitSource` installs it,
 `LvsRun.Run`, did not. Headless only: the application loads every referenced kit when it opens a workspace, so its LVS panel
 had the parts. The verb now installs the loader for each cell it compares. Gate:
 `tests/Ui.Tests/Cli/KitsLoadedOnDemandTests.cs` (`Lvs_ReadsAKitPart_LoadingItsKit`).
+
+## `<verb> --help` (2026-11-21)
+
+Every verb refused `--help` and `-h` as unknown options, so the first thing a person or an agent types to learn a verb got
+a refusal (and `new`/`import`/`history` answered "nothing called '--help'"). `CliEntry.Run` now takes either flag after any
+verb before dispatching: it prints the verb's lines from the top-level help, any `<verb> options:` section, and the verb's
+own `Usage:` block — the text each verb already prints on a refusal, captured from one run with `--help`, which every verb
+refuses before reading anything. Exit 0, plain text. Under `serve` the console is shared by concurrent calls, so there only
+the help-text lines are given. The top-level help had no entry for `env`, `fields`, `chain` or `history`, and still described
+`em` as taking only a `.cem`; both `em` input refusals said the same. Gate: `MissingVerbsCliTests.AVerbsHelp_IsItsUsage_NotARefusal`.

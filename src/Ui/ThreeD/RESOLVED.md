@@ -589,3 +589,11 @@ looked at the port, the one place it was not. `UpdatePortsFromLayoutItem` is now
 from a layout), the instance's, and the view's own menu while `StaleLayoutPorts` is non-empty; the message names all
 three. Checked on a real design whose two ports were refused: one click from a port's row draws both again.
 `UiSnapshot --c3d-menu <item>` runs a menu item by name and prints each port's refusal afterwards.
+
+## The Probe tool reads a wire it is clicked on (2026-11-21)
+
+A wire probe (`"Wire": "U1/wire/Out/3"`) was reachable only from the context menu (Object mode, select the wire, Add Probe ▸
+Wire); the toolbar's Probe made a point on whatever face lay under the cursor, which on a 25 µm wire is usually the mould
+behind it. `ProbeTool` now asks `IC3dDrawHost.WireUnderCursor` first — `Viewer3DViewModel.WireAtCursor`, the same rule an
+Object-mode click selects a wire by (the ID pass's object, else the nearest wire within the snap radius that nothing in front
+hides) — and a hit makes the wire probe the menu makes, `Stat` Max. Gate: `ThermalEditorTests.ProbeTool_ClickOnAWire_MakesAWireProbe`.

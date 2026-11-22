@@ -1473,7 +1473,7 @@ What a run models, and three worked examples with their numbers (*File â–¸ New â
 {{anchor: thermal.html|Thermal}}; this section is the gestures.
 
 <figure class="figure fixed"><span class="frame">
-    <img src="../assets/fixed/output-wires-dc-along-wire.png" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
+    <img src="../assets/fixed/output-wires-dc-along-wire.svg" alt="A gold bond wire in a mould compound, cut along its length: the wire hottest at mid-span, the heat spreading into the mould around it">
   </span><figcaption>A thermal run of <em>Thermal Output Wires</em>: a bond wire carrying current inside a package's overmold, cut
   along its length. The wire is coloured from its own solved temperature, the mould compound around it from the 3D field.</figcaption></figure>
 

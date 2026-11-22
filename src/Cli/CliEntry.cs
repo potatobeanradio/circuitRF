@@ -202,6 +202,11 @@ if (JsonRun.Verb is not ("em" or "convert"))
 // The verb's function, or null for a word that is not one. ONE table: IsVerb below asks the same
 // question of the same switch, so the installed executable's decision "is this a command line or a
 // document to open?" cannot drift from what Run will actually do with it (R-aut13-1).
+// `<verb> --help` / `-h`: the verb's usage on stdout, exit 0. Every verb used to refuse it as an unknown
+// option — the first thing a person or an agent types to learn a verb answered with a refusal.
+if (Dispatch(JsonRun.Verb) is { } helped && args.Skip(1).Any(a => a is "--help" or "-h"))
+    return VerbHelp(JsonRun.Verb, helped);
+
 int exit = Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : UnknownVerb(args[0]);
 // Judged after the verb, because only the run knows which kits' modules it asked an interpreter for.
 CircuitRF.Cli.GeneratedCells.ReportUnusedPythonModules();
@@ -360,6 +365,90 @@ return JsonRun.Finish(exit);
 // Recorded rather than printed, and the exit code is left alone: an unrecognised verb prints help on
 // stdout and exits 0 today, and changing either of those is a behaviour change this brief does not
 // get to make (R-aut0-3).
+/// <summary>
+/// `<verb> --help`: the verb's lines from the top-level help, then the verb's own <c>Usage:</c> block — the text
+/// each verb already prints after a refusal, taken by running it once with <c>--help</c> (which it refuses
+/// before reading anything) and keeping only that block. Plain text on stdout, exit 0. Under <c>serve</c>
+/// the console is shared by concurrent calls, so there it gives the summary lines alone.
+/// </summary>
+static int VerbHelp(string verb, Func<string[], int> run)
+{
+    var (stdout, stderr) = (Console.Out, Console.Error);
+    var top = new StringWriter();
+    var own = new StringWriter();
+    bool quiet = JsonRun.Sink is not null;
+    try
+    {
+        Console.SetOut(top);
+        PrintHelp();
+        if (!quiet)
+        {
+            Console.SetOut(own);
+            Console.SetError(own);
+            try { run(["--help"]); } catch (Exception) { /* a refusal that throws still printed what it had */ }
+        }
+    }
+    finally { Console.SetOut(stdout); Console.SetError(stderr); }
+    JsonRun.Reset();
+
+    var lines = new List<string>(HelpLinesOf(verb, top.ToString()));
+    var usage = UsageBlock(own.ToString());
+    if (usage.Count > 0)
+    {
+        if (lines.Count > 0) lines.Add("");
+        lines.AddRange(usage);
+    }
+    if (lines.Count == 0) lines.Add($"{verb}: no usage text; `circuitrf` with no arguments lists every verb.");
+    foreach (string l in lines) stdout.WriteLine(l);
+    return 0;
+}
+
+/// <summary>The top-level help's text for <paramref name="verb"/>: its entries in the command list (each line naming it,
+/// with its continuation lines), then any "<c>verb options:</c>" section naming it (<c>lp / lpp options:</c> names two).</summary>
+static List<string> HelpLinesOf(string verb, string help)
+{
+    var res = new List<string>();
+    bool inCommands = false, inEntry = false, inSection = false;
+    foreach (string line in help.Split('\n').Select(l => l.TrimEnd('\r')))
+    {
+        string t = line.TrimStart();
+        int indent = line.Length - t.Length;
+        if (indent == 0)
+        {
+            inEntry = false;
+            inCommands = t == "Commands:";
+            int at = t.IndexOf(" options:", StringComparison.Ordinal);
+            inSection = at > 0 && t[..at].Split(" / ").Contains(verb);
+            if (inSection) { if (res.Count > 0) res.Add(""); res.Add(line); }
+            continue;
+        }
+        if (inSection) { res.Add(line); continue; }
+        if (!inCommands) continue;
+        if (indent == 2) inEntry = t == verb || t.StartsWith(verb + " ", StringComparison.Ordinal);
+        if (inEntry) res.Add(line);
+    }
+    return res;
+}
+
+/// <summary>The <c>Usage:</c> block in a verb's refusal output: from the first <c>Usage:</c> to the first line that is
+/// neither indented nor another <c>Usage:</c>/alternative-form line.</summary>
+static List<string> UsageBlock(string output)
+{
+    var res = new List<string>();
+    foreach (string raw in output.Split('\n').Select(l => l.TrimEnd('\r')))
+    {
+        if (res.Count == 0)
+        {
+            int at = raw.IndexOf("Usage:", StringComparison.Ordinal);
+            if (at >= 0) res.Add(raw[at..]);
+            continue;
+        }
+        if (raw.Length == 0 || !char.IsWhiteSpace(raw[0])) break;
+        res.Add(raw);
+    }
+    return res;
+}
+
 static int UnknownVerb(string verb)
 {
     JsonRun.Note(CliDiagnostics.UnknownVerb(verb));
@@ -1806,7 +1895,7 @@ static int RunEm(string[] args)
         if (bandsName is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--bands"));
         // explain sizes the setup's own Solver3D, and the estimate must be explain's numbers, not a second sizing.
         if (solverName is not null) return JsonRun.Fail(CliDiagnostics.EmDryRunNeedsSetup("--solver"));
-        if (input is null) return JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
+        if (input is null) return JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem or .c3d"));
         if (!File.Exists(input)) { JsonRun.InputPath = input; return JsonRun.Fail(CliDiagnostics.FileNotFound(input)); }
         if (DocumentKinds.Classify(input) == DocumentKind.Hertzon)
             return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(input, "--dry-run is not offered for a Hertzon design; explain names the setup that would run."));
@@ -1839,7 +1928,7 @@ static int RunEm(string[] args)
 
     if (input is null)
     {
-        int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
+        int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem or .c3d"));
         Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [--component-ports \"C1,X1/Q3,X1/*,cell:Seg\"|\"*\" [--port-at pin|cell]] [--dry-run | --mesh-only] [-o out.sNp] [--workspace <file.cws>] [--design <hzn design>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--cores <n>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em --adopt <file.sNp>");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
@@ -2672,7 +2761,15 @@ static void PrintHbDataSet(DataSet ds, int maxRows, bool allPoints)
         if (cubes.TryGetValue("Residual", out var resid) && resid.DataKind == DataKind.Real)
             Console.WriteLine($"  Residual:  {resid.RealValues.Max():G3} (worst)");
         if (cubes.TryGetValue("ToneFreqs", out var tones) && tones.DataKind == DataKind.Real)
-            Console.WriteLine($"  Tones:     {string.Join(", ", tones.RealValues.Select(f => $"{f / 1e9:G6} GHz"))}");
+        {
+            // A swept run carries the tones once per point: say them once when every point has the same ones.
+            var f = tones.RealValues;
+            int per = tones.Axes.Count > 1 ? tones.Axes[^1].Length : f.Length;
+            bool same = per > 0 && f.Length % per == 0 && Enumerable.Range(per, f.Length - per).All(k => f[k] == f[k % per]);
+            var shown = same ? f.Take(per) : f;
+            string all = same && f.Length > per ? $" (every one of the {f.Length / per} points)" : "";
+            Console.WriteLine($"  Tones:     {string.Join(", ", shown.Select(x => $"{x / 1e9:G6} GHz"))}{all}");
+        }
 
         foreach (var (name, cube) in cubes.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
@@ -3078,7 +3175,9 @@ static int PrintHelp()
     Console.WriteLine("  hb     <file.cnl|.csch>   (harmonic balance; runs the sweep if one wraps it)");
     Console.WriteLine("  lp     <file.cnl|.csch>   (loadpull over the directive's Gamma grid)");
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
-    Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
+    Console.WriteLine("  env    <file.cnl|.csch> [-a name] [--stop t] [--step t] [-o out.npy]  (circuit envelope: a modulated drive through the circuit)");
+    Console.WriteLine("  em     <file.cem | view.c3d> [--setup name]   (EM, or a 3D view's setup: driven, static, eigenmode, thermal)");
+    Console.WriteLine("  fields <file.cnl|.csch> [-a name]   (a schematic's fields analyses: an EM block's per-port fields recombined by the circuit)");
     Console.WriteLine("  trl    <file.cnl|.csch> [--fixture-a p] [--fixture-b p]  (TRL: two fixture files from Thru, Reflect, Line)");
     Console.WriteLine("  tran   <file.cnl|.csch> [--stop t] [--step t] [--method trap|gear2]  (transient; runs the sweep if one wraps it)");
     Console.WriteLine("  osc    <file.cnl|.csch> [--fguess f] [--aguess a]  (oscillator: Fosc, Aosc and the HB result at the oscillation)");
@@ -3088,6 +3187,7 @@ static int PrintHelp()
     Console.WriteLine("           (the Model Composer: a FET model or a passive cell from data; exit 3 = a check failed)");
     Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
     Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
+    Console.WriteLine("  chain  <path.cchain> [-o budget.npy] [--to-schematic [dir]]  (the RF Chain Budget, stage by stage)");
     Console.WriteLine("  filter --band b --order n --f1 f [--f2 f] [--realiser r -o x.cnl]  (filter synthesis: the realisers, or one realised)");
     Console.WriteLine("  filter --extract <file.s2p> --band bandpass --order n --f1 f --f2 f  (a two-port's filter metrics against the spec)");
     Console.WriteLine("  snp    <file.sNp>    (the S-Parameter Viewer: what the file states, and its Smith, dB and phase plots)");
@@ -3101,6 +3201,8 @@ static int PrintHelp()
     Console.WriteLine("  export part <cell> --library <dir>  (a cell as a model in a model library)");
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");
     Console.WriteLine("  explain <path>         (what did circuitRF resolve it to, and by which walk)");
+    Console.WriteLine("  history checkpoint|list|restore|commit|versions|clone|pins|pin|unpin|fetch|send <workspace>");
+    Console.WriteLine("                          (restore points and versions: the safety net under an edit)");
     Console.WriteLine("  lvs     <path>         (does the artwork implement the drawing?)");
     Console.WriteLine("  recognize <file.clay> [-o x.cnl] [--into new:<name>]  (a board's artwork as a circuit)");
     Console.WriteLine("  impedance <layout> [-o report.pdf]  (every trace's Z0 against a target, and its return path)");

@@ -741,6 +741,25 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         return Regex.Replace(code, @"//[^\n]*", "");
     }
 
+    // ── --help on a verb ─────────────────────────────────────────────────────
+
+    /// <summary><c>&lt;verb&gt; --help</c> (or <c>-h</c>) is the verb's usage on stdout and exit 0 — every verb used to
+    /// refuse it as an unknown option. A verb with a <c>Usage:</c> block prints it; one with an options section in the
+    /// top-level help prints that.</summary>
+    [Theory]
+    [InlineData("render", "--help", "Usage: circuitrf render")]
+    [InlineData("hb", "-h", "hb options:")]
+    [InlineData("history", "--help", "history checkpoint|list|restore")]
+    public void AVerbsHelp_IsItsUsage_NotARefusal(string verb, string flag, string expected)
+    {
+        var (exit, stdout, stderr) = RunCli(verb, flag);
+        output.WriteLine(stdout);
+        Assert.Equal(0, exit);
+        Assert.Contains(expected, stdout);
+        Assert.DoesNotContain("unknown option", stdout + stderr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("nothing called", stdout + stderr, StringComparison.Ordinal);
+    }
+
     // ── driving the verb ─────────────────────────────────────────────────────
 
     private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)

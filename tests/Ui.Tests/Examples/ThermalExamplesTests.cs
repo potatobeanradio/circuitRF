@@ -99,17 +99,17 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>brief-em3d-85 — the external check the Output Wires page states: brief 72's W1 closed form for one isolated wire
-    /// (air, linear ρ, constant k, ends at the solved heels' mean, 98.86 °C) at the hottest wire's 2.3084 A.</summary>
+    /// (air, linear ρ, constant k, ends at the solved heels' mean, 98.78 °C) at the hottest wire's 2.3088 A.</summary>
     [Fact]
     public void TheIsolatedWiresClosedForm_IsTheRecordedValue()
     {
-        const double s20 = 4.1e7, a20 = 0.0034, k = 318, d = 25.4e-6, l = 0.99e-3, te = 98.86, i = 2.3084;
+        const double s20 = 4.1e7, a20 = 0.0034, k = 318, d = 25.4e-6, l = 0.9724e-3, te = 98.78, i = 2.3088;
         double a = Math.PI * d * d / 4, rhoE = (1 / s20) * (1 + a20 * (te - 20)), aE = a20 / (1 + a20 * (te - 20));
         double beta = i * Math.Sqrt(rhoE * aE / k) / a;
         double centre = te + (1 / aE) * (1 / Math.Cos(beta * l / 2) - 1), iStar = Math.PI / l * a * Math.Sqrt(k / (rhoE * aE));
         var n = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root(Wires), "expected-numbers.json"))).RootElement;
         Assert.Equal(n.GetProperty("External")[0].GetProperty("Expected").GetDouble(), centre, 0.05);
-        Assert.Equal(3.15, iStar, 0.005);
+        Assert.Equal(3.21, iStar, 0.005);
     }
 
     // ── gate 3: no vendor names ─────────────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
             Hold($"edge at {p.GetProperty("Idc")} A", r.Data[Max(1)].RealValues[k], p.GetProperty("Edge").GetDouble(), tol);
             k++;
         }
-        Assert.Contains(r.Warnings, w => w.Contains("No steady state above about 16.69 A"));
+        Assert.Contains(r.Warnings, w => w.Contains("No steady state above about 16.79 A"));
 
         var rf = n.GetProperty("RfHarmonics");
         r = Run(Wires, "Output", "RfHarmonics");
