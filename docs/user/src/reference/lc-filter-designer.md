@@ -28,12 +28,11 @@ prototype and shows the response on the same plots a Data Display uses. To open 
 same Filter brings that window forward. **Apply to Filter** writes the design back onto the ideal
 block, and **Place filter** puts the ladder itself on the schematic.
 
-The window's actions are on its toolbar, as icons with their names in the tooltips: **Design**,
-**Apply to Filter** (only when opened on a Filter), **Place filter**, **Place component**,
-**Replace this Filter** (likewise) and **Save netlist…**. The glyphs are ones the application
-already uses: the run glyph for Design, an edit glyph for Apply to Filter, the Match Designer's
-network glyph for Place filter, a block with a plus for Place component, Swap Line Type's arrows
-for Replace this Filter, and Generate Netlist's glyph for the netlist.
+The window's actions are on its toolbar: **Design** (the word), then, as icons with their names in
+the tooltips, **Apply to Filter** (only when opened on a Filter), **Place filter**, **Place component**
+and **Replace this Filter** (likewise). Place filter carries the ladder glyph this designer has in the
+Tools menu; Place component carries the part glyph of a Touchstone block, the one the S-Parameter
+Viewer uses. To write the ladder as a netlist, use `circuitrf filter lc … -o filter.cnl`.
 
 {{ui: lc-filter-designer-toolbar}}
 

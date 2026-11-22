@@ -8,6 +8,7 @@
         xmlns:fv="using:CircuitRF.Ui.Views.Filters"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:uictl="using:CircuitRF.Ui.Controls"
         x:Class="CircuitRF.Ui.Views.Filters.LcFilterDesignerWindow"
         x:DataType="flt:LcFilterDesignerViewModel"
         Title="LC Filter Designer"
@@ -135,18 +136,17 @@
          softened colour), one 16 px Material glyph per Padding="6,3" button, the name in the
          tooltip, and the same separators. A composite of part glyphs reads as noise at 16 px, so
          each action is ONE glyph:
-           Design           PlayCircleOutline — the workspace toolbar's run glyph.
+           Design           the word, not a glyph.
            Apply to Filter  SquareEditOutline — the block's parameters edited in place.
-           Place filter     TransitConnectionVariant — the Match Designer's glyph for an LC network.
-           Place component  ShapeRectanglePlus — one block added.
-           Replace          SwapHorizontal — Swap Line Type's glyph, one part for another.
-           Save netlist     FileExportOutline — Generate Netlist's glyph. -->
+           Place filter     Ladder — the Tools menu's glyph for this designer.
+           Place component  the SnP part's library glyph — the S-Parameter Viewer's, one block.
+           Replace          SwapHorizontal — Swap Line Type's glyph, one part for another. -->
     <Border DockPanel.Dock="Top" Padding="6,3"
             BorderThickness="0,0,0,1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
         <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
             <Button Name="DesignButton" Padding="6,3" Command="{Binding DesignCommand}"
                     ToolTip.Tip="Design — synthesise the ladder and redraw the response">
-                <mi:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"/>
+                <TextBlock Text="Design" VerticalAlignment="Center"/>
             </Button>
 
             <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
@@ -165,7 +165,7 @@
                         <Run Text="{Binding PlaceTip}"/>
                     </TextBlock>
                 </ToolTip.Tip>
-                <mi:MaterialIcon Kind="TransitConnectionVariant" Width="16" Height="16"/>
+                <mi:MaterialIcon Kind="Ladder" Width="16" Height="16"/>
             </Button>
             <Button Name="PlaceComponentButton" Padding="6,3" Click="OnPlaceComponent" IsEnabled="{Binding CanPlace}"
                     ToolTip.ShowOnDisabled="True">
@@ -176,7 +176,7 @@
                         <Run Text="{Binding PlaceTip}"/>
                     </TextBlock>
                 </ToolTip.Tip>
-                <mi:MaterialIcon Kind="ShapeRectanglePlus" Width="16" Height="16"/>
+                <uictl:PaletteGlyphControl Kind="Snp" PortCount="2" Monochrome="True" Width="16" Height="16"/>
             </Button>
             <!-- Lit = Place filter replaces the Filter this window was opened on. A Button bound to
                  Classes.ToolActive, as the Match Designer's panel lamps are: the view model owns the
@@ -187,13 +187,6 @@
                 <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
             </Button>
 
-            <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
-                    Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
-
-            <Button Name="SaveNetlistButton" Padding="6,3" Click="OnSave"
-                    ToolTip.Tip="Save netlist… — the ladder as a .cnl, at the values the table shows">
-                <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
-            </Button>
         </StackPanel>
     </Border>
 

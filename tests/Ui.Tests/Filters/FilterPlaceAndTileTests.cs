@@ -219,12 +219,13 @@ public class FilterPlaceAndTileTests
         string xaml = File.ReadAllText(Source("src", "Ui", "Views", "Filters", "LcFilterDesignerWindow.axaml"));
         int bar = xaml.IndexOf("<Border DockPanel.Dock=\"Top\"", StringComparison.Ordinal);
         Assert.True(bar >= 0);
-        string toolbar = xaml[bar..xaml.IndexOf("</Border>", xaml.IndexOf("SaveNetlistButton", bar, StringComparison.Ordinal), StringComparison.Ordinal)];
+        string toolbar = xaml[bar..xaml.IndexOf("</Border>", xaml.IndexOf("ReplaceButton", bar, StringComparison.Ordinal), StringComparison.Ordinal)];
         // Each frequency box carries its own prefix picker; the one shared picker is gone.
         foreach (string unit in (string[])["UnitA", "UnitB", "UnitC", "UnitD", "UnitFmin", "UnitFmax"])
             Assert.Contains($"SelectedItem=\"{{Binding {unit}}}\"", xaml);
         Assert.DoesNotContain("SelectedItem=\"{Binding Unit}\"", xaml);
-        foreach (string name in (string[])["DesignButton", "ApplyButton", "PlaceFilterButton", "PlaceComponentButton", "ReplaceButton", "SaveNetlistButton"])
+        foreach (string name in (string[])["DesignButton", "ApplyButton", "PlaceFilterButton", "PlaceComponentButton", "ReplaceButton"])
+
         {
             Assert.Contains($"Name=\"{name}\"", toolbar);
             Assert.Equal(1, System.Text.RegularExpressions.Regex.Matches(xaml, $"Name=\"{name}\"").Count);
@@ -233,8 +234,13 @@ public class FilterPlaceAndTileTests
         Assert.DoesNotContain("ShowMaskLabels", xaml);
         Assert.DoesNotContain("FormatText", xaml);
         // One plain glyph per action: composites of part glyphs were illegible at 16 px.
-        Assert.DoesNotContain("PaletteGlyphControl", toolbar);
-        Assert.Equal(6, System.Text.RegularExpressions.Regex.Matches(toolbar, "<mi:MaterialIcon ").Count);
+        // Design is the word; Place filter is the Tools menu's Ladder glyph; Place component is the
+        // S-Parameter Viewer's SnP part glyph. Save netlist is gone: `circuitrf filter lc -o` writes it.
+        Assert.Contains("Text=\"Design\"", toolbar);
+        Assert.Contains("Kind=\"Ladder\"", toolbar);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(toolbar, "<uictl:PaletteGlyphControl Kind=\"Snp\""));
+        Assert.DoesNotContain("SaveNetlistButton", xaml);
+        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(toolbar, "<mi:MaterialIcon ").Count);
         // A prefix picker shares its box's value column; a third side-panel column squeezed the
         // shared label column out of line with every other card.
         Assert.DoesNotContain("SharedSizeGroup=\"FltUnit\"", xaml);

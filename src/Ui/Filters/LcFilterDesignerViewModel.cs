@@ -1582,13 +1582,4 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         };
         return props;
     }
-
-    /// <summary>The netlist as text, for the clipboard and for Save.</summary>
-    public string NetlistText()
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine($"* LC Filter Designer  {Response} {Form} order {OrderText}");
-        sb.Append(Cnl);
-        return sb.ToString();
-    }
 }

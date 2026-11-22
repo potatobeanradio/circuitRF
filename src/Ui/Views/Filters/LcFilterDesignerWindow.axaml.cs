@@ -2,7 +2,6 @@ using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Schematic;
@@ -199,21 +198,5 @@ public partial class LcFilterDesignerWindow : Window, ICrfMenuWindow
     {
         if (Vm is null) return;
         Vm.Status = Vm.PlaceComponent();
-    }
-
-
-    private async void OnSave(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (Vm is null || StorageProvider is null) return;
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Save filter netlist",
-            SuggestedFileName = "filter.cnl",
-            FileTypeChoices = [new FilePickerFileType("Netlist") { Patterns = ["*.cnl"] }],
-        });
-        if (file is null) return;
-        await using var stream = await file.OpenWriteAsync();
-        using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(Vm.NetlistText());
     }
 }

@@ -144,8 +144,8 @@ a change goes through Synthesise…. A Filter without a design hides the Designe
 window's card order (`ParameterEditorViewModel.FilterRowOrder`), and the same ordered list is what
 the editor's rebuild check compares, so a reorder does not rebuild on every edit.
 
-**The window's actions are a toolbar** (Design, Apply, Place filter, Place component, the Replace
-toggle, Save netlist), icons in the Match Designer's style. The mask-label toggle is gone; the
+**The window's actions are a toolbar** (Design as a word, then Apply, Place filter, Place component and the
+Replace toggle as glyphs). The netlist is `circuitrf filter lc -o`, not a toolbar button. The mask-label toggle is gone; the
 labels are always drawn. The Ripple box is disabled unless the response is Chebyshev or elliptic.
 
 **The tile.** `Form` offers Bandstop and the glyph strikes the middle wave; a test holds that a
