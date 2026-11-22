@@ -1,0 +1,558 @@
+<!-- The LC Filter Designer: a specification column, the two response plots side by side with the
+     response choice above them, and the ladder drawn by the schematic editor's own renderer. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:flt="using:CircuitRF.Ui.Filters"
+        xmlns:df="using:CircuitRF.Design.Filters"
+        xmlns:mv="using:CircuitRF.Ui.Views.Match"
+        xmlns:fv="using:CircuitRF.Ui.Views.Filters"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:uictl="using:CircuitRF.Ui.Controls"
+        x:Class="CircuitRF.Ui.Views.Filters.LcFilterDesignerWindow"
+        x:DataType="flt:LcFilterDesignerViewModel"
+        Title="LC Filter Designer"
+        Width="1199" Height="741"
+        MinWidth="1000" MinHeight="700"
+        CanResize="True">
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8,5"/>
+            <Setter Property="Margin"          Value="0,0,0,5"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardhdr">
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,2"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.warn">
+            <Setter Property="FontSize"     Value="10"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin"       Value="0,2,0,0"/>
+            <Setter Property="Foreground"   Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.detailLabel">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- Side-panel value column: every TextBox and ComboBox shares one width. -->
+        <Style Selector="TextBox.num">
+            <Setter Property="FontSize"             Value="11"/>
+            <Setter Property="Padding"              Value="4,2"/>
+            <Setter Property="MinWidth"             Value="140"/>
+            <Setter Property="HorizontalAlignment"  Value="Stretch"/>
+        </Style>
+        <Style Selector="Border.card ComboBox">
+            <Setter Property="MinWidth"            Value="140"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+        <!-- The prefix picker beside each frequency box stays compact; it is not a value-column control. -->
+        <Style Selector="Border.card ComboBox.unitpick">
+            <Setter Property="MinWidth"            Value="0"/>
+            <Setter Property="Width"               Value="70"/>
+            <Setter Property="Margin"              Value="4,0,0,0"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+        <!-- A frequency box shares the value column with its prefix picker (Grid.withunit), so it
+             gives up the value column's minimum width rather than pushing the picker past the
+             pane: a third grid column here squeezed the shared label column in every card. -->
+        <Style Selector="Grid.withunit TextBox.num">
+            <Setter Property="MinWidth" Value="0"/>
+        </Style>
+        <Style Selector="TextBlock.tblhdr">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="FontWeight"        Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="8,0"/>
+        </Style>
+        <Style Selector="TextBlock.tblcell">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin"            Value="8,0"/>
+        </Style>
+        <!-- Dashed colour swatch sitting just right of its label (Ap / As / edges). -->
+        <Style Selector="Line.maskleg">
+            <Setter Property="StartPoint"           Value="0,0"/>
+            <Setter Property="EndPoint"             Value="18,0"/>
+            <Setter Property="Width"                Value="18"/>
+            <Setter Property="StrokeThickness"      Value="2"/>
+            <Setter Property="StrokeDashArray"      Value="4,3"/>
+            <Setter Property="Stretch"              Value="Fill"/>
+            <Setter Property="Height"               Value="10"/>
+            <Setter Property="VerticalAlignment"    Value="Center"/>
+            <Setter Property="Margin"               Value="4,0,0,0"/>
+        </Style>
+        <!-- Label column shared by every side-panel row so the value controls line up. -->
+        <Style Selector="StackPanel.lblrow">
+            <Setter Property="Orientation"        Value="Horizontal"/>
+            <Setter Property="Spacing"            Value="0"/>
+            <Setter Property="VerticalAlignment"  Value="Center"/>
+            <Setter Property="MinWidth"           Value="86"/>
+        </Style>
+        <!-- Plot chooser — same chrome as the S-parameter viewer. -->
+        <Style Selector="ToggleButton.plotpick">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+            <Setter Property="Padding"         Value="7,3"/>
+            <Setter Property="Margin"          Value="0,0,4,0"/>
+        </Style>
+        <Style Selector="ToggleButton.plotpick:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+    <!-- ── Toolbar (owner, 2026-11-21) ─────────────────────────────────────────
+         The schematic editor's toolbar, in shape: a StackPanel.Toolbar (so the icons take its
+         softened colour), one 16 px Material glyph per Padding="6,3" button, the name in the
+         tooltip, and the same separators. A composite of part glyphs reads as noise at 16 px, so
+         each action is ONE glyph:
+           Design           the word, not a glyph.
+           Apply to Filter  SquareEditOutline — the block's parameters edited in place.
+           Place filter     Ladder — the Tools menu's glyph for this designer.
+           Place component  the SnP part's library glyph — the S-Parameter Viewer's, one block.
+           Replace          SwapHorizontal — Swap Line Type's glyph, one part for another. -->
+    <Border DockPanel.Dock="Top" Padding="6,3"
+            BorderThickness="0,0,0,1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+        <StackPanel Orientation="Horizontal" Spacing="2" Classes="Toolbar">
+            <Button Name="DesignButton" Padding="6,3" Command="{Binding DesignCommand}"
+                    ToolTip.Tip="Design — synthesise the ladder and redraw the response">
+                <TextBlock Text="Design" VerticalAlignment="Center"/>
+            </Button>
+
+            <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
+                    Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
+            <Button Name="ApplyButton" Padding="6,3" Click="OnApply" IsVisible="{Binding CanApply}"
+                    ToolTip.Tip="Apply to Filter — write this specification and the Designer's settings onto the Filter">
+                <mi:MaterialIcon Kind="SquareEditOutline" Width="16" Height="16"/>
+            </Button>
+            <Button Name="PlaceFilterButton" Padding="6,3" Click="OnPlaceFilter" IsEnabled="{Binding CanPlace}"
+                    ToolTip.ShowOnDisabled="True">
+                <ToolTip.Tip>
+                    <TextBlock MaxWidth="360" TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold" Text="Place filter — the LC ladder, ends labelled IN and OUT"/>
+                        <LineBreak/>
+                        <Run Text="{Binding PlaceTip}"/>
+                    </TextBlock>
+                </ToolTip.Tip>
+                <mi:MaterialIcon Kind="Ladder" Width="16" Height="16"/>
+            </Button>
+            <Button Name="PlaceComponentButton" Padding="6,3" Click="OnPlaceComponent" IsEnabled="{Binding CanPlace}"
+                    ToolTip.ShowOnDisabled="True">
+                <ToolTip.Tip>
+                    <TextBlock MaxWidth="360" TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold" Text="Place component — one Filter block carrying this design"/>
+                        <LineBreak/>
+                        <Run Text="{Binding PlaceTip}"/>
+                    </TextBlock>
+                </ToolTip.Tip>
+                <uictl:PaletteGlyphControl Kind="Snp" PortCount="2" Monochrome="True" Width="16" Height="16"/>
+            </Button>
+            <!-- Lit = Place filter replaces the Filter this window was opened on. A Button bound to
+                 Classes.ToolActive, as the Match Designer's panel lamps are: the view model owns the
+                 state and the class follows it. -->
+            <Button Name="ReplaceButton" Padding="6,3" Command="{Binding ToggleReplaceCommand}"
+                    Classes.ToolActive="{Binding ReplaceTarget}" IsVisible="{Binding CanReplaceTarget}"
+                    ToolTip.Tip="Replace this Filter — when lit, Place filter removes the Filter block and puts the ladder in its place, on the block's nets, as one undo step">
+                <mi:MaterialIcon Kind="SwapHorizontal" Width="16" Height="16"/>
+            </Button>
+
+        </StackPanel>
+    </Border>
+
+    <Grid ColumnDefinitions="292,*" RowDefinitions="*,*">
+
+        <!-- ── Specification ─────────────────────────────────────────────── -->
+        <Border Grid.RowSpan="2" Classes="pane">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                <!-- SharedSizeGroup keeps every card's label column and value column the same width. -->
+                <StackPanel Grid.IsSharedSizeScope="True">
+                    <TextBlock Classes="panelhdr" Text="Specification"/>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Impedances"/>
+                            <Grid RowDefinitions="Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Source"/></StackPanel>
+                                <TextBox Grid.Column="1" Classes="num" Text="{Binding SourceText}"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Load"/></StackPanel>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding LoadText}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Topology"/>
+                            <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="First"/></StackPanel>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding FirstElements}"
+                                          SelectedItem="{Binding First}"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Order"/></StackPanel>
+                                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding OrderModes}"
+                                          SelectedItem="{Binding OrderMode}"
+                                          ToolTip.Tip="Minimum is the smallest prototype order that meets Ap, As and the mask edges. Specify overrides it."/>
+                                <StackPanel Grid.Row="2" Classes="lblrow"><TextBlock Classes="lbl" Text="N"/></StackPanel>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding OrderText}"
+                                         IsEnabled="{Binding OrderEditable}"
+                                         ToolTip.Tip="Prototype order. A bandpass or bandstop replaces each element by a resonator. An even-order inverse Chebyshev or elliptic has no ladder."/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Shape"/>
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Response"/></StackPanel>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding ResponseChoices}"
+                                          SelectedItem="{Binding ResponseChoice}"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Form"/></StackPanel>
+                                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Forms}"
+                                          SelectedItem="{Binding Form}"/>
+                                <StackPanel Grid.Row="2" Classes="lblrow" ToolTip.Tip="{Binding TipAp}">
+                                    <TextBlock Classes="lbl" Text="Ap, dB"/>
+                                    <Line Classes="maskleg" Stroke="#2980B9"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="2" Grid.Column="1" Classes="num" Text="{Binding ApText}"
+                                         ToolTip.Tip="{Binding TipAp}"/>
+                                <StackPanel Grid.Row="3" Classes="lblrow" ToolTip.Tip="{Binding TipRipple}">
+                                    <TextBlock Classes="lbl" Text="Ripple, dB"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Text="{Binding RippleText}"
+                                         IsEnabled="{Binding RippleRelevant}" ToolTip.ShowOnDisabled="True"
+                                         ToolTip.Tip="{Binding TipRipple}"/>
+                                <StackPanel Grid.Row="4" Classes="lblrow" ToolTip.Tip="{Binding TipAs}">
+                                    <TextBlock Classes="lbl" Text="As, dB"/>
+                                    <Line Classes="maskleg" Stroke="#C0392B"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="4" Grid.Column="1" Classes="num" Text="{Binding AsText}"
+                                         ToolTip.Tip="{Binding TipAs}"/>
+                                <StackPanel Grid.Row="5" Classes="lblrow" IsVisible="{Binding IsElliptic}"
+                                            ToolTip.Tip="{Binding TipEllipticType}">
+                                    <TextBlock Classes="lbl" Text="Type"/>
+                                </StackPanel>
+                                <ComboBox Grid.Row="5" Grid.Column="1" IsVisible="{Binding IsElliptic}"
+                                          ItemsSource="{Binding EllipticTypeChoices}"
+                                          SelectedItem="{Binding EllipticTypeChoice}"
+                                          ToolTip.Tip="{Binding TipEllipticType}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Edges"/>
+                            <!-- One prefix per box (owner, 2026-11-21), so a 900 MHz passband edge and a
+                                 2.5 GHz stop edge are each typed in their own unit. Changing a prefix
+                                 rescales that box only; the frequency it states is unchanged. -->
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Classes="lblrow" ToolTip.Tip="{Binding TipA}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelA}"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchA}"/>
+                                </StackPanel>
+                                <Grid Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto">
+                                    <TextBox Classes="num" Text="{Binding FaText}"
+                                         ToolTip.Tip="{Binding TipA}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitA}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
+                                <StackPanel Grid.Row="1" Classes="lblrow" ToolTip.Tip="{Binding TipB}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelB}"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchB}"/>
+                                </StackPanel>
+                                <Grid Grid.Row="1" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto">
+                                    <TextBox Classes="num" Text="{Binding FbText}"
+                                         ToolTip.Tip="{Binding TipB}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitB}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
+                                <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding ShowC}"
+                                            ToolTip.Tip="{Binding TipC}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelC}"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchC}"/>
+                                </StackPanel>
+                                <Grid Grid.Row="2" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding ShowC}">
+                                    <TextBox Classes="num" Text="{Binding FcText}" ToolTip.Tip="{Binding TipC}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitC}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
+                                <StackPanel Grid.Row="3" Classes="lblrow" IsVisible="{Binding ShowD}"
+                                            ToolTip.Tip="{Binding TipD}">
+                                    <TextBlock Classes="lbl" Text="{Binding LabelD}"/>
+                                    <Line Classes="maskleg" Stroke="{Binding SwatchD}"/>
+                                </StackPanel>
+                                <Grid Grid.Row="3" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding ShowD}">
+                                    <TextBox Classes="num" Text="{Binding FdText}" ToolTip.Tip="{Binding TipD}"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitD}" ToolTip.Tip="The prefix this edge is typed in"/>
+                                </Grid>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Values"/>
+                            <ComboBox ItemsSource="{Binding SeriesKinds}" SelectedItem="{Binding Series}"
+                                      ToolTip.Tip="Exact theoretical values, or the nearest IEC preferred number."/>
+                            <Button Content="Load library series" Command="{Binding LoadLibrariesCommand}"
+                                    HorizontalAlignment="Left" Margin="0,2,0,0"
+                                    ToolTip.Tip="Index the workspace's vendor libraries and offer one inductor series and one capacitor series."/>
+                            <TextBlock Classes="lbl" Text="Inductors" IsVisible="{Binding LibraryAvailable}"/>
+                            <ComboBox ItemsSource="{Binding InductorSeries}" SelectedItem="{Binding InductorChoice}"
+                                      IsVisible="{Binding LibraryAvailable}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="df:FilterLibrarySeries">
+                                        <TextBlock Text="{Binding Label}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="lbl" Text="Capacitors" IsVisible="{Binding LibraryAvailable}"/>
+                            <ComboBox ItemsSource="{Binding CapacitorSeries}" SelectedItem="{Binding CapacitorChoice}"
+                                      IsVisible="{Binding LibraryAvailable}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="df:FilterLibrarySeries">
+                                        <TextBlock Text="{Binding Label}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="3">
+                            <TextBlock Classes="cardhdr" Text="Plot range"/>
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" SharedSizeGroup="FltLbl"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Classes="lblrow">
+                                    <TextBlock Classes="lbl" Text="Mode"
+                                               ToolTip.Tip="± band widens the mask edges. Manual sets Fmin and Fmax, each in its own unit."/>
+                                </StackPanel>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding PlotRangeChoices}"
+                                          SelectedItem="{Binding PlotRangeChoice}"/>
+                                <StackPanel Grid.Row="1" Classes="lblrow" IsVisible="{Binding !PlotRangeIsManual}">
+                                    <TextBlock Classes="lbl" Text="± band"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Name="BandFractionBox"
+                                         IsVisible="{Binding !PlotRangeIsManual}"
+                                         ToolTip.Tip="Percent of the outer mask span. Recomputes the response over the whole widened range."/>
+                                <StackPanel Grid.Row="1" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBlock Classes="lbl" Text="Fmin"/>
+                                </StackPanel>
+                                <Grid Grid.Row="1" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBox Classes="num" Name="PlotFminBox"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitFmin}" ToolTip.Tip="The prefix Fmin is typed in"/>
+                                </Grid>
+                                <StackPanel Grid.Row="2" Classes="lblrow" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBlock Classes="lbl" Text="Fmax"/>
+                                </StackPanel>
+                                <Grid Grid.Row="2" Grid.Column="1" Classes="withunit" ColumnDefinitions="*,Auto" IsVisible="{Binding PlotRangeIsManual}">
+                                    <TextBox Classes="num" Name="PlotFmaxBox"/>
+                                    <ComboBox Grid.Column="1" Classes="unitpick" ItemsSource="{Binding Units}" SelectedItem="{Binding UnitFmax}" ToolTip.Tip="The prefix Fmax is typed in"/>
+                                </Grid>
+                                <StackPanel Grid.Row="3" Classes="lblrow"><TextBlock Classes="lbl" Text="points"/></StackPanel>
+                                <TextBox Grid.Row="3" Grid.Column="1" Classes="num" Name="PlotPointsBox"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="card">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="cardhdr" Text="Design information"/>                            <TextBlock Classes="note" Text="{Binding DesignInfo}"/>
+                            <TextBlock Classes="warn" Text="{Binding Status}"
+                                       IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- ── The ladder, drawn ─────────────────────────────────────────── -->
+        <Border Grid.Row="1" Grid.Column="1" Classes="pane">
+            <Grid RowDefinitions="Auto,*,Auto">
+                <TextBlock Classes="panelhdr" Text="Filter network"/>
+                <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
+                        BorderBrush="{DynamicResource CrfTileBorderBrush}">
+                    <Panel>
+                        <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
+                        <Button HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Margin="4" Padding="6,3" Click="OnZoomFit"
+                                ToolTip.Tip="Zoom to Fit  (F)">
+                            <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
+                        </Button>
+                    </Panel>
+                </Border>
+
+                <!-- Realization table — header + zebra rows, chain-budget style. -->
+                <Border Grid.Row="2" Margin="0,8,0,0" BorderBrush="#D0D0D0" BorderThickness="1"
+                        CornerRadius="2" ClipToBounds="True">
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Background="#F0F0F0" BorderBrush="#D0D0D0" BorderThickness="0,0,0,1"
+                                Padding="0,6">
+                            <Grid ColumnDefinitions="0.9*,1*,0.9*,0.9*,1.4*,1.2*,1.1*">
+                                <TextBlock Classes="tblhdr" Text="Instance"/>
+                                <Border Grid.Column="1" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Type"/>
+                                </Border>
+                                <Border Grid.Column="2" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Exact"/>
+                                </Border>
+                                <Border Grid.Column="3" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Value"/>
+                                </Border>
+                                <Border Grid.Column="4" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Series"/>
+                                </Border>
+                                <Border Grid.Column="5" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Part"/>
+                                </Border>
+                                <Border Grid.Column="6" BorderBrush="#D0D0D0" BorderThickness="1,0,0,0">
+                                    <TextBlock Classes="tblhdr" Text="Tolerance"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ListBox Grid.Row="1" ItemsSource="{Binding Elements}" MaxHeight="180"
+                                 BorderThickness="0" Background="Transparent"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0"/>
+                                    <Setter Property="MinHeight" Value="0"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                </Style>
+                                <Style Selector="ListBoxItem /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                </Style>
+                                <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+                                <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+                                <Style Selector="ComboBox.tblcombo">
+                                    <Setter Property="FontSize" Value="11"/>
+                                    <Setter Property="Padding" Value="4,1"/>
+                                    <Setter Property="MinHeight" Value="22"/>
+                                    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                                    <Setter Property="Margin" Value="4,0"/>
+                                </Style>
+                            </ListBox.Styles>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="flt:FilterElementRow">
+                                    <Border Background="{Binding RowBackground}" Padding="0,3"
+                                            BorderBrush="#E8E8E8" BorderThickness="0,0,0,1">
+                                        <Grid ColumnDefinitions="0.9*,1*,0.9*,0.9*,1.4*,1.2*,1.1*">
+                                            <TextBlock Classes="tblcell" Text="{Binding Name}"/>
+                                            <TextBlock Grid.Column="1" Classes="tblcell" Text="{Binding Kind}"/>
+                                            <TextBlock Grid.Column="2" Classes="tblcell" Text="{Binding Exact}"/>
+                                            <TextBlock Grid.Column="3" Classes="tblcell" Text="{Binding Used}"/>
+                                            <Panel Grid.Column="4">
+                                                <TextBlock Classes="tblcell" Text="{Binding SeriesName}"
+                                                           IsVisible="{Binding !LibraryEditable}"/>
+                                                <ComboBox Classes="tblcombo"
+                                                          ItemsSource="{Binding SeriesChoices}"
+                                                          SelectedItem="{Binding SelectedSeries}"
+                                                          IsVisible="{Binding LibraryEditable}"/>
+                                            </Panel>
+                                            <Panel Grid.Column="5">
+                                                <TextBlock Classes="tblcell" Text="{Binding Part}"
+                                                           IsVisible="{Binding !LibraryEditable}"/>
+                                                <ComboBox Classes="tblcombo"
+                                                          ItemsSource="{Binding PartChoices}"
+                                                          SelectedItem="{Binding SelectedPart}"
+                                                          IsVisible="{Binding LibraryEditable}"/>
+                                            </Panel>
+                                            <TextBlock Grid.Column="6" Classes="tblcell" Text="{Binding Tolerance}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- ── Response plots: toggles like the S-parameter viewer (mag + phase only) ─ -->
+        <Border Grid.Column="1" Classes="pane" ClipToBounds="True">
+            <Grid RowDefinitions="Auto,*">
+                <StackPanel Orientation="Horizontal" Margin="2,0,0,4">
+                    <ToggleButton Classes="plotpick" IsChecked="{Binding ShowMagnitude, Mode=TwoWay}"
+                                  ToolTip.Tip="Filter response, dB against frequency">
+                        <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
+                    </ToggleButton>
+                    <ToggleButton Classes="plotpick" IsChecked="{Binding ShowPhase, Mode=TwoWay}"
+                                  ToolTip.Tip="Phase and group delay against frequency">
+                        <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                    </ToggleButton>
+                </StackPanel>
+                <fv:FilterPlotLayout Grid.Row="1" ClipToBounds="True"
+                                     ShowMagnitude="{Binding ShowMagnitude}"
+                                     ShowPhase="{Binding ShowPhase}">
+                    <Grid Name="MagnitudeHost" ClipToBounds="True" IsVisible="{Binding ShowMagnitude}">
+                        <ddc:PlotControl Name="MagnitudePlotControl"
+                                         Plot="{Binding MagnitudePlot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </Grid>
+                    <Grid Name="PhaseHost" ClipToBounds="True" IsVisible="{Binding ShowPhase}">
+                        <ddc:PlotControl Name="PhasePlotControl"
+                                         Plot="{Binding PhasePlot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </Grid>
+                </fv:FilterPlotLayout>
+            </Grid>
+        </Border>
+    </Grid>
+    </DockPanel>
+</Window>

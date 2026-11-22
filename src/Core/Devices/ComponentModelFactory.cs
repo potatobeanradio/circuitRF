@@ -2302,7 +2302,8 @@ public static class ComponentModelFactory
             astopDb:  P("Astop", 40.0),
             zIn:      ImpedanceParam(parameters, "Zin",  50.0),
             zOut:     ImpedanceParam(parameters, "Zout", 50.0),
-            ilDb:     P("IL",     0.0));
+            ilDb:     P("IL",     0.0),
+            ellipticType: EnumNamed(parameters, "EllipticType", EllipticType.A));
     }
 
     /// <summary>

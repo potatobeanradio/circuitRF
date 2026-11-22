@@ -51,6 +51,7 @@ reference/plugins.html             | Tools other people write that circuitRF dra
 reference/writing-plugins.html     | Writing a plugin: the manifest, the panel, every message, view and host call, in Python or a compiled language.
 reference/chain-budget.html        | A receive chain's budget stage by stage, an array included, and its transfer to test benches that check every number.
 reference/propagation-channel.html | The radio link between two antennas: which propagation model to pick, fading and drops, the far end's errors, beams, satellites.
+reference/lc-filter-designer.html     | An LC ladder from a filter specification: lowpass, highpass, bandpass and bandstop, on the Data Display's own plots.
 
 == Simulate
 reference/simulations.html  | DC, S-parameters, harmonic balance, parametric sweeps, loadpull and pursuit.

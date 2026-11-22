@@ -42695,3 +42695,149 @@ a run of the classes together failed deterministically ("0 parts replaced", 0 of
   resolves its bench (the section's cell, else the example's one bench with an array) and arrays (backticked, else all), opens the
   tool as the application does on a copy, and checks each "colour the aperture by …" quantity is offered. Verified to fail with the
   collapse reverted ("Fields 'F1' gave no pattern.") and with the mmWave Array Link's `FT`/`FR` removed.
+
+## LC Filter Designer — the copied schematic shorted adjacent elliptic tanks (2026-11-21)
+
+Reported: a bandpass elliptic placed as a schematic was drawn wrongly (labels on the wrong parts,
+one part unlabelled, rails running between arms).
+
+- **It was a different circuit, not just a messy picture.** `MatchSchematicModel.AddWiring` and
+  `MatchSchematicCopy.SpineSegments` filled a parallel arm's rail by walking EVERY glyph at the
+  rail's height, not only those between the arm's own drops. Two tanks share a rail height, so arm 1
+  wired its glyph to arm 2's (joining two internal nets) and never reached its own right-hand drop.
+  The window's plot simulated the `.cnl`, which was right, so nothing on screen disagreed. Both now
+  use `MatchLadderLayout.WireSegments`, which is clamped to the arm.
+- **The drawing guessed which elements formed an arm** (`TryBridged`/`TryStub`) and the guesses
+  drew series chains as tanks and a four-element stub as a four-high column. `FilterLadder` now
+  returns `Arms`, and `FilterLadderDrawing` draws each arm from its own topology.
+- **A stub's middle element got a ground** (`GroundYFor` grounds the lowest symbol in a column, and
+  a parallel section drawn as legs left the series element above it lowest in its column).
+  `MatchLadderElement.NoGround` marks it. The topology gate found it immediately.
+- **Gate:** `FilterLadderDrawingTests.TheCopiedSchematicIsTheLadder` extracts the copied schematic
+  with `NetExtractor` and requires one consistent map from ladder nodes to drawn nets, every form,
+  orders 3–15, both first elements. `EveryLabelIsClearAndBesideItsOwnGlyph` measures label text with
+  the pane's own font. At the Match pitch a shunt label beside its symbol touched the next column's
+  label; the filter drawing uses a wider column step and always puts shunt labels beside.
+
+## LC Filter Designer — a bandstop never had an order, and the mask drew nothing on a refusal (2026-11-21)
+
+Reported: choosing Bandstop said the mask edges did not form a transition.
+
+- **The bandstop order mapping was turned inside out.** `FilterOrder.PrototypeStop` took the centre
+  and width from the STOP edges and mapped the PASS edges, which always lands below 1 — so no
+  bandstop mask ever had a minimum order. The prototype's Ω = 1 is the passband edge; the stop edges
+  map outward from the pass edges' centre, as the bandpass case does.
+- **The ladder was built at the wrong edges.** `TrySpec` passed Fs1/Fs2 as a bandstop's F1/F2, so
+  Ap sat at the stop edges. It is Fp1/Fp2 (inverse Chebyshev: Fs1/Fs2, its Ω = 1 being the Astop
+  edge — now also on a bandpass, which built inverse Chebyshev at Fp1/Fp2).
+- **Apply and Seed disagreed about which box an edge lives in.** Apply wrote F1/F2 from box
+  positions and Seed read F1/F2 into the first two boxes whatever the form (a bandpass's passband
+  landed in its Fs1/Fp1 boxes). Both now go through `FilterAssignments` / `SeedEdges`, the edges the
+  ladder was built from.
+- **Two older defects the bandstop gate exposed:** the Butterworth minimum order divided by a stray
+  2 (Ap 3 dB / As 40 dB / Fs = 2·Fp gave 4, which reaches 24 dB; it is 7), and a parallel-first
+  even-order Chebyshev was terminated in the series-first ratio — right at DC, where r and 1/r give
+  the same mismatch, and 3.1 dB at a 0.5 dB ripple edge. The dual's load is the reciprocal.
+- **The mask is drawn by role and survives a refusal.** Pass edges and −Ap in one colour, stop
+  edges and −As in another, each limit spanning only its own band with the forbidden side tinted;
+  a refused specification still frames and draws its mask. Limit labels are right-aligned at the
+  segment's end so they never sit on an edge label.
+- **Still open:** the minimum order is sized from Ap while the ladder is built at the separate
+  Ripple box; with Ripple below Ap a Chebyshev or elliptic misses As at Fs.
+
+## LC Filter Designer — placing the design, Synthesise…, and the Filter tile (brief FD-P, 2026-11-21)
+
+Reported: the Filter tile showed no bandstop anywhere; asked for Place filter / Place component, a
+Synthesise… entry on the Filter, and the Filter's fields to carry every Designer setting.
+
+- **The missing bandstop was the build, not the code.** The installed AppImage
+  (`~/Applications/circuitRF`, built 2026-11-20) is from `main`, which does not contain `a4eb5336d`:
+  its `NetworkForm` has no `Bandstop` member at all (a metadata string scan of the single-file
+  bundle finds `Lowpass`, `Highpass`, `InvChebyshev` and no `Bandstop`). On this branch the `Form`
+  picker offers it and the glyph strikes the middle wave; `SettingFormToBandstopRedrawsTheGlyph` holds
+  the redraw through `SetParametersCommand`. The docs now draw all four forms (`filter-form-glyphs`).
+  **`main` also carries a different, distributed "LC Filter Designer"** (MLAD ladder realisers), so the two
+  lines will meet at merge.
+- **Designer-only parameters must never reach the `.cnl`.** The mask edges are blank when unset, and a
+  blank value written as `Fs=` is the empty-value trap (`src/Core/CLAUDE.md`): the reader glues the next
+  token on. A library series name may hold a space, which would split into phantom nets.
+  `ComponentTypeRegistry.IsLcFilterDesignerParameter` names them and `NetExtractor` drops them, so a
+  Filter extracts the same line with or without them — no `ResolveEnumNamedParameters` entry needed.
+- **The window's settings are read back with the block's own cutoff winning.** Seed fills the boxes
+  from the stored mask, then `SeedEdges` puts `Fc`/`F1`/`F2` over the edge they name, so an edit made
+  in Properties is not undone by a stale stored edge. A Filter without the settings seeds as before,
+  except the order: **Specify** (the block's `Order`), where it used to recompute a minimum the block
+  was never built at.
+- **Replace this Filter joins by net NAME.** The ladder is wider than the block, and drawn where the
+  block was its spine lies over the wires that ran into the block; a series element on a wire is
+  shorted by it. Labels on the two pins (reusing a label the net already has) and on the ladder's
+  ends join the same nets with nothing drawn across the neighbouring parts. Undo reinserts the block
+  at its own list index, or the undone sheet does not save byte for byte.
+- **A placement handed over from another window must arm without a pointer.** The pointer is over
+  the Designer, so `ArmFragmentPlacement` arms at the view centre and the ghost follows once the
+  pointer arrives; `PlacementActivationRequested` → `IHierarchyHost.BringToFront` raises the
+  schematic's window.
+- **Two placed ladders must not share end names**, or they join end to end: `IN`/`OUT`, then
+  `IN2`/`OUT2` onward.
+- **Not mine, seen while gating:** the three ThreeD tests that launch the CLI as a process
+  (`Gate10_Cli_…`, `Gate14_Cli_…`, `TheVerb_AsAProcess_…`) fail on this machine in isolation:
+  `src/Cli/bin/Debug/net10.0/runtimes/` holds osx and win folders only, so `libSkiaSharp.so` is not
+  found.
+
+## LC Filter Designer — a toolbar, and a designed Filter is locked (2026-11-21)
+
+Asked for: the window's buttons on a toolbar, the mask-label toggle removed, irrelevant controls
+disabled, and a Filter that carries a design edited only through Synthesise….
+
+- **A greyed PICKER was still live.** `SetDisabledByMode` greyed a row's text box and unit combo,
+  but the choice `ComboBox` bound only `IsVisible`, so a greyed `Form` or `Response` could still be
+  changed — nobody had noticed because the only greyed rows until now (the test pad's) are numbers.
+  It binds `ExpressionEnabled` now, and a locked row is also `SetExpressionReadOnly`, which is what
+  `CommitExpression` itself refuses on.
+- **Reordering rows must reorder the rebuild check too.** `OnModelChanged` compares the row names
+  with `VisibleParams` IN SEQUENCE; displaying a Filter in the Designer's order while
+  `VisibleParams` kept the model's order would rebuild every row on every edit. Both read
+  `FilterRowParameters`.
+- **"Designed" needs a marker nothing else writes.** It is `Ap` or a mask edge being non-blank, and
+  those rows are hidden on a Filter without a design, so typing one in cannot lock a block by
+  accident.
+- **Firewall gate:** the two Gaussian-prototype invariants in `FilterPrototype.cs` were allow-listed
+  beside the file's existing invariant lines — a factorisation that cannot come back empty in
+  practice, not a message a user acts on.
+
+## LC Filter Designer — a prefix per frequency box, and legible toolbar glyphs (2026-11-21)
+
+- **Owner request:** each frequency box (the mask edges, and Fmin/Fmax) gets its own prefix picker
+  instead of one shared one; the toolbar glyphs were reworked from the application's existing set.
+- **A prefix picker belongs INSIDE the value column, not in a third grid column.** The side panel is
+  292 px; a third `Auto` column (label + 140 px box + 72 px picker) asked for more than the pane has, so
+  the grid squeezed the `FltLbl` shared label column and the Edges and Plot range cards fell out of line
+  with every other card. Each box and its picker now share the value column in a `Grid.withunit`
+  (`*,Auto`), and that class drops the box's 140 px minimum. Held by
+  `TheDesignersActionsAreOnItsToolbar_AndTheMaskLabelToggleIsGone`.
+- **A composite of schematic part glyphs is noise at 16 px.** An L and a C side by side, or the Filter
+  symbol with a badge, rendered as a vertical smear. Each action is now ONE Material glyph the
+  application already uses for the same idea (the run glyph, the Match Designer's network glyph, Swap
+  Line Type's arrows, Generate Netlist's export).
+- **Trap — a fixture must not block on `DesignAsync`.** It resumes on the UI thread, so
+  `.GetAwaiter().GetResult()` on that thread hangs DocGen forever with no output (a one-figure run that
+  takes 5 s sat for over 10 minutes). Pump `Dispatcher.UIThread.RunJobs()` until the task completes.
+- **`tools/UiSnapshot --filter <form>`** opens the real window on a default Filter, so the Designer can
+  be looked at headlessly.
+
+## LC Filter Designer — toolbar words and glyphs, and a known limitation (2026-11-22)
+
+- **Toolbar.** Design is the word; Place filter carries the `Ladder` glyph the Tools menu uses for this
+  designer; Place component carries the SnP part's library glyph (the S-Parameter Viewer's). Save
+  netlist is gone with its handler and the view model's `NetlistText()` — `circuitrf filter lc -o`
+  writes the netlist. The toolbar test asserts the word and both glyphs.
+- **Limitation, deliberately left for a later release: a placed ladder does not use the library
+  parts.** With a library series loaded the table snaps each element to a stated value and names the
+  part, and Apply to Filter stores `LSeries`/`CSeries`/`Parts` on the block so the window reopens on
+  them. Place filter and Replace this Filter build the ladder in `FilterPlacement.LadderFragment`
+  from `MatchSchematicCopy`'s generic inductor and capacitor symbols at the snapped value, with no
+  reference to the library part. Written up in the user page and the design doc.
+- **Two designers share the Tools menu.** Main's Filter Designer is spec-driven (planar realisers,
+  EM, Touchstone extraction); this one is the lumped LC ladder with standard part values. Names, icons
+  and the CLI noun (`filter lc`) are kept apart on purpose.
+

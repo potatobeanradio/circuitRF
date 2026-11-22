@@ -92,8 +92,19 @@ public static class MatchSchematicModel
         // A DC block does not tap the spine — its inductor does, and the two share a column, so a dot
         // per element would draw the same dot twice.
         var dots = new List<SchematicDot>();
-        foreach (var s in layout.Elements.Where(e => e.IsShunt && e.DcBlockEnd == 0))
+        // Only an element whose upper pin IS on the spine taps it; a symbol further down a Filter
+        // Designer stub column does not.
+        foreach (var s in layout.Elements.Where(e => e.IsShunt && e.DcBlockEnd == 0
+                                                     && Math.Abs(e.Y - MatchLadderLayout.ShuntY) < 1e-9))
             dots.Add(new SchematicDot(s.X, MatchLadderLayout.SpineY));
+        foreach (var (dx, dy) in layout.ExtraDots)
+            dots.Add(new SchematicDot(dx, dy));
+        // Parallel through-path arms (LC Filter Designer) drop onto the spine at both ends.
+        foreach (var arm in layout.ParallelArms)
+        {
+            dots.Add(new SchematicDot(arm.X0, MatchLadderLayout.SpineY));
+            dots.Add(new SchematicDot(arm.X1, MatchLadderLayout.SpineY));
+        }
 
         Bounds(comps, wires, out double minX, out double minY, out double maxX, out double maxY);
 
@@ -140,12 +151,25 @@ public static class MatchSchematicModel
         // A shunt arm's labels go beside it, or — when the text is wider than the gap to the next
         // column — underneath its own ground. The decision is MatchShuntLabels', so the flattened
         // cell makes it the same way (owner, 2026-08-20).
-        var offsets = e.IsShunt
-            ? Enumerable.Repeat(
-                  MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
-                                           MatchSchematicGeometry.LeadHalf),
-                  labels.Count).ToList()
-            : [];
+        // A through-path element above the spine (LC Filter Designer's parallel tank) puts its labels
+        // above the glyph so they do not sit on the pink rail wires.
+        List<(double Dx, double Dy)> offsets;
+        if (e.IsShunt)
+        {
+            var beside = (ShuntLabelDx, ShuntLabelDy);
+            offsets = Enumerable.Repeat(
+                e.LabelBeside ? beside
+                              : MatchShuntLabels.Offsets(labels, MatchLadderLayout.Pitch,
+                                                         MatchSchematicGeometry.LeadHalf),
+                labels.Count).ToList();
+        }
+        else if (e.LabelAbove)
+        {
+            // Above the body: an LC Filter Designer arm draws another branch underneath this glyph.
+            offsets = labels.Select(_ => (0.0, MatchLadderLayout.LabelAboveDy)).ToList();
+        }
+        else
+            offsets = [];
 
         return Compose(
             e.Name, kind, e.X, e.Y, rot, labels, offsets,
@@ -270,16 +294,8 @@ public static class MatchSchematicModel
     /// </remarks>
     private static void AddWiring(MatchLadderLayout layout, List<SchematicWire> wires)
     {
-        double y = MatchLadderLayout.SpineY;
-
-        double cursor = layout.PortLeftX;
-        foreach (var e in layout.Elements.Where(e => !e.IsShunt).OrderBy(e => e.X))
-        {
-            double left = e.X - LeadHalf;
-            if (left > cursor) wires.Add(Wire(cursor, y, left, y));
-            cursor = Math.Max(cursor, e.X + LeadHalf);
-        }
-        if (layout.PortRightX > cursor) wires.Add(Wire(cursor, y, layout.PortRightX, y));
+        foreach (var (x0, y0, x1, y1) in MatchLadderLayout.WireSegments(layout))
+            wires.Add(Wire(x0, y0, x1, y1));
     }
 
     private static SchematicWire Wire(double x0, double y0, double x1, double y1) => new()

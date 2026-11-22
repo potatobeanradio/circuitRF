@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — The LC Filter Designer</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/lc-filter-designer.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › LC Filter Designer</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="propagation-channel.html" title="Previous: The Propagation Channel: a radio link in one schematic"><span class="arrow">‹</span><span class="name">The Propagation Channel: a radio link in one schematic</span></a>
+      <a class="next" href="simulations.html" title="Next: Simulations"><span class="name">Simulations</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>The LC Filter Designer</h1>
+  <p class="lede">An LC ladder from a filter specification, drawn on the Data Display&#39;s own plots.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What it is</a></li>
+<li><a href="#spec">The specification</a></li>
+<li><a href="#mask">The plot</a></li>
+<li><a href="#values">Exact, standard, library</a></li>
+<li><a href="#place">Where the result goes</a></li>
+<li><a href="#headless">The same thing from the command line</a></li>
+</ol>
+</nav>
+<h2 id="what">What it is</h2>
+<p><strong>LC Filter Designer</strong> (Tools ▸ LC Filter Designer) synthesises a doubly terminated LC ladder from a
+prototype and shows the response on the same plots a Data Display uses. To open it on a placed
+<a href="components.html#filter">Filter</a>, right-click the Filter and choose <strong>Synthesise…</strong>, or press
+<strong>Synthesise…</strong> in its properties. Both open the same window, and opening it a second time on the
+same Filter brings that window forward. <strong>Apply to Filter</strong> writes the design back onto the ideal
+block, and <strong>Place filter</strong> puts the ladder itself on the schematic.</p>
+<p>The window's actions are on its toolbar: <strong>Design</strong> (the word), then, as icons with their names in
+the tooltips, <strong>Apply to Filter</strong> (only when opened on a Filter), <strong>Place filter</strong>, <strong>Place component</strong>
+and <strong>Replace this Filter</strong> (likewise). Place filter carries the ladder glyph this designer has in the
+Tools menu; Place component carries the part glyph of a Touchstone block, the one the S-Parameter
+Viewer uses. To write the ladder as a netlist, use <code>circuitrf filter lc … -o filter.cnl</code>.</p>
+<figure class="figure"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="250" height="36" viewBox="0 0 250 36"><defs><path id="lc-filter-designer-toolbar_d0" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L26.5 0.5Q26.65 0.5 26.79 0.5144Q26.94 0.5289 27.09 0.5576Q27.23 0.5864 27.37 0.6292Q27.51 0.672 27.65 0.7284Q27.78 0.7848 27.91 0.8542Q28.04 0.9237 28.17 1.01Q28.29 1.09 28.4 1.18Q28.52 1.27 28.62 1.38Q28.73 1.48 28.82 1.6Q28.91 1.71 28.99 1.83Q29.08 1.96 29.15 2.09Q29.22 2.22 29.27 2.35Q29.33 2.49 29.37 2.63Q29.41 2.77 29.44 2.91Q29.47 3.06 29.49 3.21Q29.5 3.35 29.5 3.5L29.5 20.5Q29.5 20.65 29.49 20.79Q29.47 20.94 29.44 21.09Q29.41 21.23 29.37 21.37Q29.33 21.51 29.27 21.65Q29.22 21.78 29.15 21.91Q29.08 22.04 28.99 22.17Q28.91 22.29 28.82 22.4Q28.73 22.52 28.62 22.62Q28.52 22.73 28.4 22.82Q28.29 22.91 28.17 22.99Q28.04 23.08 27.91 23.15Q27.78 23.22 27.65 23.27Q27.51 23.33 27.37 23.37Q27.23 23.41 27.09 23.44Q26.94 23.47 26.79 23.49Q26.65 23.5 26.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /></defs><rect fill="white" width="250" height="36" /><rect fill="#F6F8FA" width="250" height="36" /><path fill="#010101" fill-opacity="0.2" d="M201 36L201 35L0 35L0 36L201 36Z" fill-rule="evenodd" /><clipPath id="lc-filter-designer-toolbar_cl_0"><rect x="6" y="6" width="54" height="23" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_0)"><path fill="#010101" fill-opacity="0.2" transform="translate(6 6)" d="M0.5 19.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L50.5 0.5Q50.65 0.5 50.79 0.5144Q50.94 0.5289 51.09 0.5576Q51.23 0.5864 51.37 0.6292Q51.51 0.672 51.65 0.7284Q51.78 0.7848 51.91 0.8542Q52.04 0.9237 52.17 1.01Q52.29 1.09 52.4 1.18Q52.52 1.27 52.62 1.38Q52.73 1.48 52.82 1.6Q52.91 1.71 52.99 1.83Q53.08 1.96 53.15 2.09Q53.22 2.22 53.27 2.35Q53.33 2.49 53.37 2.63Q53.41 2.77 53.44 2.91Q53.47 3.06 53.49 3.21Q53.5 3.35 53.5 3.5L53.5 19.5Q53.5 19.65 53.49 19.79Q53.47 19.94 53.44 20.09Q53.41 20.23 53.37 20.37Q53.33 20.51 53.27 20.65Q53.22 20.78 53.15 20.91Q53.08 21.04 52.99 21.17Q52.91 21.29 52.82 21.4Q52.73 21.52 52.62 21.62Q52.52 21.73 52.4 21.82Q52.29 21.91 52.17 21.99Q52.04 22.08 51.91 22.15Q51.78 22.22 51.65 22.27Q51.51 22.33 51.37 22.37Q51.23 22.41 51.09 22.44Q50.94 22.47 50.79 22.49Q50.65 22.5 50.5 22.5L3.5 22.5Q3.35 22.5 3.21 22.49Q3.06 22.47 2.91 22.44Q2.77 22.41 2.63 22.37Q2.49 22.33 2.35 22.27Q2.22 22.22 2.09 22.15Q1.96 22.08 1.83 21.99Q1.71 21.91 1.6 21.82Q1.48 21.73 1.38 21.62Q1.27 21.52 1.18 21.4Q1.09 21.29 1.01 21.17Q0.9237 21.04 0.8542 20.91Q0.7848 20.78 0.7284 20.65Q0.672 20.51 0.6292 20.37Q0.5864 20.23 0.5576 20.09Q0.5289 19.94 0.5144 19.79Q0.5 19.65 0.5 19.5Z" /><clipPath id="lc-filter-designer-toolbar_cl_1"><rect x="13" y="10" width="40" height="15" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_1)"><text fill="#010101" transform="translate(13 10)" font-size="12" font-family="Inter" x="0, 8.63, 15.61, 21.89, 24.73, 32.05" y="11.63">
+							Design
+					</text></g></g><rect fill="#010101" fill-opacity="0.2" transform="translate(64 6)" width="1" height="23" /><clipPath id="lc-filter-designer-toolbar_cl_2"><rect x="69" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_2)"><use xlink:href="#lc-filter-designer-toolbar_d0" fill="#010101" fill-opacity="0.2" transform="translate(69 5)" /><clipPath id="lc-filter-designer-toolbar_cl_3"><rect x="76" y="9" width="16" height="16" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_3)"><path fill="#010101" fill-opacity="0.6" transform="matrix(0.6667 0 0 0.6667 76 9)" d="M5 3C3.89 3 3 3.89 3 5L3 19Q3 19.1 3.01 19.2Q3.02 19.29 3.04 19.39Q3.06 19.49 3.09 19.58Q3.11 19.67 3.15 19.77Q3.19 19.86 3.24 19.94Q3.28 20.03 3.34 20.11Q3.39 20.19 3.45 20.27Q3.52 20.34 3.59 20.41Q3.66 20.48 3.73 20.55Q3.81 20.61 3.89 20.66Q3.97 20.72 4.06 20.76Q4.14 20.81 4.23 20.85Q4.33 20.89 4.42 20.91Q4.51 20.94 4.61 20.96Q4.71 20.98 4.8 20.99Q4.9 21 5 21L19 21Q19.1 21 19.2 20.99Q19.29 20.98 19.39 20.96Q19.49 20.94 19.58 20.91Q19.67 20.89 19.77 20.85Q19.86 20.81 19.94 20.76Q20.03 20.72 20.11 20.66Q20.19 20.61 20.27 20.55Q20.34 20.48 20.41 20.41Q20.48 20.34 20.55 20.27Q20.61 20.19 20.66 20.11Q20.72 20.03 20.76 19.94Q20.81 19.86 20.85 19.77Q20.89 19.67 20.91 19.58Q20.94 19.49 20.96 19.39Q20.98 19.29 20.99 19.2Q21 19.1 21 19L21 12L19 12L19 19L5 19L5 5L12 5L12 3L5 3M17.78 4C17.61 4 17.43 4.07 17.3 4.2L16.08 5.41L18.58 7.91L19.8 6.7C20.06 6.44 20.06 6 19.8 5.75L18.25 4.2C18.12 4.07 17.95 4 17.78 4M15.37 6.12L8 13.5L8 16L10.5 16L17.87 8.62L15.37 6.12Z" fill-rule="evenodd" /></g></g><clipPath id="lc-filter-designer-toolbar_cl_4"><rect x="101" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_4)"><use xlink:href="#lc-filter-designer-toolbar_d0" fill="#010101" fill-opacity="0.2" transform="translate(101 5)" /><clipPath id="lc-filter-designer-toolbar_cl_5"><rect x="108" y="9" width="16" height="16" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_5)"><path fill="#010101" fill-opacity="0.6" transform="matrix(0.6667 0 0 0.6667 108 9)" d="M14 1L14 3L10 3L10 1L8 1L8 22L10 22L10 20L14 20L14 22L16 22L16 1L14 1M14 5L14 8L10 8L10 5L14 5M14 10L14 13L10 13L10 10L14 10M10 18L10 15L14 15L14 18L10 18Z" fill-rule="evenodd" /></g></g><clipPath id="lc-filter-designer-toolbar_cl_6"><rect x="133" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_6)"><use xlink:href="#lc-filter-designer-toolbar_d0" fill="#010101" fill-opacity="0.2" transform="translate(133 5)" /><path fill="none" stroke="#373737" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(140 9)" d="M4.96 10.68L4.96 5.32Q4.96 5.29 4.97 5.25Q4.97 5.22 4.99 5.19Q5 5.15 5.02 5.12Q5.04 5.09 5.07 5.07Q5.09 5.04 5.12 5.02Q5.15 5 5.19 4.99Q5.22 4.97 5.25 4.97Q5.29 4.96 5.32 4.96L10.68 4.96Q10.71 4.96 10.75 4.97Q10.78 4.97 10.81 4.99Q10.85 5 10.88 5.02Q10.91 5.04 10.93 5.07Q10.96 5.09 10.98 5.12Q11 5.15 11.01 5.19Q11.03 5.22 11.03 5.25Q11.04 5.29 11.04 5.32L11.04 10.68Q11.04 10.71 11.03 10.75Q11.03 10.78 11.01 10.81Q11 10.85 10.98 10.88Q10.96 10.91 10.93 10.93Q10.91 10.96 10.88 10.98Q10.85 11 10.81 11.01Q10.78 11.03 10.75 11.03Q10.71 11.04 10.68 11.04L5.32 11.04Q5.29 11.04 5.25 11.03Q5.22 11.03 5.19 11.01Q5.15 11 5.12 10.98Q5.09 10.96 5.07 10.93Q5.04 10.91 5.02 10.88Q5 10.85 4.99 10.81Q4.97 10.78 4.97 10.75Q4.96 10.71 4.96 10.68Z" /><path fill="none" stroke="#373737" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(140 9)" d="M4.96 8L1.92 8" /><text fill="#373737" transform="translate(146.07 17)" font-size="1" font-family="IBM Plex Sans" x="-0.5" y="0.375">
+						1
+				</text><path fill="none" stroke="#373737" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(140 9)" d="M11.04 8L14.08 8" /><text fill="#373737" transform="translate(149.93 17)" font-size="1" font-family="IBM Plex Sans" x="-0.5" y="0.375">
+						2
+				</text></g><clipPath id="lc-filter-designer-toolbar_cl_7"><rect x="165" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_7)"><use xlink:href="#lc-filter-designer-toolbar_d0" fill="#010101" fill-opacity="0.2" transform="translate(165 5)" /><clipPath id="lc-filter-designer-toolbar_cl_8"><rect x="172" y="9" width="16" height="16" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar_cl_8)"><path fill="#010101" fill-opacity="0.6" transform="matrix(0.6667 0 0 0.6667 172 9)" d="M21 9L17 5L17 8L10 8L10 10L17 10L17 13M7 11L3 15L7 19L7 16L14 16L14 14L7 14L7 11Z" fill-rule="evenodd" /></g></g></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="250" height="36" viewBox="0 0 250 36"><defs><path id="lc-filter-designer-toolbar-dark_d0" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L26.5 0.5Q26.65 0.5 26.79 0.5144Q26.94 0.5289 27.09 0.5576Q27.23 0.5864 27.37 0.6292Q27.51 0.672 27.65 0.7284Q27.78 0.7848 27.91 0.8542Q28.04 0.9237 28.17 1.01Q28.29 1.09 28.4 1.18Q28.52 1.27 28.62 1.38Q28.73 1.48 28.82 1.6Q28.91 1.71 28.99 1.83Q29.08 1.96 29.15 2.09Q29.22 2.22 29.27 2.35Q29.33 2.49 29.37 2.63Q29.41 2.77 29.44 2.91Q29.47 3.06 29.49 3.21Q29.5 3.35 29.5 3.5L29.5 20.5Q29.5 20.65 29.49 20.79Q29.47 20.94 29.44 21.09Q29.41 21.23 29.37 21.37Q29.33 21.51 29.27 21.65Q29.22 21.78 29.15 21.91Q29.08 22.04 28.99 22.17Q28.91 22.29 28.82 22.4Q28.73 22.52 28.62 22.62Q28.52 22.73 28.4 22.82Q28.29 22.91 28.17 22.99Q28.04 23.08 27.91 23.15Q27.78 23.22 27.65 23.27Q27.51 23.33 27.37 23.37Q27.23 23.41 27.09 23.44Q26.94 23.47 26.79 23.49Q26.65 23.5 26.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /></defs><rect fill="#010101" width="250" height="36" /><rect fill="#15222D" width="250" height="36" /><path fill="white" fill-opacity="0.2" d="M201 36L201 35L0 35L0 36L201 36Z" fill-rule="evenodd" /><clipPath id="lc-filter-designer-toolbar-dark_cl_0"><rect x="6" y="6" width="54" height="23" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_0)"><path fill="white" fill-opacity="0.2" transform="translate(6 6)" d="M0.5 19.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L50.5 0.5Q50.65 0.5 50.79 0.5144Q50.94 0.5289 51.09 0.5576Q51.23 0.5864 51.37 0.6292Q51.51 0.672 51.65 0.7284Q51.78 0.7848 51.91 0.8542Q52.04 0.9237 52.17 1.01Q52.29 1.09 52.4 1.18Q52.52 1.27 52.62 1.38Q52.73 1.48 52.82 1.6Q52.91 1.71 52.99 1.83Q53.08 1.96 53.15 2.09Q53.22 2.22 53.27 2.35Q53.33 2.49 53.37 2.63Q53.41 2.77 53.44 2.91Q53.47 3.06 53.49 3.21Q53.5 3.35 53.5 3.5L53.5 19.5Q53.5 19.65 53.49 19.79Q53.47 19.94 53.44 20.09Q53.41 20.23 53.37 20.37Q53.33 20.51 53.27 20.65Q53.22 20.78 53.15 20.91Q53.08 21.04 52.99 21.17Q52.91 21.29 52.82 21.4Q52.73 21.52 52.62 21.62Q52.52 21.73 52.4 21.82Q52.29 21.91 52.17 21.99Q52.04 22.08 51.91 22.15Q51.78 22.22 51.65 22.27Q51.51 22.33 51.37 22.37Q51.23 22.41 51.09 22.44Q50.94 22.47 50.79 22.49Q50.65 22.5 50.5 22.5L3.5 22.5Q3.35 22.5 3.21 22.49Q3.06 22.47 2.91 22.44Q2.77 22.41 2.63 22.37Q2.49 22.33 2.35 22.27Q2.22 22.22 2.09 22.15Q1.96 22.08 1.83 21.99Q1.71 21.91 1.6 21.82Q1.48 21.73 1.38 21.62Q1.27 21.52 1.18 21.4Q1.09 21.29 1.01 21.17Q0.9237 21.04 0.8542 20.91Q0.7848 20.78 0.7284 20.65Q0.672 20.51 0.6292 20.37Q0.5864 20.23 0.5576 20.09Q0.5289 19.94 0.5144 19.79Q0.5 19.65 0.5 19.5Z" /><clipPath id="lc-filter-designer-toolbar-dark_cl_1"><rect x="13" y="10" width="40" height="15" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_1)"><text fill="white" transform="translate(13 10)" font-size="12" font-family="Inter" x="0, 8.63, 15.61, 21.89, 24.73, 32.05" y="11.63">
+							Design
+					</text></g></g><rect fill="white" fill-opacity="0.2" transform="translate(64 6)" width="1" height="23" /><clipPath id="lc-filter-designer-toolbar-dark_cl_2"><rect x="69" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_2)"><use xlink:href="#lc-filter-designer-toolbar-dark_d0" fill="white" fill-opacity="0.2" transform="translate(69 5)" /><clipPath id="lc-filter-designer-toolbar-dark_cl_3"><rect x="76" y="9" width="16" height="16" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_3)"><path fill="white" fill-opacity="0.6" transform="matrix(0.6667 0 0 0.6667 76 9)" d="M5 3C3.89 3 3 3.89 3 5L3 19Q3 19.1 3.01 19.2Q3.02 19.29 3.04 19.39Q3.06 19.49 3.09 19.58Q3.11 19.67 3.15 19.77Q3.19 19.86 3.24 19.94Q3.28 20.03 3.34 20.11Q3.39 20.19 3.45 20.27Q3.52 20.34 3.59 20.41Q3.66 20.48 3.73 20.55Q3.81 20.61 3.89 20.66Q3.97 20.72 4.06 20.76Q4.14 20.81 4.23 20.85Q4.33 20.89 4.42 20.91Q4.51 20.94 4.61 20.96Q4.71 20.98 4.8 20.99Q4.9 21 5 21L19 21Q19.1 21 19.2 20.99Q19.29 20.98 19.39 20.96Q19.49 20.94 19.58 20.91Q19.67 20.89 19.77 20.85Q19.86 20.81 19.94 20.76Q20.03 20.72 20.11 20.66Q20.19 20.61 20.27 20.55Q20.34 20.48 20.41 20.41Q20.48 20.34 20.55 20.27Q20.61 20.19 20.66 20.11Q20.72 20.03 20.76 19.94Q20.81 19.86 20.85 19.77Q20.89 19.67 20.91 19.58Q20.94 19.49 20.96 19.39Q20.98 19.29 20.99 19.2Q21 19.1 21 19L21 12L19 12L19 19L5 19L5 5L12 5L12 3L5 3M17.78 4C17.61 4 17.43 4.07 17.3 4.2L16.08 5.41L18.58 7.91L19.8 6.7C20.06 6.44 20.06 6 19.8 5.75L18.25 4.2C18.12 4.07 17.95 4 17.78 4M15.37 6.12L8 13.5L8 16L10.5 16L17.87 8.62L15.37 6.12Z" fill-rule="evenodd" /></g></g><clipPath id="lc-filter-designer-toolbar-dark_cl_4"><rect x="101" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_4)"><use xlink:href="#lc-filter-designer-toolbar-dark_d0" fill="white" fill-opacity="0.2" transform="translate(101 5)" /><clipPath id="lc-filter-designer-toolbar-dark_cl_5"><rect x="108" y="9" width="16" height="16" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_5)"><path fill="white" fill-opacity="0.6" transform="matrix(0.6667 0 0 0.6667 108 9)" d="M14 1L14 3L10 3L10 1L8 1L8 22L10 22L10 20L14 20L14 22L16 22L16 1L14 1M14 5L14 8L10 8L10 5L14 5M14 10L14 13L10 13L10 10L14 10M10 18L10 15L14 15L14 18L10 18Z" fill-rule="evenodd" /></g></g><clipPath id="lc-filter-designer-toolbar-dark_cl_6"><rect x="133" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_6)"><use xlink:href="#lc-filter-designer-toolbar-dark_d0" fill="white" fill-opacity="0.2" transform="translate(133 5)" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(140 9)" d="M4.96 10.68L4.96 5.32Q4.96 5.29 4.97 5.25Q4.97 5.22 4.99 5.19Q5 5.15 5.02 5.12Q5.04 5.09 5.07 5.07Q5.09 5.04 5.12 5.02Q5.15 5 5.19 4.99Q5.22 4.97 5.25 4.97Q5.29 4.96 5.32 4.96L10.68 4.96Q10.71 4.96 10.75 4.97Q10.78 4.97 10.81 4.99Q10.85 5 10.88 5.02Q10.91 5.04 10.93 5.07Q10.96 5.09 10.98 5.12Q11 5.15 11.01 5.19Q11.03 5.22 11.03 5.25Q11.04 5.29 11.04 5.32L11.04 10.68Q11.04 10.71 11.03 10.75Q11.03 10.78 11.01 10.81Q11 10.85 10.98 10.88Q10.96 10.91 10.93 10.93Q10.91 10.96 10.88 10.98Q10.85 11 10.81 11.01Q10.78 11.03 10.75 11.03Q10.71 11.04 10.68 11.04L5.32 11.04Q5.29 11.04 5.25 11.03Q5.22 11.03 5.19 11.01Q5.15 11 5.12 10.98Q5.09 10.96 5.07 10.93Q5.04 10.91 5.02 10.88Q5 10.85 4.99 10.81Q4.97 10.78 4.97 10.75Q4.96 10.71 4.96 10.68Z" /><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(140 9)" d="M4.96 8L1.92 8" /><text fill="#C8C8C8" transform="translate(146.07 17)" font-size="1" font-family="IBM Plex Sans" x="-0.5" y="0.375">
+						1
+				</text><path fill="none" stroke="#C8C8C8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" transform="translate(140 9)" d="M11.04 8L14.08 8" /><text fill="#C8C8C8" transform="translate(149.93 17)" font-size="1" font-family="IBM Plex Sans" x="-0.5" y="0.375">
+						2
+				</text></g><clipPath id="lc-filter-designer-toolbar-dark_cl_7"><rect x="165" y="5" width="30" height="24" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_7)"><use xlink:href="#lc-filter-designer-toolbar-dark_d0" fill="white" fill-opacity="0.2" transform="translate(165 5)" /><clipPath id="lc-filter-designer-toolbar-dark_cl_8"><rect x="172" y="9" width="16" height="16" /></clipPath><g clip-path="url(#lc-filter-designer-toolbar-dark_cl_8)"><path fill="white" fill-opacity="0.6" transform="matrix(0.6667 0 0 0.6667 172 9)" d="M21 9L17 5L17 8L10 8L10 10L17 10L17 13M7 11L3 15L7 19L7 16L14 16L14 14L7 14L7 11Z" fill-rule="evenodd" /></g></g></svg></span>
+</span><figcaption>The LC Filter Designer&#39;s toolbar, opened on a placed Filter: Design; Apply to Filter, Place filter, Place component and Replace this Filter.</figcaption></figure>
+<p>The ideal Filter and the ladder answer different questions. The block is a rational scattering
+matrix, so its two port impedances are independent and either may be complex. A ladder cannot do
+that: its load is the ratio the family produces (1 for Butterworth, a particular ratio for an
+even-order Chebyshev). When the two disagree, the window says what the ladder's load is and Apply
+keeps the impedances you typed on the block.</p>
+<p>It is direct synthesis. There is no optimiser in the window. A mask the snapped ladder misses is
+the existing optimizer's problem, on an E-series or on a part.</p>
+<h2 id="spec">The specification</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>What it sets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source, Load</td>
+<td>The two resistances, in ohms.</td>
+</tr>
+<tr>
+<td>First element</td>
+<td>Series or parallel. Parallel starts the ladder on a shunt arm.</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>The <strong>prototype</strong> order. A bandpass or bandstop replaces each element by a resonator, so an all-pole order 3 is six elements and a tank becomes four.</td>
+</tr>
+<tr>
+<td>Response</td>
+<td>In Shape. Maximally Flat, Chebyshev, Inverse Chebyshev, Elliptic, Bessel-Thomson, Gaussian.</td>
+</tr>
+<tr>
+<td>Type</td>
+<td>In Shape, for Elliptic only. <strong>Auto</strong> (a at odd order, c at even order), <strong>a</strong> (classical), <strong>b</strong> (even order, unequal terminations), <strong>c</strong> (even order, equal terminations).</td>
+</tr>
+<tr>
+<td>Form</td>
+<td>Lowpass, highpass, bandpass, bandstop.</td>
+</tr>
+<tr>
+<td>Order</td>
+<td><strong>Minimum</strong> is the smallest prototype order that meets Ap, As and the mask edges. <strong>Specify</strong> types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder).</td>
+</tr>
+<tr>
+<td>Ap, Ripple, As</td>
+<td>Passband attenuation, synthesis ripple and stopband attenuation, in dB. Ripple is enabled only for Chebyshev and elliptic, the two families that have one; the others build at a fixed ripple. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording.</td>
+</tr>
+<tr>
+<td>Edges</td>
+<td>Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. Each edge has its own prefix (Hz, kHz, MHz, GHz) beside it; changing one rescales that box only, so the frequency it states is unchanged. The plot's axis reads in the passband edge's prefix.</td>
+</tr>
+</tbody>
+</table>
+<p>The cutoff the ladder is built at is Fp for a lowpass or highpass, the passband edges for a
+bandpass, and Fp1 and Fp2 for a bandstop — the passband edges either side of the rejected band.
+Inverse Chebyshev is the one exception: its edge is where As is first met, so it is built at Fs
+(Fs1 and Fs2 on a band form). The other edges are the mask: where you want the stopband floor, not
+a second cutoff.</p>
+<p>The plot draws that mask by role. Passband edges and the −Ap limit are blue, stopband edges and
+the −As limit are red, and each limit spans only its own band, with the side a trace must not
+enter lightly tinted. A specification the window refuses (an edge on the wrong side of another)
+still draws its mask, so the mistake is visible.</p>
+<p>Gaussian is scaled so the cutoff is the −3.01 dB point at every order. Bessel is chosen for its
+group delay, which is the second plot.</p>
+<p>Inverse Chebyshev and elliptic are ladders of tanks: a finite transmission zero is a parallel LC in
+the through path or a series LC to ground. Elliptic ladders reach any practical order — the
+reference set runs to order 31 — and every one the window shows has been checked against the
+ideal response before it is shown. An even-order elliptic of type a keeps a finite floor at
+infinite frequency, which a ladder cannot reach; types <strong>b</strong> and <strong>c</strong> move that zero to infinity
+and are ladders at every even order, b with the load ratio its DC mismatch implies and c with
+equal terminations. <strong>Auto</strong> builds c at an even order.</p>
+<p>A handful of specifications have no ladder with every element positive: a very narrow transition
+at high order with a shallow stopband, and an inverse Chebyshev whose stopband floor is shallow for
+its order. The window says so in words and keeps the ideal curve; a deeper stopband, a wider
+transition or a lower order is the remedy. A ladder is never shown that does not reproduce the
+response.</p>
+<h2 id="mask">The plot</h2>
+<p>The two plots sit side by side across the top. Both are Data Display plots. The magnitude plot
+carries the ideal |S21|, the ladder's |S21|, and the ladder's |S11| on the right axis. The phase
+plot is the ladder's phase and its group delay, in the same nanoseconds the rest of the application
+uses. The ladder is drawn underneath, arm by arm: a series LC to ground is one column; a parallel
+LC in the through path is its capacitor on the line with the inductor on a short rail above; a
+bandpass or bandstop series arm with a transmission zero is a box of three parallel branches — the
+series resonator on top, its inductor on the line, its capacitor below; and a parallel resonator to
+ground is two adjacent legs. Every label sits beside its own symbol. <strong>Copy</strong> puts the same drawing
+on the clipboard, and pasted into a schematic it extracts to exactly the ladder in the table.</p>
+<p><strong>Design</strong> on the toolbar rebuilds the ladder and the curves. Every edit redesigns after a
+short pause, off the window's thread, so typing an order of 25 does not freeze the window; the
+status line says <em>Designing…</em> until the new ladder is drawn. A design whose specification has not
+changed (a new frequency or impedance level on the same response) is reused, not resynthesised.</p>
+<p>Design information reports the order, the ladder's load, and the minimum insertion loss in the
+passband — 0 for a lossless ladder that touches 0 dB, and the passband's worst-case best
+transmission after a snap.</p>
+<h2 id="values">Exact, standard, library</h2>
+<p>The realization table has the theoretical value and the value that is written.</p>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>What each element becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exact</td>
+<td>The continued-fraction value, in henries or farads.</td>
+</tr>
+<tr>
+<td>E6, E12, E24, E96</td>
+<td>The nearest IEC 60063 preferred number, nearest by ratio — the same snap the Smith chart and the optimizer use.</td>
+</tr>
+<tr>
+<td>A library series</td>
+<td><strong>Load library series</strong> indexes the workspace's vendor libraries. Pick one inductor series and one capacitor series. Each element becomes the nearest stated value in that series, and the row names the part.</td>
+</tr>
+</tbody>
+</table>
+<p>A workspace with no vendor library leaves the series lists empty and says so. It does not fall
+back to an E-series. The power-integrity part library is a different drawer and is not read here.</p>
+<p><strong>Known limitation: a placed ladder does not use the library parts.</strong> With a library series loaded,
+the table names each part and the ladder is drawn at that part's value, but <strong>Place filter</strong> and
+<strong>Replace this Filter</strong> put ordinary inductors and capacitors on the schematic, at those values.
+They are not the vendor parts, and nothing on the placed ladder refers back to the library part.
+The block written by <strong>Apply to Filter</strong> or <strong>Place component</strong> remembers the series and parts, so
+the window reopens on them. Placing the library parts themselves is planned for a later release.</p>
+<h2 id="place">Where the result goes</h2>
+<p><strong>Apply to Filter</strong>, when the window was opened on a placed Filter, writes the whole specification
+onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
+impedances, so the ideal block and the ladder are the same response. It also writes the window's
+own settings, which the block keeps for the Designer and does not simulate: Ap, every mask edge
+(<code>Fp</code>, <code>Fs</code> or <code>Fp1</code>, <code>Fs1</code>, <code>Fs2</code>, <code>Fp2</code>), Minimum or Specify for the order, the first element, the
+value series and the library series and parts. <strong>Synthesise…</strong> on that Filter later reopens the
+window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
+because the block has no elements.</p>
+<p><strong>A Filter that carries a design is locked.</strong> Its properties and its parameter dialog show the same
+fields the window does, in the window's order, but greyed: every change goes through
+<strong>Synthesise…</strong> and Apply, so the block never drifts from the design behind it. <code>IL</code> stays editable,
+because the window does not set it. A Filter placed from the palette carries no design; it shows
+only the block's own fields and is edited directly.</p>
+<p><strong>Place filter</strong> puts the realised ladder, at the values the table shows, on the schematic. It has no
+terminations: each end is a short wire with a net label, <code>IN</code> on port 1 and <code>OUT</code> on port 2 (<code>IN2</code> and
+<code>OUT2</code> onward when the schematic already has those names), ready to be wired into the design. The
+ladder follows the pointer on the connection grid until you click, exactly as a paste does, and
+Escape drops it. <strong>Place component</strong> places one Filter block carrying the specification and the
+settings, written by the same function Apply uses.</p>
+<p>Both go into the schematic the window was opened on. A window opened from Tools ▸ LC Filter Designer
+places into the schematic you last worked in, and both buttons are disabled when there is no
+schematic or no design; the tooltip says which.</p>
+<p>When the window was opened on a Filter, the <strong>Replace this Filter</strong> toolbar button, while lit, turns
+Place filter into a replacement. The block is removed, its two pins keep their nets under labels
+(the net's own name when it already has one), and the ladder is placed below where the block was,
+with its ends on the same names. It is one undo step, and the ladder arrives selected so you can
+move it.</p>
+<p>To get the ladder as a netlist, use <code>circuitrf filter lc … -o filter.cnl</code>: two terminations and the
+inductors and capacitors between them. That file is what <code>sparam</code> simulates, and it is the same
+netlist the plot was drawn from.</p>
+<h2 id="headless">The same thing from the command line</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>
+<p>The verb calls the same synthesis the window calls. The options are in <a href="cli.html#filter-lc">CLI › filter lc</a>.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="propagation-channel.html"><span class="dir">Previous</span><span class="name">The Propagation Channel: a radio link in one schematic</span></a>
+  <a class="next" href="simulations.html"><span class="dir">Next</span><span class="name">Simulations</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

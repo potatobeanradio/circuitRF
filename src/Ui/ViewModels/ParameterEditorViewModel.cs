@@ -1225,7 +1225,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             if (comp.Symbol == SymbolKind.Tfr) AdoptTfrFilm(comp);
 
             var built = new List<ParameterRowViewModel>();
-            foreach (var param in comp.Parameters)
+            foreach (var param in comp.Symbol == SymbolKind.Filter ? FilterRowParameters(comp) : comp.Parameters)
             {
                 if (param.Name is "NumPorts" or "NumFreqs" or "CvData" || string.IsNullOrEmpty(param.Name)) continue;
 
@@ -1325,6 +1325,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             foreach (var row in built.Where(r => !r.IsFilePathParam && !IsFloatedChoice(r))) Rows.Add(row);
             foreach (var row in built.Where(IsOwnOverride)) Rows.Add(row);
             ConfigureTestPadRows();
+            ConfigureFilterRows();
             GroupRows(comp.Symbol);
         }
 
@@ -1363,6 +1364,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         if (IsVendorModelComponent(comp)) RefreshVendorModel();
         if (comp.Symbol == SymbolKind.WBond) RefreshWBondProperties();
         RefreshMatchProperties();
+        OnPropertyChanged(nameof(IsFilter));
         RefreshVerilogAPanel();
         SyncVerilogAFromModelFile();
         SyncComposedFetSymbol();
@@ -2471,6 +2473,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         foreach (var row in Rows.Concat(SwitchRows).Concat(VariableRows))
             row.RefreshFromModel();
         ConfigureTestPadRows();
+        ConfigureFilterRows();
         _isRefreshing = false;
         // A READOUT of the instance, so it follows every change to it — including an undo of a
         // footprint change, and including the Custom… picker's own write.
@@ -2683,7 +2686,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     {
         // SnP uses a custom panel; generic rows are always empty.
         if (comp.Symbol is SymbolKind.Snp or SymbolKind.EmFieldData or SymbolKind.Deembed) return [];
-        return comp.Parameters
+        return (comp.Symbol == SymbolKind.Filter ? FilterRowParameters(comp) : comp.Parameters)
             .Where(p => p.Name is not "NumPorts" and not "NumFreqs" and not "CvData" && !string.IsNullOrEmpty(p.Name))
             // A SpiceModel's panel owns File/Name/PinConfig/Pitch, so they are not rows and must not
             // be counted as ones here — this list IS the comparison OnModelChanged rebuilds on, and

@@ -190,6 +190,15 @@ public static class MatchSynthesis
 
     private static MatchSynthesisResult SynthesizeUncached(MatchDesign design)
     {
+        // Bandstop is a filter. A match is a passband between two terminations; a stopband in the
+        // middle is the filter designer's question, and answering it here would be a second ladder
+        // with a different meaning for the same form name.
+        if (design.Form == NetworkForm.Bandstop)
+            return MatchSynthesisResult.Refuse(MatchRefusal.Create(
+                MatchRefusalKind.ResponseInfeasible,
+                "Bandstop is a filter form. Match synthesises lowpass, highpass and bandpass networks.",
+                null));
+
         // ── The form dispatch comes FIRST, and not only for tidiness ──────────
         //
         // match.md §16's forms have no band centre, no fractional bandwidth and no Fano root, so

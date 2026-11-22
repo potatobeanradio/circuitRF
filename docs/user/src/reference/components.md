@@ -4051,18 +4051,34 @@ In depth: [System Components › 180° Hybrid](system-components.html#hybrid180)
 
 {{symbol: filter}}
 
-A two-port filter synthesised from a prototype — Butterworth, Chebyshev, inverse Chebyshev, Bessel
-or elliptic, as lowpass, bandpass or highpass. **Its symbol is the [Match](#match) symbol** — the
-same picture, not a related one. Impedance matching is a form of filtering, the two are built out of
-the same idea, and the library says so. The three stacked waves read as a frequency axis with the
-highest at the top, and a slash is struck through every wave the network blocks, following the
-`Form` parameter:
+A two-port filter synthesised from a prototype — Butterworth, Chebyshev, inverse Chebyshev, Bessel,
+Gaussian or elliptic, as lowpass, highpass, bandpass or bandstop. **Its symbol is the [Match](#match)
+symbol** — the same picture, not a related one. Impedance matching is a form of filtering, the two
+are built out of the same idea, and the library says so. The three stacked waves read as a frequency
+axis with the highest at the top, and a slash is struck through every wave the network blocks,
+following the `Form` parameter:
 
 | `Form` | Struck | Passes |
 |---|---|---|
 | `Lowpass` | the top two | the lowest |
 | `Bandpass` | the top and the bottom | the middle |
 | `Highpass` | the bottom two | the highest |
+| `Bandstop` | the middle | the lowest and the highest |
+
+{{ui: filter-form-glyphs}}
+
+The [LC Filter Designer](lc-filter-designer.html) builds the LC ladder for every family — elliptic of any
+practical order and type included — and can snap each value onto a standard series or a library
+part. This block stays the ideal response. Right-click a Filter and choose **Synthesise…** (or press
+it in the properties) to open the Designer on it.
+
+The parameters from `Ap` on are the **Designer's own settings**: the mask it sized the order for, how
+it chose the order, how it built the ladder. Apply to Filter writes them so the Designer reopens on
+exactly what it applied. The block's response reads none of them, and none of them reaches the
+netlist, so a Filter simulates the same with or without them. They appear only on a Filter that
+carries a design, and such a Filter is **locked**: every field but `IL` is greyed, and a change goes
+through **Synthesise…**. On a Filter without a design, a row the chosen `Response` or `Form` does not
+read is greyed, with the reason as its tooltip. The rows are listed in the Designer's own order.
 
 Tell a filter from a matching network by its type label and its instance name — `FLT1` against `MN1`
 — the same way the five FET laws, which also share one glyph, are told apart. `Order` is the

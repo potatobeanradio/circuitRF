@@ -85,6 +85,14 @@ It prints every row's height, its text's top and centre line, and the same for e
 A row taller than a plain one, or a control whose centre is off its text's, reads straight off that output.
 Default size 700x260.
 
+**The LC Filter Designer** opens as Synthesise… opens it, on a default Filter block, at one form:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --filter <Lowpass|Highpass|Bandpass|Bandstop> -o out.png [--size WxH] [steps]
+```
+
+The status line prints after the design has run.
+
 **The Tuning window** opens on a schematic's ticked Tune rows, the way the shell hosts it:
 
 ```

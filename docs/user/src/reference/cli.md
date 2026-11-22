@@ -141,6 +141,7 @@ convention behind both.</p>
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `chain` | `.cchain` | The same budget the [RF Chain Budget](chain-budget.html) window recomputes on every edit, and its Transfer to Schematic | The cascade to stdout; `-o .npy/.mat/.txt` for the budget as a DataSet; `--to-schematic` writes the test benches (and an array's Steering and Combiners benches) and their displays |
 | `filter` | **nothing** — a specification in flags | The [Filter Designer](filter-designer.html)'s realisers, and one of them | Each realiser and whether it can build the filter, to stdout; with `--realiser`, the test bench as a `.cnl` (`-o`), a `.csch` with `--to-schematic`, and a Planar EM `.em.s2p` with `--em` |
+| `filter lc` | a specification on the command line | The same ladder the LC Filter Designer draws | The element table to stdout; `-o` a `.cnl` of the ladder |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `snp` | a Touchstone `.sNp` | The same reading and plots the [S-Parameter Viewer](sparameter-viewer.html) shows | What the file states, to stdout; `-o .svg/.pdf/.png` for the four plots, `-o .cdd` for a Data Display of them |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
@@ -1714,6 +1715,31 @@ carrying `column`, `name`, `value`, `target` and `pass`.
   Unloaded Q     lossless</span></code></pre>
 
 Over MCP, this is the `create` tool's `filter` mode. Its arguments have the flags' names, except `technology` for `--tech`.
+
+## `filter lc` — an LC ladder from a specification {#filter-lc}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandpass --response Chebyshev --order 5 --f1 1GHz --f2 2GHz --ap 0.1 --series e24 -o filter.cnl</code></pre>
+
+`filter lc` is the LC Filter Designer with no window. It synthesises the same ladder the window does —
+Maximally Flat, Chebyshev, inverse Chebyshev, elliptic, Bessel or Gaussian, as a lowpass, highpass,
+bandpass or bandstop — and prints each element as exact value and, with `--series`, the nearest
+IEC preferred number.
+`--first parallel` starts the ladder on a shunt arm. `--fc` (or `--fp`) is the cutoff of a lowpass
+or highpass. `--f1` and `--f2` are the passband edges: a bandpass passes between them and a bandstop
+rejects between them (inverse Chebyshev: the edges where `--as` is first met). `Order` is the prototype order, so a bandpass or bandstop of order 3 is six elements.
+
+The load the ladder prints is the one the family produces. An even-order Chebyshev does not come
+out equal to the source; that ratio is the family's. The ideal Filter block can take any pair of
+port impedances, and the verb says so rather than building a ladder that does not have them.
+
+Inverse Chebyshev and elliptic are ladders of tanks. `--as` is their stopband floor.
+`--elliptic-type auto|a|b|c` picks the elliptic response: `auto` (the default) is type a at odd
+order and type c at even order; b and c are the even-order types that are ladders (b with unequal
+terminations, c with equal ones). An even-order inverse Chebyshev, or an even-order elliptic of
+type a, keeps a finite floor at infinite frequency, which a ladder cannot, and the verb refuses it.
+A specification with no all-positive ladder is refused with the reason, never answered
+approximately. A frequency is a number and a unit (`1GHz`, `100MHz`). Exit 0 when a ladder was
+written, 1 when the family has no ladder, 2 when an argument does not parse.
 
 ## `smith` — a matching network, headless {#smith}
 

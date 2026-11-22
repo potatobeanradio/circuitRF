@@ -576,9 +576,13 @@ Parameters: {{anchor: components#duplexer|Components › Duplexer}}.
 {{symbol: filter}}
 
 A two-port filter synthesised from a prototype: `Response` picks the family — **Butterworth**,
-**Chebyshev**, **InvChebyshev**, **Bessel** or **Elliptic** — and `Form` picks Lowpass, Bandpass or
-Highpass. A parameter the chosen family does not read is ignored rather than refused, so changing
-family never means clearing a field first.
+**Chebyshev**, **InvChebyshev**, **Bessel**, **Gaussian** or **Elliptic** — and `Form` picks
+Lowpass, Highpass, Bandpass or Bandstop. A parameter the chosen family does not read is ignored
+rather than refused, so changing family never means clearing a field first. The
+[LC Filter Designer](lc-filter-designer.html) builds the LC ladder for every family; this block stays the
+rational response, which is what an arbitrary impedance pair and a complex port need. Right-click a
+Filter and choose **Synthesise…** to open the Designer on it; it can apply the design back onto the
+block, place the ladder beside it, or replace the block with the ladder.
 
 <div class="callout note">
 <span class="label">It wears the Match component's symbol, and that is deliberate</span>
@@ -590,11 +594,20 @@ you tell the five FET laws apart: by the <b>type label</b> and the <b>instance n
 band follows <code>Form</code> — see <a href="dynamic-symbols.html#form">Dynamic symbols</a>.</p>
 </div>
 
-**`Order` is the PROTOTYPE order.** The bandpass transformation doubles the degree, so `Order = 3`
-as a bandpass is a **6th-degree network**. Both conventions exist in the wild; this one is the
-prototype's. For the three all-pole families the far stopband falls at 20 × `Order` dB per decade;
+{{ui: filter-form-glyphs}}
+
+**`Order` is the PROTOTYPE order.** The bandpass and bandstop transformations double the degree, so
+`Order = 3` as a bandpass or a bandstop is a **6th-degree network**. Both conventions exist in the
+wild; this one is the prototype's. On a bandstop, `F1` and `F2` are the passband edges either side of the rejected band (for InvChebyshev, where `Astop` is first met). For the three all-pole families the far stopband falls at 20 × `Order` dB per decade;
 InvChebyshev and Elliptic put transmission zeros on the jω axis instead, which is what buys their
 sharp transition and why their stopbands **level off** at `Astop` rather than continuing to fall.
+
+**`EllipticType`** picks which elliptic response: `A` is the classical one. An even-order type A
+keeps a finite floor at infinite frequency, which no LC ladder reaches; `B` moves its highest
+transmission zero to infinity (the terminations come out unequal) and `C` also moves its lowest
+reflection zero to DC (equal terminations). `Auto` is A at odd order and C at even order. The
+default is `A`, so every Filter placed before the parameter existed keeps its response; the
+[LC Filter Designer](lc-filter-designer.html) writes the type its ladder was built as.
 
 How much that selectivity is worth, at order 5 with 0.1 dB of passband ripple and a 60 dB floor: the
 elliptic reaches &minus;60 dB at 2.04 × the band edge, against Chebyshev's 3.41, Butterworth's 3.98

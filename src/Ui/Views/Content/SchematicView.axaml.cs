@@ -792,6 +792,7 @@ public partial class SchematicView : UserControl
         // workspace to write into: those are states the user has to act on, and a silently missing
         // item reads as a bug.
         CtxPlaceSiteParts.IsVisible = SchematicViewModel.HasSites(comp);
+        CtxSynthesizeFilter.IsVisible = Vm?.SynthesizeTarget(id) is not null;
 
         bool isMatch = comp?.Symbol == SymbolKind.Match;
         CtxFlattenMatch.IsVisible = isMatch;
@@ -873,6 +874,17 @@ public partial class SchematicView : UserControl
     {
         if (SchematicCanvasCtrl.ContextMenuTargetId is { } id) Vm?.PlaceSiteParts(id);
         SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Context menu ▸ Synthesise… — the LC Filter Designer on the clicked Filter, through the same
+    /// <c>LcFilterDesignerWindow.Show</c> the Properties panel's Synthesise… calls, so a second
+    /// request brings the open window forward rather than opening another (brief FD-P §2).
+    /// </summary>
+    private void OnCtxSynthesizeFilter(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is null || Vm.SynthesizeTarget(SchematicCanvasCtrl.ContextMenuTargetId) is not { } comp) return;
+        Views.Filters.LcFilterDesignerWindow.Show(Vm, comp, TopLevel.GetTopLevel(this) as Window);
     }
 
     /// <summary>

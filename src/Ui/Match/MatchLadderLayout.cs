@@ -83,6 +83,24 @@ public sealed record MatchLadderElement(
     public int DcBlockEnd { get; init; }
 
     /// <summary>
+    /// True when this shunt element's lower pin is NOT ground — a leg of a parallel pair partway
+    /// down an LC Filter Designer stub. <see cref="MatchLadderLayout.GroundYFor"/> draws no ground under it.
+    /// </summary>
+    public bool NoGround { get; init; }
+
+    /// <summary>
+    /// True when the labels go ABOVE the glyph rather than the editor's default below it — a
+    /// through-path element with another branch of its arm drawn underneath.
+    /// </summary>
+    public bool LabelAbove { get; init; }
+
+    /// <summary>
+    /// True when a shunt element's labels always go BESIDE it, never under its ground — a symbol
+    /// with another symbol of its stub below it, where "under the ground" is on that symbol.
+    /// </summary>
+    public bool LabelBeside { get; init; }
+
+    /// <summary>
     /// The theme role the element's SYMBOL is drawn in — the single mapping from meaning to colour.
     /// </summary>
     /// <remarks>
@@ -139,6 +157,17 @@ public sealed record MatchTransformBracket(string Label, int TransformIndex, dou
 /// </param>
 /// <param name="X">The x its PIN lands on — the same point the spine ends at.</param>
 public sealed record MatchLadderTermination(int End, string InstanceName, string ResistanceText, double X);
+
+/// <summary>
+/// A through-path parallel arm drawn above the spine: vertical drops at <see cref="X0"/> /
+/// <see cref="X1"/> from the spine up to <see cref="Y"/>, with horizontal runs in the gaps the
+/// element glyph does not cover. Used by the LC Filter Designer for L∥C in a series arm; the Match
+/// Designer never emits these (its shunt drops were designed away).
+/// </summary>
+/// <param name="X0">Left drop, world units.</param>
+/// <param name="X1">Right drop, world units.</param>
+/// <param name="Y">Centre y of the parallel element(s) on this rail.</param>
+public sealed record MatchParallelArm(double X0, double X1, double Y);
 
 /// <summary>
 /// The ladder preview's geometry (match.md §9.3): where each element sits, and where each transform
@@ -251,6 +280,21 @@ public sealed class MatchLadderLayout
 
     /// <summary>The transform brackets, already assigned to non-overlapping rows.</summary>
     public IReadOnlyList<MatchTransformBracket> Brackets { get; init; } = [];
+
+    /// <summary>
+    /// Parallel through-path arms above the spine (LC Filter Designer elliptic / inverse-Chebyshev).
+    /// Empty for every Match Designer layout.
+    /// </summary>
+    public IReadOnlyList<MatchParallelArm> ParallelArms { get; init; } = [];
+
+    /// <summary>
+    /// Wires beyond the spine and the parallel arms — the bars that join a parallel pair partway
+    /// down an LC Filter Designer stub to its column. Empty for every Match Designer layout.
+    /// </summary>
+    public IReadOnlyList<(double X0, double Y0, double X1, double Y1)> ExtraWires { get; init; } = [];
+
+    /// <summary>Junction dots for <see cref="ExtraWires"/>' T-junctions.</summary>
+    public IReadOnlyList<(double X, double Y)> ExtraDots { get; init; } = [];
 
     /// <summary>x of the port-1 connection.</summary>
     public double PortLeftX { get; init; }
@@ -437,12 +481,75 @@ public sealed class MatchLadderLayout
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(element);
-        if (!element.IsShunt) return null;
+        if (!element.IsShunt || element.NoGround) return null;
         foreach (var other in layout.Elements)
             if (other.IsShunt && other.X == element.X && other.Y > element.Y)
                 return null;
         return element.Y + MatchSchematicGeometry.LeadHalf;
     }
+
+    /// <summary>
+    /// Every wire the ladder is drawn with, as straight segments: the spine in the gaps between
+    /// its series glyphs, then each parallel arm's two drops and its rail in the gaps between the
+    /// glyphs ON THAT ARM. The pane (<c>MatchSchematicModel</c>) and its Copy
+    /// (<c>MatchSchematicCopy</c>) both draw from this, so the two cannot wire differently.
+    /// </summary>
+    /// <remarks>
+    /// <b>A rail only ever sees glyphs between its own drops.</b> Two arms routinely share a rail
+    /// height; walking every glyph at that height ran one arm's rail into the next arm's glyph —
+    /// joining two tanks' internal nets — and left its own glyph unconnected at the far drop.
+    /// </remarks>
+    public static IEnumerable<(double X0, double Y0, double X1, double Y1)> WireSegments(
+        MatchLadderLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        const double lead = MatchSchematicGeometry.LeadHalf;
+        const double eps = 1e-9;
+        double y = SpineY;
+
+        double cursor = layout.PortLeftX;
+        foreach (var e in layout.Elements
+                     .Where(e => !e.IsShunt && Math.Abs(e.Y - y) < eps)
+                     .OrderBy(e => e.X))
+        {
+            double left = e.X - lead;
+            if (left > cursor) yield return (cursor, y, left, y);
+            cursor = Math.Max(cursor, e.X + lead);
+        }
+        if (layout.PortRightX > cursor) yield return (cursor, y, layout.PortRightX, y);
+
+        foreach (var arm in layout.ParallelArms)
+        {
+            if (Math.Abs(arm.Y - y) > eps)
+            {
+                yield return (arm.X0, y, arm.X0, arm.Y);
+                yield return (arm.X1, y, arm.X1, arm.Y);
+            }
+            double run = arm.X0;
+            foreach (var e in layout.Elements
+                         .Where(e => !e.IsShunt && Math.Abs(e.Y - arm.Y) < eps
+                                     && e.X - lead >= arm.X0 - eps && e.X + lead <= arm.X1 + eps)
+                         .OrderBy(e => e.X))
+            {
+                double left = e.X - lead;
+                if (left > run) yield return (run, arm.Y, left, arm.Y);
+                run = Math.Max(run, e.X + lead);
+            }
+            if (arm.X1 > run) yield return (run, arm.Y, arm.X1, arm.Y);
+        }
+
+        foreach (var w in layout.ExtraWires) yield return w;
+    }
+
+    /// <summary>
+    /// The vertical label offset that puts an element's three label rows ABOVE its glyph instead
+    /// of the editor's default below: the last row's baseline sits one comfortable gap above the
+    /// glyph's ±65 body.
+    /// </summary>
+    public const double LabelAboveDy = -(SchematicComponentLabelBaseY + 2 * SchematicComponentLabelStep + 20.0 + 65.0 + 20.0);
+
+    private const double SchematicComponentLabelBaseY = CircuitRF.Design.Schematic.SchematicComponent.LabelBaseY;
+    private const double SchematicComponentLabelStep = CircuitRF.Design.Schematic.SchematicComponent.LabelWorldStep;
 
     /// <summary>
     /// What the preview says about one element. <b>Out-of-range wins over absorbed</b>: a negative

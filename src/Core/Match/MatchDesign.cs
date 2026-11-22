@@ -52,6 +52,13 @@ public enum NetworkForm
 
     /// <summary>Series C in the through path, shunt L to ground. Transparent at infinity.</summary>
     Highpass,
+
+    /// <summary>
+    /// Stopband between two edges, passbands outside them. A filter form: Match refuses it, because
+    /// a match is a passband between two terminations and a stopband in the middle is a different
+    /// question. Appended, so a payload written before it still decodes as the form it was.
+    /// </summary>
+    Bandstop,
 }
 
 /// <summary>The prototype family the synthesis draws from (match.md §4.3, §6).</summary>

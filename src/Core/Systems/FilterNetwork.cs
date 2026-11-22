@@ -15,8 +15,15 @@ namespace CircuitRF.Core.Systems;
 ///   Lowpass    s → s/ω_c                                   Ω = ω/ω_c
 ///   Highpass   s → ω_c/s                                    Ω = −ω_c/ω
 ///   Bandpass   s → (s² + ω_0²)/(BW·s)                       Ω = (ω² − ω_0²)/(BW·ω)
+///   Bandstop   s → BW·s / (s² + ω_0²)                       Ω = BW·ω / (ω_0² − ω²)
 ///                  ω_0 = 2π·sqrt(F1·F2)   BW = 2π(F2 − F1)
 /// </code>
+///
+/// <para><b>Bandstop uses the same two edges as bandpass, and they mean the cutoff.</b> For a
+/// bandpass those edges are the passband. For a bandstop they are the stopband: <c>Ω = 0</c> at DC
+/// and at infinity, so both are throughs, and <c>Ω → ∞</c> at the geometric centre, so that is the
+/// stop. A bandstop of prototype order 3 is a 6th-degree network for the same reason a bandpass
+/// is.</para>
 ///
 /// <para><b>The bandpass transformation DOUBLES the degree.</b> A user's <c>Order = 3</c> bandpass
 /// is a sixth-degree network, and <c>Order</c> here means the PROTOTYPE order. Both conventions
@@ -66,18 +73,21 @@ public sealed class FilterNetwork
     /// <param name="rippleDb">Passband ripple, dB.</param>
     /// <param name="astopDb">Stopband floor, dB.</param>
     /// <param name="ilDb">A flat insertion loss laid on top of the ideal response, dB.</param>
+    /// <param name="ellipticType">Read by Elliptic only; see <see cref="EllipticType"/>.</param>
     public static FilterNetwork Create(FilterResponse response, NetworkForm form, int order,
                                        double fcHz, double f1Hz, double f2Hz,
-                                       double rippleDb, double astopDb, double ilDb)
+                                       double rippleDb, double astopDb, double ilDb,
+                                       EllipticType ellipticType = EllipticType.A)
     {
-        var proto = FilterPrototype.Create(response, order, rippleDb, astopDb);
+        var proto = FilterPrototype.Create(response, order, rippleDb, astopDb, ellipticType);
         double ilAmp = Math.Pow(10.0, -ilDb / 20.0);
 
-        if (form == NetworkForm.Bandpass)
+        if (form is NetworkForm.Bandpass or NetworkForm.Bandstop)
         {
             if (!(f1Hz > 0.0) || !(f2Hz > f1Hz) || !double.IsFinite(f2Hz))
                 throw new ArgumentOutOfRangeException(nameof(f1Hz),
-                    $"A bandpass filter needs 0 < F1 < F2; got F1 = {f1Hz:G6} Hz, F2 = {f2Hz:G6} Hz.");
+                    $"A {form.ToString().ToLowerInvariant()} filter needs 0 < F1 < F2; " +
+                    $"got F1 = {f1Hz:G6} Hz, F2 = {f2Hz:G6} Hz.");
 
             double w1 = 2.0 * Math.PI * f1Hz, w2 = 2.0 * Math.PI * f2Hz;
             return new FilterNetwork(proto, form, 0.0, Math.Sqrt(w1 * w2), w2 - w1, ilAmp);
@@ -99,9 +109,21 @@ public sealed class FilterNetwork
     {
         NetworkForm.Lowpass  => omega / _wc,
         NetworkForm.Highpass => omega == 0.0 ? double.NegativeInfinity : -_wc / omega,
+        NetworkForm.Bandstop => BandstopOmega(omega),
         _                    => omega == 0.0 ? double.NegativeInfinity
                                              : (omega * omega - _w0 * _w0) / (_bw * omega),
     };
+
+    /// <summary>
+    /// <c>Ω = BW·ω / (ω0² − ω²)</c>. Zero at DC and at infinity, infinite at the stopband centre.
+    /// </summary>
+    private double BandstopOmega(double omega)
+    {
+        if (omega == 0.0 || double.IsPositiveInfinity(omega)) return 0.0;
+        double d = _w0 * _w0 - omega * omega;
+        if (d == 0.0) return double.PositiveInfinity;
+        return _bw * omega / d;
+    }
 
     /// <summary>
     /// The two-port S at <paramref name="omega"/> ≥ 0, referenced to whatever impedances the caller

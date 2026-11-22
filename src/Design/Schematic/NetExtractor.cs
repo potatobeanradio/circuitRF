@@ -3602,6 +3602,10 @@ public static class NetExtractor
             // engine as raw overrides, so no .cnl quoting/Elaborator string-param handling is needed
             // for them at all.
             .Where(p => p.Name is not "CvData" and not "ShowBias" and not "SignalLayer" and not "GroundReference")
+            // A Filter's Designer settings (mask, order mode, value series) are read by the Filter
+            // Designer and by nothing downstream. Dropped, so the line is the same with or without
+            // them and a blank mask edge never reaches the .cnl as `Fs=`.
+            .Where(p => !ComponentTypeRegistry.IsLcFilterDesignerParameter(comp.Symbol, p.Name))
             // CLIN's Eo is optional and placed blank (blank = "same as E"). It is DROPPED rather than
             // emitted: `Eo=` with nothing after it is the empty-parameter-value trap, where the .cnl
             // reader takes the next token as the value.

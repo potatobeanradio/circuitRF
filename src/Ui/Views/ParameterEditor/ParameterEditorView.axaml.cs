@@ -181,6 +181,7 @@ public partial class ParameterEditorView : UserControl
             _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested -= OnOpenMatchDesigner;
             _boundVm.OpenFilterDesignerRequested -= OnOpenFilterDesigner;
+            _boundVm.OpenLcFilterDesignerRequested -= OnOpenLcFilterDesigner;
             _boundVm.OpenSignalDesignerRequested -= OnOpenSignalDesigner;
             _boundVm.OpenPhasedArrayToolRequested -= OnOpenPhasedArrayTool;
             _boundVm.OpenSnpViewerRequested -= OnOpenSnpViewer;
@@ -192,6 +193,7 @@ public partial class ParameterEditorView : UserControl
             _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested += OnOpenMatchDesigner;
             _boundVm.OpenFilterDesignerRequested += OnOpenFilterDesigner;
+            _boundVm.OpenLcFilterDesignerRequested += OnOpenLcFilterDesigner;
             _boundVm.OpenSignalDesignerRequested += OnOpenSignalDesigner;
             _boundVm.OpenPhasedArrayToolRequested += OnOpenPhasedArrayTool;
             _boundVm.OpenSnpViewerRequested += OnOpenSnpViewer;
@@ -230,6 +232,12 @@ public partial class ParameterEditorView : UserControl
     /// <summary>Opens the Filter Designer with the selected filter part's family preselected.</summary>
     private void OnOpenFilterDesigner(CircuitRF.Design.Schematic.EditableComponent comp)
         => Views.Filters.FilterDesignerWindow.Show(Vm?.SchematicVm, comp.Symbol, TopLevel.GetTopLevel(this) as Window);
+
+    private void OnOpenLcFilterDesigner(CircuitRF.Design.Schematic.EditableComponent comp)
+    {
+        if (Vm?.SchematicVm is not { } schematicVm) return;
+        Views.Filters.LcFilterDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
+    }
 
     /// <summary>Opens the Signal Designer for the selected MOD_Source.</summary>
     private void OnOpenSignalDesigner(CircuitRF.Design.Schematic.EditableComponent comp)
