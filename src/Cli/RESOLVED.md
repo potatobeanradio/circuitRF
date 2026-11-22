@@ -3704,6 +3704,19 @@ refuses before reading anything. Exit 0, plain text. Under `serve` the console i
 the help-text lines are given. The top-level help had no entry for `env`, `fields`, `chain` or `history`, and still described
 `em` as taking only a `.cem`; both `em` input refusals said the same. Gate: `MissingVerbsCliTests.AVerbsHelp_IsItsUsage_NotARefusal`.
 
+## `netlist --flatten`: a Match as its L and C parts (2026-11-21)
+
+**Found:** with a Match now usable from a netlist (src/Core/Match/RESOLVED.md), an agent could design a matching
+network and simulate it but could not say what parts it holds: the ladder exists only inside the elaborated
+`MatchModel`, and the Designer's Flatten to Cell is the only thing that writes it out.
+
+**Added:** `netlist <.cnl|.csch> --flatten [-o out.cnl]` (MCP `netlist flatten=true`) copies the netlist and
+replaces each top-level `Match:` line with one `L:`/`C:` line per stamped element, values in nH and pF to nine
+digits, internal nets named `<match>_<net>`. It owns no flattening: the ladder is the elaborated model's and the
+nets are `MatchFlattenPlan`'s, the walk the GUI's Flatten writes its cell from. A Match inside a cell definition
+is left in place with a warning. The flattened dual-band filter's S-parameters agree with the Match's to 1e-7.
+Gate: `MissingVerbsCliTests.NetlistFlatten_WritesTheMatchAsItsParts_AndSimulatesTheSame`.
+
 ## `netlist --to-schematic -o <cell>/schematic/x.csch` creates the cell (2026-11-21)
 
 **Found:** drawing a netlist into the schematic folder of a cell that did not exist yet wrote the `.csch` and no

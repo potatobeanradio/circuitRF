@@ -3509,6 +3509,17 @@ internal static class CliDiagnostics
         "'{path}' is already a netlist. Run it directly, `circuitrf read` it, or draw it as a "
       + "schematic with --to-schematic.", ("path", path));
 
+    // ── netlist --flatten: every top-level Match as its L and C elements ──────
+
+    public static Diagnostic NetlistFlattenNoMatch(string path) => Diagnostic.Create(
+        "netlist.flatten.no-match", DiagnosticSeverity.Error,
+        "netlist --flatten: '{path}' places no Match, so there is nothing to flatten.", ("path", path));
+
+    public static Diagnostic NetlistFlattenNested(string instance) => Diagnostic.Create(
+        "netlist.flatten.nested", DiagnosticSeverity.Warning,
+        "netlist --flatten: Match '{instance}' is inside a cell definition and was left as it is.",
+        ("instance", instance));
+
     // ── netlist --to-schematic (brief-agent-authoring-overview.md AA-6) ──────
 
     public static Diagnostic NetlistToSchematicNotANetlist(string path, string kind) => Diagnostic.Create(

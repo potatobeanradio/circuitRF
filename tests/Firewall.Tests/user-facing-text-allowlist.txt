@@ -35,7 +35,7 @@ src/Core/Devices/ComponentModelFactory.cs|ExtDevice: provider '{providerName}' d
 src/Core/Devices/ComponentModelFactory.cs|ExtDevice: the 'Provider' parameter is missing — it names the registered device 
 src/Core/Devices/ComponentModelFactory.cs|ExtDevice: the 'Type' parameter is missing — it names the device type to create.
 src/Core/Devices/ComponentModelFactory.cs|Match '{name}': its 'Design' parameter could not be read as a matching-network 
-src/Core/Devices/ComponentModelFactory.cs|Match '{name}': its 'Design' parameter is empty, so there is no matching network to 
+src/Core/Devices/ComponentModelFactory.cs|Match '{name}': it has no 'Design', and its parameters do not describe one: {why} 
 src/Core/Devices/ComponentModelFactory.cs|Match '{name}': this design cannot be synthesised. {refusal.Message}
 src/Core/Devices/ComponentModelFactory.cs|Match '{name}': this design produced no ladder. Re-open the Match Designer on this 
 src/Core/Devices/ComponentModelFactory.cs|Mutual: Inductor1 parameter is missing or not a string

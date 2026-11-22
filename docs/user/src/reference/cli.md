@@ -158,7 +158,7 @@ convention behind both.</p>
 | `check` | a workspace, a cell folder, or one document | Every validator the application already uses | **Nothing** — findings to stdout |
 | `explain` | the same | Resolution only — no analysis | **Nothing** — the walk and the answer, to stdout |
 | `read` | a result file, or one of circuitRF's own documents | The same loaders the Data Display reads a file with | **Nothing** — what the file holds, to stdout |
-| `netlist` | a `.csch`, a cell folder, or a workspace — or a `.cnl` with `--to-schematic` | The same extraction **Simulate** performs, or that extraction run backwards | A `.cnl`, or the netlist text to stdout; a drawn `.csch` with `--to-schematic` |
+| `netlist` | a `.csch`, a cell folder, or a workspace — or a `.cnl` with `--to-schematic` or `--flatten` | The same extraction **Simulate** performs, or that extraction run backwards; with `--flatten`, the Match Designer's **Flatten to Cell** | A `.cnl`, or the netlist text to stdout; a drawn `.csch` with `--to-schematic`; with `--flatten`, every Match line as its L and C parts (nH, pF) |
 | `plot` | a result file | Builds a one-plot data display and draws it | A `.svg`, `.pdf` or `.png`, where `-o` says |
 | `find` | a directory | Nothing — it reads documents | **Nothing** — the workspaces, cells, views and analyses under it |
 | `reference` | **nothing** | Nothing — it reads no file | **Nothing** — the reference pages, and every netlist primitive with its terminals and parameters |

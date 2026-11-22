@@ -1457,6 +1457,11 @@ internal static class ToolCatalog
                           + "labelled with its netlist name. It extracts back to the same instances, nets and "
                           + "values. Refused, with every cause named, for a netlist that defines cells or uses a "
                           + "type with no schematic symbol. output, when given, must end in .csch."),
+                        new("flatten", "--flatten", OptKind.Flag,
+                            "Every top-level Match line replaced by the L and C elements its ladder stamps, "
+                          + "values in nH and pF: the Match Designer's Flatten to Cell, so the synthesised "
+                          + "network can be read, bought and simulated part by part. path is a .cnl or a "
+                          + ".csch; output, when given, ends in .cnl."),
                         // Named individually because two of the three are .csv and an extension
                         // cannot say which — R-ab3-2b, which is why `-o` on a board is a refusal.
                         new("ipc", "--ipc", OptKind.Path,

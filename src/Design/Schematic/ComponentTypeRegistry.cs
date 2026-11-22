@@ -1353,7 +1353,8 @@ public static class ComponentTypeRegistry
         SymbolKind.Match =>
             "Not interchangeable: terminal 1 is the R1 side and terminal 2 the R2 side. The "
           + "synthesised ladder is stored R1-first, so swapping the two reverses every asymmetric "
-          + "match.",
+          + "match. A line with no Design is synthesised from F1-F6 (with units), Bands, Order, "
+          + "Response, Form, R1 and R2, both ends resistive.",
 
         SymbolKind.NonlinearC =>
             "C(V) is evaluated at V(terminal 1) − V(terminal 2), so any odd coefficient (C1, C3, …) "

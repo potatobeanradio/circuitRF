@@ -56,14 +56,21 @@ public class MatchComponentTests
         Assert.Contains("MN1", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>An empty <c>Design</c> refuses too, and says which component to open.</summary>
+    /// <summary>With no <c>Design</c>, the line's own parameters are the specification — their declared
+    /// defaults when none is written, the spec a freshly placed Match carries — and parameters that cannot
+    /// describe one refuse, naming the component.</summary>
     [Fact]
-    public void AMissingDesign_Refuses()
+    public void AMissingDesign_BuildsFromTheParameters_OrRefusesNamingTheComponent()
     {
+        Elaborate("""
+            Term:T1  p1 0  Num=1 Z=50
+            Term:T2  p2 0  Num=2 Z=10
+            Match:MN1  p1 p2
+            """);
         var ex = Assert.ThrowsAny<Exception>(() => Elaborate("""
             Term:T1  p1 0  Num=1 Z=50
             Term:T2  p2 0  Num=2 Z=50
-            Match:MN1  p1 p2
+            Match:MN1  p1 p2 Bands=4
             """));
         Assert.Contains("MN1", ex.Message, StringComparison.Ordinal);
     }

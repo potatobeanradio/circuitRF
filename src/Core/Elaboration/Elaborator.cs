@@ -3003,7 +3003,8 @@ public sealed partial class Elaborator
         foreach (var ov in inst.Overrides)
         {
             if (ov.Name.Equals(MatchEmbedding.DesignParameter, StringComparison.OrdinalIgnoreCase)
-                || ov.Name.Equals("Response", StringComparison.OrdinalIgnoreCase))
+                || ov.Name.Equals("Response", StringComparison.OrdinalIgnoreCase)
+                || ov.Name.Equals("Form", StringComparison.OrdinalIgnoreCase))
             {
                 result[ov.Name] = new Value(Unquote(ov.Expression));
             }

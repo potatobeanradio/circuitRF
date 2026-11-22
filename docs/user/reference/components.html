@@ -508,6 +508,15 @@ return. Its whole design rides in a hidden <code>Design</code> parameter, so wha
 design rather than of the component type: the ladder it contains is the synthesised one <strong>minus</strong>
 whatever the two external terminations already supply, since absorbing those reactances is the point.
 Edit it in the Match Designer.</p>
+<p><strong>In a netlist written by hand, leave <code>Design</code> out</strong> and the line's own parameters are the specification,
+both ends resistive: <code>F1</code>…<code>F6</code> (with units: a bare number is hertz), <code>Bands</code> (1, 2 or 3), <code>Order</code> (match
+points per band), <code>Response</code> (<code>ChebyshevFano</code>, <code>ChebyshevTwoEnded</code>, <code>Butterworth</code>, <code>Bessel</code>), <code>Form</code>
+(<code>Bandpass</code>, <code>Lowpass</code>, <code>Highpass</code>), <code>R1</code> and <code>R2</code>. A ratio the basis ladder cannot reach gets the Norton
+transforms, of those the Designer lists, whose values span the least. <code>circuitrf netlist --flatten</code> writes
+the ladder out as its L and C parts. A dual-band filter between 50 Ω ports:</p>
+<pre><code>Match:M1 in out Bands=2 F1=1.805 GHz F2=1.88 GHz F3=2.62 GHz F4=2.69 GHz Order=2 R1=50 Ohm R2=50 Ohm
+</code></pre>
+<p>A reactive termination needs <code>Design</code>, the Designer's JSON, which a netlist may carry as it is.</p>
 <div class="callout note">
 <span class="label">Match has its own chapter</span>
 <p>The synthesis, the Designer's four panes, the Norton-transform rack, the Probe button and a worked
@@ -519,7 +528,7 @@ before placing one — this entry is only the component's parameter table.</p>
 <tr><td>1</td><td>1</td></tr>
 <tr><td>2</td><td>2</td></tr>
 </tbody></table>
-<p class="small">The nets of an instance line, in this order. Not interchangeable: terminal 1 is the R1 side and terminal 2 the R2 side. The synthesised ladder is stored R1-first, so swapping the two reverses every asymmetric match.</p>
+<p class="small">The nets of an instance line, in this order. Not interchangeable: terminal 1 is the R1 side and terminal 2 the R2 side. The synthesised ladder is stored R1-first, so swapping the two reverses every asymmetric match. A line with no Design is synthesised from F1-F6 (with units), Bands, Order, Response, Form, R1 and R2, both ends resistive.</p>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
 <tbody>

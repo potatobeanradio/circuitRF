@@ -1315,3 +1315,22 @@ search's family); the cost itself is unchanged and is a real wait for a user ope
 `Category=Benchmark`; routine `Core.Tests` is 2 s. The Ui side, the host that never exited, and
 the pre-existing tri-band order-ceiling failures are in `src/Ui/RESOLVED.md`.
 
+
+## A `Match` line with no `Design` is synthesised from its own parameters (2026-11-21)
+
+**Found:** an agent driving circuitRF over MCP wrote `Match:M1 in out Bands=2 F1=… Order=2 R1=50 Ohm R2=50 Ohm`
+and `check` refused it with "open the Match Designer". Only the Designer writes `Design`, so out of process
+there was no way to place a working Match at all; the echo parameters the Designer writes beside it were display
+only.
+
+**Fixed:** `ComponentModelFactory.CreateMatchModel` calls `MatchEmbedding.FromParameters` when `Design` is absent:
+the echo parameters are the specification, both ends resistive. A ratio the basis cannot reach gets the solution
+of `MatchSolutionSearch` whose values span the least (log max/min over the Ls plus over the Cs), so one line
+always builds one ladder. Not `DefaultDesign`'s fewest-transforms pick: for a dual-band 50-to-50 filter at
+order 3 (1.805-1.88 and 2.62-2.69 GHz) that ladder ran from 0.29 nH to 1.1 µH and 4.7 fF, while a two-transform
+solution of the same response spans 0.29-103 nH and 0.12-18 pF. `netlist --flatten` (src/Cli/RESOLVED.md) is
+how that showed. A band edge below 1 kHz is refused naming the unit, because a bare `F1=1.8` is 1.8 Hz. A reactive end
+still needs `Design`; `TryDecode` already read raw JSON. `Form` is now kept as a name by
+`Elaborator.ResolveMatchParameters`, as `Response` was: evaluated as an expression it threw, the catch dropped it,
+and a Lowpass line silently built a Bandpass. Documented under Match in `components.md` (served as
+`reference component-notes`). Gate: `tests/Engine.Tests/Match/MatchFromParametersTests.cs`.

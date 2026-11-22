@@ -52,7 +52,7 @@ internal static class Netlist
     {
         string? path = null, output = null, cell = null, analysis = null;
         string? ipc = null, placement = null, bom = null;
-        bool toSchematic = false;
+        bool toSchematic = false, flatten = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -65,6 +65,7 @@ internal static class Netlist
                 case "--placement" when i + 1 < args.Length:      placement = args[++i]; continue;
                 case "--bom" when i + 1 < args.Length:            bom       = args[++i]; continue;
                 case "--to-schematic":                            toSchematic = true;    continue;
+                case "--flatten":                                 flatten = true;        continue;
                 default:
                     if (args[i].StartsWith('-'))
                     { JsonRun.Report(CliDiagnostics.NetlistUnknownOption(args[i])); return Usage(); }
@@ -93,6 +94,17 @@ internal static class Netlist
             foreach (var (flag, given) in new[] { ("--cell", cell), ("--ipc", ipc), ("--placement", placement), ("--bom", bom) })
                 if (given is not null) return JsonRun.Fail(CliDiagnostics.NetlistToSchematicConflictingFlag(flag));
             return NetlistToSchematic.Run(path, kind, output);
+        }
+        // Every top-level Match as its L and C elements: the Designer's Flatten to Cell, headless.
+        if (flatten)
+        {
+            if (board) return JsonRun.Fail(CliDiagnostics.NetlistToSchematicConflictingFlag("--ipc/--placement/--bom"));
+            if (output is not null && !string.Equals(Path.GetExtension(output), ".cnl", StringComparison.OrdinalIgnoreCase))
+                return JsonRun.Fail(CliDiagnostics.NetlistOutputNotCnl(output, Path.GetExtension(output) is { Length: > 0 } fe ? fe : "(none)"));
+            if (kind == DocumentKind.Netlist) return NetlistFlatten.Run(path, kind, null, output);
+            var (flatCsch, flatRefusal) = Resolve(path, cell, kind);
+            if (flatRefusal is { } fr) return fr;
+            return NetlistFlatten.Run(path, kind, flatCsch, output);
         }
         if (kind == DocumentKind.Layout || (board && kind == DocumentKind.Cell))
             return Board.Run(path, kind, ipc, placement, bom, output);
@@ -165,6 +177,8 @@ internal static class Netlist
           + "[--ipc out.ipc] [--placement out.csv] [--bom out.csv]");
         Console.Error.WriteLine(
             "       circuitrf netlist <path.cnl> --to-schematic [-o out.csch]");
+        Console.Error.WriteLine(
+            "       circuitrf netlist <path.cnl | path.csch> --flatten [-o out.cnl]");
         return 1;
     }
 

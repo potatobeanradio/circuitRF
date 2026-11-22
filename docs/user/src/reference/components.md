@@ -265,6 +265,19 @@ design rather than of the component type: the ladder it contains is the synthesi
 whatever the two external terminations already supply, since absorbing those reactances is the point.
 Edit it in the Match Designer.
 
+**In a netlist written by hand, leave `Design` out** and the line's own parameters are the specification,
+both ends resistive: `F1`…`F6` (with units: a bare number is hertz), `Bands` (1, 2 or 3), `Order` (match
+points per band), `Response` (`ChebyshevFano`, `ChebyshevTwoEnded`, `Butterworth`, `Bessel`), `Form`
+(`Bandpass`, `Lowpass`, `Highpass`), `R1` and `R2`. A ratio the basis ladder cannot reach gets the Norton
+transforms, of those the Designer lists, whose values span the least. `circuitrf netlist --flatten` writes
+the ladder out as its L and C parts. A dual-band filter between 50 Ω ports:
+
+```
+Match:M1 in out Bands=2 F1=1.805 GHz F2=1.88 GHz F3=2.62 GHz F4=2.69 GHz Order=2 R1=50 Ohm R2=50 Ohm
+```
+
+A reactive termination needs `Design`, the Designer's JSON, which a netlist may carry as it is.
+
 <div class="callout note">
 <span class="label">Match has its own chapter</span>
 <p>The synthesis, the Designer's four panes, the Norton-transform rack, the Probe button and a worked

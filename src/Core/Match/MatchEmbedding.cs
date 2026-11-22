@@ -203,6 +203,88 @@ public static class MatchEmbedding
     /// The encoded default, computed once — every freshly-placed <c>Match</c> carries this exact
     /// string, so two of them decode to the same design and rebuild identically.
     /// </summary>
+    /// <summary>
+    /// A design from a <c>Match</c> line's own parameters, for a netlist that carries no <c>Design</c>:
+    /// both ends resistive, the bands, order, response and form as written. Returns null with
+    /// <paramref name="refusal"/> set when the parameters cannot describe one.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why it exists.</b> The Designer is the only thing that writes <c>Design</c>, so a netlist written
+    /// by hand or by an agent out of process had no way to place a working Match: the line elaborated to
+    /// "open the Match Designer". The parameters the Designer echoes onto the component already name every
+    /// input a resistive pair needs, so they are read as the specification. A transformation the basis
+    /// ladder cannot reach on its own gets the Designer's solution whose values span the least (L and C
+    /// each), so the same line always builds the same ladder, and one that can be bought.
+    /// Reactive terminations need the JSON form of <c>Design</c>, which <see cref="TryDecode"/> reads.
+    /// </remarks>
+    public static MatchDesign? FromParameters(
+        double f1, double f2, int bands, double f3, double f4, double f5, double f6,
+        int order, string? response, string? form, double r1, double r2, out string? refusal)
+    {
+        refusal = null;
+        double[] edges = bands switch { >= 3 => [f1, f2, f3, f4, f5, f6], 2 => [f1, f2, f3, f4], _ => [f1, f2] };
+        if (bands is < 1 or > 3) { refusal = $"Bands is {bands}; it is 1, 2 or 3."; return null; }
+        if (edges.Any(f => !(f >= 1e3)))
+        {
+            refusal = "a band edge is missing or below 1 kHz. Write every edge the bands need with its unit " +
+                      "(F1=1.8 GHz): a bare number is hertz.";
+            return null;
+        }
+        if (!(r1 > 0) || !(r2 > 0)) { refusal = "R1 and R2 must both be above 0 Ω."; return null; }
+
+        var shape = ResponseShape.ChebyshevFano;
+        if (!string.IsNullOrWhiteSpace(response) && !Enum.TryParse(response.Trim(), true, out shape))
+        {
+            refusal = $"Response '{response}' is not one of {string.Join(", ", Enum.GetNames<ResponseShape>())}.";
+            return null;
+        }
+        var shapeForm = NetworkForm.Bandpass;
+        if (!string.IsNullOrWhiteSpace(form) && !Enum.TryParse(form.Trim(), true, out shapeForm))
+        {
+            refusal = $"Form '{form}' is not one of {string.Join(", ", Enum.GetNames<NetworkForm>())}.";
+            return null;
+        }
+
+        var design = new MatchDesign
+        {
+            F1 = f1, F2 = f2, BandCount = bands,
+            F3 = bands >= 2 ? f3 : 0, F4 = bands >= 2 ? f4 : 0,
+            F5 = bands >= 3 ? f5 : 0, F6 = bands >= 3 ? f6 : 0,
+            Order = order, Response = shape, Form = shapeForm,
+            Term1 = Termination.Resistive(r1), Term2 = Termination.Resistive(r2),
+        };
+
+        var basis = MatchRebuild.Rebuild(design);
+        if (basis.Refusal is not null || basis.OnTarget) return design;
+
+        // The solution whose values span the least, L and C each: a netlist is written to be built, and
+        // the Designer's fewest-transforms ranking can leave a ladder spanning five decades (a dual-band
+        // 50-to-50 at order 3: 0.29 nH to 1.1 uH) where another spans under three.
+        var set = MatchSolutionSearch.Search(design, includeQAdjust: false);
+        var pick = set.Solutions.Where(s => s.QAdjust == 0.0 && !s.ImplausibleValues)
+                                .OrderBy(s => Spread(s.Network)).FirstOrDefault();
+        if (pick is null)
+        {
+            refusal = $"no transform reaches {r1:g4} Ω to {r2:g4} Ω at order {order} " +
+                      $"(Π N² {basis.Achieved:g4} of {basis.Required:g4}). Try another order, or write Design.";
+            return null;
+        }
+        design.Transforms = [.. pick.Transforms];
+        design.AppliedSolutions.Add(pick.Fingerprint);
+        return design;
+    }
+
+    /// <summary>log10 of max/min over the inductors plus the same over the capacitors.</summary>
+    private static double Spread(MatchNetwork n)
+    {
+        double Of(ElementType t)
+        {
+            var v = n.Elements.Where(e => e.Type == t && e.Value > 0).Select(e => e.Value).ToList();
+            return v.Count < 2 ? 0 : Math.Log10(v.Max() / v.Min());
+        }
+        return Of(ElementType.L) + Of(ElementType.C);
+    }
+
     public static string DefaultPayload => _defaultPayload ??= Encode(DefaultDesign());
 
     /// <summary>The default, as a bare <c>.cnl</c> token. See <see cref="EncodeToken"/>.</summary>

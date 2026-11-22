@@ -3823,14 +3823,29 @@ public static class ComponentModelFactory
             ? nm.AsString()
             : "Match";
 
+        MatchDesign? design;
         if (!parameters.TryGetValue(MatchEmbedding.DesignParameter, out var payload) ||
             payload.Kind != ValueKind.String ||
             string.IsNullOrWhiteSpace(payload.AsString()))
-            throw new InvalidOperationException(
-                $"Match '{name}': its 'Design' parameter is empty, so there is no matching network to " +
-                "build. Open the Match Designer on this component and synthesise one.");
-
-        if (!MatchEmbedding.TryDecode(payload.AsString(), out var design) || design is null)
+        {
+            // No Design: the line's own parameters are the specification (a netlist written by hand or
+            // by an agent). See MatchEmbedding.FromParameters.
+            double Real(string key, double fallback) =>
+                parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+            string? Text(string key) =>
+                parameters.TryGetValue(key, out var v) && v.Kind == ValueKind.String ? v.AsString() : null;
+            design = MatchEmbedding.FromParameters(
+                Real("F1", 1.8e9), Real("F2", 2.2e9), (int)Math.Round(Real("Bands", 1)),
+                Real("F3", 0), Real("F4", 0), Real("F5", 0), Real("F6", 0),
+                (int)Math.Round(Real("Order", 4)), Text("Response"), Text("Form"),
+                Real("R1", 50), Real("R2", 10), out var why);
+            if (design is null)
+                throw new InvalidOperationException(
+                    $"Match '{name}': it has no 'Design', and its parameters do not describe one: {why} " +
+                    "(With no Design, F1..F6, Bands, Order, Response, Form, R1 and R2 are the specification, " +
+                    "both ends resistive; a reactive end needs Design, the Match Designer's JSON.)");
+        }
+        else if (!MatchEmbedding.TryDecode(payload.AsString(), out design) || design is null)
             throw new InvalidOperationException(
                 $"Match '{name}': its 'Design' parameter could not be read as a matching-network " +
                 "design. Re-open the Match Designer on this component to replace it.");

@@ -3193,6 +3193,7 @@ static int PrintHelp()
     Console.WriteLine("  snp    <file.sNp>    (the S-Parameter Viewer: what the file states, and its Smith, dB and phase plots)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");
     Console.WriteLine("  netlist <path.csch> [-o out.cnl]  (the extraction Simulate performs)");
+    Console.WriteLine("  netlist <path.cnl|.csch> --flatten [-o out.cnl]  (every Match as its L and C parts)");
     Console.WriteLine("  convert <in> -o <out>  (layout interchange: any format to any other)");
     Console.WriteLine("  new workspace <dir>    (a workspace, with a technology copied in)");
     Console.WriteLine("  new cell <ws> <name>   (a cell folder with its view files)");

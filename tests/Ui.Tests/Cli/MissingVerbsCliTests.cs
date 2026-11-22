@@ -760,6 +760,37 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain("nothing called", stdout + stderr, StringComparison.Ordinal);
     }
 
+    /// <summary><c>netlist --flatten</c> writes each Match as its L and C parts, and the flattened netlist
+    /// simulates as the Match did.</summary>
+    [Fact]
+    public void NetlistFlatten_WritesTheMatchAsItsParts_AndSimulatesTheSame()
+    {
+        Directory.CreateDirectory(_root);
+        string cnl = Path.Combine(_root, "dual.cnl"), flat = Path.Combine(_root, "flat.cnl");
+        File.WriteAllText(cnl, """
+            Port:P1 in 0 Num=1 Z=50 Ohm
+            Port:P2 out 0 Num=2 Z=50 Ohm
+            Match:M1 in out Bands=2 F1=1.805 GHz F2=1.88 GHz F3=2.62 GHz F4=2.69 GHz Order=2 R1=50 Ohm R2=50 Ohm
+            analysis SP1 type=sparam start=2.65 stop=2.65 npts=1 Unit=GHz
+
+            """);
+        var (exit, _, err) = RunCli("netlist", cnl, "--flatten", "-o", flat);
+        Assert.True(exit == 0, err);
+        string text = File.ReadAllText(flat);
+        Assert.DoesNotMatch(@"(?m)^Match:", text);
+        Assert.Matches(@"(?m)^L:M1_\S+ \S+ \S+ L=[0-9.]+ nH$", text);
+
+        string S21(string path)
+        {
+            var (e, o, er) = RunCli("sparam", path, "--json");
+            Assert.True(e == 0, er);
+            return JsonNode.Parse(o)!["result"]!["groups"]![""]!["S"]!["values"]![2]!.ToJsonString();
+        }
+        double[] a = JsonSerializer.Deserialize<double[]>(S21(cnl))!, b = JsonSerializer.Deserialize<double[]>(S21(flat))!;
+        Assert.Equal(a[0], b[0], 6);
+        Assert.Equal(a[1], b[1], 6);
+    }
+
     // ── driving the verb ─────────────────────────────────────────────────────
 
     private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)
