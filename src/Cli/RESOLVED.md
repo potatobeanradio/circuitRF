@@ -3703,3 +3703,15 @@ own `Usage:` block — the text each verb already prints on a refusal, captured 
 refuses before reading anything. Exit 0, plain text. Under `serve` the console is shared by concurrent calls, so there only
 the help-text lines are given. The top-level help had no entry for `env`, `fields`, `chain` or `history`, and still described
 `em` as taking only a `.cem`; both `em` input refusals said the same. Gate: `MissingVerbsCliTests.AVerbsHelp_IsItsUsage_NotARefusal`.
+
+## `netlist --to-schematic -o <cell>/schematic/x.csch` creates the cell (2026-11-21)
+
+**Found:** drawing a netlist into the schematic folder of a cell that did not exist yet wrote the `.csch` and no
+`.ccell`, so the folder was not a cell: `check` accepted the document, but the GUI's project tree does not list a
+folder without one, and an agent authoring a new cell this way had to know to write it by hand.
+
+**Fixed:** when the output's folder is `schematic/` and its parent has no `.ccell`, `NetlistToSchematic` calls
+`CellFolder.CreateCellFolder` — the function New Cell calls, so the cell gets its `schematic/`, `symbol/` and
+`layout/` folders and an empty terminal map — with `IsTestBench` set when the drawing carries analyses, the rule a
+GUI save applies (`SavePlanBuilder.SchematicHasAnalyses`). An existing `.ccell` is never touched. The new file is
+listed in the run's outputs. Gate: `NetlistToSchematicTests.DrawnIntoANewCellFolder_TheCellIsCreated`.

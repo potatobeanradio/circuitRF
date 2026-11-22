@@ -244,6 +244,30 @@ public sealed class NetlistToSchematicTests(ITestOutputHelper output) : IDisposa
     /// The verb as a PROCESS writes the same bytes the in-process call serialises — it owns no
     /// placement of its own — and a netlist it cannot draw is refused by id, with nothing written.
     /// </summary>
+    /// <summary>Drawn into <c>&lt;cell&gt;/schematic/</c> of a cell with no <c>.ccell</c>, the verb makes the cell as New
+    /// Cell does — a test bench when the drawing has analyses — and leaves an existing cell's <c>.ccell</c> alone.</summary>
+    [Fact]
+    public void DrawnIntoANewCellFolder_TheCellIsCreated()
+    {
+        string ws = Path.Combine(_root, "cellws");
+        Directory.CreateDirectory(ws);
+        string cnl = Path.Combine(ws, "bench.cnl");
+        File.WriteAllText(cnl, "Port:P1 a 0 Num=1 Z=50 Ohm\nPort:P2 b 0 Num=2 Z=50 Ohm\nR:R1 a b R=10 Ohm\n" +
+                               "analysis SP1 type=sparam start=1 stop=2 npts=2 Unit=GHz\n");
+
+        string csch = Path.Combine(ws, "Bench", "schematic", "Bench.csch");
+        var run = RunCli("netlist", cnl, "--to-schematic", "-o", csch);
+        Assert.True(run.ExitCode == 0, run.StdErr + run.StdOut);
+        string ccell = Path.Combine(ws, "Bench", ".ccell");
+        Assert.True(File.Exists(ccell));
+        Assert.True(Directory.Exists(Path.Combine(ws, "Bench", "symbol")));
+        Assert.True(CircuitRF.Design.Cells.CellPersistence.LoadFromFile(ccell).IsTestBench);
+
+        File.WriteAllText(ccell, "{\n  \"FormatVersion\": 1,\n  \"Terminals\": []\n}");
+        Assert.Equal(0, RunCli("netlist", cnl, "--to-schematic", "-o", csch).ExitCode);
+        Assert.False(CircuitRF.Design.Cells.CellPersistence.LoadFromFile(ccell).IsTestBench);
+    }
+
     [Fact]
     public void TheVerb_WritesTheInProcessDrawing_AndRefusesWhatCannotBeDrawn()
     {

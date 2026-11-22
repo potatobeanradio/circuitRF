@@ -1,4 +1,5 @@
 using CircuitRF.Core.Netlist;
+using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
 
 namespace CircuitRF.Cli;
@@ -73,6 +74,24 @@ internal static class NetlistToSchematic
             return 0;
         }
 
+        // A drawing written into <cell>/schematic/ of a cell that has no .ccell yet makes that cell: without
+        // one the folder is not a cell, and the GUI does not list it. Created as New Cell creates one
+        // (CellFolder.CreateCellFolder), a test bench when the drawing carries analyses, as a GUI save marks it.
+        string? newCcell = null;
+        if (string.Equals(Path.GetFileName(targetDir), CellFolder.SchematicSubFolder, StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(targetDir) is { } cellDir
+            && !File.Exists(Path.Combine(cellDir, CellFolder.CcellFileName))
+            && Path.GetDirectoryName(cellDir) is { } parentDir)
+        {
+            try
+            {
+                CellFolder.CreateCellFolder(parentDir, Path.GetFileName(cellDir),
+                    new CcellFile { Terminals = [], IsTestBench = drawn.Schematic.Analyses.Count > 0 });
+                newCcell = Path.Combine(cellDir, CellFolder.CcellFileName);
+            }
+            catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.NetlistWriteFailed(output, ex.Message)); }
+        }
+
         try
         {
             Directory.CreateDirectory(targetDir);
@@ -80,6 +99,7 @@ internal static class NetlistToSchematic
         }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.NetlistWriteFailed(output, ex.Message)); }
 
+        if (newCcell is not null) JsonRun.AddOutput("ccell", newCcell);
         JsonRun.AddOutput("csch", output);
         Console.WriteLine(output);
         Console.Error.WriteLine($"[circuitRF] drew {Path.GetFileName(path)} -> {output}");
