@@ -26,14 +26,24 @@ public sealed class AnnotationInspectorViewModel : ObservableObject
             OnPropertyChanged(nameof(RotationIndex));
             OnPropertyChanged(nameof(LineStyle));
             OnPropertyChanged(nameof(ColorSwatch));
+            OnPropertyChanged(nameof(FillSwatch));
+            OnPropertyChanged(nameof(HasFill));
+            OnPropertyChanged(nameof(FillOpacity));
+            OnPropertyChanged(nameof(CanFill));
+            OnPropertyChanged(nameof(IsLine));
+            OnPropertyChanged(nameof(LineWidth));
+            OnPropertyChanged(nameof(StartArrow));
+            OnPropertyChanged(nameof(EndArrow));
         };
     }
 
     internal CanvasAnnotation? Annotation => _display.SelectedAnnotation;
     public bool IsActive => Annotation is not null;
     public bool IsText => Annotation is CanvasText;
-    public bool HasStroke => Annotation is CanvasLine or CanvasBox;
-    public string ShapeName => Annotation is CanvasBox ? "Box" : "Line";
+    public bool HasStroke => Annotation is CanvasLine or CanvasBox or CanvasOval;
+    public bool CanFill => Annotation is CanvasBox or CanvasOval;
+    public bool IsLine => Annotation is CanvasLine;
+    public string ShapeName => Annotation switch { CanvasBox => "Box", CanvasOval => "Oval", _ => "Line" };
     public CanvasLineStyle[] LineStyles { get; } = Enum.GetValues<CanvasLineStyle>();
     public CanvasTextRotation[] Rotations { get; } = Enum.GetValues<CanvasTextRotation>();
 
@@ -71,15 +81,57 @@ public sealed class AnnotationInspectorViewModel : ObservableObject
 
     public CanvasLineStyle LineStyle
     {
-        get => Annotation switch { CanvasLine line => line.Style, CanvasBox box => box.Style, _ => CanvasLineStyle.Solid };
+        get => Annotation switch { CanvasLine line => line.Style, CanvasBox box => box.Style, CanvasOval oval => oval.Style, _ => CanvasLineStyle.Solid };
         set
         {
             if (Annotation is CanvasLine line) Edit(line with { Style = value });
             else if (Annotation is CanvasBox box) Edit(box with { Style = value });
+            else if (Annotation is CanvasOval oval) Edit(oval with { Style = value });
         }
     }
 
     public IBrush? ColorSwatch => Color.TryParse(Annotation?.Color, out var color) ? new SolidColorBrush(color) : null;
+    public IBrush? FillSwatch => Color.TryParse(Annotation?.FillColor, out var fill) ? new SolidColorBrush(fill) : null;
+
+    public decimal LineWidth
+    {
+        get => (decimal)Math.Clamp(Annotation?.LineWidth ?? 1.5, 0.25, 40);
+        set { if (Annotation is { } annotation) Edit(annotation with { LineWidth = (double)Math.Clamp(value, 0.25m, 40m) }); }
+    }
+
+    public bool StartArrow
+    {
+        get => Annotation is CanvasLine { StartArrow: true };
+        set { if (Annotation is CanvasLine line) Edit(line with { StartArrow = value }); }
+    }
+
+    public bool EndArrow
+    {
+        get => Annotation is CanvasLine { EndArrow: true };
+        set { if (Annotation is CanvasLine line) Edit(line with { EndArrow = value }); }
+    }
+
+    public bool HasFill
+    {
+        get => Annotation?.FillColor is not null;
+        set { if (Annotation is { } annotation) Edit(annotation with { FillColor = value ? "#4080A0C0" : null }); }
+    }
+
+    public double FillOpacity
+    {
+        get => Color.TryParse(Annotation?.FillColor, out var color) ? color.A * 100.0 / 255 : 0;
+        set
+        {
+            if (Annotation is not { } annotation || !Color.TryParse(annotation.FillColor, out var color)) return;
+            var alpha = (byte)Math.Round(Math.Clamp(value, 0, 100) * 255 / 100);
+            Edit(annotation with { FillColor = new Color(alpha, color.R, color.G, color.B).ToString() });
+        }
+    }
+
+    internal void SetFillColor(string color)
+    {
+        if (Annotation is { } annotation) Edit(annotation with { FillColor = color });
+    }
 
     internal void SetColor(string? color)
     {

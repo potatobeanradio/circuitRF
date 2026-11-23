@@ -97,13 +97,14 @@ internal static class RenderDataDisplay
         // format is the contract, and a caller that has a `.cdd` did not choose its version.
         var tabs = config.Tabs.Count > 0
             ? config.Tabs
-            : config.Plots.Count > 0
+            : config.Plots.Count > 0 || config.Annotations is { Count: > 0 }
                 ? [new TabConfig { Name = "Tab 1", Plots = config.Plots,
+                                   Annotations = config.Annotations,
                                    ZoomLevel = config.ZoomLevel,
                                    ViewOffsetX = config.ViewOffsetX, ViewOffsetY = config.ViewOffsetY }]
                 : (IReadOnlyList<TabConfig>)Array.Empty<TabConfig>();
 
-        if (tabs.Count == 0 || tabs.All(t => t.Plots.Count == 0))
+        if (tabs.Count == 0 || tabs.All(t => t.Plots.Count == 0 && t.Annotations is not { Count: > 0 }))
             return JsonRun.Fail(CliDiagnostics.RenderCddEmpty(path));
 
         // ── R-rnd4-5: which tabs, and whether the format can hold them ────────
@@ -145,6 +146,7 @@ internal static class RenderDataDisplay
         // ── plots ────────────────────────────────────────────────────────────
 
         var placedPages = new List<List<PlacedPlot>>();
+        var annotationPages = new List<AnnotationPage>();
         int plotCount   = 0;
 
         foreach (int ti in pages)
@@ -177,13 +179,15 @@ internal static class RenderDataDisplay
                 plotCount++;
             }
             placedPages.Add(placed);
+            annotationPages.Add(new AnnotationPage(req.PlotIndex is null
+                ? tabs[ti].Annotations ?? [] : []));
         }
 
         return Emit(path, reportKind ?? DocumentKinds.Name(DocumentKind.DataDisplay), req, placedPages,
                     new RenderDataDisplayJson(
                         tabs[tabIndex].Name, tabIndex, tabs.Count, pages.Count, plotCount,
                         sources!.Report()),
-                    $"  {plotCount} plot(s) on {pages.Count} page(s), {sources.Report().Count} data source(s)");
+                    $"  {plotCount} plot(s) on {pages.Count} page(s), {sources.Report().Count} data source(s)", annotationPages);
     }
 
     /// <summary>
@@ -211,7 +215,8 @@ internal static class RenderDataDisplay
         string inputPath, string reportKind, Request req,
         IReadOnlyList<List<PlacedPlot>> pages,
         RenderDataDisplayJson? display,
-        string? summaryLine)
+        string? summaryLine,
+        IReadOnlyList<AnnotationPage>? annotationPages = null)
     {
         RunHost.Cancellation.ThrowIfCancellationRequested();
         RunHost.Control?.BeginStage("draw");
@@ -253,7 +258,7 @@ internal static class RenderDataDisplay
             AlwaysDisplayDataSourcePrefix  = current.AlwaysDisplayDataSourcePrefix,
         };
 
-        byte[] bytes = Encode(req, pages, theme, settings, page);
+        byte[] bytes = Encode(req, pages, theme, settings, page, annotationPages);
 
         // ── write and report ─────────────────────────────────────────────────
 
@@ -302,10 +307,18 @@ internal static class RenderDataDisplay
     /// </summary>
     private static byte[] Encode(
         Request req, IReadOnlyList<List<PlacedPlot>> pages,
-        RenderTheme theme, AppSettings settings, PagePlacement page)
+        RenderTheme theme, AppSettings settings, PagePlacement page,
+        IReadOnlyList<AnnotationPage>? annotationPages = null)
     {
         Action<SKCanvas> PageRender(List<PlacedPlot> plots)
-            => canvas => PlotComposer.Render(canvas, plots, theme, settings, page);
+        {
+            AnnotationPage? annotations = null;
+            if (annotationPages is not null)
+                for (int index = 0; index < pages.Count; index++)
+                    if (ReferenceEquals(pages[index], plots)) { annotations = annotationPages[index]; break; }
+            return canvas => PlotComposer.Render(canvas, plots, theme, settings, page, annotations?.Items,
+                annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0);
+        }
 
         return req.Format switch
         {

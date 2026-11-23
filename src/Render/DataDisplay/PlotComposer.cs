@@ -149,7 +149,9 @@ public static class PlotComposer
         IReadOnlyList<PlacedPlot> plots,
         RenderTheme               theme,
         AppSettings               settings,
-        PagePlacement             page)
+        PagePlacement             page,
+        IReadOnlyList<CanvasAnnotation>? annotations = null,
+        double annotationZoom = 1, double annotationOffsetX = 0, double annotationOffsetY = 0)
     {
         float usableW = page.UsableWidth;
         float usableH = page.UsableHeight;
@@ -160,7 +162,7 @@ public static class PlotComposer
         canvas.Clear(settings.ExportTransparentBackground
             ? SKColors.Transparent
             : theme.BackgroundColor);
-        if (plots.Count == 0) return;
+        if (plots.Count == 0 && annotations is not { Count: > 0 }) return;
 
         // ---- Bounding box in DataDisplay screen-pixel space --------
 
@@ -208,6 +210,16 @@ public static class PlotComposer
                 bndB = Math.Max(bndB, box.ViewTop  + box.BoxHeight);
             }
         }
+
+        if (annotations is not null)
+            foreach (var annotation in annotations)
+            {
+                var bounds = AnnotationRenderer.Bounds(annotation);
+                bndL = Math.Min(bndL, bounds.Left * annotationZoom + annotationOffsetX);
+                bndT = Math.Min(bndT, bounds.Top * annotationZoom + annotationOffsetY);
+                bndR = Math.Max(bndR, bounds.Right * annotationZoom + annotationOffsetX);
+                bndB = Math.Max(bndB, bounds.Bottom * annotationZoom + annotationOffsetY);
+            }
 
         if (double.IsInfinity(bndL)) return;
 
@@ -314,6 +326,15 @@ public static class PlotComposer
                     plotTraces: box.PlotTraces);
                 canvas.Restore();
             }
+        }
+        if (annotations is not null)
+        {
+            canvas.Save();
+            canvas.Translate(margin + padX + (float)(annotationOffsetX - bndL) * S,
+                             margin + padY + (float)(annotationOffsetY - bndT) * S);
+            canvas.Scale((float)annotationZoom * S);
+            foreach (var annotation in annotations) AnnotationRenderer.Draw(canvas, annotation, theme.TextColor);
+            canvas.Restore();
         }
     }
 

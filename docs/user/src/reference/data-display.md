@@ -83,6 +83,36 @@ toolbar and follows it from then on. It is one undo step.
 There are four plot types, and which one will accept which data is the single most important rule in the
 Data Display. It has its own page: [Plot Types](plot-types.html).
 
+## Annotating and exporting a display {#annotations}
+
+The **Text**, **Line**, **Box**, and **Oval** tools place annotations on the current tab. Select an
+annotation to edit it in **Properties**. Boxes and ovals support solid or dashed outlines, adjustable
+thickness, and an optional fill color with opacity. Lines can have arrowheads at either end.
+
+Drag a shape's border to move it. Drag a box or oval corner to resize it, or a line endpoint to
+change its length and direction. Hold **Ctrl** while drawing an oval to constrain it to a perfect
+circle. Hold **Ctrl** while dragging an existing oval's corner to turn it into a circle; the
+opposite corner stays fixed. Without Ctrl, ovals draw and resize freely.
+
+Text supports quarter-turn rotation; resizing its width wraps
+the text without changing its font size. These edits are undoable and saved in the `.cdd`.
+
+**Export Document**, next to **Export Data**, exports all tabs as PDF pages. PNG and SVG export
+the active tab. Plots, legends, markers, and annotations are included, but selection handles are
+not. **Export Data** still exports numerical results; a graph's context-menu export still exports
+that graph alone. Export appearance follows the existing export background and theme settings.
+
+Ctrl/Cmd+A selects the whole page, including annotations. Ctrl/Cmd+C copies the selection as a
+picture and as editable display content; with nothing selected it copies the whole page.
+Ctrl/Cmd+V restores copied annotations alongside plots.
+
+Headless export uses the same page renderer:
+
+```sh
+circuitrf render results/design.cdd -o report.pdf --all-tabs
+circuitrf render results/design.cdd -o page.png
+```
+
 ## From a DataSet to a curve {#cubes-to-traces}
 
 A run produces one **DataSet**: an ordered map of **groups** to named **DataCubes**.

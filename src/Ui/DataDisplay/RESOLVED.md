@@ -1,5 +1,22 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-23 — shape appearance and document export
+
+Box and oval fills store ARGB colors, including opacity; stroke width and independent line
+arrowheads are saved with each annotation. Oval picking follows the ellipse rather than its
+bounding box; resize handles use the same corner gesture as rectangles.
+
+Ctrl constrains both oval placement and corner resizing to equal width and height after grid
+snapping. Resizing anchors the opposite corner, including for reverse-drawn ovals. Preview and
+release read the modifier independently; a completed resize is one undo step. Moving an oval by
+its body never changes its aspect ratio. DataDisplayGridSnapTests covers placement directions
+and every resize corner in both stored coordinate directions.
+
+Export Document is separate from numerical Export Data. PDF writes every tab as a page; PNG/SVG
+write the active tab. Rich copy carries annotations in PDF, SVG, bitmap and JSON, including
+annotation-only selections. Select All includes annotations; paste groups plots and annotations
+in one undo step. Single-plot export intentionally stays plot-only.
+
 ## 2026-11-20 — canvas annotation selection
 
 Data Display text and lines are tab-owned, not plot overlays. The canvas tunnels pointer presses
