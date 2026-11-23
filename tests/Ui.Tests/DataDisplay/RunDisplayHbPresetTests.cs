@@ -1,5 +1,5 @@
 // brief-run-display-hb-preset-and-units gates 1, 2 and 4: a display whose traces read none of its source is told apart
-// from one that still draws, and the run's plots are added without touching it; the HB preset's three plots, its output
+// from one that still draws, and the run's plots (for HB, one plain spectrum plot) are added without touching it; the HB preset's three plots, its output
 // pick shared with the Transient preset's, and its waveform plot left out for tones with no common period; and a marker
 // readout that names its unit when the unit is known, and only then.
 
@@ -131,8 +131,15 @@ public sealed class RunDisplayHbPresetTests : IDisposable
         Assert.True(window.ShowsNothingOfItsSource());
         var before = display.Plots.SelectMany(p => p.PlotVM.Plot.Traces).Select(t => (t.CubeName, t.Expression, t.Label)).ToList();
 
+        // an HB run gets ONE plain plot of its spectrum — no waveforms, no title of ours; the HB preset is opt-in
         var added = await display.AddRunPlotsAsync();
-        Assert.Equal(["Waveforms", "Spectrum of V(Vout)", "Measures"], added.Select(p => p.PlotVM.Plot.CustomTitle));
+        var plain = Assert.Single(added).PlotVM.Plot;
+        Assert.True(string.IsNullOrEmpty(plain.CustomTitle));
+        var seeded = Assert.Single(plain.Traces);
+        Assert.Equal("HB1.V", seeded.CubeName);
+        Assert.True(seeded.IsHarmonicStem);
+        Assert.Equal("Vin", seeded.Slice.Single(a => a.AxisName == "node").Label);   // a labelled net, not __d1_int at index 0
+        Assert.DoesNotContain(plain.Traces, t => (t.Expression ?? "").Contains("waveform", StringComparison.Ordinal));
         // the existing traces are untouched, and the display draws again
         Assert.Equal(before, display.Plots.Except(added).SelectMany(p => p.PlotVM.Plot.Traces)
                                        .Select(t => (t.CubeName, t.Expression, t.Label)).ToList());

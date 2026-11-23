@@ -348,8 +348,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Place filter: the realised ladder at the values the table shows, ending in two wire stubs
-    /// labelled IN and OUT (no terminations), armed as a paste ghost on the schematic. With
+    /// Place filter: the realised ladder at the values the table shows, armed as a paste ghost on the schematic. On a
+    /// sheet with no ports or pins of its own it ends in ports 1 and 2; otherwise in two wire stubs labelled IN and OUT. With
     /// <see cref="ReplaceTarget"/> on a Filter the window was opened on, the ladder takes the
     /// block's place instead (<see cref="ReplaceFilter"/>).
     /// </summary>
@@ -359,6 +359,10 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         RefreshPlacement();
         if (!CanPlace || PlacementSchematic is not { } schematic) return PlaceTip;
         if (ReplaceTarget && CanReplaceTarget) return ReplaceFilter();
+        if (FilterPlacement.WantsPorts(schematic.EditModel))
+            return schematic.ArmFragmentPlacement(FilterPlacement.PortedLadderFragment(Ladder))
+                ? "Click on the schematic to place the ladder. It ends in ports 1 and 2, ready for an S-parameter analysis."
+                : "There is no ladder to place.";
         var (inName, outName) = FilterPlacement.EndNames(schematic.EditModel);
         var fragment = FilterPlacement.LadderFragment(Ladder, inName, outName);
         return schematic.ArmFragmentPlacement(fragment)
@@ -440,6 +444,21 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     {
         if (value is not null && value.Value != Response) Response = value.Value;
     }
+
+    // Every typed box designs again, as a combo does: Design debounces, so a burst of keystrokes designs once. Without
+    // these a new Fp/Fs or Ap/As changed nothing until some combo was touched.
+    partial void OnFaTextChanged(string value) => Design();
+    partial void OnFbTextChanged(string value) => Design();
+    partial void OnFcTextChanged(string value) => Design();
+    partial void OnFdTextChanged(string value) => Design();
+    partial void OnApTextChanged(string value) => Design();
+    partial void OnRippleTextChanged(string value) => Design();
+    partial void OnAsTextChanged(string value) => Design();
+    partial void OnSourceTextChanged(string value) => Design();
+    partial void OnLoadTextChanged(string value) => Design();
+    // A minimum-order design writes the order it found back into the box; that is a result, not an edit.
+    partial void OnOrderTextChanged(string value) { if (!_writingOrder) Design(); }
+    private bool _writingOrder;
 
     partial void OnFirstChanged(FilterFirstElement value) => Design();
     partial void OnSeriesChanged(FilterSeriesKind value) => Design();
@@ -1174,7 +1193,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                 && (order & 1) == 0)
                 order++;
             fromMin = true;
-            OrderText = order.ToString(CultureInfo.InvariantCulture);
+            _writingOrder = true;
+            try { OrderText = order.ToString(CultureInfo.InvariantCulture); }
+            finally { _writingOrder = false; }
         }
         else
         {

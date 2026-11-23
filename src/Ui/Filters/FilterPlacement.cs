@@ -33,6 +33,21 @@ public static class FilterPlacement
         return model;
     }
 
+    /// <summary>
+    /// True when <paramref name="sheet"/> has no port and no pin of its own — an empty cell, or a sheet that is only
+    /// parts. A ladder placed there keeps its two terminations as ports 1 and 2 (<see cref="PortedLadderFragment"/>), so
+    /// the sheet runs an S-parameter analysis as it stands. A sheet with ports is a design or a bench already, and a
+    /// sheet with pins is a subcircuit: the ladder joins either by its labelled ends instead.
+    /// </summary>
+    public static bool WantsPorts(SchematicEditModel sheet) =>
+        !sheet.Components.Any(c => CircuitRF.Design.Layout.SchematicSync.PortPlacement.IsPort(c) || c.Symbol == SymbolKind.Pin);
+
+    /// <summary>
+    /// The ladder with its two terminations as ports — port 1 at the source resistance, port 2 at the load — exactly as
+    /// the pane draws it (<see cref="MatchSchematicCopy.Build"/>).
+    /// </summary>
+    public static SchematicEditModel PortedLadderFragment(MatchLadderLayout? layout) => MatchSchematicCopy.Build(layout);
+
     private static void AddStub(SchematicEditModel model, double inner, double outer, double y, string name)
     {
         var wire = new EditableWire();

@@ -938,16 +938,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// R-rdh-1/2 — every preset the selected source's run has, transient first: what a new display of a run holds, and what
-    /// the run message's action adds. The measures table is added once, with the first preset. Empty when the source has
-    /// neither a transient nor a harmonic-balance result.
+    /// R-rdh-1/2 — the preset a run opens on: what a new display of a run holds, and what the run message's action adds.
+    /// Only a transient run has one. A harmonic-balance run deliberately does NOT: circuitRF is harmonic balance first, and
+    /// a display opened on an HB run shows the plain seeded trace (its spectrum) with no title of ours, because what a user
+    /// wants plotted from a schematic cannot be guessed. The HB preset stays one click away on the toolbar.
     /// </summary>
-    public async Task<IReadOnlyList<PlotContainerViewModel>> AddRunPresetsAsync()
-    {
-        var added = new List<PlotContainerViewModel>(await AddTransientAsync());
-        added.AddRange(await AddHbAsync(includeMeasures: added.Count == 0));
-        return added;
-    }
+    public async Task<IReadOnlyList<PlotContainerViewModel>> AddRunPresetsAsync() => await AddTransientAsync();
 
     /// <summary>
     /// R-rdh-1 — the plots of the selected source's run: its presets (<see cref="AddRunPresetsAsync"/>), or, for a run with

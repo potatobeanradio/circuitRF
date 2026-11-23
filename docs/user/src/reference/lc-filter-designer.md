@@ -150,9 +150,12 @@ the block. Untick it to make the block a plain Filter again: every field is edit
 a sweep can drive it, and the design is kept, so **Synthesise…** still reopens on it. Ticking it opens
 the window, and **Apply to Filter** holds the block to the design again.
 
-**Place filter** puts the realised ladder, at the values the table shows, on the schematic. It has no
-terminations: each end is a short wire with a net label, `IN` on port 1 and `OUT` on port 2 (`IN2` and
-`OUT2` onward when the schematic already has those names), ready to be wired into the design. The
+**Place filter** puts the realised ladder, at the values the table shows, on the schematic. On a
+schematic with no ports or pins of its own, such as a new cell, it ends in port 1 at the source
+resistance and port 2 at the load, so an S-parameter analysis runs on it as placed. On any other
+schematic it has no terminations: each end is a short wire with a net label, `IN` on port 1 and `OUT`
+on port 2 (`IN2` and `OUT2` onward when the schematic already has those names), ready to be wired into
+the design. The
 ladder follows the pointer on the connection grid until you click, exactly as a paste does, and
 Escape drops it. **Place component** places one Filter block carrying the specification and the
 settings, written by the same function Apply uses.

@@ -222,9 +222,12 @@ the palette carries no design; it shows only the block's own fields and is edite
 the block. Untick it to make the block a plain Filter again: every field is editable, so a variable or
 a sweep can drive it, and the design is kept, so <strong>Synthesise…</strong> still reopens on it. Ticking it opens
 the window, and <strong>Apply to Filter</strong> holds the block to the design again.</p>
-<p><strong>Place filter</strong> puts the realised ladder, at the values the table shows, on the schematic. It has no
-terminations: each end is a short wire with a net label, <code>IN</code> on port 1 and <code>OUT</code> on port 2 (<code>IN2</code> and
-<code>OUT2</code> onward when the schematic already has those names), ready to be wired into the design. The
+<p><strong>Place filter</strong> puts the realised ladder, at the values the table shows, on the schematic. On a
+schematic with no ports or pins of its own, such as a new cell, it ends in port 1 at the source
+resistance and port 2 at the load, so an S-parameter analysis runs on it as placed. On any other
+schematic it has no terminations: each end is a short wire with a net label, <code>IN</code> on port 1 and <code>OUT</code>
+on port 2 (<code>IN2</code> and <code>OUT2</code> onward when the schematic already has those names), ready to be wired into
+the design. The
 ladder follows the pointer on the connection grid until you click, exactly as a paste does, and
 Escape drops it. <strong>Place component</strong> places one Filter block carrying the specification and the
 settings, written by the same function Apply uses.</p>

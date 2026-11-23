@@ -17132,11 +17132,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             {
                 populated = PopulateLoadpullContourPlots(newVm, loadpullDs);
             }
-            // A transient or harmonic-balance run: its waveforms, the output's spectrum and the measures (R-rdh-2), transient
-            // first when it has both — rather than one trace on the first recorded net, which a renamed net leaves pointing
-            // at nothing.
-            else if ((TransientPreset.Available(entry.Data) || HbPreset.Available(entry.Data))
-                     && newVm.Window.DataDisplay is { } presetDisplay)
+            // A transient run: its waveforms, the output's spectrum and the measures (R-rdh-2). A harmonic-balance run is NOT
+            // given its preset here — it falls through to the one plain seeded trace below (its spectrum, untitled); the HB
+            // preset's time-domain waveforms are opt-in from the toolbar.
+            else if (TransientPreset.Available(entry.Data) && newVm.Window.DataDisplay is { } presetDisplay)
             {
                 populated = (await presetDisplay.AddRunPresetsAsync()).Count > 0;
             }

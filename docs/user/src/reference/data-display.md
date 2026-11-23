@@ -414,8 +414,8 @@ Display.
 A preset's traces read the display's selected source, as every trace does, so choosing another result in the source list
 redraws them from it.
 
-**After a run.** A schematic's first run opens its Data Display holding its run's plots: the Transient plots, the Harmonic
-Balance plots, or both. A later run reopens that display and shows the run just written. When nothing in it draws (the
+**After a run.** A schematic's first run opens its Data Display holding its run's plots: the Transient plots for a
+transient run, and one plain plot for a harmonic-balance run (a measurement, or the spectrum). A later run reopens that display and shows the run just written. When nothing in it draws (the
 bench's analysis changed, say from transient to harmonic balance, or a net its traces read was renamed), the Messages
 panel says so and offers **Add plots of this run**, which adds that run's plots beside the existing ones. The existing
 traces are left as they are: a trace that reads a renamed net says `<invalid>`, and re-pointing it is a choice to make.

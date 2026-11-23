@@ -466,7 +466,10 @@ public class FilterPlaceAndTileTests
         {
             if (form == NetworkForm.Lowpass) { v.FaText = "1"; v.FbText = "1.6"; }
         });
+        // a sheet that is already a bench (it has a port of its own): the ladder joins it by its labelled ends
         var sheet = EmptySheet(out var model);
+        var benchPort = new EditableComponent { InstanceName = "T9", Symbol = SymbolKind.TermG, X = -8000, Y = -8000 };
+        model.Components.Add(benchPort);
         designer.SchematicProvider = () => sheet;
         designer.RefreshPlacement();
         Assert.True(designer.CanPlace, designer.PlaceTip);
@@ -476,7 +479,7 @@ public class FilterPlaceAndTileTests
         Assert.True(sheet.IsPasteArmed);
         sheet.OnPointerPressed(0, 0, KeyModifiers.None);
 
-        Assert.DoesNotContain(model.Components, c => c.Symbol is SymbolKind.TermG or SymbolKind.Term);
+        Assert.DoesNotContain(model.Components, c => c.Symbol is SymbolKind.TermG or SymbolKind.Term && c != benchPort);
         var tb = NetExtractor.Extract(model).TestBench;
         var byName = tb.Instances.ToDictionary(i => i.InstanceName, StringComparer.Ordinal);
         var (_, ladder) = new CnlReader().Read(designer.Cnl);
@@ -507,6 +510,35 @@ public class FilterPlaceAndTileTests
             Bind(a, straight ? nets[0] : nets[1], e.InstanceName);
             Bind(b, straight ? nets[1] : nets[0], e.InstanceName);
         }
+    }
+
+    /// <summary>
+    /// On a sheet with no ports (a new cell), the placed ladder ends in ports 1 and 2 at the source and load resistances,
+    /// so the sheet runs an S-parameter analysis as placed — and gives the Designer's response (the placed parts carry the
+    /// values as the table shows them, so to |ΔS| ~1e-6, not bit for bit).
+    /// </summary>
+    [Fact]
+    public async Task PlaceFilterOnAPortlessSheetEndsInPorts()
+    {
+        var designer = await Designed(FilterResponse.Chebyshev, NetworkForm.Lowpass, v => { v.FaText = "1"; v.FbText = "1.6"; });
+        var sheet = EmptySheet(out var model);
+        designer.SchematicProvider = () => sheet;
+        sheet.PointerWorldProvider = () => (0, 0);
+        designer.PlaceFilter();
+        sheet.OnPointerPressed(0, 0, KeyModifiers.None);
+
+        var ports = model.Components.Where(c => c.Symbol == SymbolKind.TermG)
+                         .Select(c => c.Parameters.Single(p => p.Name == "Num").Expression).OrderBy(n => n).ToList();
+        Assert.Equal(["1", "2"], ports);
+
+        var extracted = NetExtractor.Extract(model);
+        var placed = CircuitRF.Engine.SParameterEngine.Run(new Elaborator(extracted.Library).Elaborate(extracted.TestBench), [0.8e9, 2e9]);
+        var (lib, tb) = new CnlReader().Read(designer.Cnl);
+        var reference = CircuitRF.Engine.SParameterEngine.Run(new Elaborator(lib).Elaborate(tb), [0.8e9, 2e9]);
+        var a = placed["S"].ComplexValues;
+        var b = reference["S"].ComplexValues;
+        Assert.Equal(b.Length, a.Length);
+        for (int i = 0; i < a.Length; i++) Assert.True((a[i] - b[i]).Magnitude < 1e-4, $"S entry {i}: {a[i]} vs {b[i]}");
     }
 
     [Fact]

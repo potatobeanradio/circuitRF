@@ -418,11 +418,13 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
     </tbody>
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
-<p><strong>Plots.</strong> A schematic's first harmonic-balance run opens its Data Display holding the labelled nets' voltages over one
-period, the output's spectrum as stems and the measures that are one number, the same plots a transient run gets. A
-drive or bias sweep around the analysis is drawn at its first point. The waveforms are the
-spectrum read through <a href="measurements.html#time-domain"><code>waveform</code></a>; with several tones they cover the tones' common
-period, and tones with none short enough to draw get the spectrum and measures only.</p>
+<p><strong>Plots.</strong> A schematic's first harmonic-balance run opens its Data Display on one plot: the first measurement
+that has a sweep to draw against, or, when there is none, the spectrum of the first labelled net's voltage as stems.
+Change its trace, or add plots, to show what the design needs. The waveform button on
+the Data Display toolbar adds the labelled nets' voltages over one period, the output's spectrum and the measures that
+are one number (<a href="data-display.html">Data Display</a>). The waveforms are the spectrum read through
+<a href="measurements.html#time-domain"><code>waveform</code></a>; with several tones they cover the tones' common period, and tones with none
+short enough to draw get the spectrum and measures only.</p>
 <h3 id="hb-transient-start">Starting from a transient run</h3>
 <p>Harmonic balance starts from the DC point and steps the drive up. Some circuits are a long way from there: a switching PA
 whose devices only conduct at full drive, a hard-driven mixer, a divider whose divided solution cannot be reached by

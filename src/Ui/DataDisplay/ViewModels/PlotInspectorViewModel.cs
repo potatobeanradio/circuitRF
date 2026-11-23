@@ -1373,6 +1373,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             SurfaceResolve.TryFindAngleAxes(cube, out int thetaDim, out int phiDim)
                 ? BuildSurfaceSeedSlice(cube, thetaDim, phiDim)
                 : BuildSeedSlice(cube);
+        PinFirstLabelledNode(trace.Slice, cube, cubeName, entry.Data!);
 
         // First-add nicety on Rect: only COMPLEX cubes get an auto-transform (so they don't render
         // <invalid>); REAL cubes are shown raw — no annoying "mag". (Shared with the signal-switch path.)
@@ -1386,6 +1387,31 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         trace.Expression = trace.BuildPickerExpression();
         return trace;
+    }
+
+    /// <summary>
+    /// A seeded node axis is pinned to the first net the designer LABELLED (<c>__LabeledNodes</c>, beside the cube) rather
+    /// than to index 0, which in a harmonic-balance run is often a device's internal node — one the trace card's own node
+    /// list hides. Unchanged when the run recorded no labels or the cube has no node axis.
+    /// </summary>
+    private static void PinFirstLabelledNode(AxisSlice[] slice, DataCube cube, string cubeName, DataSet ds)
+    {
+        int dot = cubeName.IndexOf('.');
+        string labelsCube = dot > 0 ? cubeName[..dot] + ".__LabeledNodes" : "__LabeledNodes";
+        if (!ds.Contains(labelsCube) || ds[labelsCube] is not { Rank: 1 } ln || ln.Axes[0].Labels is not { Length: > 0 } names)
+            return;
+        for (int d = 0; d < slice.Length && d < cube.Rank; d++)
+        {
+            if (slice[d].AxisName != "node" || slice[d].Role != AxisRole.PinToIndex) continue;
+            if (cube.Axes[d].Labels is not { } nodeLabels) return;
+            foreach (var name in names)
+                if (Array.IndexOf(nodeLabels, name) is var i and >= 0)
+                {
+                    slice[d] = slice[d] with { Index = i, Label = name };
+                    return;
+                }
+            return;
+        }
     }
 
     /// <summary>

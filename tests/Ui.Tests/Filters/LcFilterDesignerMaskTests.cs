@@ -151,4 +151,24 @@ public class LcFilterDesignerMaskTests
             if (name is "Fc" or "F1" or "F2")
                 Assert.Equal(Ghz(expression), Ghz(back[name]), 3);
     }
+
+    /// <summary>
+    /// Typing a new Fs or As designs again on its own — a lowpass's minimum order follows the box, with no combo touched
+    /// (it used to change only after something like Exact/E12 was toggled).
+    /// </summary>
+    [Fact]
+    public async Task TypedSpecificationDesignsAgain()
+    {
+        var vm = await Designed(FilterResponse.Butterworth, NetworkForm.Lowpass);
+        string before = vm.OrderText;
+        vm.AsText = "60";
+        for (int i = 0; i < 100 && vm.OrderText == before; i++) await Task.Delay(20);
+        Assert.True(int.Parse(vm.OrderText) > int.Parse(before), $"order stayed {vm.OrderText} after As went to 60 dB");
+
+        string cnl = vm.Cnl;
+        before = vm.OrderText;
+        vm.FbText = (double.Parse(vm.FbText, CultureInfo.InvariantCulture) * 3).ToString(CultureInfo.InvariantCulture);  // Fs further out
+        for (int i = 0; i < 100 && vm.Cnl == cnl; i++) await Task.Delay(20);
+        Assert.True(int.Parse(vm.OrderText) < int.Parse(before), $"order stayed {vm.OrderText} after Fs moved out");
+    }
 }
