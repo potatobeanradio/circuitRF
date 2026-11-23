@@ -170,9 +170,41 @@ public partial class PlotContainerView : UserControl
         e.Handled = true;
     }
 
+    // ---- The armed tool's crosshair, over the plot too ----
+
+    private DataDisplayViewModel? _watchedDisplay;
+
+    private void WatchDisplay(DataDisplayViewModel? display)
+    {
+        if (_watchedDisplay is not null) _watchedDisplay.PropertyChanged -= OnDisplayPropertyChanged;
+        _watchedDisplay = display;
+        if (_watchedDisplay is not null) _watchedDisplay.PropertyChanged += OnDisplayPropertyChanged;
+        _plotControl.ToolArmed = _watchedDisplay?.AnyToolArmed == true;
+    }
+
+    private void OnDisplayPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(DataDisplayViewModel.ZoomBoxArmed) or nameof(DataDisplayViewModel.DrawingTool)
+            or nameof(DataDisplayViewModel.MarkerToolArmed))
+            _plotControl.ToolArmed = _watchedDisplay?.AnyToolArmed == true;
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        WatchDisplay((DataContext as PlotContainerViewModel)?.Display);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        WatchDisplay(null);
+    }
+
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+        if (this.IsAttachedToVisualTree()) WatchDisplay((DataContext as PlotContainerViewModel)?.Display);
         if (DataContext is PlotContainerViewModel vm)
         {
             vm.PlotNeedsRedraw                       += (_, _) => _plotControl?.InvalidateVisual();

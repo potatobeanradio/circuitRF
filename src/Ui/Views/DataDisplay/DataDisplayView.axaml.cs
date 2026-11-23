@@ -22,6 +22,22 @@ public partial class DataDisplayView : UserControl
         Loaded               += OnLoaded;
         AttachedToVisualTree += OnAttachedToVisualTree;
         DataContextChanged   += OnDataContextChangedFocus;
+        // The workspace window binds Escape (DisarmPlacement) at Window level, and a Window KeyBinding marks the key
+        // handled before it is routed — so no Escape handler in this view (a text box's cancel, a canvas gesture's
+        // cancel, disarm and deselect below) ever ran in the application. See OnEscapeTunnel.
+        AddHandler(KeyDownEvent, OnEscapeTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    /// <summary>
+    /// Escape with focus in this display is routed as if the window had not claimed it: un-handled here, at the top of the
+    /// tunnel, so the focused control answers first (a text box cancels its edit, a canvas gesture in flight is abandoned)
+    /// and <see cref="OnKeyDown"/> then disarms every tool, or with none armed drops the selection. The window's own
+    /// Escape (disarming a schematic placement) has already run and has nothing to do here.
+    /// </summary>
+    private void OnEscapeTunnel(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None && e.Handled && IsKeyboardFocusWithin)
+            e.Handled = false;
     }
 
     // ── Activation focus — claim keyboard focus when this document's tab is activated ──

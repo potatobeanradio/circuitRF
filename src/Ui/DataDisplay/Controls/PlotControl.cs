@@ -380,6 +380,23 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         public Func<PlotContainerViewModel?>? ContainerProvider { get; set; }
 
         /// <summary>
+        /// A tool is armed on the display (marker, drawing or magnifier): the plot shows the canvas's crosshair instead of
+        /// its own arrow, so the pointer does not say "no tool" the moment it crosses onto a plot. Set by
+        /// <c>PlotContainerView</c>, which follows the display.
+        /// </summary>
+        public bool ToolArmed
+        {
+            get => _toolArmed;
+            set
+            {
+                if (_toolArmed == value) return;
+                _toolArmed = value;
+                Cursor = value ? new Cursor(StandardCursorType.Cross) : new Cursor(StandardCursorType.Arrow);
+            }
+        }
+        private bool _toolArmed;
+
+        /// <summary>
         /// Returns the set of markers that currently have selected InfoBoxes, filtered
         /// to this container.
         /// </summary>
@@ -1767,7 +1784,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             }
 
             // ---- Table cursor: resize-handle hover feedback ----
-            if (_plot.PlotType == PlotType.Table)
+            if (_plot.PlotType == PlotType.Table && !_toolArmed)
             {
                 float tableZoom3 = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
                 var hover = TableRenderer.HitTest((float)current.X, (float)current.Y,

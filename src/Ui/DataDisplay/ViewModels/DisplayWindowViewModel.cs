@@ -697,19 +697,12 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     /// <summary>Ctrl/Cmd+A in the data display — select everything (plots + markers) in the active tab.</summary>
     [RelayCommand] private void SelectAll() => DataDisplay?.SelectAll();
 
-    /// <summary>Escape — one thing at a time, most specific first. An ARMED magnifier is the most
-    /// recently turned-on state, so that is what Escape means while it is on; only once it is off
-    /// does Escape drop the selection. See <c>DataDisplayViewModel.DeselectAll</c>.</summary>
+    /// <summary>Escape — the first press disarms every armed tool (marker, drawing, magnifier); a press with none armed
+    /// drops the selection. See <c>DataDisplayViewModel.DisarmAllTools</c> and <c>DeselectAll</c>.</summary>
     [RelayCommand]
     private void DeselectAll()
     {
-        if (DataDisplay?.DisarmMarkerTool() == true) return;
-        if (DataDisplay is { DrawingTool: not AnnotationTool.None } drawing)
-        {
-            drawing.DrawingTool = AnnotationTool.None;
-            return;
-        }
-        if (DataDisplay?.DisarmZoomBox() == true) return;
+        if (DataDisplay?.DisarmAllTools() == true) return;
         DataDisplay?.DeselectAll();
     }
 

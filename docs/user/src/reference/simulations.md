@@ -337,11 +337,9 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
 
 **Plots.** A schematic's first harmonic-balance run opens its Data Display on one plot: the first measurement
 that has a sweep to draw against, or, when there is none, the spectrum of the first labelled net's voltage as stems.
-Change its trace, or add plots, to show what the design needs. The waveform button on
-the Data Display toolbar adds the labelled nets' voltages over one period, the output's spectrum and the measures that
-are one number ([Data Display](data-display.html)). The waveforms are the spectrum read through
-[`waveform`](measurements.html#time-domain); with several tones they cover the tones' common period, and tones with none
-short enough to draw get the spectrum and measures only.
+Change its trace, or add plots, to show what the design needs. The HB Spectrum button on
+the Data Display toolbar adds the output's spectrum and the measures that are one number
+([Data Display](data-display.html)).
 
 ### Starting from a transient run {#hb-transient-start}
 

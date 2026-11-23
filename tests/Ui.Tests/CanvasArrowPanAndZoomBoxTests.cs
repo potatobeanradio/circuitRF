@@ -374,7 +374,8 @@ public class CanvasArrowPanAndZoomBoxTests
         Assert.True(disarm < tool, "The magnifier unwinds before the tool does.");
     }
 
-    /// <summary>The Data Display's Escape command disarms before it deselects, for the same reason.</summary>
+    /// <summary>The Data Display's Escape command disarms before it deselects, for the same reason — every tool at once,
+    /// the magnifier among them (<c>DataDisplayViewModel.DisarmAllTools</c>; DataDisplayEscapeTests drives it).</summary>
     [Fact]
     public void TheDataDisplaysEscape_DisarmsTheMagnifierFirst()
     {
@@ -384,7 +385,7 @@ public class CanvasArrowPanAndZoomBoxTests
         Assert.True(at >= 0);
 
         var body = code[at..Math.Min(code.Length, at + 500)];
-        int disarm = body.IndexOf("DisarmZoomBox", StringComparison.Ordinal);
+        int disarm = body.IndexOf("DisarmAllTools", StringComparison.Ordinal);
         int clear  = body.IndexOf("DeselectAll()", disarm < 0 ? 0 : disarm, StringComparison.Ordinal);
         Assert.True(disarm >= 0 && clear > disarm,
                     "Escape should disarm the magnifier before it drops the selection.");

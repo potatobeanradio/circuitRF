@@ -104,7 +104,9 @@ that graph alone. Export appearance follows the existing export background and t
 
 Ctrl/Cmd+A selects the whole page, including annotations. Ctrl/Cmd+C copies the selection as a
 picture and as editable display content; with nothing selected it copies the whole page.
-Ctrl/Cmd+V restores copied annotations alongside plots.
+Ctrl/Cmd+V restores copied annotations alongside plots. Escape turns off whichever tool is armed (a marker,
+drawing or zoom tool); with no tool armed, it clears the selection. While a tool is armed the pointer is a
+crosshair over the plots as well as between them.
 
 Headless export uses the same page renderer:
 
@@ -439,14 +441,11 @@ run had an `Equalizer`, the received points are its output, and the trace says w
 [Signal quality](simulations.html#envelope-evm).
 
 **Transient and harmonic balance.** The sine-wave toolbar button adds the selected transient result's waveforms, the
-output's spectrum over its last period and the measures ([Transient](transient.html)). The waveform button beside it adds
-the same three plots from a harmonic-balance result: the labelled nets' voltages over one period, rebuilt from the
-spectrum by [`waveform`](measurements.html#time-domain); the output's spectrum as stems (the power through the IProbe
-whose name says "out" in dBm, else that net's voltage in dBV); and the measures that are one number, as a table. A sweep
-around the analysis is drawn at its first point. Both pick the same output on the same
-bench. With two or more tones the waveform covers the tones' common period; tones that share none short enough to draw
-get the spectrum and the measures only. **Open Harmonic Balance Plots** on a result file's menu opens them in a new Data
-Display.
+output's spectrum over its last period and the measures ([Transient](transient.html)). The HB Spectrum button beside it
+adds a harmonic-balance result's output spectrum as stems (the power through the IProbe whose name says "out" in dBm,
+else that net's voltage in dBV) and the measures that are one number, as a table. A sweep around the analysis is drawn at
+its first point. Both pick the same output on the same bench. **Open Harmonic Balance Plots** on a result file's menu
+opens them in a new Data Display.
 
 A preset's traces read the display's selected source, as every trace does, so choosing another result in the source list
 redraws them from it.

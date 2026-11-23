@@ -198,9 +198,8 @@ public partial class PlotCanvasView : UserControl
             e.Handled = true;
             return;
         }
-        if (!e.Handled && e.Key == Key.Escape && Display is { DrawingTool: not AnnotationTool.None } drawing)
+        if (!e.Handled && e.Key == Key.Escape && Display is { } armed && armed.DisarmAllTools())
         {
-            drawing.DrawingTool = AnnotationTool.None;
             e.Handled = true;
             return;
         }
@@ -245,8 +244,7 @@ public partial class PlotCanvasView : UserControl
     /// wBond editors draw theirs — the arming is a mode, and a mode with no pointer change is one the
     /// user discovers by clicking.</summary>
     private void SyncZoomBoxCursor() =>
-        Cursor = Display is { ZoomBoxArmed: true } or { DrawingTool: not AnnotationTool.None } or { MarkerToolArmed: true }
-            ? new Cursor(StandardCursorType.Cross) : Cursor.Default;
+        Cursor = Display is { AnyToolArmed: true } ? new Cursor(StandardCursorType.Cross) : Cursor.Default;
 
     // Helper to reach the active DataDisplayViewModel.
     private DataDisplayViewModel? Display => (DataContext as TabViewModel)?.DataDisplay;

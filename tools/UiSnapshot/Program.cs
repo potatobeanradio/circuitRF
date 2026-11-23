@@ -1557,6 +1557,13 @@ else
 }
 
 host = new Window { Width = width, Height = height, Content = content };
+// The workspace window binds Escape at Window level (DisarmPlacement), and a Window KeyBinding claims the key before it
+// is routed. Bound here too, so a scripted --key Escape reaches the display as it does in the application.
+host.KeyBindings.Add(new Avalonia.Input.KeyBinding
+{
+    Gesture = new Avalonia.Input.KeyGesture(Avalonia.Input.Key.Escape),
+    Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { }),
+});
 host.Show();
 }
 Pump();

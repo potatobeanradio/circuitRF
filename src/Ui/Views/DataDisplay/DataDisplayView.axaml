@@ -89,9 +89,9 @@
                 BorderThickness="0,0,0,1"
                 Padding="4,2">
             <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory needs a
-                 stable handle on this panel. -->
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel x:Name="DocsToolbar" Orientation="Horizontal" Spacing="2" Classes="Toolbar">
+                 stable handle on this panel. A WrapPanel, as the layout editor's: a narrow window wraps
+                 the buttons onto a second row rather than hiding them behind a scroll bar. -->
+            <WrapPanel x:Name="DocsToolbar" Orientation="Horizontal" ItemSpacing="2" LineSpacing="2" Classes="Toolbar">
 
                 <!-- Datasource combo: lists results/ schematics + workspace Touchstone files -->
                 <ComboBox Width="200"
@@ -189,10 +189,10 @@
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.AddHbCommand}"
-                        ToolTip.Tip="Add Harmonic Balance: the labelled nets' voltages over one period, the output's spectrum and the measures as a table. Needs a harmonic-balance result as the source"
+                        ToolTip.Tip="Add HB Spectrum: the output's spectrum as stems (power through the output current probe in dBm, else its voltage in dBV) and the measures as a table. Needs a harmonic-balance result as the source"
                         ToolTip.ShowOnDisabled="True"
                         Padding="6,3">
-                    <mi:MaterialIcon Kind="Waveform" Width="16" Height="16"/>
+                    <mi:MaterialIcon Kind="Equalizer" Width="16" Height="16"/>
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.AddStatisticsTableCommand}"
@@ -366,8 +366,7 @@
                     <mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/>
                 </Button>
 
-            </StackPanel>
-            </ScrollViewer>
+            </WrapPanel>
         </Border>
 
         <!-- ── Main content: tabs + inspector (library panel removed) ────────── -->

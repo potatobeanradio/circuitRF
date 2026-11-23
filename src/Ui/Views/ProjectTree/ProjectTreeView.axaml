@@ -609,12 +609,12 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="SineWave" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
-                                        <!-- R-rdh-2 — a harmonic-balance result's waveforms, output spectrum and measures, in one action. -->
+                                        <!-- R-rdh-2 — a harmonic-balance result's output spectrum and measures, in one action. -->
                                         <MenuItem Header="Open Harmonic Balance Plots"
                                                   Command="{Binding OpenHbCommand}"
                                                   IsVisible="{Binding IsResultFile}"
-                                                  ToolTip.Tip="A new Data Display with this harmonic-balance result's waveforms over one period, the output's spectrum and the measures. Needs a harmonic-balance run.">
-                                            <MenuItem.Icon><mi:MaterialIcon Kind="Waveform" Width="14" Height="14"/></MenuItem.Icon>
+                                                  ToolTip.Tip="A new Data Display with this harmonic-balance result's output spectrum and the measures. Needs a harmonic-balance run.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Equalizer" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
                                         <!-- brief-dfr32-3 R-dfr32-3-2 — a solved 3D view's or EM setup's saved fields, to the Trash. -->

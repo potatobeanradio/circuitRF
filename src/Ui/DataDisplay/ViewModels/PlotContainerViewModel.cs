@@ -116,6 +116,9 @@ public partial class PlotContainerViewModel : ViewModelBase
 
     public bool MarkerToolArmed => _parent.MarkerToolArmed;
 
+    /// <summary>The display this plot is on — for a view that has to follow its armed tools.</summary>
+    internal DataDisplayViewModel Display => _parent;
+
     public MarkerFunction MarkerToolFunction => _parent.MarkerToolFunction;
 
     public void DisarmMarkerTool() => _parent.MarkerToolArmed = false;

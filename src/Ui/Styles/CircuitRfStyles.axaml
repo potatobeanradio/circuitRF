@@ -273,6 +273,10 @@
         <Style Selector="StackPanel.Toolbar mi|MaterialIcon">
             <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
         </Style>
+        <!-- The same for a toolbar that wraps (the Data Display's). -->
+        <Style Selector="WrapPanel.Toolbar mi|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
 
         <!-- Panel toggles in a toolbar (the workspace toolbar's Library / Properties / Messages
              buttons): FLAT while unchecked, so they sit with the plain toolbar buttons beside them,

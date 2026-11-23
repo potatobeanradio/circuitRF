@@ -1,13 +1,14 @@
 // ================================================================
-//  HbPreset.cs  —  a harmonic-balance run's waveforms, spectrum and measures, in one action
+//  HbPreset.cs  —  a harmonic-balance run's output spectrum and measures, in one action
 //  (brief-run-display-hb-preset-and-units R-rdh-2)
 //
-//  The Transient preset's three plots, read from a harmonic-balance result so the two analyses of one bench look alike:
-//  the labelled nets' voltages over one period, rebuilt from the spectrum by waveform(); the output's spectrum as stems —
-//  the power through the output IProbe in dBm when there is one, the output net's voltage in dBV when there is not; and
-//  the bench's measures as a table. The output is chosen by TransientPreset.OutputIndex, so both presets pick the same
-//  net. Every trace is an ordinary trace the user can re-point; nothing here computes a number. A parametric sweep's axes
-//  are read at their first point.
+//  The output's spectrum as stems — the power through the output IProbe in dBm when there is one, the output net's voltage
+//  in dBV when there is not — and the bench's measures as a table. The output is chosen by TransientPreset.OutputIndex, so
+//  this and the Transient preset pick the same net. Every trace is an ordinary trace the user can re-point; nothing here
+//  computes a number. A parametric sweep's axes are read at their first point.
+//
+//  It draws NO time-domain plot (2026-11-23): circuitRF is harmonic balance first, and the labelled nets' voltages over one
+//  period, rebuilt by waveform(), were not wanted. waveform() itself stays, for anyone who types it.
 // ================================================================
 
 using System;
@@ -45,10 +46,9 @@ public static class HbPreset
     public static bool Available(DataSet? ds) => GroupOf(ds) is not null;
 
     /// <summary>
-    /// The waveforms, the output's spectrum and (when <paramref name="includeMeasures"/>) the measures table of
-    /// <paramref name="ds"/>'s harmonic-balance result, each trace reading <paramref name="sourceRef"/>, laid out from (0, 0)
-    /// as the Transient preset lays out its own. The waveform plot is left out when the tones share no period short enough
-    /// to draw (waveform() refuses them), rather than holding nothing but that refusal. Empty when there is no HB result.
+    /// The output's spectrum and (when <paramref name="includeMeasures"/>) the measures table of <paramref name="ds"/>'s
+    /// harmonic-balance result, each trace reading <paramref name="sourceRef"/>, laid out from (0, 0) as the Transient preset
+    /// lays out its own. Empty when there is no HB result.
     /// </summary>
     public static IReadOnlyList<PlotContainerConfig> Build(DataSet ds, string sourceRef, bool includeMeasures = true)
     {
@@ -63,7 +63,6 @@ public static class HbPreset
         var tones = cubes["ToneFreqs"].RealValues;
         double f0 = tones.Length > 0 ? tones[0] : 0;
         if (oneTone && !(f0 > 0)) return [];
-        string f0Arg = oneTone ? ", " + f0.ToString("R", CultureInfo.InvariantCulture) : "";
 
         // The nets to draw: the labelled ones, in the order the run recorded them; every named node without that record.
         var nodeNames = v.Axes[nDim].Labels ?? [];
@@ -71,36 +70,6 @@ public static class HbPreset
             ? names.Where(n => Array.IndexOf(nodeNames, n) >= 0).ToArray()
             : nodeNames.Where(n => n.Length > 0 && !n.StartsWith("__", StringComparison.Ordinal)).ToArray();
         var plots = new List<PlotContainerConfig>();
-
-        // ── the labelled nets against time, over one period ──
-        var waves = new List<TraceConfig>();
-        for (int k = 0; k < Math.Min(labelled.Length, TransientPreset.MaxWaveforms); k++)
-        {
-            int node = Array.IndexOf(nodeNames, labelled[k]);
-            int color = TraceProperties.LineColorOrder[k % TraceProperties.LineColorOrder.Length];
-            waves.Add(new TraceConfig
-            {
-                SourcePath = sourceRef, Label = labelled[k],
-                Expression = $"waveform({q}V{TransientPreset.Tokens(v, spectral, ("node", node))}{f0Arg})",
-                Properties = new TracePropertiesConfig { LineColorIndex = color, MarkerColorIndex = color },
-            });
-        }
-        // the tones may share no period short enough to draw: the plot is left out, as the Transient preset leaves its spectrum out
-        bool drawable = waves.Count > 0 && TraceExpression.TryEvaluate(waves[0].Expression!, ds, PlotType.Rect,
-            out _, out _, out _, out _, out _, out _, out _);
-        PlotContainerConfig? wavePlot = null;
-        if (drawable)
-        {
-            wavePlot = new PlotContainerConfig
-            {
-                PlotType = PlotType.Rect, Width = 560, Height = 400, Left = 0, Top = 0,
-                CustomTitle = "Waveforms", CustomTitleOn = true,
-                CustomXLabel = "Time (s)", CustomXLabelOn = true,
-                CustomYLabel = "Voltage (V)", CustomYLabelOn = true,
-                Legend = LegendPlacement.Below, Traces = waves,
-            };
-            plots.Add(wavePlot);
-        }
 
         // ── the output's spectrum, as stems ──
         string expr, label, yLabel;
@@ -124,7 +93,7 @@ public static class HbPreset
         int c0 = TraceProperties.LineColorOrder[0];
         plots.Add(new PlotContainerConfig
         {
-            PlotType = PlotType.Rect, Width = 420, Height = 400, Left = wavePlot is null ? 0 : wavePlot.Width + Gap, Top = 0,
+            PlotType = PlotType.Rect, Width = 420, Height = 400, Left = 0, Top = 0,
             CustomTitle = $"Spectrum of {label}", CustomTitleOn = true,
             // a harmonic axis counts harmonics, so it says of what; a mixIndex axis is in hertz and labels itself
             CustomXLabel = oneTone ? $"Harmonic of {TransientPreset.Hz(f0)}" : "", CustomXLabelOn = oneTone,

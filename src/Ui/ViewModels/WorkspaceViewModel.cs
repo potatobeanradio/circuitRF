@@ -11049,8 +11049,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
-    /// R-rdh-2 — a new Data Display on the result <paramref name="path"/>, holding its harmonic-balance run's waveforms, the
-    /// output's spectrum and the measures: one action from the result's context menu. A result with no HB run is refused by
+    /// R-rdh-2 — a new Data Display on the result <paramref name="path"/>, holding its harmonic-balance run's output spectrum
+    /// and the measures: one action from the result's context menu. A result with no HB run is refused by
     /// name and opens nothing.
     /// </summary>
     public async Task OpenHbAsync(string path)

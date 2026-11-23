@@ -147,6 +147,21 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Escape's first press: every armed tool off at once — the marker tool, a drawing tool and the magnifier. True when
+    /// anything WAS armed, which is what makes the next Escape drop the selection instead.
+    /// </summary>
+    public bool DisarmAllTools()
+    {
+        bool any = DisarmMarkerTool();
+        if (DrawingTool != AnnotationTool.None) { DrawingTool = AnnotationTool.None; any = true; }
+        return DisarmZoomBox() | any;
+    }
+
+    /// <summary>True while any tool is armed — marker, drawing or magnifier: the canvas AND every plot on it show a
+    /// crosshair for as long as it is.</summary>
+    public bool AnyToolArmed => MarkerToolArmed || ZoomBoxArmed || DrawingTool != AnnotationTool.None;
+
     public bool TextToolArmed => DrawingTool == AnnotationTool.Text;
     public bool LineToolArmed => DrawingTool == AnnotationTool.Line;
     public bool BoxToolArmed => DrawingTool == AnnotationTool.Box;
