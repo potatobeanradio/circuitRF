@@ -308,7 +308,7 @@ public static class PlotComposer
                 canvas.Translate(bx, by);
                 MarkerRenderer.DrawInfoBox(
                     canvas, (bw, bh),
-                    box.Marker, box.Trace, box.FreqUnit,
+                    plot.ResolveMarker(box.Trace, box.Marker), box.Trace, box.FreqUnit,
                     theme, c.ShowFilePrefix,
                     transparentBackground: settings.MarkerBoxTransparentBackground,
                     plotTraces: box.PlotTraces);

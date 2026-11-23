@@ -32,6 +32,7 @@ using Material.Icons.Avalonia;
 using SkiaSharp;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using RfCore;
 
 namespace CircuitRF.Ui.Views.DataDisplay;
 
@@ -41,6 +42,10 @@ public partial class MarkerInfoBoxView : UserControl
 
     // ---- Flyout state ---------------------------------------------------
     private Flyout? _editorFlyout;
+    private Point _pressPoint;
+    private bool _frequencyPress;
+    private bool _frequencyDragged;
+    private bool _closingFrequencyEditor;
 
     // ---- Constructor ----------------------------------------------------
 
@@ -54,6 +59,8 @@ public partial class MarkerInfoBoxView : UserControl
         PointerMoved    += OnPointerMoved;
         PointerReleased += OnPointerReleased;
         DoubleTapped    += OnDoubleTapped;
+        FrequencyEditor.KeyDown += OnFrequencyEditorKeyDown;
+        FrequencyEditor.LostFocus += (_, _) => CloseFrequencyEditor(commit: true);
 
         // Invalidate when any resource in the lookup chain changes (e.g.
         // SystemAccentColor on a macOS accent-color or theme switch).
@@ -261,7 +268,7 @@ public partial class MarkerInfoBoxView : UserControl
             : default;
         context.Custom(new InfoBoxDrawOperation(
             new Rect(Bounds.Size),
-            Vm.Marker,
+            Vm.DisplayMarker,
             Vm.Trace,
             Vm.FreqUnit,
             Vm.Theme,
@@ -328,6 +335,7 @@ public partial class MarkerInfoBoxView : UserControl
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (FrequencyEditor.IsVisible) return;
 
         // Ctrl/Cmd+click toggles this InfoBox in the selection without clearing others.
         // Plain click selects only this InfoBox (clears all plots and other InfoBoxes).
@@ -341,6 +349,9 @@ public partial class MarkerInfoBoxView : UserControl
 
         var root = TopLevel.GetTopLevel(this);
         var pt   = root is not null ? e.GetPosition(root) : e.GetPosition(this);
+        _pressPoint = pt;
+        _frequencyDragged = false;
+        _frequencyPress = FrequencyRowBounds() is { } row && row.Contains(e.GetPosition(this));
         Vm?.StartGroupDrag(pt);
         e.Pointer.Capture(this);
         e.Handled = true;
@@ -353,6 +364,11 @@ public partial class MarkerInfoBoxView : UserControl
     /// </summary>
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (FrequencyEditor.IsVisible)
+        {
+            base.OnKeyDown(e);
+            return;
+        }
         if (Vm is { } vm && (vm.PlotType.IsRect() || vm.PlotType.IsComplex()) &&
             e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
         {
@@ -370,7 +386,10 @@ public partial class MarkerInfoBoxView : UserControl
     {
         if (e.Pointer.Captured != this) return;
         var root = TopLevel.GetTopLevel(this);
-        Vm?.UpdateGroupDrag(root is not null ? e.GetPosition(root) : e.GetPosition(this));
+        var point = root is not null ? e.GetPosition(root) : e.GetPosition(this);
+        if (Math.Abs(point.X - _pressPoint.X) > 4 || Math.Abs(point.Y - _pressPoint.Y) > 4)
+            _frequencyDragged = true;
+        Vm?.UpdateGroupDrag(point);
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -378,14 +397,62 @@ public partial class MarkerInfoBoxView : UserControl
         if (e.Pointer.Captured != this) return;
         Vm?.EndGroupDrag();
         e.Pointer.Capture(null);
+        if (_frequencyPress && !_frequencyDragged) OpenFrequencyEditor();
+        _frequencyPress = false;
     }
 
     // ---- Double-tap: open marker editor flyout --------------------------
 
     private void OnDoubleTapped(object? sender, TappedEventArgs e)
     {
+        if (FrequencyEditor.IsVisible) return;
         OpenEditorFlyout();
         e.Handled = true;
+    }
+
+    private Rect? FrequencyRowBounds()
+    {
+        if (Vm is not { } vm || !vm.Trace.TryGetMarkerFrequency(vm.DisplayMarker, out _)) return null;
+        var lines = vm.Trace.BuildMarkerBoxLines(vm.DisplayMarker, vm.FreqUnit, vm.ShowFilePrefix, vm.PlotTraces);
+        int index = lines.FindIndex(line => line.Item1.StartsWith("freq=", StringComparison.OrdinalIgnoreCase));
+        if (index < 0) return null;
+        double textSize = Bounds.Height / (1.3 * lines.Count + 0.3);
+        double padding = textSize * 0.3;
+        return new Rect(padding, padding + index * (textSize + padding),
+                        Math.Max(0, Bounds.Width - padding * 2), textSize + padding);
+    }
+
+    private void OpenFrequencyEditor()
+    {
+        if (Vm is not { } vm || FrequencyRowBounds() is not { } row ||
+            !vm.Trace.TryGetMarkerFrequency(vm.DisplayMarker, out double frequency)) return;
+        Canvas.SetLeft(FrequencyEditor, row.X);
+        Canvas.SetTop(FrequencyEditor, row.Y);
+        FrequencyEditor.Width = row.Width;
+        FrequencyEditor.Height = row.Height;
+        FrequencyEditor.FontSize = Math.Max(8, row.Height / 1.3);
+        FrequencyUnit.FontSize = FrequencyEditor.FontSize;
+        FrequencyUnit.Text = vm.FreqUnit.Description();
+        FrequencyEditor.Text = (frequency * vm.FreqUnit.Scale()).ToString("G12", System.Globalization.CultureInfo.InvariantCulture);
+        FrequencyEditor.IsVisible = true;
+        FrequencyEditor.Focus();
+        FrequencyEditor.SelectAll();
+    }
+
+    private void OnFrequencyEditorKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { CloseFrequencyEditor(commit: true); e.Handled = true; }
+        else if (e.Key == Key.Escape) { CloseFrequencyEditor(commit: false); e.Handled = true; }
+    }
+
+    private void CloseFrequencyEditor(bool commit)
+    {
+        if (_closingFrequencyEditor || !FrequencyEditor.IsVisible) return;
+        _closingFrequencyEditor = true;
+        if (commit && Vm is { } vm && NumericText.TryParseDouble(FrequencyEditor.Text, out double value))
+            vm.TrySetFrequency(value / vm.FreqUnit.Scale());
+        FrequencyEditor.IsVisible = false;
+        _closingFrequencyEditor = false;
     }
 
     private void OpenEditorFlyout()

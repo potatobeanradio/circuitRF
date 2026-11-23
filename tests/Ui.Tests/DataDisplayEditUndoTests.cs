@@ -60,6 +60,58 @@ public sealed class DataDisplayEditUndoTests : IDisposable
     }
 
     [Fact]
+    public async Task MarkerFrequencyEdit_SnapsAndUndoesCubePosition()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var trace = container.PlotVM.Plot.Traces[0];
+        var marker = new Marker(trace, 0, false, false, 1, FreqUnit.GHz);
+        trace.Markers.Add(marker);
+        Assert.True(trace.TrySetMarkerFrequency(marker, 1e9, out _));
+        marker.Function = MarkerFunction.Minimum;
+        var box = new MarkerInfoBoxViewModel(marker, trace, container,
+            () => FreqUnit.GHz, () => RenderTheme.Light, display, 0, 0);
+
+        Assert.True(box.TrySetFrequency(2.6e9));
+        Assert.Equal(MarkerFunction.Normal, marker.Function);
+        Assert.True(trace.TryGetMarkerFrequency(marker, out double frequency));
+        Assert.Equal(3e9, frequency);
+        display.UndoRedo.Undo();
+        Assert.Equal(MarkerFunction.Minimum, marker.Function);
+        Assert.True(trace.TryGetMarkerFrequency(marker, out frequency));
+        Assert.Equal(1e9, frequency);
+        display.UndoRedo.Redo();
+        Assert.Equal(MarkerFunction.Normal, marker.Function);
+        Assert.True(trace.TryGetMarkerFrequency(marker, out frequency));
+        Assert.Equal(3e9, frequency);
+    }
+
+    [Fact]
+    public async Task MarkerFunction_IsSavedInTraceConfiguration()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var trace = window.DataDisplay!.Plots[0].PlotVM.Plot.Traces[0];
+        var marker = new Marker(trace, 0, true, false, 1, FreqUnit.GHz) { Function = MarkerFunction.Vertical };
+        trace.Markers.Add(marker);
+        var config = DataDisplayViewModel.BuildTraceConfig(trace, _dir);
+        var json = JsonSerializer.Serialize(config.Markers[0], DataDisplayJson.Options);
+        var restored = JsonSerializer.Deserialize<MarkerConfig>(json, DataDisplayJson.Options);
+        Assert.Equal(MarkerFunction.Vertical, restored!.Function);
+        Assert.Equal(MarkerFunction.Normal, JsonSerializer.Deserialize<MarkerConfig>("{}", DataDisplayJson.Options)!.Function);
+        Assert.Equal(MarkerFunction.Vertical, new Marker(marker).Function);
+
+        string path = Path.Combine(_dir, "marker.cdd");
+        await window.SaveAllAsync(path);
+        var reopened = new DisplayWindowViewModel();
+        reopened.DataSourceLibrary.ResultsRootProvider = () => _dir;
+        await reopened.LoadAllAsync(path);
+        var savedMarker = Assert.Single(reopened.DataDisplay!.Plots[0].PlotVM.Plot.Traces[0].Markers);
+        Assert.Equal(MarkerFunction.Vertical, savedMarker.Function);
+        Assert.True(savedMarker.IsMulti);
+    }
+
+    [Fact]
     public void TabAnnotations_RoundTripInOrder_AndAreOptional()
     {
         var options = DataDisplayJson.Options;

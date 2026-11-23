@@ -3110,10 +3110,11 @@ namespace CircuitRF.Render.DataDisplay
         {
             var f = Data.Frequencies;
             if (f is not { Length: > 0 }) return -1;
-            int best = 0;
-            double bestD = Math.Abs(f[0] - freq);
-            for (int i = 1; i < f.Length; i++)
+            int best = -1;
+            double bestD = double.PositiveInfinity;
+            for (int i = 0; i < f.Length; i++)
             {
+                if (!double.IsFinite(f[i])) continue;
                 double d = Math.Abs(f[i] - freq);
                 if (d < bestD) { bestD = d; best = i; }
             }
@@ -4027,6 +4028,13 @@ namespace CircuitRF.Render.DataDisplay
 
         public string GetMultiMarkerLine(Marker m, Trace other)
         {
+            if (m.Function == MarkerFunction.Vertical)
+            {
+                double x = GetMarkerDataLocation(m).X;
+                double value = other.InterpolateDisplayedValue(x);
+                string text = double.IsFinite(value) ? other.FormatScalarValue(value, m) : "NaN";
+                return DbFloor.Label(other.ReadoutDescription(false), other.WithValueUnit(text));
+            }
             // Cube-X owner (HB measurement vs a swept axis): keyed by X-index, not frequency.
             if (IsCubeXMarker)
                 return GetCubeMultiMarkerLine(m, other);
@@ -4200,9 +4208,30 @@ namespace CircuitRF.Render.DataDisplay
         /// reads all of them, because comparing power against efficiency at one termination is the
         /// whole point of the readout. Null when the caller has no plot context (tests, design time),
         /// in which case only this trace is reported.</param>
+        public double InterpolateDisplayedValue(double x)
+        {
+            if (!XIsFrequency || IsFamily || IsHarmonicStem || _lastPlotType != PlotType.Rect || !double.IsFinite(x))
+                return double.NaN;
+            for (int point = 0; point < Points.Count; point++)
+            {
+                var current = Points[point];
+                if (!float.IsFinite(current.X) || !float.IsFinite(current.Y)) continue;
+                if (current.X == (float)x) return current.Y;
+                if (point == 0) continue;
+                var previous = Points[point - 1];
+                if (!float.IsFinite(previous.X) || !float.IsFinite(previous.Y) || previous.X == current.X) continue;
+                if (_pointSample.Count == Points.Count && Math.Abs(_pointSample[point] - _pointSample[point - 1]) != 1)
+                    continue;
+                if (x < Math.Min(previous.X, current.X) || x > Math.Max(previous.X, current.X)) continue;
+                return previous.Y + (current.Y - previous.Y) * (x - previous.X) / (current.X - previous.X);
+            }
+            return double.NaN;
+        }
+
         public List<(string Text, bool Bold)> BuildMarkerBoxLines(Marker m, FreqUnit freqUnit,
             bool showFilePrefix = true, IReadOnlyList<Trace>? plotTraces = null)
         {
+            if (m.Unavailable) return [(m.MarkerString, true), ("No visible samples", false)];
             // A FREELY-PLACED MARKER READS ITS OWN POSITION, in the two spellings that position has
             // on a Γ plane: the reflection coefficient and the impedance it stands for. There is no
             // frequency row, because the marker is not at a frequency — it is a TARGET the user put
@@ -4255,6 +4284,10 @@ namespace CircuitRF.Render.DataDisplay
                 if (!string.IsNullOrEmpty(fline)) lines.Add((fline, false));
                 lines.Add((GetStemOrderString(m), false));
                 lines.Add((GetStemValString(m, showFilePrefix), false));
+                if (m.Function == MarkerFunction.Vertical && plotTraces != null)
+                    foreach (var other in plotTraces)
+                        if (!Equals(other) && !other.IsAnnotation)
+                            lines.Add((GetMultiMarkerLine(m, other), false));
                 return lines;
             }
 
@@ -4280,15 +4313,103 @@ namespace CircuitRF.Render.DataDisplay
             return standardLines;
         }
 
+        public bool TrySetVisibleExtremum(Marker marker, PlotRect window, bool maximum)
+        {
+            if (!XIsFrequency || IsContourTrace || _lastPlotType != PlotType.Rect)
+                return false;
+            var points = CubeMarkerPoints(marker);
+            if (points.Count == 0) return false;
+            double left = Math.Min(window.Left, window.Right);
+            double right = Math.Max(window.Left, window.Right);
+            int best = -1;
+            for (int point = 0; point < points.Count; point++)
+            {
+                var candidate = points[point];
+                if (!float.IsFinite(candidate.X) || !float.IsFinite(candidate.Y) || candidate.X < left || candidate.X > right)
+                    continue;
+                if (best < 0 || (maximum ? candidate.Y > points[best].Y : candidate.Y < points[best].Y))
+                    best = point;
+            }
+            if (best < 0) return false;
+            int sample = !IsFamily && _pointSample.Count == points.Count ? _pointSample[best] : best;
+            if (sample < 0) sample = ~sample;
+            if (IsCubeBound)
+            {
+                marker.PositionStatic = new Vector2(points[best].X, IsFamily ? marker.PositionStatic.Y : 0f);
+                return true;
+            }
+            if (Data?.Frequencies is not { } frequencies || sample >= frequencies.Length) return false;
+            marker.Freq = frequencies[sample];
+            return true;
+        }
+
+        public bool TryGetMarkerFrequency(Marker m, out double frequency)
+        {
+            frequency = double.NaN;
+            if (!XIsFrequency || m.FreePosition || IsFamily) return false;
+            if (!IsCubeBound)
+            {
+                if (Data?.Frequencies is not { Length: > 0 }) return false;
+                int index = NearestFrequencyIndex(m.Freq);
+                if (index < 0) return false;
+                frequency = Data.Frequencies[index];
+                return true;
+            }
+            if (_cubeXValues is not { Length: > 0 } frequencies || Points.Count == 0) return false;
+            int sample = CubeMarkerSample(m).Sample;
+            if (sample < 0 || sample >= frequencies.Length) return false;
+            frequency = frequencies[sample];
+            if (_cubeXAxisName == HarmonicAxisName && _f0ByX is { Length: > 0 })
+                frequency *= _f0ByX[Math.Min(sample, _f0ByX.Length - 1)];
+            return double.IsFinite(frequency);
+        }
+
+        public bool TrySetMarkerFrequency(Marker m, double newFreq, out double snappedFrequency)
+        {
+            snappedFrequency = double.NaN;
+            if (!double.IsFinite(newFreq) || !XIsFrequency || m.FreePosition || IsFamily) return false;
+
+            if (!IsCubeBound)
+            {
+                if (Data?.Frequencies is not { Length: > 0 }) return false;
+                int index = NearestFrequencyIndex(newFreq);
+                if (index < 0 || !double.IsFinite(Data.Frequencies[index])) return false;
+                snappedFrequency = Data.Frequencies[index];
+                m.Freq = snappedFrequency;
+                SnapMarkerToStabilityCircle(m, index);
+                return true;
+            }
+
+            if (_cubeXValues is not { Length: > 0 } frequencies || Points.Count == 0) return false;
+            int bestPoint = -1;
+            double bestDistance = double.PositiveInfinity;
+            for (int point = 0; point < Points.Count; point++)
+            {
+                int sample = _pointSample.Count == Points.Count ? _pointSample[point] : point;
+                if (sample < 0) sample = ~sample;
+                if (sample >= frequencies.Length) continue;
+                double frequency = frequencies[sample];
+                if (_cubeXAxisName == HarmonicAxisName && _f0ByX is { Length: > 0 })
+                    frequency *= _f0ByX[Math.Min(sample, _f0ByX.Length - 1)];
+                if (!double.IsFinite(frequency)) continue;
+                double distance = Math.Abs(frequency - newFreq);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestPoint = point;
+                    snappedFrequency = frequency;
+                }
+            }
+            if (bestPoint < 0) return false;
+            var target = Points[bestPoint];
+            m.PositionStatic = MarkersResolve2D ? target : new Vector2(target.X, 0f);
+            return true;
+        }
+
         public void SetMarkerFreq(Marker m, double newFreq)
         {
-            if (IsCubeBound || IsFamily) return;
-            // Nearest, for the reason GetMarkerDataLocation gives — and this is the path a TYPED
-            // frequency takes, which is one of the two the absolute tolerance actually broke.
-            int fi = NearestFrequencyIndex(newFreq);
-            if (fi < 0) fi = Data.Frequencies.Length - 1;
-            m.Freq = Data.Frequencies[fi];
-            SnapMarkerToStabilityCircle(m, fi);
+            if (!IsCubeBound && !IsFamily)
+                TrySetMarkerFrequency(m, newFreq, out _);
         }
 
         public void IncrementMarkerFreq(Marker m)

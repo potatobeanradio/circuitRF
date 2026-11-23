@@ -560,6 +560,8 @@ namespace CircuitRF.Render.DataDisplay
                 foreach (var trace in plot.Traces)
                     foreach (var marker in trace.Markers)
                     {
+                        var resolvedMarker = plot.ResolveMarker(trace, marker);
+                        if (resolvedMarker.Unavailable) continue;
                         if (marker.VswrEnabled && VswrAvailableFor(plot, trace, marker))
                         {
                             var vplane = plot.PlotType is PlotType.Smith or PlotType.Polar
@@ -583,8 +585,8 @@ namespace CircuitRF.Render.DataDisplay
                         // the corners outside the circle — which is what those plots want. A marker whose
                         // point IS in view keeps its glyph above the top edge (MarkerRenderer.GlyphClip).
                         canvas.Save();
-                        canvas.ClipRect(MarkerRenderer.GlyphClip(viewportClip, marker, trace, tf, canvasSize));
-                        MarkerRenderer.DrawSymbol(canvas, canvasSize, marker, trace, tf, theme,
+                        canvas.ClipRect(MarkerRenderer.GlyphClip(viewportClip, resolvedMarker, trace, tf, canvasSize));
+                        MarkerRenderer.DrawSymbol(canvas, canvasSize, resolvedMarker, trace, tf, theme,
                             isSelected:     selectedMarkers?.Contains(marker) ?? false,
                             selectionColor: selectionColor);
                         canvas.Restore();

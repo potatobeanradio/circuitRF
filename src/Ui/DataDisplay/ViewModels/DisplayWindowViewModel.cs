@@ -60,6 +60,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         // Unsubscribe from the previous active tab's property and undo events.
         if (_subscribedTab?.DataDisplay is { } old)
         {
+            old.MarkerToolArmed = false;
             old.PropertyChanged       -= OnActiveDisplayPropertyChanged;
             old.UndoRedo.StateChanged -= OnUndoRedoStateChanged;
             old.ContentChanged        -= OnActiveDisplayContentChanged;
@@ -699,6 +700,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     [RelayCommand]
     private void DeselectAll()
     {
+        if (DataDisplay?.DisarmMarkerTool() == true) return;
         if (DataDisplay is { DrawingTool: not AnnotationTool.None } drawing)
         {
             drawing.DrawingTool = AnnotationTool.None;

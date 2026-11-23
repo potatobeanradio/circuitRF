@@ -99,6 +99,23 @@ internal sealed class RemovePlotsCommand : IUndoableCommand
 
 // ---- Marker add / remove ---------------------------------------------
 
+internal sealed class MoveMarkerFrequencyCommand(MarkerInfoBoxViewModel box,
+    double beforeFrequency, System.Numerics.Vector2 beforePosition,
+    double afterFrequency, System.Numerics.Vector2 afterPosition,
+    MarkerFunction beforeFunction = MarkerFunction.Normal, MarkerFunction afterFunction = MarkerFunction.Normal) : IUndoableCommand
+{
+    public void Execute() => Apply(afterFrequency, afterPosition, afterFunction);
+    public void Undo() => Apply(beforeFrequency, beforePosition, beforeFunction);
+
+    private void Apply(double frequency, System.Numerics.Vector2 position, MarkerFunction function)
+    {
+        box.Marker.Freq = frequency;
+        box.Marker.PositionStatic = position;
+        box.Marker.Function = function;
+        box.OnMarkerMoved();
+    }
+}
+
 /// <summary>Undo: remove the added marker.  Redo: add it back.</summary>
 internal sealed class AddMarkerCommand : IUndoableCommand
 {

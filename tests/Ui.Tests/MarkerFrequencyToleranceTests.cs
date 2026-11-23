@@ -102,4 +102,81 @@ public sealed class MarkerFrequencyToleranceTests
             Assert.Equal(trace.Points[i + 1], trace.GetMarkerDataLocation(nearerNext));
         }
     }
+
+    [Fact]
+    public void TypedFrequencyMovesNetworkAndCubeMarkersToActualSamples()
+    {
+        var (plot, network) = Fixture();
+        var networkMarker = new Marker(network, 0, false, false, 1, plot.FreqUnits);
+        Assert.True(network.TrySetMarkerFrequency(networkMarker, 2.2e6, out double networkFrequency));
+        Assert.Equal(network.Data.Frequencies[1], networkFrequency);
+        Assert.Equal(networkFrequency, networkMarker.Freq);
+
+        var cube = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            CubeName = "value",
+        };
+        cube.SetCubeData([1e9, 2e9, 4e9], null, [1.0, 2.0, 3.0],
+                         "freq", "Hz", PlotType.Rect, FreqUnit.GHz);
+        var cubeMarker = new Marker(cube, 0, false, false, 1, FreqUnit.GHz);
+        Assert.True(cube.TrySetMarkerFrequency(cubeMarker, 2.6e9, out double cubeFrequency));
+        Assert.Equal(2e9, cubeFrequency);
+        Assert.Equal(cube.Points[1], cube.GetMarkerDataLocation(cubeMarker));
+        Assert.Equal(0, cubeMarker.Freq);
+        Assert.False(cube.TrySetMarkerFrequency(cubeMarker, double.NaN, out _));
+
+        Assert.True(cube.TrySetMarkerFrequency(cubeMarker, 10e9, out cubeFrequency));
+        Assert.Equal(4e9, cubeFrequency);
+        Assert.True(cube.TrySetMarkerFrequency(cubeMarker, 1.5e9, out cubeFrequency));
+        Assert.Equal(1e9, cubeFrequency);
+
+        cube.SetCubeData([1.0, 2.0], null, [1.0, 2.0],
+                 "voltage", "V", PlotType.Rect, FreqUnit.GHz);
+        Assert.False(cube.TrySetMarkerFrequency(cubeMarker, 1.5, out _));
+    }
+
+    [Fact]
+    public void VisibleExtremaUseDisplayedSamplesWithinTheWindow()
+    {
+        var cube = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            CubeName = "value",
+        };
+        cube.SetCubeData([1e9, 2e9, 3e9, 4e9], null, [4.0, 1.0, 3.0, 9.0],
+                         "freq", "Hz", PlotType.Rect, FreqUnit.GHz);
+        var marker = new Marker(cube, 0, false, false, 1, FreqUnit.GHz);
+        var window = new PlotRect(1.5, 0, 1.6, 10);
+        Assert.True(cube.TrySetVisibleExtremum(marker, window, maximum: false));
+        Assert.True(cube.TryGetMarkerFrequency(marker, out double frequency));
+        Assert.Equal(2e9, frequency);
+        Assert.True(cube.TrySetVisibleExtremum(marker, window, maximum: true));
+        Assert.True(cube.TryGetMarkerFrequency(marker, out frequency));
+        Assert.Equal(3e9, frequency);
+        Assert.False(cube.TrySetVisibleExtremum(marker, new PlotRect(5, 0, 1, 1), maximum: true));
+    }
+
+    [Fact]
+    public void ExtremaFollowWindowWithoutMutatingSavedMarker()
+    {
+        var (plot, trace) = Fixture();
+        var marker = new Marker(trace, trace.Data.Frequencies[0], false, false, 1, plot.FreqUnits)
+        {
+            Function = MarkerFunction.Maximum,
+        };
+        var original = marker.Freq;
+        plot.Axes.Window = new PlotRect(trace.Points[2].X, -100, trace.Points[6].X - trace.Points[2].X, 200);
+        Assert.Equal(trace.Data.Frequencies[6], plot.ResolveMarker(trace, marker).Freq);
+        Assert.Equal(original, marker.Freq);
+        plot.Axes.Window = new PlotRect(50, -100, 1, 200);
+        Assert.True(plot.ResolveMarker(trace, marker).Unavailable);
+    }
+
+    [Fact]
+    public void VerticalMarkerInterpolatesOtherTraceAndDoesNotExtrapolate()
+    {
+        var trace = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db) { CubeName = "value" };
+        trace.SetCubeData([1e9, 3e9], null, [2.0, 6.0], "freq", "Hz", PlotType.Rect, FreqUnit.GHz);
+        Assert.Equal(4.0, trace.InterpolateDisplayedValue(2.0), 6);
+        Assert.True(double.IsNaN(trace.InterpolateDisplayedValue(4.0)));
+    }
 }

@@ -1,5 +1,33 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+<<<<<<< Updated upstream
+=======
+## 2026-11-23 — marker frequency editing shortcuts
+
+Data Display key bindings for deletion, selection, clipboard and undo could run while a marker's
+frequency text box had focus, deleting or cutting the selected marker instead of editing text.
+Those commands now use the same text-focus guard as the canvas shortcuts. The frequency unit is
+shown as non-editable right-hand content in the text box, and the marker tool glyphs inherit their
+button or menu foreground rather than using fixed colours.
+
+## 2026-11-23 — shape appearance and document export
+
+Box and oval fills store ARGB colors, including opacity; stroke width and independent line
+arrowheads are saved with each annotation. Oval picking follows the ellipse rather than its
+bounding box; resize handles use the same corner gesture as rectangles.
+
+Ctrl constrains both oval placement and corner resizing to equal width and height after grid
+snapping. Resizing anchors the opposite corner, including for reverse-drawn ovals. Preview and
+release read the modifier independently; a completed resize is one undo step. Moving an oval by
+its body never changes its aspect ratio. DataDisplayGridSnapTests covers placement directions
+and every resize corner in both stored coordinate directions.
+
+Export Document is separate from numerical Export Data. PDF writes every tab as a page; PNG/SVG
+write the active tab. Rich copy carries annotations in PDF, SVG, bitmap and JSON, including
+annotation-only selections. Select All includes annotations; paste groups plots and annotations
+in one undo step. Single-plot export intentionally stays plot-only.
+
+>>>>>>> Stashed changes
 ## 2026-11-20 — canvas annotation selection
 
 Data Display text and lines are tab-owned, not plot overlays. The canvas tunnels pointer presses

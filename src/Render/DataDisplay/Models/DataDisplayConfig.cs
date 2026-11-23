@@ -667,6 +667,9 @@ public sealed class MarkerConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MarkerKind MarkerKind { get; set; } = MarkerKind.Polyline;
 
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MarkerFunction Function { get; set; } = MarkerFunction.Normal;
+
     public bool   ShowInfoBox    { get; set; } = true;
     public bool   ContourSnapped { get; set; }
     public bool   VswrEnabled    { get; set; }

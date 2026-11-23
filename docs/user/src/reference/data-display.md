@@ -342,6 +342,13 @@ on a load-pull contour they read the interpolated **surface** rather than the ne
 is the point of fitting a surface at all. The maximum-power and maximum-efficiency locations are flagged
 on a contour plot automatically.
 
+The marker toolbar dropdown offers **Normal**, **Minimum**, **Maximum** and **Vertical line**. Choose a
+type, then click a trace. Minimum and maximum follow the visible frequency range of a rectangular plot;
+dragging, stepping or editing one turns it into a normal marker. A vertical line reads compatible traces
+at the same frequency, interpolating between samples when needed; values outside a trace's range are unavailable.
+Click the `freq=` row of a marker's box to enter a frequency in the displayed unit. The marker moves to
+the nearest available sample; Enter commits and Escape cancels.
+
 **The arrow keys step a selected marker** from one sample to the next — Right or Up to the next higher
 x, Left or Down to the next lower — on a rectangular, Smith or polar plot. On a Smith or polar plot the
 marker walks along the curve in frequency order. A marker you have just added from the plot's **Add
