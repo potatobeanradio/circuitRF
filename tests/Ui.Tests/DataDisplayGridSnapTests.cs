@@ -12,6 +12,44 @@ namespace CircuitRF.Ui.Tests;
 
 public sealed class DataDisplayGridSnapTests
 {
+    [Theory]
+    [InlineData(90, 50, 90, 100)]
+    [InlineData(-70, 50, -70, 100)]
+    [InlineData(40, -60, 90, -60)]
+    [InlineData(-20, -60, -70, -60)]
+    [InlineData(10, 100, 90, 100)]
+    public void CtrlOval_ConstrainsBothPreviewAndReleaseToACircle(double x, double y, double expectedX, double expectedY)
+    {
+        var oval = new CanvasOval(10, 20, 10, 20);
+        var end = new Avalonia.Point(x, y);
+        var preview = Assert.IsType<CanvasOval>(CircuitRF.Ui.Views.DataDisplay.PlotCanvasView.UpdateShapeEnd(
+            oval, end, Avalonia.Input.KeyModifiers.Control));
+        Assert.Equal(expectedX, preview.EndX);
+        Assert.Equal(expectedY, preview.EndY);
+        Assert.Equal(Math.Abs(preview.EndX - preview.X), Math.Abs(preview.EndY - preview.Y));
+        Assert.Equal(preview, CircuitRF.Ui.Views.DataDisplay.PlotCanvasView.UpdateShapeEnd(
+            preview, end, Avalonia.Input.KeyModifiers.Control));
+        Assert.Equal(oval with { EndX = x, EndY = y },
+            CircuitRF.Ui.Views.DataDisplay.PlotCanvasView.UpdateShapeEnd(preview, end));
+    }
+
+    [Fact]
+    public void CtrlOvalResize_KeepsTheOppositeCornerFixed_ForEveryCornerAndDirection()
+    {
+        foreach (bool reversed in new[] { false, true })
+        foreach (bool endX in new[] { false, true })
+        foreach (bool endY in new[] { false, true })
+        {
+            var oval = reversed ? new CanvasOval(100, 80, 10, 20) : new CanvasOval(10, 20, 100, 80);
+            var resized = CircuitRF.Ui.Views.DataDisplay.PlotCanvasView.ConstrainOvalResize(oval, endX, endY);
+            Assert.Equal(Math.Abs(resized.EndX - resized.X), Math.Abs(resized.EndY - resized.Y));
+            Assert.Equal(endX ? oval.X : oval.EndX, endX ? resized.X : resized.EndX);
+            Assert.Equal(endY ? oval.Y : oval.EndY, endY ? resized.Y : resized.EndY);
+            Assert.Equal(resized, CircuitRF.Ui.Views.DataDisplay.PlotCanvasView.ConstrainOvalResize(resized, endX, endY));
+            Assert.Equal(oval.Color, resized.Color);
+        }
+    }
+
     [Fact]
     public void ADraggedPlot_LandsOnTheGrid_AndOffItMovesFreely()
     {

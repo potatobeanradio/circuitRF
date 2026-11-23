@@ -122,6 +122,8 @@ public partial class DataDisplayView : UserControl
 
         win.SetRichCopyAction((containers, theme) =>
             PlotExporter.CopyContainersToClipboardAsync(this, containers, theme));
+        win.SetAnnotationCopyAction((containers, theme, annotations) =>
+            PlotExporter.CopyContainersToClipboardAsync(this, containers, theme, annotations));
         win.SetGetClipboardTextAction(() => ClipboardRead.TextAsync(TopLevel.GetTopLevel(this)?.Clipboard));
 
         win.DataSourceLibrary.FindMissingFileAsync = path => FindMissingSnpFileAsync(path);
@@ -262,6 +264,13 @@ public partial class DataDisplayView : UserControl
 
         foreach (var path in npyFiles)
             await doc.ViewModel.Window.DataSourceLibrary.LoadFileAsync(path);
+    }
+
+    private async void OnExportDocument(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DataDisplayDocument doc || doc.ViewModel.Window.DataDisplay is not { } display) return;
+        try { await PlotExporter.ExportDocumentAsync(this, doc.ViewModel.Window, doc.ViewModel.Window.ActiveTab?.Name ?? "display"); }
+        catch (Exception error) { await ShowErrorAsync(error.Message); }
     }
 
     private async Task DoExportDataAsync()

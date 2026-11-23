@@ -269,6 +269,11 @@
                         AutomationProperties.Name="Draw Box" ToolTip.Tip="Draw Box" Padding="6,3">
                     <mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/>
                 </Button>
+                <Button Command="{Binding ViewModel.Window.DataDisplay.ToggleOvalToolCommand}"
+                        Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.OvalToolArmed, FallbackValue=False}"
+                        AutomationProperties.Name="Draw Oval" ToolTip.Tip="Draw Oval" Padding="6,3">
+                    <mi:MaterialIcon Kind="CircleOutline" Width="16" Height="16"/>
+                </Button>
 
                 <Button Command="{Binding ViewModel.Window.ZoomBoxCommand}"
                         Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.ZoomBoxArmed, FallbackValue=False}"
@@ -334,6 +339,9 @@
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <Button Click="OnExportDocument" AutomationProperties.Name="Export Document" ToolTip.Tip="Export Document (PDF, SVG, PNG)" Padding="6,3">
+                    <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
+                </Button>
                 <Button Command="{Binding ViewModel.Window.ExportDataCommand}"
                         ToolTip.Tip="Export Data"
                         Padding="6,3">

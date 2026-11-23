@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Specialized;
 using System.Globalization;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Rendering.SceneGraph;
+using Avalonia.Skia;
+using SkiaSharp;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 
@@ -99,6 +103,8 @@ public partial class PlotCanvasView
             _boxCorner = display.SelectedAnnotation switch
             {
                 CanvasBox box => HitCorner(point, corner => BoxCornerPoint(display, box, corner)),
+                CanvasOval oval => HitCorner(point, corner => BoxCornerPoint(display,
+                    new CanvasBox(oval.X, oval.Y, oval.EndX, oval.EndY), corner)),
                 CanvasText text when !string.IsNullOrEmpty(text.Text) => AnnotationLayer.HitTextCorner(display, text, point),
                 _ => null,
             };
@@ -126,9 +132,12 @@ public partial class PlotCanvasView
             Focus();
             _linePress = point;
             _linePointer = e.Pointer;
-            _shapePreview = display.BoxToolArmed
-                ? new CanvasBox(anchor.X, anchor.Y, anchor.X, anchor.Y)
-                : new CanvasLine(anchor.X, anchor.Y, anchor.X, anchor.Y);
+            _shapePreview = display.DrawingTool switch
+            {
+                AnnotationTool.Box => new CanvasBox(anchor.X, anchor.Y, anchor.X, anchor.Y),
+                AnnotationTool.Oval => new CanvasOval(anchor.X, anchor.Y, anchor.X, anchor.Y),
+                _ => new CanvasLine(anchor.X, anchor.Y, anchor.X, anchor.Y),
+            };
             e.Pointer.Capture(grid);
         }
         e.Handled = true;
@@ -139,11 +148,11 @@ public partial class PlotCanvasView
         if (_linePointer != e.Pointer || Display is not { } display) return;
         var point = e.GetPosition(_contentGrid);
         if (_moveOriginal is { } original && MovedEnough(point))
-            _movePreview = MoveAnnotation(display, original, point);
+            _movePreview = MoveAnnotation(display, original, point, e.KeyModifiers);
         else if (_moveOriginal is not null)
             _movePreview = null;
         else
-            _shapePreview = UpdateShapeEnd(_shapePreview, SnappedPoint(display, point));
+            _shapePreview = UpdateShapeEnd(_shapePreview, SnappedPoint(display, point), e.KeyModifiers);
         _annotationLayer?.InvalidateVisual();
         e.Handled = true;
     }
@@ -154,12 +163,12 @@ public partial class PlotCanvasView
             || e.InitialPressMouseButton != MouseButton.Left) return;
         var point = e.GetPosition(_contentGrid);
         var end = SnappedPoint(display, point);
-        var shape = UpdateShapeEnd(_shapePreview, end);
+        var shape = UpdateShapeEnd(_shapePreview, end, e.KeyModifiers);
         var original = _moveOriginal;
         var index = _moveIndex;
-        var moved = original is not null && MovedEnough(point) ? MoveAnnotation(display, original, point) : null;
+        var moved = original is not null && MovedEnough(point) ? MoveAnnotation(display, original, point, e.KeyModifiers) : null;
         CancelAnnotationDraft();
-        if (moved is not null && (moved is not CanvasBox || IsNonempty(moved)) && index == display.SelectedAnnotationIndex
+        if (moved is not null && (moved is not (CanvasBox or CanvasOval) || IsNonempty(moved)) && index == display.SelectedAnnotationIndex
             && ReferenceEquals(original, display.SelectedAnnotation))
             display.EditAnnotation(index, moved);
         else if (MovedEnough(point) && IsNonempty(shape))
@@ -173,17 +182,31 @@ public partial class PlotCanvasView
 
     private bool MovedEnough(Point point) => double.Hypot(point.X - _linePress.X, point.Y - _linePress.Y) >= 4;
 
-    private static CanvasAnnotation? UpdateShapeEnd(CanvasAnnotation? shape, Point end) => shape switch
+    internal static CanvasAnnotation? UpdateShapeEnd(CanvasAnnotation? shape, Point end,
+        KeyModifiers modifiers = KeyModifiers.None) => shape switch
     {
         CanvasLine line => line with { EndX = end.X, EndY = end.Y },
         CanvasBox box => box with { EndX = end.X, EndY = end.Y },
+        CanvasOval oval when modifiers.HasFlag(KeyModifiers.Control) => ConstrainCircle(oval, end),
+        CanvasOval oval => oval with { EndX = end.X, EndY = end.Y },
         _ => null,
     };
+
+    private static CanvasOval ConstrainCircle(CanvasOval oval, Point end)
+    {
+        double diameter = Math.Max(Math.Abs(end.X - oval.X), Math.Abs(end.Y - oval.Y));
+        return oval with
+        {
+            EndX = oval.X + Math.CopySign(diameter, end.X - oval.X),
+            EndY = oval.Y + Math.CopySign(diameter, end.Y - oval.Y),
+        };
+    }
 
     private static bool IsNonempty(CanvasAnnotation? shape) => shape switch
     {
         CanvasLine line => line.X != line.EndX || line.Y != line.EndY,
         CanvasBox box => box.X != box.EndX && box.Y != box.EndY,
+        CanvasOval oval => oval.X != oval.EndX && oval.Y != oval.EndY,
         _ => false,
     };
 
@@ -218,7 +241,8 @@ public partial class PlotCanvasView
         return hit;
     }
 
-    private CanvasAnnotation MoveAnnotation(DataDisplayViewModel display, CanvasAnnotation annotation, Point point)
+    private CanvasAnnotation MoveAnnotation(DataDisplayViewModel display, CanvasAnnotation annotation, Point point,
+        KeyModifiers modifiers)
     {
         var deltaX = (point.X - _linePress.X) / display.ZoomLevel;
         var deltaY = (point.Y - _linePress.Y) / display.ZoomLevel;
@@ -229,6 +253,7 @@ public partial class PlotCanvasView
             CanvasText text => text with { X = display.SnapToGrid(text.X + deltaX), Y = display.SnapToGrid(text.Y + deltaY) },
             CanvasLine line => MoveLine(line),
             CanvasBox box => MoveBox(box),
+            CanvasOval oval => MoveOval(oval),
             _ => annotation,
         };
 
@@ -255,6 +280,29 @@ public partial class PlotCanvasView
             var y = display.SnapToGrid(box.Y + deltaY);
             return box with { X = x, Y = y, EndX = box.EndX + (x - box.X), EndY = box.EndY + (y - box.Y) };
         }
+
+        CanvasOval MoveOval(CanvasOval oval)
+        {
+            var moved = MoveBox(new CanvasBox(oval.X, oval.Y, oval.EndX, oval.EndY));
+            var resized = oval with { X = moved.X, Y = moved.Y, EndX = moved.EndX, EndY = moved.EndY };
+            return _boxCorner is { } corner && modifiers.HasFlag(KeyModifiers.Control)
+                ? ConstrainOvalResize(resized, UsesEndX(corner), UsesEndY(corner)) : resized;
+        }
+    }
+
+    internal static CanvasOval ConstrainOvalResize(CanvasOval resized, bool movingEndX, bool movingEndY)
+    {
+        var anchorX = movingEndX ? resized.X : resized.EndX;
+        var anchorY = movingEndY ? resized.Y : resized.EndY;
+        var moving = new Point(movingEndX ? resized.EndX : resized.X, movingEndY ? resized.EndY : resized.Y);
+        var circle = ConstrainCircle(resized with { X = anchorX, Y = anchorY }, moving);
+        return resized with
+        {
+            X = movingEndX ? anchorX : circle.EndX,
+            Y = movingEndY ? anchorY : circle.EndY,
+            EndX = movingEndX ? circle.EndX : anchorX,
+            EndY = movingEndY ? circle.EndY : anchorY,
+        };
     }
 
     private void OpenAnnotationEditor(Point anchor)
@@ -330,13 +378,10 @@ public partial class PlotCanvasView
     {
         private static readonly DashStyle LineDashes = new([3, 2], 0);
 
-        private static FormattedText Format(CanvasText text, DataDisplayViewModel display, IBrush brush)
+        private static AnnotationRenderer.TextLayout Format(CanvasText text, DataDisplayViewModel display, IBrush brush)
         {
-            var formatted = new FormattedText(text.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                Typeface.Default, Math.Max(1, text.FontSize * display.ZoomLevel), brush);
-            if (text.WrapWidth is > 0 and < double.PositiveInfinity)
-                formatted.MaxTextWidth = text.WrapWidth.Value * display.ZoomLevel;
-            return formatted;
+            var layout = AnnotationRenderer.Layout(text);
+            return layout with { Width = layout.Width * (float)display.ZoomLevel, Height = layout.Height * (float)display.ZoomLevel };
         }
 
         private static Matrix TextTransform(CanvasText text, DataDisplayViewModel display)
@@ -346,10 +391,9 @@ public partial class PlotCanvasView
                 * Matrix.CreateTranslation(anchor.X, anchor.Y);
         }
 
-        private static double TextWidth(FormattedText text) => text.MaxTextWidth is > 0 and < double.PositiveInfinity
-            ? text.MaxTextWidth : text.WidthIncludingTrailingWhitespace;
+        private static double TextWidth(AnnotationRenderer.TextLayout text) => text.Width;
 
-        private static Rect TextBounds(FormattedText text)
+        private static Rect TextBounds(AnnotationRenderer.TextLayout text)
             => new Rect(new Point(), new Size(TextWidth(text), text.Height));
 
         private static Point TextCornerPoint(Rect bounds, BoxCorner corner)
@@ -398,10 +442,20 @@ public partial class PlotCanvasView
             {
                 switch (display.Annotations[index])
                 {
+                    case CanvasOval oval:
+                        var ovalBounds = BoxBounds(display, new CanvasBox(oval.X, oval.Y, oval.EndX, oval.EndY));
+                        var rx = ovalBounds.Width / 2;
+                        var ry = ovalBounds.Height / 2;
+                        if (rx <= 0 || ry <= 0) break;
+                        double norm = double.Hypot((point.X - ovalBounds.Center.X) / rx, (point.Y - ovalBounds.Center.Y) / ry);
+                        if (oval.FillColor is not null && norm <= 1 || Math.Abs(norm - 1) * Math.Min(rx, ry)
+                            <= Math.Max(5, oval.LineWidth * display.ZoomLevel / 2)) return index;
+                        break;
                     case CanvasBox box:
                         var bounds = BoxBounds(display, box);
                         var tolerance = Math.Max(5, display.ZoomLevel);
-                        if (bounds.Inflate(tolerance).Contains(point)
+                        if (box.FillColor is not null && bounds.Contains(point)
+                            || bounds.Inflate(tolerance).Contains(point)
                             && (Math.Abs(point.X - bounds.Left) <= tolerance || Math.Abs(point.X - bounds.Right) <= tolerance
                                 || Math.Abs(point.Y - bounds.Top) <= tolerance || Math.Abs(point.Y - bounds.Bottom) <= tolerance))
                             return index;
@@ -420,7 +474,7 @@ public partial class PlotCanvasView
                         var fraction = lengthSquared == 0 ? 0 : Math.Clamp(
                             ((point.X - start.X) * dx + (point.Y - start.Y) * dy) / lengthSquared, 0, 1);
                         if (double.Hypot(point.X - (start.X + fraction * dx), point.Y - (start.Y + fraction * dy))
-                            <= Math.Max(5, display.ZoomLevel)) return index;
+                            <= Math.Max(5, line.LineWidth * display.ZoomLevel / 2)) return index;
                         break;
                 }
             }
@@ -431,20 +485,27 @@ public partial class PlotCanvasView
         {
             base.Render(context);
             if (owner.Display is not { } display || Foreground is not { } brush) return;
+            var annotations = display.Annotations.Select((annotation, index) =>
+                index == owner._moveIndex && owner._movePreview is { } moving ? moving : annotation).ToList();
+            if (owner._shapePreview is { } draft) annotations.Add(draft);
+            context.Custom(new AnnotationDrawOperation(new Rect(Bounds.Size), annotations.ToArray(), display.ZoomLevel,
+                display.ViewOffsetX, display.ViewOffsetY, display.Theme.TextColor));
             for (int index = 0; index < display.Annotations.Count; index++)
                 Draw(index == owner._moveIndex && owner._movePreview is { } moving ? moving : display.Annotations[index],
-                     index == display.SelectedAnnotationIndex);
+                     index == display.SelectedAnnotationIndex || display.AllAnnotationsSelected);
             if (owner._shapePreview is { } preview) Draw(preview, false);
 
             void Draw(CanvasAnnotation annotation, bool selected)
             {
-                var ink = Color.TryParse(annotation.Color, out var color) ? new SolidColorBrush(color) : brush;
+                if (!selected) return;
                 var selection = selected ? new Pen(Brushes.DodgerBlue, 1, DashStyle.Dash) : null;
                 switch (annotation)
                 {
+                    case CanvasOval oval:
+                        Draw(new CanvasBox(oval.X, oval.Y, oval.EndX, oval.EndY), selected);
+                        break;
                     case CanvasBox box:
                         var bounds = BoxBounds(display, box);
-                        context.DrawRectangle(null, Stroke(box.Style), bounds);
                         if (selection is not null)
                         {
                             context.DrawRectangle(null, selection, bounds.Inflate(3));
@@ -458,7 +519,6 @@ public partial class PlotCanvasView
                     case CanvasLine line:
                         var start = ViewPoint(display, line.X, line.Y);
                         var end = ViewPoint(display, line.EndX, line.EndY);
-                        context.DrawLine(Stroke(line.Style), start, end);
                         if (selection is not null)
                         {
                             context.DrawRectangle(null, selection, new Rect(start, new Size()).Inflate(3));
@@ -466,10 +526,9 @@ public partial class PlotCanvasView
                         }
                         break;
                     case CanvasText note when !string.IsNullOrEmpty(note.Text):
-                        var formatted = Format(note, display, ink);
+                        var formatted = Format(note, display, brush);
                         using (context.PushTransform(TextTransform(note, display)))
                         {
-                            context.DrawText(formatted, new Point());
                             if (selection is not null)
                             {
                                 var textBounds = TextBounds(formatted);
@@ -482,9 +541,29 @@ public partial class PlotCanvasView
                         break;
                 }
 
-                Pen Stroke(CanvasLineStyle style) => new(ink, Math.Max(0.75, 1.5 * display.ZoomLevel),
-                    style == CanvasLineStyle.Dashed ? LineDashes : null);
             }
+        }
+    }
+
+    private sealed class AnnotationDrawOperation(Rect bounds, CanvasAnnotation[] annotations,
+        double zoom, double offsetX, double offsetY, SKColor color) : ICustomDrawOperation
+    {
+        public Rect Bounds => bounds;
+        public bool HitTest(Point point) => false;
+        public bool Equals(ICustomDrawOperation? other) => false;
+        public void Dispose() { }
+        public void Render(ImmediateDrawingContext context)
+        {
+            var feature = context.TryGetFeature<ISkiaSharpApiLeaseFeature>();
+            if (feature is null) return;
+            using var lease = feature.Lease();
+            var canvas = lease.SkCanvas;
+            canvas.Save();
+            canvas.ClipRect(new SKRect(0, 0, (float)bounds.Width, (float)bounds.Height));
+            canvas.Translate((float)offsetX, (float)offsetY);
+            canvas.Scale((float)zoom);
+            foreach (var annotation in annotations) AnnotationRenderer.Draw(canvas, annotation, color);
+            canvas.Restore();
         }
     }
 }

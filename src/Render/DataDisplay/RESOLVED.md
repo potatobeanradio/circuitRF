@@ -1,5 +1,20 @@
 # src/Render/DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-23 — one annotation renderer for screen and page output
+
+Arrow shafts stop at each arrowhead's base rather than extending to its tip. Expanded shaft
+outlines and arrowheads are unioned and painted once, so translucent arrows do not darken where
+the shapes meet. Two-headed short lines limit head lengths to avoid crossing. Pixel regression
+tests cover taper clearance and uniform alpha for solid, dashed and two-headed arrows.
+
+AnnotationRenderer draws and measures all page annotations without Avalonia. PlotComposer includes
+their full bounds in its page fit, including rotated/wrapped text and arrowheads, and draws them
+over plots. The canvas delegates its committed and preview drawing to the same renderer; selection
+handles remain UI-only. The CLI accepts annotation-only tabs and forwards annotations per PDF page.
+
+Dashed strokes are expanded with Skia's GetFillPath before drawing, so SVG does not silently drop
+the stroke path effect. Text uses the existing embedded font and fallback helper on every path.
+
 ## A pinned X window did not follow the frequency unit, 2026-09-14
 
 Owner-reported against a real extraction, and reported as missing per-point marker glyphs: the dots
