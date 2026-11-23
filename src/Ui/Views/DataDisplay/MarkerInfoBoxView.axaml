@@ -16,4 +16,12 @@
         Cursor=Hand signals the box is draggable.
     -->
 
+    <Canvas>
+        <TextBox x:Name="FrequencyEditor" IsVisible="False" Padding="2,0"
+                 MinHeight="0" VerticalContentAlignment="Center">
+            <TextBox.InnerRightContent>
+                <TextBlock x:Name="FrequencyUnit" VerticalAlignment="Center" Margin="3,0,2,0"/>
+            </TextBox.InnerRightContent>
+        </TextBox>
+    </Canvas>
 </UserControl>

@@ -1,3 +1,11 @@
+## Visible-range marker functions
+
+Minimum and maximum markers resolve from the plotted samples and the current axis window without
+changing their saved position on pan or data refresh. A marker on a cube stores its sample position
+in `PositionStatic`, while a network marker stores its frequency in `Freq`. Vertical markers read
+other frequency traces from their own displayed samples and interpolate between adjacent points;
+they do not share the owner's sample index or extrapolate beyond a trace.
+
 # src/Render/DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
 ## 2026-11-23 — one annotation renderer for screen and page output

@@ -1,5 +1,13 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-23 — marker frequency editing shortcuts
+
+Data Display key bindings for deletion, selection, clipboard and undo could run while a marker's
+frequency text box had focus, deleting or cutting the selected marker instead of editing text.
+Those commands now use the same text-focus guard as the canvas shortcuts. The frequency unit is
+shown as non-editable right-hand content in the text box, and the marker tool glyphs inherit their
+button or menu foreground rather than using fixed colours.
+
 ## 2026-11-23 — shape appearance and document export
 
 Box and oval fills store ARGB colors, including opacity; stroke width and independent line

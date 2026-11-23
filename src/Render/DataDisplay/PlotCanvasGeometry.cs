@@ -44,7 +44,8 @@ public static class PlotCanvasGeometry
         double zoom)
     {
         var tf = PlotRenderer.BuildTransforms(plot, (canvasWidth, canvasHeight));
-        var dl = trace.GetMarkerDataLocation(marker);
+        var resolved = plot.ResolveMarker(trace, marker);
+        var dl = trace.GetMarkerDataLocation(resolved);
         var px = tf.ToCanvas(dl.X, dl.Y, trace.UseSecondaryAxis);
 
         // Offset 15/10 px from the symbol, clamped inside the container bounds.
@@ -55,7 +56,21 @@ public static class PlotCanvasGeometry
         //   screen X  = containerLeft * zoom + offsetX + sxPx
         //   logical X = (screen X - offsetX) / zoom = containerLeft + sxPx / zoom
         double z = zoom > 0 ? zoom : 1.0;
-        return new PlotPoint(containerLeft + sxPx / z, containerTop + syPx / z);
+        double x = containerLeft + sxPx / z;
+        double y = containerTop + syPx / z;
+        var (width, height) = MarkerRenderer.MeasureInfoBox(resolved, trace, plot.FreqUnits, plotTraces: plot.Traces);
+        foreach (var otherTrace in plot.Traces)
+        foreach (var other in otherTrace.Markers)
+        {
+            if (ReferenceEquals(other, marker) || !other.ShowInfoBox || !double.IsFinite(other.InfoBoxPos.X)
+                || !double.IsFinite(other.InfoBoxPos.Y)) continue;
+            var (otherWidth, otherHeight) = MarkerRenderer.MeasureInfoBox(
+                plot.ResolveMarker(otherTrace, other), otherTrace, plot.FreqUnits, plotTraces: plot.Traces);
+            if (x < other.InfoBoxPos.X + otherWidth && x + width > other.InfoBoxPos.X
+                && y < other.InfoBoxPos.Y + otherHeight && y + height > other.InfoBoxPos.Y)
+                y = other.InfoBoxPos.Y + otherHeight + 5;
+        }
+        return new PlotPoint(x, y);
     }
 
     /// <summary>

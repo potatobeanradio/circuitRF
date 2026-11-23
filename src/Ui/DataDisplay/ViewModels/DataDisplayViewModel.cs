@@ -127,6 +127,26 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     [NotifyPropertyChangedFor(nameof(TextToolArmed), nameof(LineToolArmed), nameof(BoxToolArmed), nameof(OvalToolArmed))]
     private AnnotationTool _drawingTool;
 
+    [ObservableProperty]
+    private bool _markerToolArmed;
+
+    public MarkerFunction MarkerToolFunction { get; private set; }
+
+    public void ArmMarkerTool(MarkerFunction function = MarkerFunction.Normal)
+    {
+        DrawingTool = AnnotationTool.None;
+        DisarmZoomBox();
+        MarkerToolFunction = function;
+        MarkerToolArmed = true;
+    }
+
+    public bool DisarmMarkerTool()
+    {
+        if (!MarkerToolArmed) return false;
+        MarkerToolArmed = false;
+        return true;
+    }
+
     public bool TextToolArmed => DrawingTool == AnnotationTool.Text;
     public bool LineToolArmed => DrawingTool == AnnotationTool.Line;
     public bool BoxToolArmed => DrawingTool == AnnotationTool.Box;
@@ -142,6 +162,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     private void ToggleAnnotationTool(AnnotationTool tool)
     {
         DisarmZoomBox();
+        MarkerToolArmed = false;
         DrawingTool = DrawingTool == tool ? AnnotationTool.None : tool;
     }
 
@@ -1657,6 +1678,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     public void ToggleZoomBox()
     {
         DrawingTool = AnnotationTool.None;
+        MarkerToolArmed = false;
         ZoomBoxArmed = !ZoomBoxArmed;
     }
 
@@ -2189,6 +2211,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 FreePosition          = m.FreePosition,
                 SnappedToCurve        = m.SnappedToCurve,
                 MarkerKind            = m.MarkerKind,
+                Function              = m.Function,
                 ShowInfoBox           = m.ShowInfoBox,
                 ContourSnapped        = m.ContourSnapped,
                 VswrEnabled           = m.VswrEnabled,

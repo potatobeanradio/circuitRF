@@ -235,7 +235,8 @@ public partial class PlotCanvasView : UserControl
 
     private void OnDisplayPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(DataDisplayViewModel.ZoomBoxArmed) or nameof(DataDisplayViewModel.DrawingTool))
+        if (e.PropertyName is nameof(DataDisplayViewModel.ZoomBoxArmed) or nameof(DataDisplayViewModel.DrawingTool)
+            or nameof(DataDisplayViewModel.MarkerToolArmed))
             SyncZoomBoxCursor();
         UpdateAnnotationView(e.PropertyName);
     }
@@ -244,7 +245,7 @@ public partial class PlotCanvasView : UserControl
     /// wBond editors draw theirs — the arming is a mode, and a mode with no pointer change is one the
     /// user discovers by clicking.</summary>
     private void SyncZoomBoxCursor() =>
-        Cursor = Display is { ZoomBoxArmed: true } or { DrawingTool: not AnnotationTool.None }
+        Cursor = Display is { ZoomBoxArmed: true } or { DrawingTool: not AnnotationTool.None } or { MarkerToolArmed: true }
             ? new Cursor(StandardCursorType.Cross) : Cursor.Default;
 
     // Helper to reach the active DataDisplayViewModel.

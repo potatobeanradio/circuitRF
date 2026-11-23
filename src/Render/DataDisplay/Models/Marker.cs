@@ -20,6 +20,8 @@ namespace CircuitRF.Render.DataDisplay
 
     public enum MarkerKind { Polyline, Spectrum, StabilityCircle, Table, Contour }
 
+    public enum MarkerFunction { Normal, Minimum, Maximum, Vertical }
+
     public static class MarkerStyleExtensions
     {
         public static string Description(this MarkerStyle s) => s switch
@@ -82,6 +84,8 @@ namespace CircuitRF.Render.DataDisplay
         public int            MaximumFractionDigits  { get; set; } = 4;
         public PrecisionFormat FormatString          { get; set; } = PrecisionFormat.G;
         public MarkerKind     MarkerKind             { get; set; } = MarkerKind.Polyline;
+        public MarkerFunction Function               { get; set; } = MarkerFunction.Normal;
+        public bool           Unavailable            { get; set; }
         public bool           ShowInfoBox            { get; set; } = true;
         public bool           ContourSnapped         { get; set; }
         public bool           VswrEnabled            { get; set; }
@@ -194,6 +198,8 @@ namespace CircuitRF.Render.DataDisplay
             Style                  = src.Style;
             MaximumFractionDigits  = src.MaximumFractionDigits;
             MarkerKind             = src.MarkerKind;
+            Function               = src.Function;
+            Unavailable            = src.Unavailable;
             ShowInfoBox            = src.ShowInfoBox;
             ContourSnapped         = src.ContourSnapped;
             VswrEnabled            = src.VswrEnabled;
