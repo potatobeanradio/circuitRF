@@ -33,6 +33,10 @@ public enum ProcessStopReason { Memory, Disk }
 public sealed record ProcessStop(ProcessStopReason Reason, long ReadingBytes, long LimitBytes, bool Meshing,
                                  bool BeforeStart = false, string? Volume = null, string? VolumeRole = null)
 {
+    /// <summary>What the solves started before this one held when it was stopped (<see cref="ActiveSolves"/>): the tree was
+    /// held to its ceiling less this. 0 when it was the only one.</summary>
+    public long SharedBytes { get; init; }
+
     /// <summary>
     /// The sentence a run stopped this way shows, naming <paramref name="solver"/> and what it was doing. A memory stop while
     /// meshing says a runaway is the likely cause; while solving, that the problem is larger than this machine, with
@@ -50,6 +54,11 @@ public sealed record ProcessStop(ProcessStopReason Reason, long ReadingBytes, lo
                    $"{MachineMemory.Format(LimitBytes)} circuitRF keeps free on it so the operating system can swap and the run can " +
                    $"write. {(BeforeStart ? "" : "Nothing was written. ")}Free some space on that volume, or write the results to another one.";
         }
+        if (SharedBytes > 0)
+            return $"{solver} was stopped while {doing}: it reached {MachineMemory.Format(ReadingBytes)}, and the EM solves already " +
+                   $"running on this machine hold {MachineMemory.Format(SharedBytes)}; together they reached {ceilingOwner} " +
+                   $"({MachineMemory.Format(LimitBytes + SharedBytes)}). Nothing was written. Run one EM solve at a time: run this " +
+                   "again when the others have finished.";
         string reached = $"{solver} was stopped while {doing}: it reached {MachineMemory.Format(ReadingBytes)}, {ceilingOwner} " +
                          $"({MachineMemory.Format(LimitBytes)}). Nothing was written.";
         string listed = string.Join("; ", remedies.Select(r => r.What));

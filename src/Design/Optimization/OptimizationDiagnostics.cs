@@ -262,6 +262,20 @@ public static class OptimizationDiagnostics
         "No length steps by less than {size}, the smallest element of the held 3D mesh: a smaller change is meshing noise, " +
         "not a slope.", ("size", CircuitRF.Engine.Em3d.FdtdGrid.FormatLength(metres)));
 
+    /// <summary>
+    /// The step floor leaves the search no first step: the held mesh's smallest element, as a fraction of one variable's
+    /// range, is at least the algorithm's own first step, and the floor is shared by every variable — so the run would
+    /// end at its start point having moved nothing, and report that as convergence.
+    /// </summary>
+    public static Diagnostic EmStepFloorTooCoarse(string key, string floor, string range, string option, string first) =>
+        Diagnostic.Create(
+        "opt.em.step-floor-too-coarse", DiagnosticSeverity.Error,
+        "{key} cannot move: no length steps by less than {floor} on this EM view, which is {option}={first} or more of its " +
+        "range ({range}), and the floor is shared by every variable, so the search would stop before its first step. " +
+        "Widen {key}'s range, take it out of the optimisation, make the setup's mesh finer at the conductors (a smaller " +
+        "EdgeRefinement), or use algorithm=bayes, which takes no step to floor.",
+        ("key", key), ("floor", floor), ("range", range), ("option", option), ("first", first));
+
     /// <summary>D10.</summary>
     public static Diagnostic EmConnectedRange(string sentence) => Diagnostic.Create(
         "opt.em.connected-range", DiagnosticSeverity.Info, "{sentence}", ("sentence", sentence));

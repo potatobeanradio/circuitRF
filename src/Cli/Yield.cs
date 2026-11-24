@@ -431,6 +431,7 @@ internal static partial class Yield
         });
         if (run.Refusal is { } refused) return JsonRun.Fail(refused);
         foreach (var note in run.Notes) Report(note);
+        int reported = run.Notes.Count;   // before Run(): result.Notes is the same list, so a later count skips all
 
         if (trial is { } t) return RunTrial(input, full, run, mode, t, output, presetName, cornerName, ct);
 
@@ -438,7 +439,7 @@ internal static partial class Yield
                                 $"{run.Entries.Count} statistical entr{(run.Entries.Count == 1 ? "y" : "ies")}, " +
                                 $"{run.KitCalls.Count} kit stream(s), {run.Goals.Count} goal(s), up to {run.Settings.EffectiveTrials} trials");
         var result = run.Run();
-        foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
+        foreach (var note in result.Notes.Skip(reported)) Report(note);
 
         if (result.Outcome == StatisticalOutcome.Cancelled || ct.IsCancellationRequested)
         {

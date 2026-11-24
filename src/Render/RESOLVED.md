@@ -5980,3 +5980,9 @@ chord, and those slivers' side walls striped the barrel's top band.
 notch, which leaves what genuinely lies beyond the barrel (a square pad's corners). In `Notched`, a piece lying wholly inside
 a round bore's TRUE circle is an artefact of the inscribed ring and draws nothing; it keeps its vertices, and a solid with no
 piece left keeps its own, so its bounds stay the pad's. Gate: `PlatedViaAndPerspectiveTests.APlatedBarrel_IsDrawnAsATube_ThroughAHoleInItsPad`.
+
+## A long plot title lost its last characters (2026-11-23)
+
+The title was shrunk to fit the axes' width but centred over the axes, which sit right of the y-axis labels, so a
+title as wide as the space still ran past the canvas's right edge. `AxesRenderer` now fits it to the width it is
+centred in and keeps its box on the canvas. Gate: `PlotTitleFitTests`.

@@ -91,6 +91,7 @@ internal static class JsonRun
         public VendorLibraryJson? Library;
         public System.Text.Json.Nodes.JsonObject? Plugin;
         public System.Text.Json.Nodes.JsonObject? Hertzon;
+        public System.Text.Json.Nodes.JsonObject? LcFilter;
         public TextWriter? Sink;
         public List<ResultOutput> Outputs = [];
         public List<DiagnosticJson> Diagnostics = [];
@@ -317,6 +318,8 @@ internal static class JsonRun
     public static System.Text.Json.Nodes.JsonObject? Plugin { get => S.Plugin; set => S.Plugin = value; }
     /// <summary>HZN-8 — what a run in Hertzon reports (<c>em --solver hertzon</c>): the version, the schema and Hertzon's own summary fields.</summary>
     public static System.Text.Json.Nodes.JsonObject? Hertzon { get => S.Hertzon; set => S.Hertzon = value; }
+    /// <summary><c>filter lc</c> — the ladder the LC Filter Designer builds: specification, terminations, elements.</summary>
+    public static System.Text.Json.Nodes.JsonObject? LcFilter { get => S.LcFilter; set => S.LcFilter = value; }
 
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
@@ -385,6 +388,7 @@ internal static class JsonRun
         Library             = null;
         Plugin              = null;
         Hertzon             = null;
+        LcFilter            = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -623,6 +627,7 @@ internal static class JsonRun
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
          || Center is not null || Doe is not null || Sensitivity is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
          || Model is not null || Library is not null || Review is not null || ReviewChecks is not null || Plugin is not null
+         || LcFilter is not null
          || (Hertzon is not null && Data is null))
         {
             // EMB-5 R-emb5-8: `--result summary` on a report with no DataSet — the answer without its
@@ -645,7 +650,8 @@ internal static class JsonRun
                                      Yield: yieldR, Corners: corners, Center: center, Doe: doe, Sensitivity: Sensitivity,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
                                      Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks,
-                                     Snp: Snp, ExportPart: ExportPart, Summarized: summarized, Plugin: Plugin, Hertzon: Hertzon);
+                                     Snp: Snp, ExportPart: ExportPart, Summarized: summarized, Plugin: Plugin, Hertzon: Hertzon,
+                                     LcFilter: LcFilter);
         }
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and

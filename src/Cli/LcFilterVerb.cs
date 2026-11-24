@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using CircuitRF.Core.Matching;
+using CircuitRF.Core.Synthesis.Filters;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
 
@@ -84,10 +85,7 @@ public static class LcFilterVerb
                                              spec.Ap > 0 ? spec.Ap : 0.1, spec.Rs, spec.First,
                                              spec.As > 0 ? spec.As : 40, spec.EllipticType);
         if (!built.Ok)
-        {
-            Console.Error.WriteLine(built.Refusal!.Message);
-            return 1;
-        }
+            return JsonRun.Fail(CliDiagnostics.FilterSpecRefused(built.Refusal!.Message));
 
         var real = built.Realization!;
         var used = new List<FilterElement>(real.Elements.Count);
@@ -96,11 +94,15 @@ public static class LcFilterVerb
         if (spec.Response == FilterResponse.Elliptic)
             text.Append($", type {EllipticTypes.Letter(EllipticTypes.Resolve(spec.EllipticType, spec.Order))}");
         text.AppendLine();
-        if (real.Note.Length > 0) Console.Error.WriteLine(real.Note);
+        if (real.Note.Length > 0) JsonRun.Report(CliDiagnostics.FilterNote(real.Note));
         text.AppendLine($"# source {real.SourceOhms:0.###} ohm, load {real.LoadOhms:0.###} ohm");
         foreach (var e in real.Elements)
         {
             double value = FilterValues.Snap(e.Inductor, e.Value, spec.Series);
+            // The snap multiplies a mantissa by a decade, so 6.8 pF arrives as 6.799999999999999e-12. A preferred value
+            // has at most three significant digits, so twelve loses nothing and the netlist reads 6.8E-12.
+            if (spec.Series != FilterSeriesKind.Exact)
+                value = double.Parse(value.ToString("G12", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
             used.Add(e with { Value = value });
             text.Append(e.Name).Append('\t')
                 .Append(e.Shunt ? "shunt" : "series").Append('\t')
@@ -109,17 +111,73 @@ public static class LcFilterVerb
                 .AppendLine(value.ToString("G6", CultureInfo.InvariantCulture));
         }
         Console.Write(text);
+        JsonRun.LcFilter = Result(spec, real, used);
 
         if (!string.IsNullOrWhiteSpace(spec.Out))
         {
+            // `;` is the netlist's comment; the `*` this once wrote is SPICE's, and the reader warned on it in every file.
             var cnl = new StringBuilder();
-            cnl.Append("* ").Append(spec.Response).Append(' ').Append(spec.Form)
+            cnl.Append("; ").Append(spec.Response).Append(' ').Append(spec.Form)
                .Append(" order ").AppendLine(spec.Order.ToString(CultureInfo.InvariantCulture));
             cnl.Append(FilterLadder.ToCnl(used, real.SourceOhms, real.LoadOhms));
+            // A sweep across the band, so the file runs as written: the span the Filter Designer's own bench sweeps.
+            var band = spec.Form switch
+            {
+                NetworkForm.Highpass => FilterBand.Highpass,
+                NetworkForm.Bandpass => FilterBand.Bandpass,
+                NetworkForm.Bandstop => FilterBand.Bandstop,
+                _                    => FilterBand.Lowpass,
+            };
+            bool edges = band is FilterBand.Bandpass or FilterBand.Bandstop;
+            var sweep = FilterSynthesisService.Frequencies(
+                new FilterSpec(spec.Response, band, spec.Order, edges ? f1 : fc, edges ? f2 : 0), 401);
+            cnl.Append("analysis SP1 type=sparam start=").Append(sweep[0].ToString("R", CultureInfo.InvariantCulture))
+               .Append(" stop=").Append(sweep[^1].ToString("R", CultureInfo.InvariantCulture)).AppendLine(" npts=401 Unit=Hz");
             File.WriteAllText(spec.Out, cnl.ToString());
             Console.Error.WriteLine($"Wrote {spec.Out}");
+            JsonRun.AddOutput("cnl", Path.GetFullPath(spec.Out));
         }
         return 0;
+    }
+
+    /// <summary>
+    /// The ladder as <c>--json</c> carries it: what was asked, the terminations the family produced, and each
+    /// element at its exact value and at the value written (the series snap; the same number with <c>--series exact</c>).
+    /// </summary>
+    private static System.Text.Json.Nodes.JsonObject Result(Parsed spec, FilterRealization real, IReadOnlyList<FilterElement> used)
+    {
+        var elements = new System.Text.Json.Nodes.JsonArray();
+        for (int i = 0; i < used.Count; i++)
+        {
+            var e = used[i];
+            elements.Add(new System.Text.Json.Nodes.JsonObject
+            {
+                ["name"]   = e.Name,
+                ["kind"]   = e.Component,
+                ["arm"]    = e.Shunt ? "shunt" : "series",
+                ["nodes"]  = new System.Text.Json.Nodes.JsonArray(e.NodeA, e.NodeB),
+                ["exact"]  = real.Elements[i].Value,
+                ["value"]  = e.Value,
+                ["unit"]   = e.Inductor ? "H" : "F",
+            });
+        }
+        var o = new System.Text.Json.Nodes.JsonObject
+        {
+            ["response"]   = spec.Response.ToString(),
+            ["form"]       = spec.Form.ToString(),
+            ["order"]      = spec.Order,
+            ["first"]      = real.First.ToString(),
+            ["series"]     = spec.Series.ToString(),
+            ["sourceOhms"] = real.SourceOhms,
+            ["loadOhms"]   = real.LoadOhms,
+            ["elements"]   = elements,
+        };
+        if (spec.Fc is double fc) o["fcHz"] = fc;
+        if (spec.F1 is double f1) o["f1Hz"] = f1;
+        if (spec.F2 is double f2) o["f2Hz"] = f2;
+        if (spec.Response is FilterResponse.Chebyshev or FilterResponse.Elliptic) o["rippleDb"] = spec.Ap > 0 ? spec.Ap : 0.1;
+        if (spec.Response is FilterResponse.InvChebyshev or FilterResponse.Elliptic) o["stopDb"] = spec.As > 0 ? spec.As : 40;
+        return o;
     }
 
     private static string Help() => """
@@ -139,7 +197,7 @@ public static class LcFilterVerb
           --elliptic-type auto|a|b|c
                              auto (default) is a at odd order and c at even order
           --series exact|e6|e12|e24|e96
-          -o out.cnl         the ladder as a netlist
+          -o out.cnl         the ladder as a netlist, with an S-parameter sweep across the band
 
         Inverse Chebyshev and elliptic are ladders of tanks. An even-order inverse Chebyshev, or an
         even-order elliptic of type a, keeps a finite floor at infinite frequency, which a ladder
@@ -150,7 +208,7 @@ public static class LcFilterVerb
 
     private static int Fail(string message)
     {
-        Console.Error.WriteLine(message);
+        JsonRun.Report(CliDiagnostics.FilterSpecRefused(message));
         return 2;
     }
 

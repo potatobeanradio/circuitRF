@@ -1415,6 +1415,12 @@ public static class PalaceRun
                 var diskRead = Stopwatch.StartNew();
                 var read = !watchMemory ? null
                          : watch!.ReadMemory?.Invoke(p.Id) ?? (job is not null ? job.Read : ProcessTreeMemory.Sampler(p.Id));
+                // Every tree this loop watches is on the machine-wide record, so a tree started beside others is held to what
+                // they leave rather than to the whole machine (ActiveSolves). A footprint a test supplies is not published.
+                using var registered = read is null || watch!.ReadMemory is not null ? null
+                                     : ActiveSolves.Register(p, exe, psi.WorkingDirectory);
+                long older = 0;
+                var shared = Stopwatch.StartNew();
                 // Hands every line read so far to the watcher, or ticks the stage once per line without one.
                 // On the run's thread, so a cancellation thrown by the control lands here.
                 void Drain()
@@ -1449,6 +1455,14 @@ public static class PalaceRun
                     peak = Math.Max(peak ?? 0, m.ResidentBytes);
                     peakFootprint = Math.Max(peakFootprint ?? 0, m.FootprintBytes);
                     if (ceiling is { } c && m.FootprintBytes >= c) return new(ProcessStopReason.Memory, m.FootprintBytes, c, Meshing());
+                    if (registered is not null && shared.ElapsedMilliseconds >= 1000)
+                    {
+                        shared.Restart();
+                        registered.Update(m.FootprintBytes);
+                        older = ActiveSolves.OlderFootprint(registered);
+                    }
+                    if (ceiling is { } whole && older > 0 && m.FootprintBytes >= whole - older)
+                        return new(ProcessStopReason.Memory, m.FootprintBytes, Math.Max(0, whole - older), Meshing()) { SharedBytes = older };
                     long near = ceiling ?? watch!.PhysicalBytes;
                     if (memoryNote is null && near > 0 && m.FootprintBytes >= Em3dMemoryVerdict.InUseNoteFraction * near)
                         memoryNote = ceiling is { } limit

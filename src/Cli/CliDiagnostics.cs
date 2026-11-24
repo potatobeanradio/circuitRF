@@ -282,7 +282,7 @@ internal static class CliDiagnostics
     // A narrowing that could not be honoured against the result that came back — an axis no cube
     // has, or a value that is not one — is NOT declared here: those are
     // RfCore.Export.NarrowingDiagnostics' own (narrow.axis.unknown, narrow.value.malformed,
-    // narrow.value.missing, narrow.range.empty), because the rule about which axes exist belongs
+    // narrow.value.missing, narrow.range.empty, narrow.axis.picked-twice), because the rule about which axes exist belongs
     // where the axes do. They fail the invocation: any file the run wrote is still named in
     // `outputs` and the result's SHAPE still comes back, so nothing is lost — what a caller must
     // not receive is the whole un-narrowed result under the impression that it answers the
@@ -802,6 +802,16 @@ internal static class CliDiagnostics
 
     public static Diagnostic NewView3dNote(string text) => Diagnostic.Create(
         "new.view3d.note", DiagnosticSeverity.Info, "{text}", ("text", text));
+
+    public static Diagnostic NewLayoutArgs(string why) => Diagnostic.Create(
+        "new.args.layout", DiagnosticSeverity.Error, "new layout: {why}", ("why", why));
+
+    /// <summary>One line of Update Layout from Schematic's report, as the Messages panel shows it: a note, or a warning.</summary>
+    public static Diagnostic NewLayoutNote(string text) => Diagnostic.Create(
+        "new.layout.note", DiagnosticSeverity.Info, "{text}", ("text", text));
+
+    public static Diagnostic NewLayoutWarning(string text) => Diagnostic.Create(
+        "new.layout.warning", DiagnosticSeverity.Warning, "{text}", ("text", text));
 
     public static Diagnostic NewView3dPortsLeftOut(string text) => Diagnostic.Create(
         "new.view3d.ports-left-out", DiagnosticSeverity.Warning, "Ports left out: {text}.", ("text", text));
@@ -1447,6 +1457,11 @@ internal static class CliDiagnostics
     public static Diagnostic EmDryRunEstimate(string estimate) => Diagnostic.Create(
         "em.dry-run.estimate", DiagnosticSeverity.Info,
         "estimate: {estimate}", ("estimate", estimate));
+
+    /// <summary>EM solves already running on this machine, in any circuitRF process (<c>ActiveSolves</c>): the estimate is
+    /// against the whole machine, and they hold part of it.</summary>
+    public static Diagnostic EmSolvesRunning(string text) => Diagnostic.Create(
+        "em.solves-running", DiagnosticSeverity.Warning, "{text}", ("text", text));
 
     /// <summary>brief-sdl-6 R-sdl6-7 — <c>check</c>: an analysis or instance asked to run by EM that cannot be.</summary>
     public static Diagnostic CheckEmRefused(string path, string analysis, string reason) => Diagnostic.Create(

@@ -599,8 +599,20 @@ public sealed partial class OptimizationRun
     public long Failures    => Interlocked.Read(ref _failures);
 
     /// <summary>How many points an evaluation runs at once: the setup's <c>parallel=</c>, or the cores less one;
-    /// 1 when the circuit is not re-entrant (<see cref="PreparedCircuit.NotReentrantReason"/>).</summary>
-    public int Parallelism => _simulates && _circuit.NotReentrantReason is not null ? 1 : _parallelism;
+    /// 1 when the circuit is not re-entrant (<see cref="PreparedCircuit.NotReentrantReason"/>) or a point solves EM.</summary>
+    public int Parallelism => SerialReason is not null ? 1 : _parallelism;
+
+    /// <summary>
+    /// Why points run one at a time, or null. A point that solves EM (em=direct, or em=correct's EM check) runs a field
+    /// solver that already uses every core and holds a mesh of its own: side by side they bought no speed and multiplied
+    /// the memory — a Bayesian start of seven EMerge solves at once exhausted a 16 GB machine.
+    /// </summary>
+    private string? SerialReason =>
+        !_simulates ? null
+        : _circuit.NotReentrantReason
+          ?? (EmMode != OptimizerEmMode.Off && _evalEm != false
+                  ? "each point solves an EM geometry, and one solve already uses every core and its own mesh's memory"
+                  : null);
     public long Infeasible  => _infeasible;
     public long CacheHits   => _cacheHits;
 
@@ -666,6 +678,7 @@ public sealed partial class OptimizationRun
                 if (PrepareEm(ct) is { } emRefusal) return Refused(emRefusal);
                 if (EmMode == OptimizerEmMode.Correct) return RunEmCorrect(ct);
                 FloorSteps(AlgorithmId, _dbuStep.DefaultIfEmpty(0).Max());
+                if (StepFloorTooCoarse(AlgorithmId) is { } frozen) return Refused(frozen);
             }
             if (_inner is { MinStep: > 0 } inner)
                 foreach (var id in new[] { AlgorithmId, LevenbergMarquardt.AlgorithmId, Minimax.AlgorithmId }) FloorSteps(id, inner.MinStep);
@@ -1233,7 +1246,7 @@ public sealed partial class OptimizationRun
 
         var outcomes = new (PointOutcome Outcome, DataSet? Data)[toRun.Count];
         int degree = Math.Min(_parallelism, toRun.Count);
-        string? serialWhy = _simulates ? _circuit.NotReentrantReason : null;
+        string? serialWhy = SerialReason;
         if (serialWhy is not null && degree > 1 && !_serialNoted)
         {
             _serialNoted = true;

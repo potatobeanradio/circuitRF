@@ -18,6 +18,7 @@
 // prints the inference and the flags that answer it, never a guess. `circuitrf convert` already
 // fixed this rule for interchange imports and it applies here unchanged.
 
+using CircuitRF.Design.Layout.SchematicSync;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
@@ -51,6 +52,7 @@ public static class Authoring
             "workspace" => NewWorkspace(args[1..]),
             "cell"      => NewCell(args[1..]),
             "view3d"    => NewView3d(args[1..]),
+            "layout"    => NewLayout(args[1..]),
             "example"   => NewExample(args[1..]),
             _           => UnknownNoun(noun),
         };
@@ -435,6 +437,75 @@ public static class Authoring
             Console.Error.WriteLine($"warning: Ports left out: {left}.");
             JsonRun.Note(CliDiagnostics.NewView3dPortsLeftOut(left));
         }
+        return 0;
+    }
+
+    // ── new layout ────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Design ▸ Update Layout from Schematic, headless: <see cref="LayoutFromSchematic.Run"/>, the planner the menu
+    /// item runs, on the cell's primary schematic (or the <c>.csch</c> named). The layout is made when the cell has none,
+    /// and brought up to date with the schematic when it has one — hand edits kept, as the menu item keeps them.
+    /// </summary>
+    private static int NewLayout(string[] args)
+    {
+        string? input = null;
+        bool fromSchematic = false, connect = true, emSetup = false;
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "--from-schematic": fromSchematic = true; break;
+                case "--no-connect": connect = false; break;
+                case "--em-setup": emSetup = true; break;
+                default:
+                    if (args[i].StartsWith('-')) { JsonRun.Report(CliDiagnostics.NewUnknownOption(args[i])); return NewUsage(); }
+                    if (input is null) input = args[i];
+                    else { JsonRun.Report(CliDiagnostics.NewCellExtraArgument(args[i])); return NewUsage(); }
+                    break;
+            }
+        }
+        if (input is null) { JsonRun.Report(CliDiagnostics.NewLayoutArgs("a cell folder or a .csch is required.")); return NewUsage(); }
+        JsonRun.InputPath = input;
+        if (!fromSchematic)
+            return JsonRun.Fail(CliDiagnostics.NewLayoutArgs(
+                "say what the layout is made from: --from-schematic runs Update Layout from Schematic. An empty layout is " +
+                "'new cell <workspace> <name> --views layout'."));
+
+        string full = Path.GetFullPath(input).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string? schematic = null;
+        if (File.Exists(full) && full.EndsWith(".csch", StringComparison.OrdinalIgnoreCase)) schematic = full;
+        else if (File.Exists(Path.Combine(full, CellFolder.CcellFileName)))
+        {
+            var primary = CellFolder.ResolvePrimary(full, ViewType.Schematic);
+            schematic = primary.ResolvedName is { } n ? Path.Combine(CellFolder.SubFolderPath(full, ViewType.Schematic), n) : null;
+            if (schematic is null || !File.Exists(schematic))
+                return JsonRun.Fail(CliDiagnostics.NewLayoutArgs($"'{input}' has no schematic to make a layout from."));
+        }
+        else return JsonRun.Fail(CliDiagnostics.NewLayoutArgs($"'{input}' is neither a cell folder nor a .csch."));
+
+        LayoutFromSchematic.Outcome made;
+        try { made = LayoutFromSchematic.Run(schematic, connect, emSetup); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+                                      or System.Text.Json.JsonException or ArgumentException or InvalidOperationException)
+        {
+            return JsonRun.Fail(CliDiagnostics.NewRefused($"Update Layout from Schematic: {ex.Message}"));
+        }
+        if (made.Refusal is { } why) return JsonRun.Fail(CliDiagnostics.NewRefused($"Update Layout from Schematic: {why}"));
+
+        Console.WriteLine(made.LayoutPath);
+        JsonRun.AddOutput("layout", made.LayoutPath);
+        foreach (string setup in made.EmSetups) { Console.WriteLine(setup); JsonRun.AddOutput("em-setup", setup); }
+        void Line(string text, bool warning)
+        {
+            Console.Error.WriteLine((warning ? "warning: " : "note: ") + text);
+            JsonRun.Note(warning ? CliDiagnostics.NewLayoutWarning(text) : CliDiagnostics.NewLayoutNote(text));
+        }
+        Line($"{(made.Created ? "Created" : "Updated")} {Path.GetFileName(made.LayoutPath)}: {made.Added} added, {made.Updated} updated, " +
+             $"{made.Unchanged} unchanged, {made.Removed} removed.", false);
+        foreach (var l in made.Lines)
+            Line(l.InstanceName is { Length: > 0 } who ? $"{who}: {l.Text}" : l.Text,
+                 l.Severity == CircuitRF.Design.Layout.SchematicSync.SchematicLayoutPlanner.ReportSeverity.Warning);
         return 0;
     }
 
@@ -900,6 +971,7 @@ public static class Authoring
         Console.Error.WriteLine("Usage: circuitrf new workspace <dir> [--name N] [--tech <id>|none] [--length-unit um|mm|mil] [--vendor-library <name>=<folder>]...");
         Console.Error.WriteLine("       circuitrf new cell <workspace-or-dir> <cellName> [--views schematic,symbol,layout,3d]");
         Console.Error.WriteLine("       circuitrf new view3d <cell-dir> --from-layout [--name N]");
+        Console.Error.WriteLine("       circuitrf new layout <cell-dir-or-.csch> --from-schematic [--no-connect] [--em-setup]");
         Console.Error.WriteLine("       circuitrf new example <dir> <name>     ('circuitrf reference examples' lists them)");
         return 1;
     }

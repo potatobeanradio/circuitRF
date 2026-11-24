@@ -463,7 +463,7 @@ static int UnknownVerb(string verb)
 
 static int RunSparam(string[] args)
 {
-    string? input = null, output = null;
+    string? input = null, output = null, analysisName = null;
     bool    freqExplicit = false;
     double  start  = 1e9, stop = 10e9, step = 1e8;
     var     sets   = new List<(string Name, string Expr)>();
@@ -473,6 +473,9 @@ static int RunSparam(string[] args)
     {
         switch (args[i])
         {
+            case "--analysis" or "-a" when i + 1 < args.Length:
+                analysisName = args[++i];
+                break;
             case "--freq" when i + 1 < args.Length:
                 freqExplicit = true;
                 var parts = args[++i].Split(':');
@@ -520,25 +523,32 @@ static int RunSparam(string[] args)
         ApplySets(tb, sets);
         string? refBase = CircuitSource.ReferenceBaseOf(input);
         // brief-sdl-6: the chain this verb dispatches, switched to its EM bench when it runs by EM, counted first.
-        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is SParameterAnalysis, null, out int emExit);
+        using var emScope = em.Prepare(input, refBase, ref lib, ref tb, a => a is SParameterAnalysis, analysisName, out int emExit);
         if (emScope is null) return emExit;
         ElaboratedNetlist nl;
         using (freqExplicit ? null : em.BaseElaboration())   // a dispatched sweep solves at its own points only (D5)
             nl = ParametricSweepEngine.ElaborateForRun(lib, tb, refBase, () => freqExplicit ? null
-                : ChainSelector.Select(tb, null, a => a is SParameterAnalysis, "S-parameter", "").Selected);
+                : ChainSelector.Select(tb, analysisName, a => a is SParameterAnalysis, "S-parameter", "").Selected);
         var shown = PrintWarnings(nl);
 
         // A parametric_sweep wrapping the S-parameter analysis is dispatched at the SWEEP, as `hb`, `lp`
         // and `lpp` dispatch theirs: running the inner alone silently drops the sweep axis and returns
         // one point (designer report, round 26). --freq names no directive, so it keeps the plain run.
-        if (!freqExplicit &&
-            SelectTop(tb, null, a => a is SParameterAnalysis, "S-parameter", "analysis <name> type=sparam ...",
-                      out _) is ParametricSweepAnalysis sweep)
+        string? why = null;
+        var top = freqExplicit ? null
+            : SelectTop(tb, analysisName, a => a is SParameterAnalysis, "S-parameter", "analysis <name> type=sparam ...",
+                        out why);
+        if (analysisName is not null && !freqExplicit && top is null)
+            return JsonRun.Fail(CliDiagnostics.NoAnalysis("sparam", why!));
+        if (top is ParametricSweepAnalysis sweep)
             return RunSparamSweep(sweep, lib, tb, nl, shown, refBase, input, output);
 
-        // Prefer typed SParameterAnalysis from the netlist unless --freq was explicitly given.
+        // Prefer typed SParameterAnalysis from the netlist unless --freq was explicitly given: the one the chain selection
+        // chose (-a, else the first ENABLED chain), not merely the first in the file — that ran a disabled SP1 in place of
+        // the SP2 beside it.
         double[] freqs;
-        var spa = tb.Analyses.OfType<SParameterAnalysis>().FirstOrDefault();
+        var spa = (top is null ? null : ChainSelector.BaseOfChain(top, tb) as SParameterAnalysis)
+                  ?? tb.Analyses.OfType<SParameterAnalysis>().FirstOrDefault();
         if (spa is not null && !freqExplicit)
         {
             JsonRun.Analysis = spa.Name;

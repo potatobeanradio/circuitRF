@@ -589,6 +589,37 @@ public sealed partial class OptimizationRun
         }
     }
 
+    /// <summary>
+    /// em=direct: refused when the step floor (<see cref="FloorSteps"/>, the largest variable's fraction, since the
+    /// algorithms take one step size for every coordinate) is at least <paramref name="algorithmId"/>'s first step. The
+    /// search would end before its first move, at the start point, and say it had converged.
+    /// </summary>
+    private Diagnostic? StepFloorTooCoarse(string algorithmId)
+    {
+        string? first = algorithmId switch
+        {
+            "pattern" => "poll",
+            "simplex" => "step",
+            "trust_region" or "minimax" => "radius",
+            _ => null,
+        };
+        if (first is null || _dbuStep.Length == 0 || Variables is null) return null;
+        int worst = 0;
+        for (int i = 1; i < _dbuStep.Length; i++) if (_dbuStep[i] > _dbuStep[worst]) worst = i;
+        double floor = _dbuStep[worst];
+        if (floor <= 0) return null;
+        double start = _settings.Options?.TryGetValue(first, out var stated) == true
+                       && double.TryParse(stated, NumberStyles.Float, CultureInfo.InvariantCulture, out double s) ? s
+                     : double.TryParse(OptimizerAlgorithms.Find(algorithmId)?.Option(first)?.Default, NumberStyles.Float,
+                                       CultureInfo.InvariantCulture, out double d) ? d : 0;
+        if (start <= 0 || floor < start) return null;
+        var c = Variables.Coordinates[worst];
+        string F(double v) => v.ToString("G4", CultureInfo.InvariantCulture);
+        return OptimizationDiagnostics.EmStepFloorTooCoarse(
+            c.Key, $"{F(floor * (c.Max - c.Min))} {c.Unit}".Trim(), $"{F(c.Min)} to {F(c.Max)} {c.Unit}".Trim(),
+            first, F(start));
+    }
+
     // ── em=direct: the budget, in the batch ──────────────────────────────────
 
     /// <summary>

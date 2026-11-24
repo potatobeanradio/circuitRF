@@ -103,11 +103,12 @@ internal static partial class Yield
         });
         if (run.Refusal is { } refused) return JsonRun.Fail(refused);
         foreach (var note in run.Notes) Report(note);
+        int reported = run.Notes.Count;   // before Run(): result.Notes is the same list, so a later count skips all
 
         Console.Error.WriteLine($"[circuitRF] corners: {run.Corners.Count} corner(s) and the nominal" +
                                 (mc ? $", a {(mode == StatisticalMode.Yield ? "yield" : "Monte Carlo")} at each" : $", {run.Goals.Count} goal(s)"));
         var result = run.Run();
-        foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
+        foreach (var note in result.Notes.Skip(reported)) Report(note);
 
         if (result.Outcome == StatisticalOutcome.Cancelled || ct.IsCancellationRequested)
         {

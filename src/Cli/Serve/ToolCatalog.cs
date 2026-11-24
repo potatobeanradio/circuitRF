@@ -164,7 +164,7 @@ internal static class ToolCatalog
     // that returns a DataSet because the flags are taken once, before dispatch, for exactly that
     // reason.
     private static readonly ToolOption At = new("at", "--at", OptKind.StrList,
-        "Pick one point per axis, as axis=value with the axis's own unit (freq=2GHz). Nearest grid "
+        "Pick one point per axis, as axis=value with the axis's own unit (freq=2GHz); a second pick on one axis is refused. Nearest grid "
       + "point unless interp is set; the result says which point it returned.");
 
     private static readonly ToolOption Range = new("range", "--range", OptKind.StrList,
@@ -490,11 +490,11 @@ internal static class ToolCatalog
             "analysis",
             "Which analysis to run.",
             [
-                // No `-a`: RunSparam takes the first typed SParameterAnalysis — src/Cli/RESOLVED.md
-                // records that gap. `--set` it reads, through hb's own override path.
+                // `-a` names the analysis, as for hb; without it, the first enabled S-parameter chain.
+                // `--set` it reads, through hb's own override path.
                 new("sparam", ["sparam"],
                     [new("path", true, "The .cnl to run.")],
-                    [Set, Output, .. Narrowing, .. EmOptions,
+                    [Analysis, Set, Output, .. Narrowing, .. EmOptions,
                      new("freq", "--freq", OptKind.Str, "Frequency sweep as start:stop:step (1GHz, 100MHz, 1e9).")],
                     "S-parameters. -o writes a Touchstone (.s1p … .s99p) or the cubes (.npy, .mat, .txt); "
                   + "an extension naming neither is refused."),
@@ -944,7 +944,7 @@ internal static class ToolCatalog
 
         new("create",
             "Create a correct initial document — a workspace, a cell folder with its view files, a 3D view of a cell's layout, "
-          + "a copy of a shipped example workspace to run and change, a filter synthesised from its specification as a netlist, "
+          + "a copy of a shipped example workspace to run and change, a filter synthesised from its specification as a netlist, an LC ladder from the LC Filter Designer, "
           + "or a model in a model library exported from a cell or a Model Composer model (Export to Library).",
             "what",
             "What to create.",
@@ -998,6 +998,41 @@ internal static class ToolCatalog
                     "A filter from its specification: the realisers that can build it, or, with realiser, one realised as a .cnl: "
                   + "the part with its parameters on the technology's substrate, an R, L, C or via on each of its sites, two ports "
                   + "and an S-parameter sweep across the band, ready for run analysis=sparam."),
+                // The LC Filter Designer, headless (`filter lc`): a lumped L/C ladder from a specification, every element at
+                // its exact value and at the nearest preferred-series value. A mode of `create`: what it makes is a netlist.
+                new("lcFilter", ["filter", "lc"],
+                    [],
+                    [
+                        new("band",         "--form",          OptKind.Str,     "lowpass (default), highpass, bandpass or bandstop."),
+                        new("response",     "--response",      OptKind.Str,     "Butterworth (default), Chebyshev, InvChebyshev, Bessel, Gaussian or Elliptic."),
+                        new("order",        "--order",         OptKind.Integer, "The prototype's order (3). A bandpass or bandstop of order N has 2N elements."),
+                        new("first",        "--first",         OptKind.Str,     "series or parallel: the first arm from the source (series)."),
+                        new("fc",           "--fc",            OptKind.Str,     "A lowpass or highpass cutoff, with its unit (1GHz)."),
+                        new("f1",           "--f1",            OptKind.Str,     "A bandpass or bandstop lower edge, with its unit."),
+                        new("f2",           "--f2",            OptKind.Str,     "A bandpass or bandstop upper edge, with its unit."),
+                        new("rs",           "--rs",            OptKind.Number,  "Source termination, ohms (50)."),
+                        new("rl",           "--rl",            OptKind.Number,  "Load termination, ohms (50). The ladder's load is the family's own ratio when that differs."),
+                        new("ripple",       "--ap",            OptKind.Number,  "Passband ripple, dB, for Chebyshev and elliptic (0.1)."),
+                        new("stop",         "--as",            OptKind.Number,  "Stopband floor, dB, for inverse Chebyshev and elliptic (40)."),
+                        new("ellipticType", "--elliptic-type", OptKind.Str,     "auto (default), a, b or c."),
+                        new("series",       "--series",        OptKind.Str,     "exact (default), e6, e12, e24 or e96: the preferred-number series each value is snapped to."),
+                        new("output",       "-o",              OptKind.Path,    "The ladder as a .cnl: two Term ports, one L or C line per element at the snapped values, and an S-parameter sweep across the band."),
+                    ],
+                    "An LC ladder from a filter specification — the LC Filter Designer's synthesis. The result lists each element "
+                  + "(series or shunt arm, its nodes) at its exact value and at the series value; output writes the ladder as a "
+                  + "netlist ready for run analysis=sparam."),
+                // Design ▸ Update Layout from Schematic, headless (LayoutFromSchematic, the planner the menu item runs).
+                new("layout", ["new", "layout"],
+                    [new("cell", true, "The cell folder whose primary schematic the layout is made from, or a .csch.")],
+                    [
+                        new("fromSchematic", "--from-schematic", OptKind.Flag, "Run Update Layout from Schematic. Required."),
+                        new("noConnect",     "--no-connect",     OptKind.Flag, "Leave parts where they are placed instead of joining them along their nets (Settings ▸ Connect parts on Update Layout, on by default)."),
+                        new("emSetup",       "--em-setup",       OptKind.Flag, "Also create or update the layout's Planar EM setup from the schematic's numbered Ports."),
+                    ],
+                    "The cell's layout made from its schematic, or brought up to date with it: every part placed with its footprint "
+                  + "or generated geometry, lines joined along their nets, a ground via beside each grounded pad and the ground pour "
+                  + "under them, Pins as port labels. Hand edits in an existing layout are kept. The report lists what was added, "
+                  + "updated and removed."),
                 // brief-emb-1 R-emb1-1 — Design ▸ New 3D View from Layout.
                 new("view3d", ["new", "view3d"],
                     [new("cell", true, "The cell folder whose layout the 3D view places.")],
@@ -1398,6 +1433,26 @@ internal static class ToolCatalog
                         new("setup", "--setup", OptKind.Str,
                             ".c3d only: which of its embedded setups the picture is drawn through (its air box and problem), "
                           + "by name. Needed when it embeds several."),
+                        // The rest of `render`'s 3D and layout options, which the CLI took and this tool did not offer — so an
+                        // agent could draw a 3D view only as an outline or a section, never as the realistic picture.
+                        new("look", "--look", OptKind.Str,
+                            ".c3d only: plain (default) or realistic — the 3D view's realistic picture (metal, substrate, solder "
+                          + "mask, lighting), a .png, seen from iso, viewDir or the Look's own Camera."),
+                        new("lookSet", "--look-set", OptKind.StrRepeat,
+                            "With look=realistic: one Look key overridden for this picture only, Key=value (Background=#ffffff); "
+                          + "read and validated as the .c3d's own Look is. One item per key."),
+                        new("supersample", "--supersample", OptKind.Integer, "With look=realistic: 1, 2 or 4 samples per pixel side."),
+                        new("viewDir", "--view-dir", OptKind.Str,
+                            ".c3d only: the camera direction, top, bottom, front, back, left or right, or x,y,z toward the viewer."),
+                        new("region", "--region", OptKind.Str, "With field: frame this object, instance or group only."),
+                        new("noMirror", "--no-mirror", OptKind.Flag, "With field: leave a symmetry plane's mirrored half undrawn."),
+                        new("smooth", "--smooth", OptKind.Flag, "With field: a clip-plane field averaged over coincident nodes within each material."),
+                        new("transparency", "--transparency", OptKind.StrList,
+                            ".c3d only: name=percent for an object, instance or group, this picture only (U1=60)."),
+                        new("componentPorts", "--component-ports", OptKind.Path,
+                            ".clay only: a .cem whose component ports and cut instances are marked as the EM panel marks them."),
+                        new("solverGeometry", "--solver-geometry", OptKind.Flag,
+                            "With componentPorts: draw the geometry that setup's run solves rather than the layout as drawn."),
                     ],
                     ""),
             ],

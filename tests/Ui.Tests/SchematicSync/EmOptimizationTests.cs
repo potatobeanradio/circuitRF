@@ -278,6 +278,18 @@ public sealed class EmOptimizationTests : IDisposable
         Assert.Contains("pattern, simplex, trust_region, bayes", run.Refusal.Render());
     }
 
+    /// <summary>em=direct evaluates its points one at a time: each is a field solve that already uses every core and its own
+    /// mesh's memory, and a Bayesian start of seven side by side exhausted a 16 GB machine. em=off keeps its parallelism.</summary>
+    [Fact]
+    public void Direct_EvaluatesOnePointAtATime()
+    {
+        var direct = OptimizationRun.Create(PreparedCircuit.FromSchematic(Fixture(Setup(OptimizerEmMode.Direct, algorithm: "bayes"), tag: "d").Csch));
+        Assert.Null(direct.Refusal);
+        Assert.Equal(1, direct.Parallelism);
+        var off = OptimizationRun.Create(PreparedCircuit.FromSchematic(Fixture(Setup(OptimizerEmMode.Off), tag: "o").Csch));
+        if (Environment.ProcessorCount > 2) Assert.True(off.Parallelism > 1);
+    }
+
     /// <summary>D6: with ML3's width set in the layout, w50 no longer reaches it — SDL-6 D4's finding — and optimising w50
     /// by EM is refused rather than spent.</summary>
     [Fact]

@@ -1173,7 +1173,13 @@ namespace CircuitRF.Render.DataDisplay
                 // Shrink-to-fit: a long title (e.g. "Pout (dBm) at Constant Eff=…") can be wider
                 // than the control. Since the PlotControl now clips to its bounds, scale the title
                 // font down so the full text fits within the canvas width instead of being clipped.
-                float avail   = w - 4f * lw;                 // small side margin
+                // Centred over the axes, which sit right of the canvas's centre by the Y labels' margin, the title
+                // has the room on its NARROWER side twice over; sizing it to the whole canvas ran its tail off the
+                // right edge. (A title drawn in the top band starts at the axes' left edge instead.)
+                float side    = 2f * lw;                     // small side margin
+                float avail   = TitleInBand(plot)
+                    ? w - side - vpLeft
+                    : 2f * Math.Min(vpCenterX - side, w - side - vpCenterX);
                 float titleW  = RendererText.MeasureTextWithFallback(title, font, titleFallback);
                 float titleSz = font.Size;
                 if (titleW > avail && titleW > 0f)
@@ -1193,6 +1199,9 @@ namespace CircuitRF.Render.DataDisplay
                     tx = vpLeft;
                     ty = Math.Max(0f, bandTop) + row / 2f + font.Size * 0.35f;
                 }
+                // Only a title still too wide at the shrink's half-size floor reaches here off the canvas; it is kept
+                // on it rather than centred.
+                tx = Math.Clamp(tx, side, Math.Max(side, w - side - tw));
                 RendererText.DrawLeftTextWithFallback(canvas, title, tx, ty, font, titleFallback, paint);
                 rects.Title = new SKRect(tx, ty - font.Size, tx + tw, ty + font.Size * 0.5f);
             }

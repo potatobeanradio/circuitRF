@@ -32926,3 +32926,29 @@ guide is unchanged. The `.hzn` reading has no round guide (its hollow ports are 
 A square two-mode Hertzon guide now converts; the census was not re-run.
 
 Tests that moved: `HznMultiModeWavePortTests`' square-refusal assertion (now: not refused).
+
+## Solves side by side each fitted the machine; together they did not (2026-11-23)
+
+Every solver/mesher tree's ceiling (brief-emi-10) and the size check before a run were held against the WHOLE machine,
+as if each run were alone. A Bayesian em=direct optimize evaluated its starting batch with `Parallel.For`, seven EMerge
+solves at once, each under 16 GB, together far past it — the machine swapped until it stopped responding.
+
+- `OptimizationRun.SerialReason`: a point that solves EM (EmMode ≠ Off and the run evaluates EM) runs one at a time,
+  noted as `opt.parallel.serial`. A solve already uses every core, so parallel points bought no speed. Circuit-model
+  inner runs (em=correct's) keep their parallelism. Gate: `EmOptimizationTests.Direct_EvaluatesOnePointAtATime`.
+- `Em3d/ActiveSolves`: each tree the one process loop (`PalaceRun.RunProcess`) watches with a real memory reading
+  writes a file in the user's temp directory, rewritten every second with its footprint and deleted when it ends; a file
+  not rewritten for 15 s is a dead host's and is removed (no process id is trusted). A tree is stopped when its footprint
+  reaches its ceiling LESS what the trees started before it hold, so the newer run yields and the sentence says why
+  (`ProcessStop.SharedBytes`). A forced run keeps no ceiling (O2), and so no share either. `Em3dRunService.Run` warns
+  before starting when others are running. A planar MoM solve runs in-process and is not on the record. Gate:
+  `ActiveSolvesTests`.
+
+## Apply's key check could never match a 3D-view cell (2026-11-23)
+
+`EmApply.KeyOfSaved` keyed the saved layout with `EmCellCache.KeyOf` — the planar scheme — while a cell solved through
+its 3D view is cached under `KeyOf3D`, which covers the whole 3D problem. The two can never be equal, so every apply on
+such a cell reported "the saved layout's geometry is NOT the one EM verified". For a 3D target the saved copper is now
+compared with the copper `EmEvaluation.Geometry` plans from the saved schematic (both by the layout key), and when they
+agree the answer is that evaluation's 3D key. Gate: `EmThreeDCellTests.Apply_OnA3DView_TheSavedLayoutIsTheVerifiedGeometry`.
+
