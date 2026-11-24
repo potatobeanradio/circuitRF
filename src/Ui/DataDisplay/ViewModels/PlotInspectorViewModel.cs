@@ -589,7 +589,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     /// <summary>Set by the owning container: the display a typed <c>@m1</c> is bound and resolved in (brief-ddl-1).
     /// Null for a plot hosted outside a Data Display, where a link has nothing to follow.</summary>
-    internal Func<LinkDocument>? LinkDocumentProvider { get; set; }
+    internal Func<LinkDocument?>? LinkDocumentProvider { get; set; }
+
+    /// <summary>Set by the owning container: re-resolves every link of the display after a link on THIS plot was
+    /// made or changed — the edit itself is the undo step, so this plot's saved form is not rebased.</summary>
+    internal Action? FollowLinksForEdit { get; set; }
 
     /// <summary>A trace's label changed (DFR27-3): the legend, axis titles and label strips redraw, and the
     /// marker boxes are rebuilt because each names its trace.</summary>

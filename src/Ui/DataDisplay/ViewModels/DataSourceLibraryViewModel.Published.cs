@@ -274,6 +274,10 @@ public partial class DataSourceLibraryViewModel
     /// the workspace.</summary>
     public Action<string>? TrialMessage { get; set; }
 
+    /// <summary>Posts a warning to the workspace's Messages panel — a link whose plot or trace was deleted (brief-ddl-2
+    /// R-ddl2-8). Installed by the workspace beside <see cref="TrialMessage"/>; null outside one.</summary>
+    public Action<string>? LinkMessage { get; set; }
+
     /// <summary>Every open display's library — where a re-run trial's ghost is shown, so it appears in every display
     /// bound to the source. Set by the workspace; null means this library alone.</summary>
     public Func<IEnumerable<DataSourceLibraryViewModel>>? AllLibraries { get; set; }

@@ -198,6 +198,7 @@ public partial class DataDisplayViewModel
             c.RequestPlotRedraw();
         }
         finally { _restoringEdit = false; }
+        RequestLinkFollow(released: true);   // a restored link, or a restored source, is followed again
     }
 }
 

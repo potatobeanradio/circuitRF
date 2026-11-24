@@ -1400,7 +1400,7 @@
                                                       ItemsSource="{Binding AxisRoles}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:AxisRoleRowViewModel">
-                                                    <Grid ColumnDefinitions="70,Auto,Auto,Auto,*,Auto"
+                                                    <Grid ColumnDefinitions="70,Auto,Auto,Auto,*,Auto,Auto"
                                                           IsVisible="{Binding IsRowVisible}"
                                                           Margin="0,0,0,2">
                                                         <TextBlock Grid.Column="0"
@@ -1448,10 +1448,62 @@
                                                             <TextBlock Text="Fix" FontSize="10"/>
                                                         </Button>
                                                         <ComboBox Grid.Column="4"
-                                                                  IsVisible="{Binding ShowPinPicker}"
+                                                                  IsVisible="{Binding ShowIndexPicker}"
                                                                   ItemsSource="{Binding PinOptions}"
                                                                   SelectedIndex="{Binding PinIndex, Mode=TwoWay}"
                                                                   HorizontalAlignment="Stretch"/>
+                                                        <!-- brief-ddl-2 R-ddl2-1: a pin that follows a link source.
+                                                             The picker lists every source in the display — the ones
+                                                             that fit this axis first, then the ones that do not,
+                                                             then (greyed) the ones that would close a cycle; the line
+                                                             under it reads what the link resolved to. A source that is
+                                                             gone shows the chip (R-ddl2-5) instead of a reading. -->
+                                                        <StackPanel Grid.Column="4"
+                                                                    IsVisible="{Binding ShowLinkPicker}"
+                                                                    Spacing="1">
+                                                            <ComboBox ItemsSource="{Binding LinkSources}"
+                                                                      SelectedItem="{Binding SelectedLinkSource, Mode=TwoWay}"
+                                                                      PlaceholderText="{Binding LinkPlaceholder}"
+                                                                      HorizontalAlignment="Stretch">
+                                                                <ComboBox.ItemContainerTheme>
+                                                                    <ControlTheme TargetType="ComboBoxItem">
+                                                                        <Setter Property="IsEnabled"
+                                                                                Value="{ReflectionBinding IsEnabled}"/>
+                                                                    </ControlTheme>
+                                                                </ComboBox.ItemContainerTheme>
+                                                                <ComboBox.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <TextBlock Text="{ReflectionBinding Label}"
+                                                                                   FontSize="{StaticResource FontSize}"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   ToolTip.Tip="{ReflectionBinding Tooltip}"/>
+                                                                    </DataTemplate>
+                                                                </ComboBox.ItemTemplate>
+                                                            </ComboBox>
+                                                            <TextBlock Classes="label"
+                                                                       IsVisible="{Binding !IsDangling}"
+                                                                       Text="{Binding LinkText}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{Binding LinkText}"/>
+                                                            <Border IsVisible="{Binding IsDangling}"
+                                                                    Classes="linkChip"
+                                                                    CornerRadius="3"
+                                                                    Padding="4,2"
+                                                                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                                                <StackPanel Spacing="2">
+                                                                    <TextBlock Classes="label"
+                                                                               Text="{Binding DanglingText}"
+                                                                               TextWrapping="Wrap"/>
+                                                                    <Button Classes="seg-btn"
+                                                                            IsVisible="{Binding CanUseNewSource}"
+                                                                            Command="{Binding UseNewSourceCommand}"
+                                                                            HorizontalAlignment="Left"
+                                                                            Padding="6,1">
+                                                                        <TextBlock Text="{Binding UseNewSourceText}" FontSize="10"/>
+                                                                    </Button>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </StackPanel>
                                                         <!-- Eye: reveal unlabeled nodes / device-port branches. Tied to the pin selector. -->
                                                         <Button Grid.Column="5"
                                                                 Classes="seg-btn"
@@ -1462,6 +1514,21 @@
                                                                 ToolTip.Tip="Show all nodes / branch currents">
                                                             <mi:MaterialIcon Kind="Eye" Width="14" Height="14"/>
                                                         </Button>
+                                                        <!-- Link toggle: off is the index, on follows a source.
+                                                             Its column is always reserved on a pinned row, so turning
+                                                             it on never moves the controls beside it. -->
+                                                        <Panel Grid.Column="6"
+                                                               IsVisible="{Binding IsLinkable}"
+                                                               Width="29">
+                                                            <ToggleButton Classes="seg-btn"
+                                                                          IsChecked="{Binding IsLinked, Mode=TwoWay}"
+                                                                          IsVisible="{Binding ShowPinPicker}"
+                                                                          VerticalAlignment="Top"
+                                                                          Width="26" Padding="3,2" Margin="3,0,0,0"
+                                                                          ToolTip.Tip="Follow a marker instead of a fixed index">
+                                                                <mi:MaterialIcon Kind="LinkVariant" Width="14" Height="14"/>
+                                                            </ToggleButton>
+                                                        </Panel>
                                                     </Grid>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -1470,6 +1537,13 @@
                                         <TextBlock Classes="label"
                                                    IsVisible="{Binding ShowEmptyQuantity}"
                                                    Text="{Binding EmptyQuantityMessage}"
+                                                   Margin="0,2,0,0"/>
+                                        <!-- brief-ddl-2: what the link resolution says about this trace — a source
+                                             that is gone, a value off the end of the axis, a cycle. -->
+                                        <TextBlock Classes="label"
+                                                   IsVisible="{Binding ShowLinkNote}"
+                                                   Text="{Binding LinkNote}"
+                                                   TextWrapping="Wrap"
                                                    Margin="0,2,0,0"/>
 
                                         <!-- ── WSProbe (WSP-4 §2) ────────────────────────────────

@@ -12165,6 +12165,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         lib.SendTrialToTuning       = SendTrialToTuning;
         lib.SaveTrialAsCorner       = (source, trial, ds) => _ = SaveTrialAsCornerAsync(source, trial, ds);
         lib.TrialMessage            = text => Messages.Warning(text);
+        lib.LinkMessage             = text => Messages.Warning(text);
         lib.AllLibraries            = () => _openDocsByPath.Values.OfType<DataDisplayDocument>().Concat(_scratchDataDisplays)
                                                 .Select(dd => dd.ViewModel.Window.DataSourceLibrary).ToList();
     }

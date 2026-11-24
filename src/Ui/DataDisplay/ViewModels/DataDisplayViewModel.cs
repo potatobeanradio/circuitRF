@@ -260,7 +260,96 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// boxes that belong to <paramref name="container"/>.
     /// </summary>
     public void OnContainerPlotChanged(PlotContainerViewModel container)
-        => RebuildMarkerInfoBoxesForContainer(container);
+    {
+        RebuildMarkerInfoBoxesForContainer(container);
+        // A marker added, removed, re-pointed or dropped after a drag: its dependents follow (brief-ddl-2).
+        RequestLinkFollow(released: true);
+    }
+
+    // ---- Links (brief-ddl-2) ----------------------------------------------------------------------
+
+    /// <summary>Set by the owning window: re-resolve the display's links on the next frame — coalesced, so a drag's
+    /// many moves in one frame resolve once (R-ddl2-3). <c>announce</c> names newly frozen dependents in Messages.</summary>
+    internal Action<bool, bool>? LinkFollowRequested { get; set; }
+
+    /// <summary>Set by the owning window: re-resolve now, after a link on <c>editing</c> was made or changed.</summary>
+    internal Action<PlotContainerViewModel>? LinkFollowNow { get; set; }
+
+    /// <summary>Set by the owning window: every display of the document, for a marker's <b>Link plots ▸</b>.</summary>
+    internal Func<IReadOnlyList<DataDisplayViewModel>>? DocumentDisplaysProvider { get; set; }
+
+    internal IReadOnlyList<(string Label, bool IsLinked, Action Toggle)> LinkTargetsFor(Marker marker)
+    {
+        var doc = CurrentLinkDocument();
+        var displays = DocumentDisplaysProvider?.Invoke() ?? [this];
+        var site = doc.Markers().Where(m => ReferenceEquals(m.Marker, marker)).Select(m => (LinkDocument.MarkerSite?)m).FirstOrDefault();
+        if (site is not { } at) return [];
+        string id = marker.Id.ToString("D");
+        var list = new List<(string, bool, Action)>();
+        foreach (var t in LinkCatalog.TargetsFor(doc, at, new LibraryDataSources(Library)))
+        {
+            var target = t;
+            list.Add((t.Label, t.IsLinked, () =>
+            {
+                string axis = target.Consumer.Slice![target.SliceIndex].AxisName;
+                var row = displays.SelectMany(d => d.Plots).SelectMany(c => c.Inspector.Traces)
+                                  .FirstOrDefault(vm => ReferenceEquals(vm.Trace, target.Consumer))
+                                  ?.AxisRoles.FirstOrDefault(r => r.AxisName == axis);
+                if (target.IsLinked) row?.SetLink(null, null);
+                else                 row?.SetLink(id, marker.Name);
+            }));
+        }
+        return list;
+    }
+
+    internal void RequestLinkFollow(bool released = true, bool announce = false)
+    {
+        if (LinkFollowRequested is { } request) request(released, announce);
+        else if (LinkDocumentProvider is null) LocalFollow(null);
+    }
+
+    internal void FollowLinksNow(PlotContainerViewModel editing)
+    {
+        if (LinkFollowNow is { } now) now(editing);
+        else LocalFollow(editing);
+    }
+
+    /// <summary>A display with no window around it (a test, a tool's own plots) follows its own links at once.</summary>
+    private void LocalFollow(PlotContainerViewModel? editing)
+    {
+        if (_localFollowing) return;
+        _localFollowing = true;
+        try
+        {
+            var moved = LinkResolve.Resolve(CurrentLinkDocument(), new LibraryDataSources(Library));
+            if (moved.Count > 0) AfterLinksFollowed(moved, editing);
+        }
+        finally { _localFollowing = false; }
+    }
+
+    private bool _localFollowing;
+
+    /// <summary>
+    /// What a re-resolution leaves to the tab: the consumers' cards, plots and labels show the new case, and their
+    /// saved forms are taken as the edit checkpoint — a dependent is derived and records nothing (R-ddl2-6). The plot
+    /// being edited is the exception: its change IS the undo step. Returns the containers touched.
+    /// </summary>
+    internal List<PlotContainerViewModel> AfterLinksFollowed(IReadOnlyCollection<Trace> resolved, PlotContainerViewModel? editing)
+    {
+        var touched = _plots.Where(c => c.PlotVM.Plot.Traces.Any(resolved.Contains)).ToList();
+        // FIRST: a redraw reports a content change, and the edit recorder would take the new index for an edit.
+        foreach (var c in touched)
+            if (!ReferenceEquals(c, editing) && _editCheckpoint.ContainsKey(c)) _editCheckpoint[c] = SavedFormOf(c);
+        foreach (var c in touched)
+        {
+            foreach (var vm in c.Inspector.Traces)
+                if (resolved.Contains(vm.Trace)) vm.OnLinksFollowed();
+            c.UpdateLabelStrips();
+            RebuildLegendBoxForContainer(c);
+            c.RequestPlotRedraw();
+        }
+        return touched;
+    }
 
     /// <summary>
     /// Records a change to one plot's axis windows — a pan, a wheel zoom, an Autoscale — as an undo
@@ -343,7 +432,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         foreach (var vm in _markerInfoBoxes)
             if (vm.Container == container)
-                vm.OnMarkerMoved();
+                vm.RefreshAfterMove();
+        // Mid-drag: dependents follow on the next frame, a slow one on release (R-ddl2-3).
+        RequestLinkFollow(released: false);
     }
 
     /// <summary>
@@ -594,6 +685,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         RebuildLegendBoxForContainer(container);
         if (selectIt) SelectOnly(container);
         else          RefreshSelection();
+        RequestLinkFollow(released: true);   // an undone delete brings its sources back, live (R-ddl2-6)
     }
 
     /// <summary>Removes a container and its info boxes from the display.</summary>
@@ -602,6 +694,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         RemoveMarkerInfoBoxesForContainer(container);
         _plots.Remove(container);
         RefreshSelection();
+        // A plot carrying a link source takes it with it: its dependents freeze, and Messages names them (R-ddl2-8).
+        RequestLinkFollow(released: true, announce: true);
     }
 
     /// <summary>Adds a marker to its trace and rebuilds the container's info boxes.</summary>
@@ -2287,13 +2381,17 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
         // Seed with every marker name already in the display; updated as new names are assigned
         // so intra-paste collisions (two source plots both having "m1") are also resolved.
+        // Every tab's, since marker names are the document's (brief-ddl-1 R-ddl1-2).
         var usedMarkerNames = new HashSet<string>(
-            _plots.SelectMany(p => p.PlotVM.Plot.Traces)
-                  .SelectMany(t => t.Markers)
-                  .Select(m => m.Name),
+            CurrentLinkDocument().Markers().Select(s => s.Marker.Name),
             StringComparer.Ordinal);
 
         var pastedContainers = new List<PlotContainerViewModel>();
+
+        // A pasted marker is a NEW marker: it takes a fresh id, and a link inside the pasted set that followed one
+        // of the copied markers follows its copy, so a pasted overview and detail pair drives itself; a link to a
+        // marker outside the set keeps following the original (brief-ddl-2 R-ddl2-7).
+        LinkRemap.Renew(config.Plots);
 
         foreach (var pc in config.Plots)
         {
@@ -2305,9 +2403,6 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 {
                     mc.InfoBoxX += PasteOffset;
                     mc.InfoBoxY += PasteOffset;
-                    // A pasted marker is a NEW marker (R-ddl1-1): it takes a fresh id, so a link to the original
-                    // never silently starts following the copy. Remapping the pasted links is DDL-2's.
-                    mc.Id = null;
                 }
             if (pc.LegendLeft is { } ll) pc.LegendLeft = ll + PasteOffset;
             if (pc.LegendTop  is { } lt) pc.LegendTop  = lt + PasteOffset;
@@ -2364,6 +2459,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             RefreshSelection();
         }
 
+        // The pasted pins take their indices from the pasted markers, under their new names.
+        if (pastedContainers.Count > 0) RequestLinkFollow(released: true);
         return pastedContainers;
     }
 

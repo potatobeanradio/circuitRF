@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using CircuitRF.Cli;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using CircuitRF.Ui.DataDisplay;
 using NumFlat;
 using RfCore;
 using RfCore.Data;
@@ -320,4 +321,179 @@ public sealed class LinkedPlotsTests : IDisposable
     }
 
     private static IPlotDataSources Sources(DisplayWindowViewModel w) => new LibraryDataSources(w.DataSourceLibrary);
+
+    // ================================================================
+    //  brief-ddl-2 — linking in the window
+    // ================================================================
+
+    private static PlotContainerViewModel Container(DisplayWindowViewModel w, int plot) => w.Tabs[0].DataDisplay.Plots[plot];
+
+    private static AxisRoleRowViewModel Row(DisplayWindowViewModel w, int plot, string axis)
+        => Container(w, plot).Inspector.Traces[0].AxisRoles.Single(r => r.AxisName == axis);
+
+    /// <summary>R-ddl2-1, R-ddl2-6: the detail's gridPoint pin is linked from its row's picker and reads what it
+    /// resolved to; undo takes the link back as one step.</summary>
+    [Fact]
+    public async Task Ddl2_ThePinRowLinksFromThePicker_AndUndoTakesItBack()
+    {
+        string npy = LoadpullRun();
+        var smith = Cube(npy, "GammaLoad", "GammaLoad", X("gridPoint"));
+        var g = Gamma(17);
+        smith.Markers.Add(MarkerAt(M1, "m1", new Vector2((float)g.Real, (float)g.Imaginary)));
+        var detail = Cube(npy, "Pout", "Pout[3, :]", Pin("gridPoint", 3), X("pinStep"));
+        var w = await OpenAsync(WriteCdd("pick.cdd", PlotOf(PlotType.Smith, 0, smith), PlotOf(PlotType.Rect, 320, detail)));
+
+        var row = Row(w, 1, "gridPoint");
+        Assert.True(row.IsLinkable);
+        row.IsLinked = true;
+        var m1 = Assert.Single(row.LinkSources);
+        Assert.Equal("m1 — Smith 1, GammaLoad", m1.Label);
+        row.SelectedLinkSource = m1;
+
+        Assert.Equal(PoutRow(17), Ys(TraceAt(w, 1)));
+        Assert.Equal($"@m1 → 17 (Γ {g.Magnitude:0.##}∠{g.Phase * 180 / Math.PI:0}°)", row.LinkText);
+        Assert.Equal("Pout[@m1, :]", Container(w, 1).Inspector.Traces[0].Trace.Expression);
+        Assert.Equal("Pout @ m1 (gridPoint 17)", TraceLabeler.QuantityFor(TraceAt(w, 1)));
+
+        w.Tabs[0].DataDisplay.UndoRedo.Undo();
+        Assert.Equal(PoutRow(3), Ys(TraceAt(w, 1)));
+        Assert.False(TraceAt(w, 1).Slice![0].IsLinked);
+    }
+
+    /// <summary>Gate 2: sixty moves in one frame re-resolve the dependent once, at the latest position.</summary>
+    [Fact]
+    public async Task Ddl2_Gate2_SixtyMovesInOneFrame_ResolveTheDependentOnce()
+    {
+        var w = await OpenAsync(LinkedCdd(LoadpullRun()));
+        var frame = new List<Action>();
+        w.LinkFrameScheduler = frame.Add;
+        int runs = w.LinkFollowRuns, resolutions = w.LinkConsumerResolutions;
+
+        var smith = TraceAt(w, 0);
+        for (int k = 0; k < 60; k++)
+        {
+            smith.PlaceMarkerAtSample(smith.Markers[0], k % Grid);
+            Container(w, 0).OnMarkerMoved();          // what PlotControl.MarkerMoved does during a drag
+        }
+        var post = Assert.Single(frame);
+        post();
+
+        Assert.Equal((runs + 1, resolutions + 1), (w.LinkFollowRuns, w.LinkConsumerResolutions));
+        Assert.Equal(PoutRow(59 % Grid), Ys(TraceAt(w, 1)));
+    }
+
+    /// <summary>Gate 3: deleting m1 freezes the detail with the chip; undo makes it live; a new m1 is offered in one click.</summary>
+    [Fact]
+    public async Task Ddl2_Gate3_DanglingIsSaid_UndoIsLive_AndTheNewMarkerIsOneClick()
+    {
+        var w = await OpenAsync(LinkedCdd(LoadpullRun()));
+        var display = w.Tabs[0].DataDisplay;
+        var smith = TraceAt(w, 0);
+        var m1 = smith.Markers[0];
+        var row = Row(w, 1, "gridPoint");
+
+        Container(w, 0).RemoveMarkerWithUndo(m1, smith);
+        Assert.True(TraceAt(w, 1).LinkFrozen);
+        Assert.True(row.IsDangling);
+        Assert.Equal("m1 is gone", row.DanglingText);
+        Assert.Equal("m1 is gone — showing gridPoint 17, where m1 last was.", Container(w, 1).Inspector.Traces[0].LinkNote);
+        Assert.False(row.CanUseNewSource);
+        Assert.Equal(PoutRow(17), Ys(TraceAt(w, 1)));
+        Assert.Equal("Pout @ m\u03361\u0336 (gridPoint 17)", TraceLabeler.QuantityFor(TraceAt(w, 1)));
+
+        display.UndoRedo.Undo();
+        Assert.False(TraceAt(w, 1).LinkFrozen);
+        Assert.False(row.IsDangling);
+
+        display.UndoRedo.Redo();                             // m1 deleted again
+        var fresh = new Marker(smith, 0, false, false, 1) { Name = "m1" };
+        Assert.True(smith.PlaceMarkerAtSample(fresh, 4));
+        display.InternalAddMarker(fresh, smith, Container(w, 0));
+        Assert.True(row.IsDangling);                         // never relinks by itself
+        Assert.True(row.CanUseNewSource);
+        row.UseNewSourceCommand.Execute(null);
+        Assert.False(TraceAt(w, 1).LinkFrozen);
+        Assert.Equal(PoutRow(4), Ys(TraceAt(w, 1)));
+    }
+
+    /// <summary>Gate 4: a pasted overview and detail pair drives itself, and the original marker does not move it.</summary>
+    [Fact]
+    public async Task Ddl2_Gate4_APastedPair_FollowsItsOwnMarker()
+    {
+        var w = await OpenAsync(LinkedCdd(LoadpullRun()));
+        var display = w.Tabs[0].DataDisplay;
+        var json = CircuitRF.Ui.DataDisplay.PlotExporter.BuildContainersJson([Container(w, 0), Container(w, 1)]);
+        var pasted = await display.PasteFromConfigAsync(JsonSerializer.Deserialize<DataDisplayConfig>(json, DataDisplayJson.Options)!);
+
+        var copySmith  = pasted[0].PlotVM.Plot.Traces[0];
+        var copyDetail = pasted[1].PlotVM.Plot.Traces[0];
+        Assert.NotEqual(TraceAt(w, 0).Markers[0].Id, copySmith.Markers[0].Id);
+        Assert.Equal(copySmith.Markers[0].Id.ToString("D"), copyDetail.Slice![0].Link);
+
+        var original = TraceAt(w, 0);
+        original.PlaceMarkerAtSample(original.Markers[0], 2);
+        w.FollowLinks(released: true);
+        Assert.Equal(PoutRow(2), Ys(TraceAt(w, 1)));
+        Assert.Equal(PoutRow(17), Ys(copyDetail));
+
+        copySmith.PlaceMarkerAtSample(copySmith.Markers[0], 8);
+        w.FollowLinks(released: true);
+        Assert.Equal(PoutRow(8), Ys(copyDetail));
+    }
+
+    /// <summary>Gate 5: with Pout pinned by m2 on Gt, Gt's picker lists m1 (on Pout) greyed, with the chain.</summary>
+    [Fact]
+    public async Task Ddl2_Gate5_ASourceThatClosesACycle_IsGreyedWithTheChain()
+    {
+        string npy = LoadpullRun();
+        var m2 = Guid.NewGuid();
+        var pout = Cube(npy, "Pout", "Pout[@m2, :]", Pin("gridPoint", 0, m2, "m2"), X("pinStep"));
+        pout.Markers.Add(MarkerAt(M1, "m1", new Vector2(-6, 0)));
+        var gt = Cube(npy, "Gt", "Gt[:, 3]", X("gridPoint"), Pin("pinStep", 3));
+        gt.Markers.Add(MarkerAt(m2, "m2", new Vector2(9, 0)));
+        var w = await OpenAsync(WriteCdd("cycle-pick.cdd", PlotOf(PlotType.Rect, 0, pout), PlotOf(PlotType.Rect, 320, gt)));
+
+        var row = Row(w, 1, "pinStep");
+        row.IsLinked = true;
+        var m1 = row.LinkSources.Single(i => i.Name == "m1");
+        Assert.False(m1.IsEnabled);
+        Assert.Equal("That would make a cycle: Gt pinned by m1 on Pout, pinned by m2 on Gt.", m1.Tooltip);
+        var onGt = row.LinkSources.Single(i => i.Name == "m2");   // on Gt itself
+        Assert.Equal("That would make a cycle: Gt pinned by m2 on Gt.", onGt.Tooltip);
+    }
+
+    /// <summary>R-ddl2-8: deleting the plot that carries m1 freezes the detail and Messages names it once.</summary>
+    [Fact]
+    public async Task Ddl2_DeletingTheSourcePlot_NamesTheFrozenDependents()
+    {
+        var w = await OpenAsync(LinkedCdd(LoadpullRun()));
+        var said = new List<string>();
+        w.DataSourceLibrary.LinkMessage = said.Add;
+
+        w.Tabs[0].DataDisplay.RemovePlot(Container(w, 0));
+        Assert.Equal(["Pout on Rect 1 no longer follows m1; it shows gridPoint 17."], said);
+
+        // R-ddl2-2 lives on the marker's own menu; with the source gone there is nothing to list, and undo brings it back.
+        w.Tabs[0].DataDisplay.UndoRedo.Undo();
+        Assert.False(TraceAt(w, 1).LinkFrozen);
+    }
+
+    /// <summary>R-ddl2-2: a marker's Link plots ▸ lists the detail's pin, and ticking it links it.</summary>
+    [Fact]
+    public async Task Ddl2_LinkPlotsFromTheMarker_LinksThePin()
+    {
+        string npy = LoadpullRun();
+        var smith = Cube(npy, "GammaLoad", "GammaLoad", X("gridPoint"));
+        var g = Gamma(11);
+        smith.Markers.Add(MarkerAt(M1, "m1", new Vector2((float)g.Real, (float)g.Imaginary)));
+        var detail = Cube(npy, "Pout", "Pout[3, :]", Pin("gridPoint", 3), X("pinStep"));
+        var w = await OpenAsync(WriteCdd("menu.cdd", PlotOf(PlotType.Smith, 0, smith), PlotOf(PlotType.Rect, 320, detail)));
+
+        var targets = Container(w, 0).LinkTargetsFor(TraceAt(w, 0).Markers[0]);
+        var (label, linked, toggle) = Assert.Single(targets);
+        Assert.Equal(("Rect 1, Pout — gridPoint", false), (label, linked));
+        toggle();
+        Assert.Equal(PoutRow(11), Ys(TraceAt(w, 1)));
+        Assert.True(Assert.Single(Container(w, 0).LinkTargetsFor(TraceAt(w, 0).Markers[0])).IsLinked);
+    }
 }

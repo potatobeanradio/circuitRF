@@ -444,8 +444,13 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         DataSourceLibrary.PublicationChanged += (_, _) => OnPropertyChanged(nameof(LiveChip));
         TrialSelection.Shared.Subscribe(this);
         if (Application.Current is not null)
+        {
             DataSourceLibrary.FrameScheduler = endFrame =>
                 Avalonia.Threading.Dispatcher.UIThread.Post(endFrame, Avalonia.Threading.DispatcherPriority.Background);
+            // A drag's moves coalesce to one follow per rendered frame (brief-ddl-2 R-ddl2-3).
+            LinkFrameScheduler = follow =>
+                Avalonia.Threading.Dispatcher.UIThread.Post(follow, Avalonia.Threading.DispatcherPriority.Background);
+        }
 
         // Keep the combo selection in sync with the library selection.
         DataSourceLibrary.PropertyChanged += (_, e) =>
@@ -506,7 +511,94 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         // Marker names and links are the DOCUMENT's, not the tab's (brief-ddl-1 R-ddl1-2, R-ddl1-5).
         tab.DataDisplay.DocumentMarkerIndexProvider = GetNextMarkerIndex;
         tab.DataDisplay.LinkDocumentProvider        = BuildLinkDocument;
+        tab.DataDisplay.LinkFollowRequested         = RequestLinkFollow;
+        tab.DataDisplay.LinkFollowNow               = editing => FollowLinks(released: true, editing);
+        tab.DataDisplay.DocumentDisplaysProvider    = () => [.. Tabs.Select(t => t.DataDisplay)];
         return tab;
+    }
+
+    // ---- Live follow (brief-ddl-2 R-ddl2-3) --------------------------------------------------------------
+
+    /// <summary>
+    /// Posts work to the end of the frame being rendered. A drag reports a move per pointer event, many per frame;
+    /// every move asks for a follow, and only the first in a frame posts one, which then reads the latest position.
+    /// Null (no Application — a test, a headless host) runs the follow at once.
+    /// </summary>
+    internal Action<Action>? LinkFrameScheduler { get; set; }
+
+    /// <summary>How many times the display's links have been re-resolved — what the coalescing gate counts.</summary>
+    internal int LinkFollowRuns { get; private set; }
+
+    /// <summary>How many consumer traces those runs re-resolved, in total.</summary>
+    internal int LinkConsumerResolutions { get; private set; }
+
+    private bool _followPending, _followReleased, _followAnnounce, _following;
+
+    internal void RequestLinkFollow(bool released, bool announce)
+    {
+        // What a follow does to the plots it touches (a label, a legend box) reports changes of its own; they are
+        // its result, not a new move, and following them again would never end.
+        if (_following) return;
+        _followReleased |= released;
+        _followAnnounce |= announce;
+        if (_followPending) return;
+        _followPending = true;
+        if (LinkFrameScheduler is { } post) post(RunPendingFollow);
+        else RunPendingFollow();
+    }
+
+    private void RunPendingFollow()
+    {
+        if (!_followPending) return;
+        bool released = _followReleased, announce = _followAnnounce;
+        _followPending = _followReleased = _followAnnounce = false;
+        FollowLinks(released, editing: null, announce);
+    }
+
+    /// <summary>
+    /// Re-resolves every linked pin of the display, in dependency order, and has each tab show the result. With
+    /// <paramref name="announce"/>, a link that froze in this run — its plot or trace was deleted — is named once in
+    /// Messages (R-ddl2-8).
+    /// </summary>
+    internal void FollowLinks(bool released, PlotContainerViewModel? editing = null, bool announce = false)
+    {
+        if (_following) return;
+        _following = true;
+        try { FollowLinksCore(released, editing, announce); }
+        finally { _following = false; }
+    }
+
+    private void FollowLinksCore(bool released, PlotContainerViewModel? editing, bool announce)
+    {
+        LinkFollowRuns++;
+        var doc = BuildLinkDocument();
+        var wasFrozen = doc.Traces().SelectMany(x => x.Trace.FrozenLinks.Select(k => (x.Trace, k))).ToHashSet();
+        var resolved = LinkResolve.Resolve(doc, new LibraryDataSources(DataSourceLibrary), released);
+        LinkConsumerResolutions += resolved.Count;
+        if (resolved.Count == 0) return;
+        var set = resolved.ToHashSet();
+        foreach (var tab in Tabs) tab.DataDisplay.AfterLinksFollowed(set, editing);
+        if (announce) AnnounceFrozen(doc, wasFrozen);
+    }
+
+    /// <summary>"Pout and Gt on Detail no longer follow m1; they show gridPoint 17."</summary>
+    private void AnnounceFrozen(LinkDocument doc, HashSet<(Trace, string)> wasFrozen)
+    {
+        if (DataSourceLibrary.LinkMessage is not { } post) return;
+        var fresh = new List<(int Tab, Plot Plot, Trace Trace, AxisSlice Pin)>();
+        foreach (var (ti, plot, t) in doc.Traces())
+            foreach (var key in t.FrozenLinks)
+                if (!wasFrozen.Contains((t, key)) && t.Slice?.FirstOrDefault(s => (s.Link ?? s.LinkName) == key) is { } pin)
+                    fresh.Add((ti, plot, t, pin));
+        foreach (var g in fresh.GroupBy(f => (f.Pin.LinkName, f.Plot)))
+        {
+            var items = g.ToList();
+            string names = string.Join(" and ", items.Select(i => LinkGraph.NameOf(i.Trace)).Distinct());
+            string plot  = LinkCatalog.PlotName(doc, items[0].Tab, g.Key.Plot, items[0].Tab);
+            string they  = items.Count == 1 ? "it shows" : "they show";
+            post($"{names} on {plot} no longer follow{(items.Count == 1 ? "s" : "")} {g.Key.LinkName}; "
+               + $"{they} {items[0].Pin.AxisName} {items[0].Pin.Index}.");
+        }
     }
 
     /// <summary>
@@ -526,13 +618,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     /// Resolves every linked pin of the display through the one resolution path (<see cref="LinkResolve"/>, which
     /// <c>circuitrf render</c> also calls), and redraws what moved.
     /// </summary>
-    internal void ResolveLinks()
-    {
-        var moved = LinkResolve.Resolve(BuildLinkDocument(), new LibraryDataSources(DataSourceLibrary));
-        if (moved.Count == 0) return;
-        foreach (var c in Tabs.SelectMany(t => t.DataDisplay.Plots))
-            if (c.PlotVM.Plot.Traces.Any(t => moved.Contains(t))) c.RequestPlotRedraw();
-    }
+    internal void ResolveLinks() => FollowLinks(released: true);
 
     // ---- Internal tab add / remove (called by undo commands) ------------
 

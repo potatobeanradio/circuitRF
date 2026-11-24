@@ -328,7 +328,9 @@ public partial class PlotContainerViewModel : ViewModelBase
         Inspector.PushUndo         = PushUndoCommand;
         Inspector.FollowDisplaySource = () => parent.FollowDisplaySource(this);
         Inspector.MarkerBoxesStale = RequestInfoBoxRebuild;
-        Inspector.LinkDocumentProvider = parent.CurrentLinkDocument;
+        // Only a tab a Data Display window owns has links; a tool's own plots (Smith, Match, …) do not.
+        Inspector.LinkDocumentProvider = () => parent.LinkDocumentProvider is null ? null : parent.CurrentLinkDocument();
+        Inspector.FollowLinksForEdit   = () => parent.FollowLinksNow(this);
 
         // The Data Display widens a rectangular plot's canvas for its extra Y-label columns, so the
         // graph area keeps its size however many traces it carries.
@@ -357,6 +359,8 @@ public partial class PlotContainerViewModel : ViewModelBase
             UpdateLabelStrips();
             _parent.RebuildLegendBoxForContainer(this);
             EnsureInfoBoxesShownForTable();
+            // A trace removed with its markers freezes what followed them, and Messages names it (R-ddl2-8).
+            _parent.RequestLinkFollow(released: true, announce: true);
             OnPropertyChanged(nameof(IsSquareAspect));
             NotifyViewProperties();
         };
@@ -768,6 +772,14 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// </summary>
     public void RequestPlotRedraw() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>A link source on this plot moved: the display's dependents follow (brief-ddl-2 R-ddl2-3).</summary>
+    internal void RequestLinkFollow(bool released = true) => _parent.RequestLinkFollow(released);
+
+    /// <summary>The pins elsewhere in the display that <paramref name="marker"/> can drive, for its context menu's
+    /// <b>Link plots ▸</b> (R-ddl2-2), each with the action that links or unlinks it.</summary>
+    internal IReadOnlyList<(string Label, bool IsLinked, Action Toggle)> LinkTargetsFor(Marker marker)
+        => _parent.LinkTargetsFor(marker);
+
     /// <summary>
     /// Puts the box back where and how big an undo says it was. Taken as the plot type's settled size,
     /// so the next structural change does not re-coerce it as though the type had just changed.
@@ -931,7 +943,11 @@ public partial class PlotContainerViewModel : ViewModelBase
                 marker.PositionStatic = beforePosition;
             }
         }
-        if (moved) RequestPlotRedraw();   // ensure the glyph redraws (and dirty fires) even if a box is hidden
+        if (moved)
+        {
+            RequestPlotRedraw();   // ensure the glyph redraws (and dirty fires) even if a box is hidden
+            RequestLinkFollow();   // and whatever follows the marker follows it (brief-ddl-2)
+        }
         return eligible;
     }
 

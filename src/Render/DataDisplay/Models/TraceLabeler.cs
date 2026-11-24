@@ -174,6 +174,27 @@ namespace CircuitRF.Render.DataDisplay
             _                   => "",
         };
 
+        /// <summary>One linked axis as the case it shows: the owner's resolved display with its value ("Vgs −0.4 V"), or
+        /// the axis and its index when the owner resolved none ("gridPoint 17").</summary>
+        private static string LinkedToken(Trace t, AxisSlice s)
+        {
+            if (t.PinnedAxisDisplay(s.AxisName) is { Length: > 0 } d)
+            {
+                int eq = d.IndexOf('=');
+                return eq > 0 ? d[..eq] + " " + d[(eq + 1)..] : d;
+            }
+            return $"{AxisSymbols.Display(s.AxisName)} {s.Index}";
+        }
+
+        /// <summary>A dangling link's name, struck through (R-ddl2-5): every character overlaid with U+0336, so the
+        /// legend, the axis label and the card all show the same thing without a renderer of their own.</summary>
+        internal static string StruckThrough(string name)
+        {
+            var sb = new StringBuilder(name.Length * 2);
+            foreach (char c in name) sb.Append(c).Append('\u0336');
+            return sb.ToString();
+        }
+
         private static string BuildCubeQuantity(Trace t)
         {
             // WSP-4/WSP-7: a WSProbe trace is named by the QUANTITY, not by the raw wsp matrix its
@@ -204,8 +225,25 @@ namespace CircuitRF.Render.DataDisplay
                                     && x.AxisName is "i" or "j" or "row" or "col") == 2;
 
                 bool first = true;
+                // A LINKED pin is not part of the parenthesis: it says which source chose the case and what the case
+                // is, after the quantity — "Pout @ m1 (gridPoint 17)" (brief-ddl-2 R-ddl2-4). One group per source, in
+                // slice order, so two axes one marker drives read "@ m2 (Vgs −0.4 V, Vds 6 V)".
+                var links = new List<(string Key, string Name, bool Frozen, List<string> Tokens)>();
                 foreach (var s in t.Slice)
                 {
+                    if (s.IsLinked)
+                    {
+                        string key = s.Link ?? s.LinkName ?? "";
+                        var group = links.FirstOrDefault(g => g.Key == key);
+                        if (group.Tokens is null)
+                        {
+                            group = (key, s.LinkName ?? "link", t.FrozenLinks.Contains(key), new List<string>());
+                            links.Add(group);
+                        }
+                        group.Tokens.Add(LinkedToken(t, s));
+                        continue;
+                    }
+
                     // WHAT THE PICTURE PINS, not what the slice calls pinned — the two differ on a
                     // 3D surface, in BOTH directions, and SurfaceResolve.PinsAxis owns the
                     // difference. A theta or phi pin carried over from a cut is not a fact about a
@@ -271,6 +309,9 @@ namespace CircuitRF.Render.DataDisplay
                     first = false;
                 }
                 if (!first) sb.Append(')');
+                foreach (var (_, name, frozen, tokens) in links)
+                    sb.Append(" @ ").Append(frozen ? StruckThrough(name) : name)
+                      .Append(" (").Append(string.Join(", ", tokens)).Append(')');
             }
 
             // Append transform suffix (not folded into the cube name).

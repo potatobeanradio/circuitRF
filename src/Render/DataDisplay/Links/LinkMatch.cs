@@ -97,13 +97,17 @@ public static class LinkMatch
     private static string Gone(string name, Axis axis, int index)
         => $"{name} is gone — showing {axis.Name} {index}, where {name} last was.";
 
-    private static string Mismatch(LinkValue value, Axis axis)
-    {
-        string gives = value.Coordinates.Count > 0
+    /// <summary>What a source supplies, in a few words: "freq (Hz)", "gridPoint and pinStep (dBm)".</summary>
+    public static string Supplies(LinkValue value)
+        => value.Coordinates.Count > 0
             ? string.Join(" and ", value.Coordinates.Select(c => c.Unit.Length > 0 ? $"{c.Axis} ({c.Unit})" : c.Axis))
             : value.Scalar is { } s ? (s.Unit.Length > 0 ? $"a value in {s.Unit}" : "a plain value")
             : value.Position is not null ? "a point on the Smith chart"
             : "nothing";
+
+    private static string Mismatch(LinkValue value, Axis axis)
+    {
+        string gives = Supplies(value);
         string axisText = (axis.Unit ?? "").Length > 0 ? $"{axis.Name} ({axis.Unit})" : axis.Name;
         return $"{value.Name} gives {gives}; this axis is {axisText}.";
     }

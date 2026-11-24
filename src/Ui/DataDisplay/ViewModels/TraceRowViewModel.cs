@@ -3420,8 +3420,110 @@ public partial class TraceRowViewModel : ViewModelBase
     private void RebuildAxisRoles()
     {
         _rebuildingAxisRoles = true;
-        try { RebuildAxisRolesCore(); }
+        try { RebuildAxisRolesCore(); ApplyLinkState(); }
         finally { _rebuildingAxisRoles = false; }
+    }
+
+    // ---- Links on the pin rows (brief-ddl-2) --------------------------------------------------
+
+    /// <summary>The cube axis a row stands for, from the trace's own source — null when it is not loaded.</summary>
+    private Axis? CubeAxis(string axisName)
+    {
+        if (_trace.CubeName is not { } cn) return null;
+        var ds = _parent.LibraryEntries.FirstOrDefault(e =>
+                     string.Equals(e.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase))?.Data;
+        return ds is not null && ds.Contains(cn) ? ds[cn].Axes.FirstOrDefault(a => a.Name == axisName) : null;
+    }
+
+    /// <summary>Which rows may follow a marker, and which do — read from the slice, never written back.</summary>
+    private void ApplyLinkState()
+    {
+        foreach (var r in AxisRoles)
+        {
+            var axis = CubeAxis(r.AxisName);
+            r.AxisIsLinkable = axis is not null && SliceTokenParser.IsLinkableAxis(axis.Name, axis.Labels, axis.Length);
+            var e = _trace.Slice?.FirstOrDefault(x => x.AxisName == r.AxisName);
+            bool linked = e is { } en && en.IsLinked;
+            r.LoadLink(linked ? e!.Value.Link : null, linked ? e!.Value.LinkName : null);
+            if (r.IsLinked) RefreshLinkRow(r);
+        }
+        OnPropertyChanged(nameof(LinkNote));
+        OnPropertyChanged(nameof(ShowLinkNote));
+    }
+
+    /// <summary>Whether this card is in a Data Display window, whose markers a pin may follow. Asked when it is
+    /// needed: a card is built before its container is, and a tab before its window adopts it.</summary>
+    internal bool IsInDisplay => _parent.LinkDocumentProvider?.Invoke() is not null;
+
+    /// <summary>What the link resolution says about this trace — a gone source, a value off the end, a cycle.</summary>
+    public string? LinkNote => _trace.LinkNote;
+    public bool    ShowLinkNote => !string.IsNullOrEmpty(_trace.LinkNote);
+
+    /// <summary>The id of the marker a pin on this trace would follow by <paramref name="name"/>, or null.</summary>
+    internal string? FindSourceNamed(string? name)
+    {
+        if (name is null || _parent.LinkDocumentProvider?.Invoke() is not { } doc) return null;
+        return doc.TryFindByName(name, doc.TabOf(_trace), out var site, out _) ? site.Marker.Id.ToString("D") : null;
+    }
+
+    /// <summary>
+    /// A linked row's picker items and texts: <c>@m1 → 17 (Γ 0.31∠142°)</c>; for a source that is gone, the chip's
+    /// sentence and whether a marker of that name exists again (R-ddl2-1, R-ddl2-5).
+    /// </summary>
+    internal void RefreshLinkRow(AxisRoleRowViewModel r)
+    {
+        if (_parent.LinkDocumentProvider?.Invoke() is not { } doc || _trace.Slice is not { } slice) return;
+        int idx = Array.FindIndex(slice, x => x.AxisName == r.AxisName);
+        if (idx < 0) return;
+        var entry   = slice[idx];
+        var sources = new LibraryDataSources(_parent.Library);
+        var items   = LinkCatalog.For(doc, _trace, idx, CubeAxis(r.AxisName), sources);
+
+        string text = "", gone = "";
+        bool dangling = false, canNew = false;
+        if (r.LinkId is { } id)
+        {
+            if (doc.FindMarker(id) is { } site)
+                text = $"@{site.Marker.Name} → {entry.Index}" + Reading(MarkerLinkSource.Resolve(site, sources), r.AxisName);
+            else
+            {
+                dangling = true;
+                text = $"@{r.LinkName} → {entry.Index}";
+                // The chip says it in three words; the card's note says where the plot now stands.
+                gone = $"{r.LinkName} is gone";
+                canNew = FindSourceNamed(r.LinkName) is not null;
+            }
+        }
+        r.ShowLink(items, text, dangling, gone, canNew);
+    }
+
+    /// <summary>The source's own reading, in brackets: its Γ on a Smith chart, else its value on the axis it shares.</summary>
+    private static string Reading(LinkValue v, string axisName)
+    {
+        if (v.Position is { } p)
+            return $" (Γ {p.Gamma.Magnitude:0.##}∠{p.Gamma.Phase * 180 / Math.PI:0}°)";
+        var c = v.Coordinates.FirstOrDefault(x => x.Axis == axisName) ?? v.Coordinates.FirstOrDefault();
+        return c is null ? "" : $" ({c.Axis} {LinkMatch.Format(c.Value, c.Unit)})";
+    }
+
+    /// <summary>
+    /// The display re-resolved this trace's links (a source moved, appeared or went): the rows show the new index and
+    /// reading, and the label and note follow. Never rebuilds the rows, so a focused control keeps its focus.
+    /// </summary>
+    internal void OnLinksFollowed()
+    {
+        if (_trace.Slice is { } slice)
+            foreach (var r in AxisRoles)
+            {
+                if (!r.IsLinked) continue;
+                var e = slice.FirstOrDefault(x => x.AxisName == r.AxisName);
+                if (e.Link is { } id) { r.LinkId = id; r.LinkName = e.LinkName; }
+                r.SetPinIndexSilent(e.Index);
+                RefreshLinkRow(r);
+            }
+        RefreshDescription();
+        OnPropertyChanged(nameof(LinkNote));
+        OnPropertyChanged(nameof(ShowLinkNote));
     }
 
     private static string SiblingCubeName(string cubeName, string sibling)
@@ -3635,7 +3737,10 @@ public partial class TraceRowViewModel : ViewModelBase
             string lbl = (role == AxisRole.PinToIndex && r.OptionsAreLabels && r.PinOptions.Count > 0)
                 ? r.PinOptions[Math.Clamp(r.PinIndex, 0, r.PinOptions.Count - 1)]
                 : "";
-            slice[i] = new AxisSlice(r.AxisName, role, r.TruePinIndex, Label: lbl);
+            // A linked pin keeps following its source (brief-ddl-2); the index is the one it last resolved to.
+            bool follows = role == AxisRole.PinToIndex && r.IsLinked && r.LinkId is not null;
+            slice[i] = new AxisSlice(r.AxisName, role, r.TruePinIndex, Label: lbl,
+                                     Link: follows ? r.LinkId : null, LinkName: follows ? r.LinkName : null);
         }
 
         // Guard: if no X survived, promote the first non-family, non-label axis.
@@ -3655,6 +3760,10 @@ public partial class TraceRowViewModel : ViewModelBase
         }
 
         _trace.Slice = slice;
+        // A pin that follows a marker takes its index now, through the display's one link path, so the edit
+        // records the picture it produces (R-ddl2-6) — and every other consumer of the display follows too.
+        _trace.LinkError = null;
+        if (slice.Any(x => x.IsLinked) || _trace.LinkNote is not null) _parent.FollowLinksForEdit?.Invoke();
         // A "plot versus" X side mirrors these roles, so it has to be re-derived from the NEW slice
         // before the expression text is composed — otherwise an explicit X spec keeps the roles it was
         // written with and the two halves disagree about which axis is the family.

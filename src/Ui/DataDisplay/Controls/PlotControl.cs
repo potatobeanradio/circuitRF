@@ -2816,7 +2816,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 {
                     InvalidateVisual();
                     PlotChanged?.Invoke(this, EventArgs.Empty);
-                });
+                },
+                linkTargets: ContainerProvider?.Invoke()?.LinkTargetsFor(marker));
             menu.Items.Add(new Separator());
             menu.Items.Add(AddAsGoalItem(trace, "Add as Goal…"));
             menu.Close(); // a second right-click while the menu is still up replaces, not re-opens

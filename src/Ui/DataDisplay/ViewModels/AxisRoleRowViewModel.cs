@@ -4,6 +4,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using CircuitRF.Render.DataDisplay;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -117,6 +119,8 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSurfaceAngleAxis));
         OnPropertyChanged(nameof(ShowRoleButtons));
         OnPropertyChanged(nameof(ShowPinPicker));
+        OnPropertyChanged(nameof(ShowIndexPicker));
+        OnPropertyChanged(nameof(ShowLinkPicker));
         OnPropertyChanged(nameof(IsRowVisible));
     }
 
@@ -128,12 +132,16 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPinned))]
     [NotifyPropertyChangedFor(nameof(ShowPinPicker))]
+    [NotifyPropertyChangedFor(nameof(ShowIndexPicker))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkPicker))]
     [NotifyPropertyChangedFor(nameof(IsRowVisible))]
     private bool _isX;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsPinned))]
     [NotifyPropertyChangedFor(nameof(ShowPinPicker))]
+    [NotifyPropertyChangedFor(nameof(ShowIndexPicker))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkPicker))]
     private bool _isFamily;
 
     [ObservableProperty]
@@ -147,6 +155,145 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     /// left as X from a rect plot is still pinned by the surface, and hiding its picker would leave
     /// a multi-frequency pattern with no way to choose the frequency.</summary>
     public bool ShowPinPicker => SurfaceMode ? !IsSurfaceAngleAxis : (!IsX && !IsFamily);
+
+    // ---- Link (brief-ddl-2 R-ddl2-1, R-ddl2-5) ---------------------------------------------
+    //
+    //  A pinned axis may follow a marker instead of holding an index. The toggle beside the index
+    //  picker swaps the picker for a list of the display's link sources; the row then reads what the
+    //  link resolved to. A link whose source is gone shows a chip offering the picker again and, when
+    //  a source of the same name exists, a one-click "Use the new m3". Nothing relinks by itself.
+
+    /// <summary>Whether this axis can follow a marker at all — a point along a quantity, not a label axis
+    /// (<see cref="SliceTokenParser.IsLinkableAxis"/>), on a trace inside a Data Display.</summary>
+    public bool IsLinkable => AxisIsLinkable && _owner.IsInDisplay;
+
+    /// <summary>The axis half of <see cref="IsLinkable"/>, set when the row is built.</summary>
+    internal bool AxisIsLinkable { get; set; }
+
+    /// <summary>The link toggle: on, the row follows <see cref="LinkId"/> (or waits for a source to be picked).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowIndexPicker))]
+    [NotifyPropertyChangedFor(nameof(ShowLinkPicker))]
+    private bool _isLinked;
+
+    /// <summary>The followed source's id, or null — written into the slice by <c>FlushSliceAndRebuild</c>.</summary>
+    public string? LinkId { get; internal set; }
+
+    /// <summary>The followed source's name as last seen.</summary>
+    public string? LinkName { get; internal set; }
+
+    /// <summary>The index picker, on an unlinked pinned row.</summary>
+    public bool ShowIndexPicker => ShowPinPicker && !IsLinked;
+
+    /// <summary>The source picker and the resolved reading, on a linked pinned row.</summary>
+    public bool ShowLinkPicker => ShowPinPicker && IsLinked;
+
+    /// <summary>What the picker offers (<see cref="LinkCatalog.For"/>).</summary>
+    [ObservableProperty] private IReadOnlyList<LinkSourceItem> _linkSources = [];
+
+    /// <summary>The source picked, or null while none is.</summary>
+    [ObservableProperty] private LinkSourceItem? _selectedLinkSource;
+
+    /// <summary><c>@m1 → 17 (Γ 0.31∠142°)</c>: the link, the index it resolved to, the source's own reading.</summary>
+    [ObservableProperty] private string _linkText = "";
+
+    /// <summary>The link's source is gone, and the row is showing where it last was.</summary>
+    [ObservableProperty] private bool _isDangling;
+
+    /// <summary>"m3 is gone" — the card's note says the rest.</summary>
+    [ObservableProperty] private string _danglingText = "";
+
+    /// <summary>The picker's prompt: "Link to…" on a dangling link, which is the chip's <b>Link to ▾</b>.</summary>
+    public string LinkPlaceholder => IsDangling ? "Link to…" : "Choose a marker";
+
+    partial void OnIsDanglingChanged(bool value) => OnPropertyChanged(nameof(LinkPlaceholder));
+
+    /// <summary>A source with the dangling link's name exists again, so one click can follow it.</summary>
+    [ObservableProperty] private bool _canUseNewSource;
+
+    /// <summary>"Use the new m3".</summary>
+    public string UseNewSourceText => $"Use the new {LinkName}";
+
+    private bool _settingSource;
+
+    partial void OnIsLinkedChanged(bool value)
+    {
+        if (_suppress) return;
+        Gesture.Note("axis.link", $"{AxisName} -> {(value ? "link" : "index")}");
+        if (value) { _owner.RefreshLinkRow(this); return; }   // a source is chosen in the picker
+        LinkId = null; LinkName = null;
+        _owner.FlushSliceAndRebuild();
+    }
+
+    partial void OnSelectedLinkSourceChanged(LinkSourceItem? value)
+    {
+        if (_suppress || _settingSource || value is null) return;
+        if (!value.IsEnabled) { SetSelectedSourceSilent(LinkSources.FirstOrDefault(i => i.Id == LinkId)); return; }
+        if (string.Equals(value.Id, LinkId, StringComparison.OrdinalIgnoreCase)) return;
+        Gesture.Note("axis.link", $"{AxisName} -> @{value.Name}");
+        LinkId = value.Id; LinkName = value.Name;
+        _owner.FlushSliceAndRebuild();
+    }
+
+    /// <summary>Follows the marker that now carries the dangling link's name (R-ddl2-5's one click).</summary>
+    [RelayCommand]
+    private void UseNewSource()
+    {
+        if (_owner.FindSourceNamed(LinkName) is not { } id) return;
+        Gesture.Note("axis.link", $"{AxisName} -> new @{LinkName}");
+        LinkId = id;
+        _owner.FlushSliceAndRebuild();
+    }
+
+    /// <summary>Points this row at <paramref name="id"/> (or unlinks it, for null) as one edit — what a marker's
+    /// <b>Link plots ▸</b> item does (R-ddl2-2).</summary>
+    internal void SetLink(string? id, string? name)
+    {
+        _suppress = true;
+        IsLinked = id is not null;
+        _suppress = false;
+        LinkId = id; LinkName = name;
+        OnPropertyChanged(nameof(ShowIndexPicker));
+        OnPropertyChanged(nameof(ShowLinkPicker));
+        _owner.FlushSliceAndRebuild();
+    }
+
+    /// <summary>Sets the link state from the slice without writing it back.</summary>
+    internal void LoadLink(string? id, string? name)
+    {
+        _suppress = true;
+        IsLinked = id is not null || name is not null;
+        _suppress = false;
+        LinkId = id; LinkName = name;
+        OnPropertyChanged(nameof(UseNewSourceText));
+    }
+
+    /// <summary>Puts the picker's items, selection and texts in place without treating them as an edit.</summary>
+    internal void ShowLink(IReadOnlyList<LinkSourceItem> sources, string text, bool dangling, string danglingText, bool canUseNew)
+    {
+        LinkSources = sources;
+        SetSelectedSourceSilent(sources.FirstOrDefault(i => string.Equals(i.Id, LinkId, StringComparison.OrdinalIgnoreCase)));
+        LinkText     = text;
+        IsDangling   = dangling;
+        DanglingText = danglingText;
+        CanUseNewSource = canUseNew;
+        OnPropertyChanged(nameof(UseNewSourceText));
+    }
+
+    private void SetSelectedSourceSilent(LinkSourceItem? item)
+    {
+        _settingSource = true;
+        SelectedLinkSource = item;
+        _settingSource = false;
+    }
+
+    /// <summary>The index a link resolved to, shown by the index picker if the row is unlinked later.</summary>
+    internal void SetPinIndexSilent(int index)
+    {
+        _suppress = true;
+        PinIndex = Math.Clamp(index, 0, Math.Max(0, PinOptions.Count - 1));
+        _suppress = false;
+    }
 
     // ---- Construction -----------------------------------------------------
 

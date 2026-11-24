@@ -55,6 +55,14 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
 
     public void OnMarkerMoved()
     {
+        RefreshAfterMove();
+        // Every plot that follows this marker follows it (brief-ddl-2 R-ddl2-3), coalesced to one per frame.
+        Container.RequestLinkFollow();
+    }
+
+    /// <summary>The box and the glyph after a move — nothing about who follows the marker.</summary>
+    internal void RefreshAfterMove()
+    {
         RefreshSize();
         OnPropertyChanged(nameof(NeedsRedraw));
         // Redraw the PlotControl so the marker glyph moves to the new frequency position.

@@ -102,7 +102,8 @@ public partial class MarkerInfoBoxView : UserControl
             showFilePrefix:       Vm.ShowFilePrefix,
             onContourModeToggled: () => Vm.RequestRedraw(),
             onShowInfoBoxToggled: () => Vm.Container.RequestInfoBoxRebuild(),
-            onVswrToggled:        () => { Vm.RequestRedraw(); Vm.Container.RequestPlotRedraw(); });
+            onVswrToggled:        () => { Vm.RequestRedraw(); Vm.Container.RequestPlotRedraw(); },
+            linkTargets:          Vm.Container.LinkTargetsFor(Vm.Marker));
     }
 
     /// <summary>
@@ -146,7 +147,8 @@ public partial class MarkerInfoBoxView : UserControl
         bool                                      showFilePrefix = true,
         Action?                                   onContourModeToggled = null,
         Action?                                   onShowInfoBoxToggled = null,
-        Action?                                   onVswrToggled = null)
+        Action?                                   onVswrToggled = null,
+        System.Collections.Generic.IReadOnlyList<(string Label, bool IsLinked, Action Toggle)>? linkTargets = null)
     {
         menu.Items.Clear();
 
@@ -185,6 +187,32 @@ public partial class MarkerInfoBoxView : UserControl
         // network/cube trace it could be re-pointed onto), so it is never shown for contours.
         if (marker.MarkerKind != MarkerKind.Contour)
             menu.Items.Add(changeItem);
+
+        // brief-ddl-2 R-ddl2-2: the plots whose pins this marker can drive — one tick links the pin, from the
+        // overview straight to a detail plot that already exists. Only shown when there is somewhere to link.
+        if (linkTargets is { Count: > 0 })
+        {
+            var linkItem = new MenuItem
+            {
+                Header = "Link plots",
+                Icon   = new MaterialIcon { Kind = MaterialIconKind.LinkVariant },
+            };
+            foreach (var (label, isLinked, toggle) in linkTargets)
+            {
+                var sub = new MenuItem
+                {
+                    Header = label,
+                    Icon   = new MaterialIcon
+                    {
+                        Kind = isLinked ? MaterialIconKind.CheckboxOutline : MaterialIconKind.CheckboxBlankOutline,
+                    },
+                };
+                var act = toggle;
+                sub.Click += (_, _) => act();
+                linkItem.Items.Add(sub);
+            }
+            menu.Items.Add(linkItem);
+        }
 
         // ---- Grouped toggles (no separators between them) ----
         if (PlotRenderer.VswrAvailableFor(hostPlot, trace, marker))

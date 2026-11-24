@@ -3408,6 +3408,10 @@ namespace CircuitRF.Render.DataDisplay
         /// part of a cycle (R-ddl1-7, R-ddl1-8). Set with <see cref="LinkNote"/>.</summary>
         public bool LinkFrozen { get; set; }
 
+        /// <summary>The links of this trace that are frozen, by the key a slice entry names them with (its <c>Link</c> id,
+        /// or its name when unbound) — what the label strikes through (brief-ddl-2 R-ddl2-5). Set by <c>LinkResolve</c>.</summary>
+        public HashSet<string> FrozenLinks { get; } = new(StringComparer.Ordinal);
+
         /// <summary>
         /// A linked spec that was REFUSED when it was committed — an unknown or ambiguous name, a cycle. While set,
         /// the trace resolves to this error rather than to a picture; the next commit clears it. Never saved.

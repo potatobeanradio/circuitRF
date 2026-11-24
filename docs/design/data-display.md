@@ -333,7 +333,41 @@ one draws the cycle's members frozen, with that chain as the note.
 of every tab has loaded at its stored indices, and re-resolves each consumer through
 `TraceResolve.ResolveCubeTrace`. The window calls it when a display opens and when a link is committed;
 `circuitrf render` calls it over the plots it loaded (`cli.md` §13.7, which also covers
-`--marker`). Live follow while a marker is dragged, the link picker and relinking are DDL-2's.
+`--marker`). It also autoscales each followed plot, respecting its axis flags, so both frame the new case
+the same way.
+
+**In the window (DDL-2).** A linkable pin row has a link toggle in a column of its own (reserved, so
+turning it on moves nothing). On, the index picker becomes a source picker (`LinkCatalog.For`): sources
+that fit the axis, then the ones that do not with what they supply, then — greyed, the chain as tooltip
+— the ones that would close a cycle. Under it the row reads `@m1 → 17 (Γ 0.48∠127°)`. A marker's
+context menu has **Link plots ▸** (`LinkCatalog.TargetsFor`): every pin elsewhere in the display it fits
+without a cycle, ticked when linked. The legend and axis label carry the link as part of the quantity:
+`Pout @ m1 (gridPoint 17)`.
+
+**Live follow is coalesced per frame, never per event.** Every source move — a drag, an arrow step, the
+info box's frequency, an undo — asks the window for a follow; the first ask in a frame posts one, which
+reads the latest position. A consumer that is slow by KIND (a contour; an off-grid loadpull read in
+DDL-3) is left during a drag and resolved on release, and its card says "Updates on release". A follow
+re-resolves, refreshes the cards' link rows and the labels, and redraws; it never rebuilds marker info
+boxes.
+
+**A dependent is derived and records nothing.** Making, changing or removing a link is the card edit
+the display's edit recorder already turns into one undo step. A follow takes each consumer plot's new
+saved form as its edit checkpoint BEFORE redrawing it, because the redraw itself is what reports a content
+change. Deleting a marker freezes its dependents; undo restores the same object, id included, so they
+are live again with nothing to choose.
+
+**Dangling and mended.** A frozen pin shows a chip ("m1 is gone") with the picker prompting "Link to…",
+and the card's note says where it is drawn. When a marker of that name exists again the chip offers
+**Use the new m1** — one click, never automatic. The legend strikes the name through (U+0336 on each
+character, so every place the label is drawn shows it without a renderer of its own). Deleting a plot or
+trace that carried a source names its newly frozen dependents once in Messages ("Pout on Rect 1 no
+longer follows m1; it shows gridPoint 17").
+
+**Paste.** Every pasted marker takes a new id, and a link inside the pasted set that followed one of
+them follows its copy (`LinkRemap.Renew`), so a pasted overview and detail pair drives itself; a link to
+a marker outside the set keeps following the original. Pasted names are made unique across the whole
+document.
 
 ---
 
