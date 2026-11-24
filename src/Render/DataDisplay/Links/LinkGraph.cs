@@ -23,7 +23,18 @@ public sealed partial class LinkGraph
     /// a multi-cube expression (−1). <see cref="Site"/> is null when the source is not in the document, and then
     /// <see cref="Error"/> says why when there is more to say than "gone" (an unbound name that resolves to nothing).
     /// </summary>
-    public sealed record Slot(int SliceIndex, string? Id, string Name, LinkDocument.MarkerSite? Site, string? Error);
+    /// <param name="IsSelection">The slot follows the trial selection (brief-ddl-4 R-ddl4-5), which has no site.</param>
+    public sealed record Slot(int SliceIndex, string? Id, string Name, LinkDocument.MarkerSite? Site, string? Error,
+                              bool IsSelection = false);
+
+    /// <summary>The <see cref="Slot.SliceIndex"/> of an <c>@name</c> operand of a multi-cube expression.</summary>
+    public const int ExpressionOperandSlot = -1;
+
+    /// <summary>The <see cref="Slot.SliceIndex"/> of a contour's frequency (brief-ddl-4 R-ddl4-3).</summary>
+    public const int ContourFreqSlot = -2;
+
+    /// <summary>The <see cref="Slot.SliceIndex"/> of an expression's frequency (brief-ddl-4 R-ddl4-4).</summary>
+    public const int ExpressionFreqSlot = -3;
 
     private readonly Dictionary<Trace, List<Slot>> _slots = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<Trace, string> _cycles = new(ReferenceEqualityComparer.Instance);
@@ -115,6 +126,9 @@ public sealed partial class LinkGraph
     private static List<Slot> SlotsFor(LinkDocument doc, int tab, Trace t)
     {
         var slots = new List<Slot>();
+        // A contour's frequency (R-ddl4-3): a contour trace is not cube-bound, so it is read before that test.
+        if (t.ContourData is { IsFreqLinked: true } cd)
+            slots.Add(MarkerSlot(doc, tab, ContourFreqSlot, cd.FreqLink, cd.FreqLinkName!));
         if (!t.IsCubeBound || t.LinkError is not null) return slots;   // a refused spec follows nothing
 
         if (IsSingleCube(t))
@@ -123,29 +137,46 @@ public sealed partial class LinkGraph
             {
                 var e = t.Slice[i];
                 if (!e.IsLinked) continue;
-                if (e.Link is { } id)
-                {
-                    var site = doc.FindMarker(id);
-                    slots.Add(new Slot(i, id, site?.Marker.Name ?? e.LinkName ?? "the linked marker", site, null));
-                }
+                if (LinkDocument.IsSelection(e.Link) || (e.Link is null && LinkDocument.IsSelection(e.LinkName)))
+                    slots.Add(new Slot(i, LinkDocument.SelectionId, LinkDocument.SelectionId, null, null, IsSelection: true));
                 else
-                {
-                    // A name not yet bound to an id — a hand-written file, or a spec typed outside a commit.
-                    bool found = doc.TryFindByName(e.LinkName!, tab, out var byName, out var err);
-                    slots.Add(new Slot(i, found ? byName.Marker.Id.ToString("D") : null, e.LinkName!,
-                                       found ? byName : null, found ? null : err));
-                }
+                    slots.Add(MarkerSlot(doc, tab, i, e.Link, e.LinkName ?? "the linked marker"));
             }
         }
-        else if (t.Expression is { } expr && expr.Contains('@'))
+        else if (t.Expression is { } expr)
         {
-            foreach (var name in OperandNames(expr))
-            {
-                bool found = doc.TryFindByName(name, tab, out var site, out var err);
-                slots.Add(new Slot(-1, found ? site.Marker.Id.ToString("D") : null, name,
-                                   found ? site : null, found ? null : err));
-            }
+            if (expr.Contains('@'))
+                foreach (var name in OperandNames(expr))
+                {
+                    if (LinkDocument.IsSelection(name))
+                    {
+                        slots.Add(new Slot(ExpressionOperandSlot, LinkDocument.SelectionId, name, null, null, IsSelection: true));
+                        continue;
+                    }
+                    bool found = doc.TryFindByName(name, tab, out var site, out var err);
+                    slots.Add(new Slot(ExpressionOperandSlot, found ? site.Marker.Id.ToString("D") : null, name,
+                                       found ? site : null, found ? null : err));
+                }
+            // An expression's frequency (R-ddl4-4).
+            if (t.IsExpressionFreqLinked)
+                slots.Add(MarkerSlot(doc, tab, ExpressionFreqSlot, t.ExpressionFreqLink, t.ExpressionFreqLinkName!));
         }
         return slots;
+    }
+
+    /// <summary>
+    /// A slot following a marker: by its id when it has one (a marker that is gone leaves the site null, and the
+    /// consumer freezes), else by an unbound name — a hand-written file, or a spec typed outside a commit.
+    /// </summary>
+    private static Slot MarkerSlot(LinkDocument doc, int tab, int sliceIndex, string? id, string name)
+    {
+        if (id is not null)
+        {
+            var site = doc.FindMarker(id);
+            return new Slot(sliceIndex, id, site?.Marker.Name ?? name, site, null);
+        }
+        bool found = doc.TryFindByName(name, tab, out var byName, out var err);
+        return new Slot(sliceIndex, found ? byName.Marker.Id.ToString("D") : null, name,
+                        found ? byName : null, found ? null : err);
     }
 }

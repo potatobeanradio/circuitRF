@@ -23,6 +23,14 @@ public static class LinkMatch
     /// in order. <paramref name="storedIndex"/> is the pin's saved index, drawn when nothing fits (rule 4).
     /// </summary>
     public static LinkMatchResult Match(LinkValue value, Axis axis, int storedIndex)
+        => Match(value, axis, storedIndex, data: null);
+
+    /// <summary>
+    /// As <see cref="Match(LinkValue, Axis, int)"/>, with the consumer's own file: when rules 1–3 find nothing and
+    /// <paramref name="axis"/> has 1-D companion cubes in <paramref name="data"/>, the case whose companions are nearest
+    /// the source's coordinates is taken (brief-ddl-4 R-ddl4-1) before rule 4.
+    /// </summary>
+    public static LinkMatchResult Match(LinkValue value, Axis axis, int storedIndex, DataSet? data)
     {
         int fallback = Math.Clamp(storedIndex, 0, Math.Max(0, axis.Length - 1));
         if (value.Frozen)
@@ -46,9 +54,90 @@ public static class LinkMatch
         if (value.Scalar is { } sc && UnitsMatch(sc.Unit, axis.Name, axis))
             return Nearest(value.Name, sc.Value, axis);
 
+        // Companions — a list of cases (a bias `point`) described by 1-D cubes over it (`vgs[point]`, `vds[point]`):
+        // the case nearest the source's coordinates. A nearest match by design; interpolating between bias points
+        // would be a model, and is not here.
+        if (data is not null && ByCompanions(value, axis, data) is { } byCompanion)
+            return byCompanion;
+
         // Rule 4 — nothing fits: drawn where it was, and the note says what each side is.
         return new(fallback, LinkMatchKind.Unresolved, Mismatch(value, axis));
     }
+
+    /// <summary>A 1-D cube over a consumer axis, named like a coordinate a source may supply.</summary>
+    /// <param name="Name">The cube's name without its group: <c>vgs</c>.</param>
+    public sealed record Companion(string Name, double[] Values, string Unit);
+
+    /// <summary>
+    /// The real 1-D cubes of <paramref name="data"/> whose only axis is <paramref name="axis"/> — its name and its
+    /// grid. Bookkeeping cubes (<c>__…</c>) are not companions.
+    /// </summary>
+    public static IReadOnlyList<Companion> CompanionsOf(DataSet data, Axis axis)
+    {
+        var list = new List<Companion>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var g in data.Groups)
+            foreach (var (name, cube) in data.CubesIn(g))
+            {
+                if (name.StartsWith("__", StringComparison.Ordinal) || cube.Rank != 1 || cube.DataKind != DataKind.Real) continue;
+                var a = cube.Axes[0];
+                if (a.Name != axis.Name || !SameGrid(a.Values, axis.Values) || !seen.Add(name)) continue;
+                list.Add(new Companion(name, cube.RealValues, cube.Unit ?? ""));
+            }
+        return list;
+    }
+
+    private static string Bare(string name) => name.LastIndexOf('.') is var dot and >= 0 ? name[(dot + 1)..] : name;
+
+    private static LinkMatchResult? ByCompanions(LinkValue value, Axis axis, DataSet data)
+    {
+        if (value.Coordinates.Count == 0) return null;
+        var companions = CompanionsOf(data, axis);
+        if (companions.Count == 0) return null;
+
+        // Each coordinate pairs with the companion of its name (case-insensitively), else with the one companion left
+        // in its unit. A coordinate that pairs with nothing takes no part.
+        var pairs = new List<(LinkCoordinate C, Companion K)>();
+        var used  = new HashSet<Companion>(ReferenceEqualityComparer.Instance);
+        foreach (var c in value.Coordinates)
+            if (companions.FirstOrDefault(k => !used.Contains(k)
+                    && string.Equals(k.Name, Bare(c.Axis), StringComparison.OrdinalIgnoreCase)) is { } k)
+            { pairs.Add((c, k)); used.Add(k); }
+        foreach (var c in value.Coordinates)
+        {
+            if (pairs.Any(p => ReferenceEquals(p.C, c)) || (c.Unit ?? "").Length == 0) continue;
+            var inUnit = companions.Where(k => !used.Contains(k) && string.Equals(k.Unit, c.Unit, StringComparison.Ordinal)).ToList();
+            if (inUnit.Count == 1) { pairs.Add((c, inUnit[0])); used.Add(inUnit[0]); }
+        }
+        if (pairs.Count == 0) return null;
+
+        // Each dimension scaled by its companion's span, so a volt of Vgs and a volt of Vds weigh by how far each
+        // ranges here, not by their numbers.
+        var spans = pairs.Select(p =>
+        {
+            double lo = p.K.Values.Where(double.IsFinite).DefaultIfEmpty(0).Min();
+            double hi = p.K.Values.Where(double.IsFinite).DefaultIfEmpty(0).Max();
+            return hi > lo ? hi - lo : 1.0;
+        }).ToArray();
+        int best = -1; double bestD = double.PositiveInfinity;
+        for (int i = 0; i < axis.Length; i++)
+        {
+            double d = 0;
+            for (int k = 0; k < pairs.Count; k++)
+            {
+                double x = (pairs[k].K.Values[i] - pairs[k].C.Value) / spans[k];
+                d += x * x;
+            }
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        if (best < 0) return null;
+
+        string took  = string.Join(", ", pairs.Select(p => $"{p.K.Name} {Format(p.K.Values[best], UnitOf(p))}"));
+        string asked = string.Join(", ", pairs.Select(p => Format(p.C.Value, UnitOf(p))));
+        return new(best, LinkMatchKind.Companion, $"{axis.Name} {best} ({took}; {value.Name} at {asked}).");
+    }
+
+    private static string UnitOf((LinkCoordinate C, Companion K) p) => p.K.Unit.Length > 0 ? p.K.Unit : p.C.Unit ?? "";
 
     /// <summary>
     /// A unit is a match when it is the same unit, NAMED. Two unitless axes match only when they are the same-named

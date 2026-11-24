@@ -1089,16 +1089,80 @@
                                         </Grid>
 
                                         <!-- Slice-axis pin row (only when the loadpull has >1 slice) -->
-                                        <Grid ColumnDefinitions="50,*"
+                                        <Grid ColumnDefinitions="50,*,Auto"
                                               IsVisible="{Binding ShowContourFreqPicker}">
                                             <TextBlock Grid.Column="0" Text="{Binding ContourLeadingAxisLabel}"
                                                        Classes="label"/>
                                             <ComboBox Grid.Column="1"
                                                       ItemsSource="{Binding AvailableFrequencies}"
                                                       SelectedIndex="{Binding ContourFreqIndex, Mode=TwoWay}"
+                                                      IsVisible="{Binding ContourFreqLink.ShowIndexPicker}"
                                                       HorizontalAlignment="Stretch"
                                                       ToolTip.Tip="Swept-axis value to slice at"/>
+                                            <!-- brief-ddl-4: the frequency follows a marker. The picker and its reading
+                                                 replace the index picker; the toggle's column is always reserved. -->
+                                            <StackPanel Grid.Column="1"
+                                                        x:DataType="vm:FreqLinkViewModel"
+                                                        DataContext="{Binding $parent[Grid].((vm:TraceRowViewModel)DataContext).ContourFreqLink}"
+                                                        IsVisible="{Binding IsLinked}"
+                                                        Spacing="1">
+                                                <ComboBox ItemsSource="{Binding LinkSources}"
+                                                          SelectedItem="{Binding SelectedLinkSource, Mode=TwoWay}"
+                                                          PlaceholderText="{Binding LinkPlaceholder}"
+                                                          HorizontalAlignment="Stretch">
+                                                    <ComboBox.ItemContainerTheme>
+                                                        <ControlTheme TargetType="ComboBoxItem">
+                                                            <Setter Property="IsEnabled" Value="{ReflectionBinding IsEnabled}"/>
+                                                        </ControlTheme>
+                                                    </ComboBox.ItemContainerTheme>
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{ReflectionBinding Label}"
+                                                                       FontSize="{StaticResource FontSize}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{ReflectionBinding Tooltip}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <TextBlock Classes="label"
+                                                           IsVisible="{Binding !IsDangling}"
+                                                           Text="{Binding LinkText}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip.Tip="{Binding LinkText}"/>
+                                                <Border IsVisible="{Binding IsDangling}"
+                                                        CornerRadius="3" Padding="4,2"
+                                                        Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Classes="label" Text="{Binding DanglingText}" TextWrapping="Wrap"/>
+                                                        <Button Classes="seg-btn"
+                                                                IsVisible="{Binding CanUseNewSource}"
+                                                                Command="{Binding UseNewSourceCommand}"
+                                                                HorizontalAlignment="Left" Padding="6,1">
+                                                            <TextBlock Text="{Binding UseNewSourceText}" FontSize="10"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                            <Panel Grid.Column="2" Width="29" IsVisible="{Binding CanLinkFreq}">
+                                                <ToggleButton Classes="seg-btn"
+                                                              x:DataType="vm:FreqLinkViewModel"
+                                                              DataContext="{Binding $parent[Grid].((vm:TraceRowViewModel)DataContext).ContourFreqLink}"
+                                                              IsChecked="{Binding IsLinked, Mode=TwoWay}"
+                                                              VerticalAlignment="Top"
+                                                              Width="26" Padding="3,2" Margin="3,0,0,0"
+                                                              ToolTip.Tip="Follow a marker instead of a fixed frequency">
+                                                    <mi:MaterialIcon Kind="LinkVariant" Width="14" Height="14"/>
+                                                </ToggleButton>
+                                            </Panel>
                                         </Grid>
+
+                                        <!-- brief-ddl-4: what a linked frequency says — a source that is gone, a
+                                             cycle, and that a refit waits for the drag to end. -->
+                                        <TextBlock Classes="label"
+                                                   IsVisible="{Binding ShowLinkNote}"
+                                                   Text="{Binding LinkNote}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="50,0,0,2"/>
 
                                         <!-- Z0 row: Γ-plane loadpull contours only (brief-dd-z0-renormalization.md §5) —
                                              the Z-plane impedance grid has no reference-impedance concept and never
@@ -1937,15 +2001,71 @@
                                         <!-- brief NZ-2: the frequency a circle expression (ga_circle, ns_circle,
                                              stab_circle) or a pinned quantity (Sopt) is drawn at - the contour
                                              trace's frequency picker, for an expression. -->
-                                        <Grid ColumnDefinitions="50,*" Margin="0,4,0,0"
+                                        <Grid ColumnDefinitions="50,*,Auto" Margin="0,4,0,0"
                                               IsVisible="{Binding ShowExpressionFreqPicker}">
                                             <TextBlock Grid.Column="0" Text="Freq" Classes="label"
-                                                       VerticalAlignment="Center"/>
+                                                       VerticalAlignment="Top" Margin="0,3,0,0"/>
                                             <ComboBox Grid.Column="1"
                                                       ItemsSource="{Binding ExpressionFrequencies}"
                                                       SelectedIndex="{Binding ExpressionFreqIndex, Mode=TwoWay}"
+                                                      IsVisible="{Binding ExpressionFreqLink.ShowIndexPicker}"
                                                       HorizontalAlignment="Stretch"
                                                       ToolTip.Tip="The frequency this trace is drawn at"/>
+                                            <!-- brief-ddl-4: the frequency follows a marker. The picker and its reading
+                                                 replace the index picker; the toggle's column is always reserved. -->
+                                            <StackPanel Grid.Column="1"
+                                                        x:DataType="vm:FreqLinkViewModel"
+                                                        DataContext="{Binding $parent[Grid].((vm:TraceRowViewModel)DataContext).ExpressionFreqLink}"
+                                                        IsVisible="{Binding IsLinked}"
+                                                        Spacing="1">
+                                                <ComboBox ItemsSource="{Binding LinkSources}"
+                                                          SelectedItem="{Binding SelectedLinkSource, Mode=TwoWay}"
+                                                          PlaceholderText="{Binding LinkPlaceholder}"
+                                                          HorizontalAlignment="Stretch">
+                                                    <ComboBox.ItemContainerTheme>
+                                                        <ControlTheme TargetType="ComboBoxItem">
+                                                            <Setter Property="IsEnabled" Value="{ReflectionBinding IsEnabled}"/>
+                                                        </ControlTheme>
+                                                    </ComboBox.ItemContainerTheme>
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{ReflectionBinding Label}"
+                                                                       FontSize="{StaticResource FontSize}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{ReflectionBinding Tooltip}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                                <TextBlock Classes="label"
+                                                           IsVisible="{Binding !IsDangling}"
+                                                           Text="{Binding LinkText}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip.Tip="{Binding LinkText}"/>
+                                                <Border IsVisible="{Binding IsDangling}"
+                                                        CornerRadius="3" Padding="4,2"
+                                                        Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Classes="label" Text="{Binding DanglingText}" TextWrapping="Wrap"/>
+                                                        <Button Classes="seg-btn"
+                                                                IsVisible="{Binding CanUseNewSource}"
+                                                                Command="{Binding UseNewSourceCommand}"
+                                                                HorizontalAlignment="Left" Padding="6,1">
+                                                            <TextBlock Text="{Binding UseNewSourceText}" FontSize="10"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
+                                            <Panel Grid.Column="2" Width="29" IsVisible="{Binding CanLinkFreq}">
+                                                <ToggleButton Classes="seg-btn"
+                                                              x:DataType="vm:FreqLinkViewModel"
+                                                              DataContext="{Binding $parent[Grid].((vm:TraceRowViewModel)DataContext).ExpressionFreqLink}"
+                                                              IsChecked="{Binding IsLinked, Mode=TwoWay}"
+                                                              VerticalAlignment="Top"
+                                                              Width="26" Padding="3,2" Margin="3,0,0,0"
+                                                              ToolTip.Tip="Follow a marker instead of a fixed frequency">
+                                                    <mi:MaterialIcon Kind="LinkVariant" Width="14" Height="14"/>
+                                                </ToggleButton>
+                                            </Panel>
                                         </Grid>
 
                                         <!-- Pattern cut: which half of the plane this trace draws.

@@ -760,7 +760,31 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>Whether a single-curve cube marker is resolved in two dimensions — on a Smith or polar locus, or a point
         /// cloud — with its <c>PositionStatic</c> the point itself rather than (X, curve index).</summary>
-        public bool MarkersResolve2D => (IsComplexPlanePlot || IsPointCloud) && !IsFamily;
+        /// <remarks>A VERSUS trace resolves in two dimensions too (brief-ddl-4 R-ddl4-2): its X is another cube's values,
+        /// which repeat — <c>Id[point]</c> against <c>vds[point]</c> has every bias point at one Vds on one X — so a marker
+        /// keyed by X alone can never sit on any but the first of them. <see cref="AdoptLegacyVersusMarkers"/> carries a
+        /// marker saved as X alone onto the sample it read then.</remarks>
+        public bool MarkersResolve2D => (IsComplexPlanePlot || IsPointCloud || IsVersus) && !IsFamily;
+
+        /// <summary>
+        /// Markers on a versus trace saved before versus markers were resolved in two dimensions hold (X, 0): each is put
+        /// on the point the X-only rule gave, so it reads what it read when it was saved. Called once, after a load.
+        /// </summary>
+        public void AdoptLegacyVersusMarkers()
+        {
+            if (!IsVersus || IsFamily || !IsCubeBound || Points.Count == 0) return;
+            foreach (var m in Markers)
+            {
+                if (m.FreePosition || m.PositionStatic.Y != 0f) continue;
+                int idx = 0; float best = float.PositiveInfinity;
+                for (int i = 0; i < Points.Count; i++)
+                {
+                    float d = Math.Abs(Points[i].X - m.PositionStatic.X);
+                    if (d < best) { best = d; idx = i; }
+                }
+                m.PositionStatic = Points[idx];
+            }
+        }
 
         /// <summary>Full element-wise expression string (e.g. <c>mag(V[:, 0, 0]) + mag(V[:, 0, 1])</c>).
         /// When non-null, the owner resolves via <c>TraceExpression</c> instead of the single-slice path.
@@ -808,6 +832,16 @@ namespace CircuitRF.Render.DataDisplay
         /// circle function's <c>[freq, point]</c> at the first frequency.
         /// </summary>
         public int ExpressionFreqIndex { get; set; } = -1;
+
+        /// <summary>The link source <see cref="ExpressionFreqIndex"/> follows — a marker's id — or null (brief-ddl-4
+        /// R-ddl4-4). The index stays the one drawn, and is the frozen fallback.</summary>
+        public string? ExpressionFreqLink { get; set; }
+
+        /// <summary>The followed source's name as last seen.</summary>
+        public string? ExpressionFreqLinkName { get; set; }
+
+        /// <summary>True when the expression's frequency follows a link source.</summary>
+        public bool IsExpressionFreqLinked => ExpressionFreqLink is not null || ExpressionFreqLinkName is not null;
 
         /// <summary>The frequency axis the last resolve pinned and the index it used, or null — what the card's picker
         /// lists. Resolved from the data, never saved.</summary>
@@ -1870,6 +1904,8 @@ namespace CircuitRF.Render.DataDisplay
             Expression      = src.Expression;
             XSpec           = src.XSpec;
             ExpressionFreqIndex = src.ExpressionFreqIndex;
+            ExpressionFreqLink     = src.ExpressionFreqLink;
+            ExpressionFreqLinkName = src.ExpressionFreqLinkName;
             ExpressionFreqPin   = src.ExpressionFreqPin;
             StableSide          = src.StableSide;
             XSourcePath     = src.XSourcePath;
@@ -2167,7 +2203,8 @@ namespace CircuitRF.Render.DataDisplay
         private List<(Marker M, double X, bool Back)> LocusMarkerSamples()
         {
             var anchors = new List<(Marker, double, bool)>();
-            if (!MarkersResolve2D || IsPointCloud || Markers.Count == 0) return anchors;
+            // A versus trace has no x order either: its X is another cube's values (brief-ddl-4).
+            if (!MarkersResolve2D || IsPointCloud || IsVersus || Markers.Count == 0) return anchors;
             if (_cubeXValues is not { Length: > 0 } xs || _pointSample.Count != Points.Count) return anchors;
             foreach (var m in Markers)
             {
@@ -2182,7 +2219,7 @@ namespace CircuitRF.Render.DataDisplay
         /// in the new data, so it rides the curve rather than re-snapping by distance.</summary>
         private void ReanchorLocusMarkers(List<(Marker M, double X, bool Back)> anchors)
         {
-            if (anchors.Count == 0 || !MarkersResolve2D || IsPointCloud) return;
+            if (anchors.Count == 0 || !MarkersResolve2D || IsPointCloud || IsVersus) return;
             if (_cubeXValues is not { Length: > 0 } xs || _pointSample.Count != Points.Count) return;
             foreach (var (m, x, back) in anchors)
             {
@@ -4495,7 +4532,8 @@ namespace CircuitRF.Render.DataDisplay
             if (sample < 0) sample = ~sample;
             if (IsCubeBound)
             {
-                marker.PositionStatic = new Vector2(points[best].X, IsFamily ? marker.PositionStatic.Y : 0f);
+                marker.PositionStatic = MarkersResolve2D ? points[best]
+                                      : new Vector2(points[best].X, IsFamily ? marker.PositionStatic.Y : 0f);
                 return true;
             }
             if (Data?.Frequencies is not { } frequencies || sample >= frequencies.Length) return false;
@@ -4670,7 +4708,7 @@ namespace CircuitRF.Render.DataDisplay
                 // target is an exact sample on the bound curve, so store its X directly (matches the
                 // index lookups in CubeMarkerIndex / FindStemIndex) and keep the family curve index.
                 var target = pts[order[nextRank]];
-                m.PositionStatic = new Vector2(target.X, IsFamily ? m.PositionStatic.Y : 0f);
+                m.PositionStatic = MarkersResolve2D ? target : new Vector2(target.X, IsFamily ? m.PositionStatic.Y : 0f);
                 return true;
             }
 

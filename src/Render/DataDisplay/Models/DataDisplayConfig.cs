@@ -466,6 +466,12 @@ public sealed class TraceConfig
     /// when unset, so every .cdd written before it loads unchanged.</summary>
     public int?                  ExpressionFreqIndex { get; set; }
 
+    /// <summary>The link source <see cref="ExpressionFreqIndex"/> follows (brief-ddl-4 R-ddl4-4); omitted when unlinked.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string?               ExpressionFreqLink     { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string?               ExpressionFreqLinkName { get; set; }
+
     /// <summary>Absolute path of the X side's data source; null = the same source as the Y side.</summary>
     public string?               XSourcePath   { get; set; }
 
@@ -745,6 +751,11 @@ public sealed class ContourTraceConfig
     public CompressionType CompressionType { get; set; } = CompressionType.Gmax;
 
     public int    FreqIndex            { get; set; } = 0;
+    /// <summary>The link source the frequency follows (brief-ddl-4 R-ddl4-3); omitted when it is a fixed index.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FreqLink            { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FreqLinkName        { get; set; }
     public string? LoadpullGroup       { get; set; }
 
     [JsonConverter(typeof(JsonStringEnumConverter))]

@@ -40,11 +40,16 @@ public static class LinkCatalog
     {
         int tab = doc.TabOf(consumer);
         var items = new List<LinkSourceItem>();
+        DataSet? data = consumer.SourcePath is { } sp ? sources?.DataFor(sp) : null;
+        // The trial selection is a source for a trial axis only (brief-ddl-4 R-ddl4-5): it supplies nothing else.
+        if (axis?.Name == "trial" && sliceIndex >= 0)
+            items.Add(new LinkSourceItem(LinkDocument.SelectionId, LinkDocument.SelectionId, "the trials selected",
+                                         Matches: true, "trial", null));
         foreach (var site in doc.Markers())
         {
             string id = site.Marker.Id.ToString("D");
             var value = MarkerLinkSource.Resolve(site, sources);
-            bool matches = axis is not null && LinkMatch.Match(value, axis, 0).IsLive;
+            bool matches = axis is not null && LinkMatch.Match(value, axis, 0, data).IsLive;
             items.Add(new LinkSourceItem(id, site.Marker.Name, Where(doc, site, tab), matches,
                                          LinkMatch.Supplies(value), WouldCycle(doc, consumer, sliceIndex, id)));
         }
@@ -77,7 +82,7 @@ public static class LinkCatalog
                 var axis = cube.Axes.FirstOrDefault(a => a.Name == e.AxisName);
                 if (axis is null || !SliceTokenParser.IsLinkableAxis(axis.Name, axis.Labels, axis.Length)) continue;
                 bool linked = string.Equals(e.Link, id, StringComparison.OrdinalIgnoreCase);
-                if (!linked && (!LinkMatch.Match(value, axis, e.Index).IsLive || WouldCycle(doc, t, i, id) is not null)) continue;
+                if (!linked && (!LinkMatch.Match(value, axis, e.Index, ds).IsLive || WouldCycle(doc, t, i, id) is not null)) continue;
                 list.Add(new Target(t, i, $"{PlotName(doc, ti, plot, site.TabIndex)}, {LinkGraph.NameOf(t)} — {axis.Name}", linked));
             }
         }
@@ -87,11 +92,30 @@ public static class LinkCatalog
     /// <summary>The chain a link from this pin to source <paramref name="id"/> would close, or null.</summary>
     public static string? WouldCycle(LinkDocument doc, Trace consumer, int sliceIndex, string id)
     {
+        if (LinkDocument.IsSelection(id)) return null;   // the selection sits on no trace, so it closes nothing
+        string? Probe() => LinkGraph.Build(doc).Cycles.TryGetValue(consumer, out var chain) ? chain : null;
+
+        // A contour's or an expression's frequency (brief-ddl-4 R-ddl4-3, R-ddl4-4).
+        if (sliceIndex == LinkGraph.ContourFreqSlot && consumer.ContourData is { } cd)
+        {
+            var (was, wasName) = (cd.FreqLink, cd.FreqLinkName);
+            cd.FreqLink = id; cd.FreqLinkName ??= id;
+            try { return Probe(); }
+            finally { cd.FreqLink = was; cd.FreqLinkName = wasName; }
+        }
+        if (sliceIndex == LinkGraph.ExpressionFreqSlot)
+        {
+            var (was, wasName) = (consumer.ExpressionFreqLink, consumer.ExpressionFreqLinkName);
+            consumer.ExpressionFreqLink = id; consumer.ExpressionFreqLinkName ??= id;
+            try { return Probe(); }
+            finally { consumer.ExpressionFreqLink = was; consumer.ExpressionFreqLinkName = wasName; }
+        }
+
         if (consumer.Slice is not { } slice || sliceIndex < 0 || sliceIndex >= slice.Length) return null;
         var probe = (AxisSlice[])slice.Clone();
         probe[sliceIndex] = probe[sliceIndex] with { Role = AxisRole.PinToIndex, Link = id };
         consumer.Slice = probe;
-        try { return LinkGraph.Build(doc).Cycles.TryGetValue(consumer, out var chain) ? chain : null; }
+        try { return Probe(); }
         finally { consumer.Slice = slice; }
     }
 
@@ -135,5 +159,11 @@ public static class LinkRemap
         }
         foreach (var s in list.SelectMany(p => p.Traces).SelectMany(t => t.CubeSlice))
             if (s.Link is { } link && map.TryGetValue(link, out var copy)) s.Link = copy;
+        // The frequency links (brief-ddl-4 R-ddl4-3, R-ddl4-4) are remapped alike.
+        foreach (var t in list.SelectMany(p => p.Traces))
+        {
+            if (t.ExpressionFreqLink is { } ef && map.TryGetValue(ef, out var efCopy)) t.ExpressionFreqLink = efCopy;
+            if (t.ContourTrace?.FreqLink is { } cf && map.TryGetValue(cf, out var cfCopy)) t.ContourTrace.FreqLink = cfCopy;
+        }
     }
 }

@@ -1357,3 +1357,23 @@ against extrapolation noise; with X = Pout (about the gain above the drive) it a
 point down to the drive floor, a spike back at the low-power end of every Pout-axis curve. It now applies only when
 X is the sweep key. Gate: `tests/RfCore.Tests/LoadpullOffGridTests.cs`.
 
+## More link sources and consumers (brief-ddl-4, 2026-11-24)
+
+**HB drive sweep: the measurements and the voltages share one axis.** The shipped `Harmonic Balance/PowerAmplifier`
+example's `hb` run (its `HB1_sweep_Pin` sweep, 31 points) writes `V[Pin, node, harmonic]`, `I[Pin, branch,
+harmonic]` and every measurement (`Pout_dBm[Pin]`, `PAE[Pin]`, …) on an axis named `Pin` with the same 31 values
+(0…30) and the same empty unit. So a marker on Pout against Pin drives `V[@m1, node, :]` by index — rule 1 — and no
+writer change was needed. The unit is empty because the swept variable carries none, so a value match (rule 2)
+would refuse a different file whose axis is not also named `Pin`; within one run it never comes to that. Gate:
+`LinkedSourcesTests.Gate5_…`, which runs the example through the CLI and asserts the axis identity first.
+
+**A versus marker was keyed by X alone.** `MarkersResolve2D` was true only on Smith/Polar and point clouds, so a Rect
+versus trace stored a marker as (X, 0) and read it back as the first sample at that X. On a bias plane drawn as
+`Idp[point]` against `vds[point]`, every point at one Vds shares an X, and the marker could only ever sit on the
+first. Versus markers now resolve in two dimensions; a file saved before keeps its reading through
+`Trace.AdoptLegacyVersusMarkers`, which applies the old X-only rule once on load.
+
+**A hand-written `.cdd` drops an unbound link name.** `AxisSliceConfig.ToSlice` keeps `LinkName` only beside a
+`Link` id, so a file with `"LinkName": "selected"` and no `Link` loads unlinked. A saved `@selected` pin carries
+`"Link": "selected"` (bound by `LinkCommit`), which is what to write by hand.
+

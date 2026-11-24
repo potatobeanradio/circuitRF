@@ -261,6 +261,8 @@ public static class PlotConfigLoader
                 CompressionReference  = ct.CompressionReference,
                 CompressionType       = ct.CompressionType,
                 FreqIndex             = ct.FreqIndex,
+                FreqLink              = ct.FreqLink,
+                FreqLinkName          = ct.FreqLinkName,
                 LoadpullGroup         = ct.LoadpullGroup,
                 LevelMode             = ct.LevelMode,
                 LevelStart            = ct.LevelStart,
@@ -355,6 +357,8 @@ public static class PlotConfigLoader
         // source happens to be selected).
         trace.XSpec = traceConfig.XSpec;
         trace.ExpressionFreqIndex = traceConfig.ExpressionFreqIndex ?? -1;
+        trace.ExpressionFreqLink     = traceConfig.ExpressionFreqLink;
+        trace.ExpressionFreqLinkName = traceConfig.ExpressionFreqLinkName;
         trace.Label = string.IsNullOrEmpty(traceConfig.Label) ? null : traceConfig.Label;
         if (!string.IsNullOrEmpty(traceConfig.XSourcePath))
             trace.XSourcePath = sources.ResolveAbs(traceConfig.XSourcePath);
@@ -386,7 +390,12 @@ public static class PlotConfigLoader
         else if (snp is not null && !snp.IsEmpty)
             trace.BuildPath(plotType, freqUnit);
 
-        if (isCubeBound) { RestoreMarkers(trace, traceConfig); return trace; }
+        if (isCubeBound)
+        {
+            RestoreMarkers(trace, traceConfig);
+            trace.AdoptLegacyVersusMarkers();   // a versus marker saved as X alone (brief-ddl-4 R-ddl4-2)
+            return trace;
+        }
 
         RestoreMarkers(trace, traceConfig);
         return trace;

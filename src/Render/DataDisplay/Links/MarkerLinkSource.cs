@@ -46,6 +46,11 @@ public static class MarkerLinkSource
                 else if (t.IsVersus && t.SampleAxis is { } sa && sample.X < sa.Length)
                     coords.Add(new LinkCoordinate(t.SourcePath, group, sa.Name, sample.X, sa.Values[sample.X], sa.Unit ?? "", sa.Values));
 
+                // A versus trace also supplies its X operand's value, with that cube's unit (brief-ddl-4 R-ddl4-2):
+                // Id[point] against vds[point] gives the point AND the Vds there.
+                if (t.IsVersus && t.CubeXValues is { Count: > 0 } vxs && sample.X < vxs.Count)
+                    coords.Add(VersusX(t, sample.X, vxs, sources));
+
                 if (t.IsFamily && sample.Curve >= 0 && sample.Curve < t.FamilyCurves.Count && t.FamilyAxisName is { } fam)
                 {
                     var famValues = t.FamilyCurves.Select(c => c.AxisValue).ToArray();
@@ -63,6 +68,19 @@ public static class MarkerLinkSource
         }
 
         return new LinkValue(m.Id.ToString("D"), m.Name, coords, position);
+    }
+
+    /// <summary>The X operand of a versus trace as a coordinate: named by the operand (<c>vds</c>), in its cube's unit.</summary>
+    private static LinkCoordinate VersusX(Trace t, int sample, IReadOnlyList<double> xs, IPlotDataSources? sources)
+    {
+        string spec = t.XSpec!.Trim();
+        int br = spec.IndexOf('[');
+        string name = (br > 0 ? spec[..br] : spec).Trim();
+        string unit = "";
+        if (sources is not null && (t.XSourcePath ?? t.SourcePath) is { } xp && sources.DataFor(xp) is { } xds
+            && xds.Contains(name))
+            unit = xds[name].Unit ?? "";
+        return new LinkCoordinate(t.XSourcePath ?? t.SourcePath, "", name, sample, xs[sample], unit, xs.ToArray());
     }
 
     /// <summary>

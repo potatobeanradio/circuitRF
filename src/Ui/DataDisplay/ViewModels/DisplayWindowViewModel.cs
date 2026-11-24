@@ -236,7 +236,18 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     }
 
     /// <inheritdoc/>
-    public void OnTrialSelectionChanged() => OnPropertyChanged(nameof(TrialChip));
+    public void OnTrialSelectionChanged()
+    {
+        OnPropertyChanged(nameof(TrialChip));
+        // A pin following the selection follows it (brief-ddl-4 R-ddl4-5) — a click is a release, not a drag.
+        if (FollowsSelection()) RequestLinkFollow(released: true, announce: false);
+    }
+
+    /// <summary>Whether any trace in this display follows the trial selection.</summary>
+    private bool FollowsSelection()
+        => Tabs.SelectMany(t => t.DataDisplay.Plots).SelectMany(c => c.PlotVM.Plot.Traces).Any(t =>
+               (t.Slice?.Any(e => LinkDocument.IsSelection(e.Link) || LinkDocument.IsSelection(e.LinkName)) ?? false)
+               || (t.CubeName is null && t.Expression is { } x && LinkGraph.OperandNames(x).Any(LinkDocument.IsSelection)));
 
     /// <summary>Pass-through: enumerate results + workspace Touchstone without loading any file.</summary>
     public void RefreshAvailableDataSources()
@@ -612,7 +623,11 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
     /// <summary>Every tab and plot of this display, as the links see them.</summary>
     internal LinkDocument BuildLinkDocument()
-        => new([.. Tabs.Select(t => new LinkDocument.Tab(t.Name, [.. t.DataDisplay.Plots.Select(c => c.PlotVM.Plot)]))]);
+        => new([.. Tabs.Select(t => new LinkDocument.Tab(t.Name, [.. t.DataDisplay.Plots.Select(c => c.PlotVM.Plot)]))])
+        {
+            // A pin following `@selected` reads the shared selection (brief-ddl-4 R-ddl4-5).
+            SelectedTrials = TrialSelection.Shared.For,
+        };
 
     /// <summary>
     /// Resolves every linked pin of the display through the one resolution path (<see cref="LinkResolve"/>, which

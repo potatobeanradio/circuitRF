@@ -396,6 +396,45 @@ them follows its copy (`LinkRemap.Renew`), so a pasted overview and detail pair 
 a marker outside the set keeps following the original. Pasted names are made unique across the whole
 document.
 
+**A case described by companion cubes (DDL-4).** Model data lists its bias points as an axis (`Y[point, freq, 2, 2]`)
+with 1-D cubes over it saying where each point is (`vgs[point]`, `vds[point]`). When rules 1–3 find nothing for a
+pinned axis, `LinkMatch` looks in the consumer's own file for real 1-D cubes whose only axis is that axis (its name
+and grid), pairs each source coordinate with the companion of its name (case-insensitively), else with the one
+companion left in its unit, and takes the case nearest the source's values with each dimension scaled by its
+companion's span. The note always says which case it took and how far it was: "point 10 (vds 6.1 V, vgs -380 mV;
+m1 at 6 V, -400 mV)". It is a nearest match by design: interpolating between bias points is a model question.
+
+**Family and versus sources.** A marker on a family supplies X and the family axis (DDL-1). A marker on a versus
+trace supplies the trace's own kept axis (`point`) and the X operand's value, named by the operand and in its cube's
+unit. **A versus marker resolves in two dimensions** (`Trace.MarkersResolve2D` includes `IsVersus`): its X is another
+cube's values, which repeat (a bias plane has every point at one Vds on one X), so a marker keyed by X alone could sit
+only on the first of them. A versus marker saved as (X, 0) before this is put, on load, on the point the X-only rule
+gave (`Trace.AdoptLegacyVersusMarkers`), so it reads what it read then. Versus markers are not re-anchored by X
+value across new data either, for the same reason.
+
+**A contour's frequency and an expression's frequency follow a source too.** They are fields, not slice axes:
+`ContourData.FreqLink`/`FreqLinkName` (`ContourTraceConfig`, omitted when unlinked) and `Trace.ExpressionFreqLink`/
+`ExpressionFreqLinkName` (`TraceConfig`). Each resolves by the same rules against its own frequency list — the
+loadpull surface's leading axis (name and unit as the surface reports it), and the frequency axis the expression's
+last evaluation pinned. A contour is slow by kind, so it refits on release; the contour card shows the note. In
+`LinkGraph` they are slots with negative slice indices (`ContourFreqSlot`, `ExpressionFreqSlot`), so ordering,
+cycles, freezing and the picker (`LinkCatalog.For`, `WouldCycle`) are the pinned axis's own. A toggle beside each
+frequency picker swaps it for a source picker (`FreqLinkViewModel`), reading `@m1 → 2 GHz`.
+
+**The selected trial (`@selected`).** The trial selection (`TrialSelection.Shared`, per source file) is a link
+source with the reserved id and name `selected` (`LinkDocument.SelectionId`); `@selected` always means it, never a
+marker. It resolves per consumer: the lowest trial selected in the consumer's OWN source, by value on its `trial`
+axis. Several selected: "3 trials selected; showing trial 12, the lowest". None: the pin stays where it was, "No
+trial is selected; showing trial 12, the last one selected" — not frozen, since the source is not gone. The window
+hands the selection in through `LinkDocument.SelectedTrials` and follows on every selection change;
+`circuitrf render` has no selection, so a pin following it draws where it was saved. The picker offers it on a
+`trial` axis only. A marker on a scatter over trials still works through DDL-1; this covers a histogram, whose bars
+are not samples.
+
+**HB drive.** In the shipped power amplifier example's HB sweep, the node voltages, currents and every measurement
+carry the same sweep axis (name, length, values, unitless), so a marker on Pout against Pin drives
+`V[@m1, node, :]` by index (rule 1). Recorded in `src/Render/DataDisplay/RESOLVED.md`.
+
 ---
 
 ## 3. Sub-phases

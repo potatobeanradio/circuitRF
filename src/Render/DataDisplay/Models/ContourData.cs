@@ -62,6 +62,13 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>Where a compression constraint is measured from: the running maximum (default) or the small-signal gain.</summary>
         public CompressionType CompressionType      { get; set; } = CompressionType.Gmax;
         public int            FreqIndex             { get; set; } = 0;
+        /// <summary>The link source <see cref="FreqIndex"/> follows (a marker's id), or null when it is a fixed index
+        /// (brief-ddl-4 R-ddl4-3). <see cref="FreqIndex"/> stays the index drawn and is the frozen fallback.</summary>
+        public string?        FreqLink              { get; set; }
+        /// <summary>The followed source's name as last seen; alone (no id) it is an unbound name.</summary>
+        public string?        FreqLinkName          { get; set; }
+        /// <summary>True when the frequency follows a link source.</summary>
+        public bool           IsFreqLinked          => FreqLink is not null || FreqLinkName is not null;
         /// <summary>Why nothing is drawn, when nothing can be (too few loads reach the constraint); null when the
         /// contour drew. Set by <c>ContourResolve.Rebuild</c>; not persisted.</summary>
         public string?        Status                { get; set; }
@@ -291,6 +298,8 @@ namespace CircuitRF.Render.DataDisplay
             CompressionReference  = CompressionReference,
             CompressionType       = CompressionType,
             FreqIndex             = FreqIndex,
+            FreqLink              = FreqLink,
+            FreqLinkName          = FreqLinkName,
             LoadpullGroup         = LoadpullGroup,
             LevelMode             = LevelMode,
             LevelStart            = LevelStart,

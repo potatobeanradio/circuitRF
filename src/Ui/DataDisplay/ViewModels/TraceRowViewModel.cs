@@ -3463,6 +3463,7 @@ public partial class TraceRowViewModel : ViewModelBase
     internal string? FindSourceNamed(string? name)
     {
         if (name is null || _parent.LinkDocumentProvider?.Invoke() is not { } doc) return null;
+        if (LinkDocument.IsSelection(name)) return LinkDocument.SelectionId;
         return doc.TryFindByName(name, doc.TabOf(_trace), out var site, out _) ? site.Marker.Id.ToString("D") : null;
     }
 
@@ -3483,7 +3484,11 @@ public partial class TraceRowViewModel : ViewModelBase
         bool dangling = false, canNew = false;
         if (r.LinkId is { } id)
         {
-            if (doc.FindMarker(id) is { } site)
+            // The trial selection never goes away; it reads the trial shown (brief-ddl-4 R-ddl4-5).
+            if (LinkDocument.IsSelection(id))
+                text = $"@{LinkDocument.SelectionId} → {entry.Index}"
+                     + (CubeAxis(r.AxisName) is { } ta && entry.Index < ta.Length ? $" (trial {ta.Values[entry.Index]:0.##})" : "");
+            else if (doc.FindMarker(id) is { } site)
                 // A drive-up synthesised at a free load has no index to report: it is not any measured load (brief-ddl-3).
                 text = $"@{site.Marker.Name} → {(_trace.IsSynthesized && r.AxisName == "gridPoint" ? "interpolated" : entry.Index.ToString())}"
                      + Reading(MarkerLinkSource.Resolve(site, sources), r.AxisName);
@@ -3524,6 +3529,7 @@ public partial class TraceRowViewModel : ViewModelBase
                 RefreshLinkRow(r);
             }
         RefreshDescription();
+        SyncFreqLinks();
         OnPropertyChanged(nameof(LinkNote));
         OnPropertyChanged(nameof(ShowLinkNote));
     }

@@ -48,9 +48,19 @@ public static class LinkResolve
                 notes.Add($"{cycle}: a cycle, so it is drawn where it was.");
             }
 
+            var slots = graph.SlotsOf(t);
+            if (t.IsContourTrace)
+            {
+                // A contour's frequency (brief-ddl-4 R-ddl4-3): a refit, so it never runs while a source is dragged.
+                frozen |= ResolveContour(t, plot, slots, cycle is not null, sources, notes);
+                if (UpdatesOnRelease(t)) notes.Add("Updates on release.");
+                t.LinkNote   = notes.Count > 0 ? string.Join(" ", notes.Distinct(StringComparer.Ordinal)) : null;
+                t.LinkFrozen = frozen;
+                continue;
+            }
             if (LinkGraph.IsSingleCube(t))
             {
-                var (f, deferred, synthesis) = ResolveSlice(t, plot, graph.SlotsOf(t), cycle is not null, sources, notes, released);
+                var (f, deferred, synthesis) = ResolveSlice(doc, t, plot, slots, cycle is not null, sources, notes, released);
                 if (deferred)
                 {
                     // A synthesised read whose surface is not built yet waits for the drag to end (R-ddl3-7).
@@ -60,11 +70,24 @@ public static class LinkResolve
                 }
                 frozen |= f;
                 t.AfterResolve = synthesis;
+                TraceResolve.ResolveCubeTrace(t, sources, plot.PlotType, plot.FreqUnits);
             }
             else
-                t.ExpressionLinks = ExpressionResolver(doc, doc.TabOf(t), sources, cycle is not null, notes, () => frozen = true);
+            {
+                t.ExpressionLinks = ExpressionResolver(doc, t, sources, cycle is not null, notes, () => frozen = true);
+                var freqSlot = slots.FirstOrDefault(s => s.SliceIndex == LinkGraph.ExpressionFreqSlot);
+                bool hadAxis = t.ExpressionFreqPin is not null;
+                if (freqSlot is not null) frozen |= ApplyExpressionFreq(t, freqSlot, cycle is not null, sources, notes);
+                TraceResolve.ResolveCubeTrace(t, sources, plot.PlotType, plot.FreqUnits);
+                // The frequency list is known only once the expression has been evaluated: a first resolve that found
+                // it chooses the index and draws again.
+                if (freqSlot is not null && !hadAxis && t.ExpressionFreqPin is not null)
+                {
+                    frozen |= ApplyExpressionFreq(t, freqSlot, cycle is not null, sources, notes);
+                    TraceResolve.ResolveCubeTrace(t, sources, plot.PlotType, plot.FreqUnits);
+                }
+            }
 
-            TraceResolve.ResolveCubeTrace(t, sources, plot.PlotType, plot.FreqUnits);
             // The plot frames the new case as it framed the old one: an autoscaled axis follows, a pinned one stays.
             // Here rather than in each caller, so the window and `render` frame a followed plot the same way.
             plot.Autoscale();
@@ -104,7 +127,7 @@ public static class LinkResolve
     /// free load calls for one (brief-ddl-3).
     /// </summary>
     private static (bool Frozen, bool Deferred, Action<Trace, PlotType, FreqUnit>? Synthesis) ResolveSlice(
-        Trace t, Plot plot, IReadOnlyList<LinkGraph.Slot> slots, bool inCycle,
+        LinkDocument doc, Trace t, Plot plot, IReadOnlyList<LinkGraph.Slot> slots, bool inCycle,
         IPlotDataSources sources, List<string> notes, bool released)
     {
         var slice = (AxisSlice[])t.Slice!.Clone();
@@ -121,7 +144,12 @@ public static class LinkResolve
             // renamed marker is written back as its new name (overview D1).
             entry = entry with { Link = slot.Id ?? entry.Link, LinkName = slot.Site?.Marker.Name ?? entry.LinkName };
             if (inCycle) t.FrozenLinks.Add(entry.Link ?? entry.LinkName ?? "");
-            if (axis is not null && !inCycle)
+            if (axis is not null && !inCycle && slot.IsSelection)
+            {
+                // The trial selection (R-ddl4-5): the lowest selected trial in this consumer's own source.
+                entry = entry with { Index = SelectionIndex(doc, t, axis, entry.Index, notes) };
+            }
+            else if (axis is not null && !inCycle)
             {
                 var value = ValueOf(slot, sources);
                 // A loadpull position on this loadpull's gridPoint: the node, the nearest node, or a synthesised curve.
@@ -138,7 +166,7 @@ public static class LinkResolve
                         continue;
                     }
                 }
-                var r = LinkMatch.Match(value, axis, entry.Index);
+                var r = LinkMatch.Match(value, axis, entry.Index, data);
                 entry = entry with { Index = r.Index };
                 if (r.Note is { } n) notes.Add(slot.Error is { } err && r.Kind == LinkMatchKind.Frozen ? err : n);
                 if (r.Kind == LinkMatchKind.Frozen) { frozen = true; t.FrozenLinks.Add(entry.Link ?? entry.LinkName ?? ""); }
@@ -158,19 +186,104 @@ public static class LinkResolve
     /// and says so.
     /// </summary>
     private static Func<string, Axis, LinkMatchResult> ExpressionResolver(
-        LinkDocument doc, int tab, IPlotDataSources sources, bool inCycle, List<string> notes, Action markFrozen)
-        => (name, axis) =>
+        LinkDocument doc, Trace t, IPlotDataSources sources, bool inCycle, List<string> notes, Action markFrozen)
+    {
+        int tab = doc.TabOf(t);
+        DataSet? data = t.SourcePath is { } sp ? sources.DataFor(sp) : null;
+        return (name, axis) =>
         {
             LinkMatchResult r;
             if (inCycle) r = new LinkMatchResult(0, LinkMatchKind.Frozen, null);
+            else if (LinkDocument.IsSelection(name))
+            {
+                // No stored index to fall back on: with nothing selected the operand reads trial index 0.
+                var local = new List<string>();
+                int i = SelectionIndex(doc, t, axis, 0, local);
+                notes.AddRange(local);
+                r = new LinkMatchResult(i, LinkMatchKind.SameAxis, null);
+            }
             else if (!doc.TryFindByName(name, tab, out var site, out var err))
                 r = new LinkMatchResult(0, LinkMatchKind.Frozen, err);
             else
-                r = LinkMatch.Match(MarkerLinkSource.Resolve(site, sources), axis, 0);
+                r = LinkMatch.Match(MarkerLinkSource.Resolve(site, sources), axis, 0, data);
             if (r.Note is { } n) notes.Add(n);
             if (r.Kind == LinkMatchKind.Frozen) markFrozen();
             return r;
         };
+    }
+
+    /// <summary>
+    /// The index of the trial a pin on <paramref name="axis"/> follows (brief-ddl-4 R-ddl4-5): the lowest trial selected
+    /// in the consumer's own source, by value on the axis. With several selected the note says which it shows; with
+    /// none, the pin stays at <paramref name="stored"/> — the last one it showed — and the note says so.
+    /// </summary>
+    private static int SelectionIndex(LinkDocument doc, Trace t, Axis axis, int stored, List<string> notes)
+    {
+        int fallback = Math.Clamp(stored, 0, Math.Max(0, axis.Length - 1));
+        string Trial(int i) => axis.Values.Length > i ? LinkMatch.Format(axis.Values[i], axis.Unit) : i.ToString();
+        var selected = doc.SelectedTrials?.Invoke(t.SourcePath);
+        if (selected is not { Count: > 0 })
+        {
+            notes.Add($"No trial is selected; showing trial {Trial(fallback)}, the last one selected.");
+            return fallback;
+        }
+        int lowest = selected.Min();
+        var value = new LinkValue(LinkDocument.SelectionId, LinkDocument.SelectionId,
+            [new LinkCoordinate(t.SourcePath, "", "trial", -1, lowest, "", [])]);
+        var r = LinkMatch.Match(value, axis, stored);
+        if (r.Note is { } n) notes.Add(n);
+        if (r.Kind == LinkMatchKind.Unresolved) return r.Index;
+        if (selected.Count > 1)
+            notes.Add($"{selected.Count} trials selected; showing trial {Trial(r.Index)}, the lowest.");
+        return r.Index;
+    }
+
+    /// <summary>
+    /// A contour whose frequency follows a link (R-ddl4-3): the index its source chooses on the contour's own frequency
+    /// list, and the refit there. Returns whether the link is frozen.
+    /// </summary>
+    private static bool ResolveContour(Trace t, Plot plot, IReadOnlyList<LinkGraph.Slot> slots, bool inCycle,
+                                       IPlotDataSources sources, List<string> notes)
+    {
+        var cd = t.ContourData!;
+        if (t.SourcePath is not { } sp || sources.DataFor(sp) is not { } ds) return false;
+        string group = ContourResolve.GroupFor(LoadpullRecognition.FindLoadpullViews(ds), cd.LoadpullGroup);
+        if (LoadpullLinks.Surface(ds, group) is not { } surface) return false;
+        bool frozen = false;
+        if (slots.FirstOrDefault(s => s.SliceIndex == LinkGraph.ContourFreqSlot) is { } slot)
+        {
+            var axis = new Axis(surface.LeadingAxisName, [.. surface.Frequencies], surface.LeadingAxisUnit);
+            cd.FreqLinkName = slot.Site?.Marker.Name ?? cd.FreqLinkName;
+            cd.FreqLink   ??= slot.Id;
+            if (inCycle) t.FrozenLinks.Add(cd.FreqLink ?? cd.FreqLinkName ?? "");
+            else
+            {
+                var r = LinkMatch.Match(ValueOf(slot, sources), axis, cd.FreqIndex, ds);
+                cd.FreqIndex = r.Index;
+                if (r.Note is { } n) notes.Add(slot.Error is { } err && r.Kind == LinkMatchKind.Frozen ? err : n);
+                if (r.Kind == LinkMatchKind.Frozen) { frozen = true; t.FrozenLinks.Add(cd.FreqLink ?? cd.FreqLinkName ?? ""); }
+            }
+        }
+        ContourResolve.Rebuild(t, surface, plot.PlotType);
+        return frozen;
+    }
+
+    /// <summary>The frequency an expression follows (R-ddl4-4), on the frequency list its last resolve pinned.</summary>
+    private static bool ApplyExpressionFreq(Trace t, LinkGraph.Slot slot, bool inCycle, IPlotDataSources sources,
+                                            List<string> notes)
+    {
+        t.ExpressionFreqLinkName = slot.Site?.Marker.Name ?? t.ExpressionFreqLinkName;
+        t.ExpressionFreqLink   ??= slot.Id;
+        if (inCycle) { t.FrozenLinks.Add(t.ExpressionFreqLink ?? t.ExpressionFreqLinkName ?? ""); return false; }
+        if (t.ExpressionFreqPin?.Freq is not { } axis) return false;
+        DataSet? data = t.SourcePath is { } sp ? sources.DataFor(sp) : null;
+        var r = LinkMatch.Match(ValueOf(slot, sources), axis, Math.Max(0, t.ExpressionFreqIndex), data);
+        t.ExpressionFreqIndex = r.Index;
+        if (r.Note is { } n) notes.Add(slot.Error is { } err && r.Kind == LinkMatchKind.Frozen ? err : n);
+        if (r.Kind != LinkMatchKind.Frozen) return false;
+        t.FrozenLinks.Add(t.ExpressionFreqLink ?? t.ExpressionFreqLinkName ?? "");
+        return true;
+    }
 
     private static LinkValue ValueOf(LinkGraph.Slot slot, IPlotDataSources sources)
         => slot.Site is { } site

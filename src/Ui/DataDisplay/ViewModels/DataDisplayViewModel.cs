@@ -2219,6 +2219,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             Expression    = t.Expression,
             XSpec         = t.XSpec,
             ExpressionFreqIndex = t.ExpressionFreqIndex >= 0 ? t.ExpressionFreqIndex : null,
+            ExpressionFreqLink     = t.ExpressionFreqLink,
+            ExpressionFreqLinkName = t.ExpressionFreqLinkName,
             XSourcePath   = t.XSourcePath is { Length: > 0 } xp
                 ? ComputeSourceKey(xp, library)
                 : null,
@@ -2254,6 +2256,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 CompressionReference = cd.CompressionReference,
                 CompressionType      = cd.CompressionType,
                 FreqIndex            = cd.FreqIndex,
+                FreqLink             = cd.FreqLink,
+                FreqLinkName         = cd.FreqLinkName,
                 LoadpullGroup        = cd.LoadpullGroup,
                 LevelMode            = cd.LevelMode,
                 LevelStart           = cd.LevelStart,

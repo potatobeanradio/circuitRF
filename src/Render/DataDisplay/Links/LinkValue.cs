@@ -75,6 +75,9 @@ public enum LinkMatchKind
     Nearest,
     /// <summary>As <see cref="Nearest"/>, but the value is off the end of the axis, so the end sample (rule 2).</summary>
     Clamped,
+    /// <summary>The axis is a list of cases (<c>point</c>) with 1-D companion cubes over it (<c>vgs[point]</c>,
+    /// <c>vds[point]</c>): the case whose companion values are nearest the source's (brief-ddl-4 R-ddl4-1).</summary>
+    Companion,
     /// <summary>Nothing the source gives fits the axis; drawn at the stored index (rule 4).</summary>
     Unresolved,
     /// <summary>The source is gone, or is part of a cycle; drawn at the stored index (R-ddl1-7, R-ddl1-8).</summary>
@@ -85,5 +88,6 @@ public enum LinkMatchKind
 /// there is nothing worth saying, which is the exact and the nearest-in-range cases).</summary>
 public readonly record struct LinkMatchResult(int Index, LinkMatchKind Kind, string? Note)
 {
-    public bool IsLive => Kind is LinkMatchKind.SameAxis or LinkMatchKind.Nearest or LinkMatchKind.Clamped;
+    public bool IsLive => Kind is LinkMatchKind.SameAxis or LinkMatchKind.Nearest or LinkMatchKind.Clamped
+                                 or LinkMatchKind.Companion;
 }

@@ -25,6 +25,23 @@ public sealed class LinkDocument
 
     public LinkDocument(IReadOnlyList<Tab> tabs) => Tabs = tabs;
 
+    /// <summary>
+    /// The id and name of the trial selection as a link source (brief-ddl-4 R-ddl4-5). Not a marker: it is one per
+    /// source FILE, so it resolves against each consumer's own source, and it never goes away. The name is reserved —
+    /// <c>@selected</c> always means the selection.
+    /// </summary>
+    public const string SelectionId = "selected";
+
+    /// <summary>True when a link id or name is the trial selection.</summary>
+    public static bool IsSelection(string? idOrName) => string.Equals(idOrName, SelectionId, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The trials selected in a source file, or null when none are. The window answers from its shared selection;
+    /// a caller with none (<c>circuitrf render</c>) leaves it null, and a pin following the selection draws where it
+    /// was saved.
+    /// </summary>
+    public Func<string?, IReadOnlySet<int>?>? SelectedTrials { get; init; }
+
     /// <summary>A document of one tab — a caller with no tabs of its own (a test, a single plot).</summary>
     public static LinkDocument Of(params Plot[] plots) => new([new Tab("Tab 1", plots)]);
 
