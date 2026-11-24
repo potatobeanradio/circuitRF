@@ -9,6 +9,8 @@
 //    "a..b"  |  "..b"  |  "a.."  → KeepRange  (end-exclusive sub-range)
 //    "label"  →  PinLabel resolved to an integer index
 //    integer  →  PinIndex (pins/removes the axis)
+//    "@name"  →  PinLink: pinned at whatever index the link source
+//                "name" (a marker) chooses (brief-ddl-1 R-ddl1-5)
 // ================================================================
 
 using System;
@@ -25,7 +27,7 @@ namespace CircuitRF.Render.DataDisplay;
 /// keep it; ranges are END-EXCLUSIVE (NumPy/C#, not MATLAB).</summary>
 public static class SliceTokenParser
 {
-    public enum Kind { KeepWhole, KeepRange, PinIndex, PinLabel, Invalid, Family }
+    public enum Kind { KeepWhole, KeepRange, PinIndex, PinLabel, Invalid, Family, PinLink }
 
     /// <summary>Splits a bracket slice body into per-axis tokens on <b>top-level</b> commas only — a comma
     /// inside a double-quoted label (e.g. the two-tone mixIndex tag <c>"(1,-1)"</c>) is NOT a separator.
@@ -93,6 +95,19 @@ public static class SliceTokenParser
         if (tk == "~" || string.Equals(tk, "fam", StringComparison.OrdinalIgnoreCase)
                       || string.Equals(tk, "family", StringComparison.OrdinalIgnoreCase))
             return new Token(Kind.Family);
+
+        // A linked pin "@m1" (brief-ddl-1 R-ddl1-5): the axis is pinned, at the index the named link source
+        // resolves to. The NAME is all a token can carry — binding it to a source id, and choosing the index, need
+        // the display, which is the caller's (LinkCommit at commit, LinkResolve at draw).
+        if (tk.Length > 0 && tk[0] == '@')
+        {
+            string name = tk[1..].Trim();
+            if (name.Length == 0 || !name.All(c => char.IsLetterOrDigit(c) || c is '_' or '.' or '-'))
+            { error = $"'{tk}' is not a link — write '@' and a marker's name, as in '@m1'."; return new Token(Kind.Invalid); }
+            if (!IsLinkableAxis(axisName, axisLabels, axisLength))
+            { error = $"Axis '{axisName}' names its entries, so it cannot follow a marker; pin it by name or index."; return new Token(Kind.Invalid); }
+            return new Token(Kind.PinLink, Label: name);
+        }
 
         // Range "a..b" (end-exclusive), with open ends "..b", "a..", "..".
         int dots = tk.IndexOf("..", StringComparison.Ordinal);
@@ -170,5 +185,19 @@ public static class SliceTokenParser
 
         error = $"Cannot parse token '{tk}' for axis '{axisName}'.";
         return new Token(Kind.Invalid);
+    }
+
+    /// <summary>
+    /// Whether a pinned axis may follow a link source. A LABEL axis — a node, a branch, a port pair, a WSProbe row or
+    /// column, a category axis that names every entry — cannot in this series (R-ddl1-6): what a marker sits on is a
+    /// point along a quantity, and "the nearest node" is not a question with an answer. Spectral axes (frequency,
+    /// harmonic order, a two-tone product) carry labels too and stay linkable.
+    /// </summary>
+    public static bool IsLinkableAxis(string axisName, string[]? axisLabels, int axisLength)
+    {
+        if (axisName is "node" or "branch" or "i" or "j" or "row" or "col" or "port") return false;
+        if (axisLabels is { Length: > 0 } l && l.Length == axisLength
+            && axisName is not ("freq" or "harmonic" or "mixIndex")) return false;
+        return true;
     }
 }

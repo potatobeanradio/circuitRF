@@ -270,6 +270,71 @@ with the palette written out as explicit ARGB: Avalonia's `Transparent` is `#00F
 `#00000000`, and `RenderTheme.ToSKColor` overrides the alpha with the trace's own opacity — so the same
 stored choice would have rendered white on one and black on the other.
 
+### 2.10 Links — a plot that follows a marker (DDL-1, 2026-11-24)
+
+A pinned slice axis can take its index from a **link source** instead of a typed integer:
+`Pout[@m1, :]` draws the row of `Pout` at whatever load marker m1 sits on. The code is
+`src/Render/DataDisplay/Links/`; the decisions are below.
+
+**The model.** A *source* (in DDL-1, a marker; display controls join it in DDL-5) resolves to a
+`LinkValue`: one `LinkCoordinate` per axis its trace keeps — X, and the family axis when there is one —
+each with the axis name, the index into the source cube's own axis, the value, the unit and the whole
+axis; a `LinkPosition` (Γ, its reference impedance, snapped or free) when the marker is on a Smith
+chart; a `LinkScalar` for a control. A *consumer* is a pinned `AxisSlice` whose `Link` holds the
+source's id. A marker's coordinates come from the SAMPLE it sits on (`Trace.MarkerSampleOf`): the
+nearest frequency index of a network trace, the position-resolved sample of a cube trace, the curve
+index of a family. Nothing re-derives a sample by comparing doubles with `==`.
+
+**Identity: links are by id, shown by name.** `Marker.Id` is saved (`MarkerConfig.Id`, always written;
+a file without one gets fresh ids, since nothing could have linked to them). The copy constructor and
+re-pointing a marker at another trace keep it; a paste makes a new marker and a fresh id. A link stores
+the id (`AxisSliceConfig.Link`) and the name as last seen (`LinkName`), which is for a person reading
+the file and for the note — resolution never matches on it. Renaming a marker keeps its links and the
+spec text follows the new name. A deleted marker cannot hand its links to a later marker that happens
+to reuse the name.
+
+**Names are the document's.** New markers take the lowest `m<n>` free across every tab
+(`DisplayWindowViewModel.GetNextMarkerIndex`); duplicates already in a file keep their names. A typed
+`@m1` is bound to an id when the spec is committed (`LinkCommit`): the consumer's own tab first, then the
+document. An unknown name is refused naming the markers there are; a name on two other tabs is refused
+naming the tabs.
+
+**The token.** `@name` is one more `SliceTokenParser` form, so `CubeTraceSpecParser` and
+`TraceExpression` accept it identically. A label axis (`node`, `branch`, `i`, `j`, a category axis) cannot
+be linked: "the nearest node" has no answer. A picker spec writes a linked pin back as `@name`; the
+expression handed to a goal writes the resolved index, because a goal cannot follow a marker. An operand
+of a multi-cube expression asks the trace's resolver through `LinkScope`; with no display behind it, it is
+an error that says so, never a silent 0.
+
+**Matching (overview D3) — same axis is an index, anything else is a value.**
+1. A coordinate on an axis of the same name, length and values (the same run, or the same sweep written
+   twice): its index, exactly.
+2. Else a coordinate in the consumer axis's unit: the consumer's sample nearest that value. A value
+   past the end takes the end sample and the trace's note says so ("m1 is 3.1 GHz; this axis ends at
+   3 GHz"). **A unitless axis matches by value only an axis of the same name** — `gridPoint` 17 is not
+   `pinStep` 17, and reading one as the other would draw a plausible, wrong curve.
+3. Else, for a control's scalar, the same as 2.
+4. Else unresolved: drawn at the stored index, with a note naming both sides ("m1 gives freq (Hz); this
+   axis is gridPoint").
+
+**Frozen.** A link whose source is not in the document draws at its stored `Index` — which is always the
+last index it resolved to, since resolution writes it back — with `Trace.LinkFrozen` set and the note
+"m1 is gone — showing gridPoint 17, where m1 last was". The `.cdd` keeps the link and the index, so it
+reopens static until someone relinks it, and an older circuitRF that ignores `Link` draws the same frozen
+picture.
+
+**Order and cycles.** `LinkGraph` has one node per trace and an edge from a consumer to the trace its
+source marker sits on; resolution runs in topological order, so a marker is read after its own trace
+has followed whatever it follows. A cycle — including a marker whose own trace it pins — is refused at
+commit with the chain named ("Pout pinned by m1 on Gt, pinned by m2 on Pout"). A file that already holds
+one draws the cycle's members frozen, with that chain as the note.
+
+**One resolution path.** `LinkResolve.Resolve(LinkDocument, IPlotDataSources)` runs once every plot
+of every tab has loaded at its stored indices, and re-resolves each consumer through
+`TraceResolve.ResolveCubeTrace`. The window calls it when a display opens and when a link is committed;
+`circuitrf render` calls it over the plots it loaded (`cli.md` §13.7, which also covers
+`--marker`). Live follow while a marker is dragged, the link picker and relinking are DDL-2's.
+
 ---
 
 ## 3. Sub-phases

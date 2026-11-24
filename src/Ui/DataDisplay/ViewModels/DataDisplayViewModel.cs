@@ -531,23 +531,24 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Returns the lowest positive m-number not already in use by any marker
-    /// on any trace across the entire data display.
+    /// Returns the lowest positive m-number not already in use by any marker in the whole DOCUMENT — every tab
+    /// (brief-ddl-1 R-ddl1-2), which the window that owns the tabs answers. A display with no window (a test, a
+    /// tool's embedded plot) answers for its own plots.
     /// </summary>
     public int GetNextMarkerIndex()
-    {
-        var used = new System.Collections.Generic.HashSet<int>();
-        foreach (var c in _plots)
-            foreach (var t in c.PlotVM.Plot.Traces)
-                foreach (var m in t.Markers)
-                    if (m.Name.StartsWith("m", StringComparison.Ordinal)
-                        && int.TryParse(m.Name.AsSpan(1), out int n))
-                        used.Add(n);
+        => DocumentMarkerIndexProvider?.Invoke()
+           ?? LinkDocument.NextMarkerIndex(_plots.SelectMany(c => c.PlotVM.Plot.Traces).SelectMany(t => t.Markers));
 
-        int idx = 1;
-        while (used.Contains(idx)) idx++;
-        return idx;
-    }
+    /// <summary>Set by the owning window: the next marker number across every tab.</summary>
+    internal Func<int>? DocumentMarkerIndexProvider { get; set; }
+
+    /// <summary>Set by the owning window: every tab and plot, as a link sees them (brief-ddl-1).</summary>
+    internal Func<LinkDocument>? LinkDocumentProvider { get; set; }
+
+    /// <summary>The document a link on this tab is resolved in — the window's, or this tab alone without one.</summary>
+    internal LinkDocument CurrentLinkDocument()
+        => LinkDocumentProvider?.Invoke()
+           ?? new LinkDocument([new LinkDocument.Tab("Tab 1", [.. _plots.Select(c => c.PlotVM.Plot)])]);
 
     // ---- Shared state propagated to all containers ------------------
 
@@ -2207,6 +2208,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         {
             tc.Markers.Add(new MarkerConfig
             {
+                Id                    = m.Id.ToString("D"),
                 Name                  = m.Name,
                 Index                 = m.Index,
                 Freq                  = Finite(m.Freq),
@@ -2303,6 +2305,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 {
                     mc.InfoBoxX += PasteOffset;
                     mc.InfoBoxY += PasteOffset;
+                    // A pasted marker is a NEW marker (R-ddl1-1): it takes a fresh id, so a link to the original
+                    // never silently starts following the copy. Remapping the pasted links is DDL-2's.
+                    mc.Id = null;
                 }
             if (pc.LegendLeft is { } ll) pc.LegendLeft = ll + PasteOffset;
             if (pc.LegendTop  is { } lt) pc.LegendTop  = lt + PasteOffset;

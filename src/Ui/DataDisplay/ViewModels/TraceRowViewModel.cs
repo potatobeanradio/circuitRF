@@ -4196,6 +4196,7 @@ public partial class TraceRowViewModel : ViewModelBase
             _trace.Slice    = null;
         }
 
+        CommitLinks(text);
         _parent.RebuildAndNotify();
 
         if (_trace.CubeName is not null)   // valid single-cube spec
@@ -4209,6 +4210,32 @@ public partial class TraceRowViewModel : ViewModelBase
         SyncVersusFromTrace();             // the vs row tracks the typed text like every other control
         OnPropertyChanged(nameof(IsCubeBoundTrace));
         OnPropertyChanged(nameof(ShowAllToggleVisible));
+    }
+
+    /// <summary>
+    /// A typed <c>@m1</c> is bound to that marker's id as the spec is committed, and refused — an unknown or ambiguous
+    /// name, a link that would close a cycle — with the reason on the card (brief-ddl-1 R-ddl1-5, R-ddl1-8). A bound
+    /// link is then resolved through the display's one link path, so the trace draws at the marker at once.
+    /// </summary>
+    private void CommitLinks(string text)
+    {
+        _trace.LinkError = null;
+        _trace.LinkNote  = null;
+        bool linked = (_trace.Slice?.Any(s => s.IsLinked) ?? false)
+                   || (_trace.CubeName is null && LinkGraph.OperandNames(text).Count > 0);
+        if (!linked) { _trace.ExpressionLinks = null; return; }
+
+        if (_parent.LinkDocumentProvider?.Invoke() is not { } doc)
+        {
+            _trace.LinkError = "'@' follows a marker, and only a Data Display has markers to follow.";
+            return;
+        }
+        if (!LinkCommit.TryCommit(doc, _trace, out var error))
+        {
+            _trace.LinkError = error;
+            return;
+        }
+        LinkResolve.Resolve(doc, new LibraryDataSources(_parent.Library));
     }
 
     /// <summary>

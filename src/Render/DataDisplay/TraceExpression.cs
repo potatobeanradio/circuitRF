@@ -153,6 +153,9 @@ public static class TraceExpression
                         xDim = d; break;
                     case SliceTokenParser.Kind.PinIndex:
                         args[d] = PortSlices.PinPosition(axis, t.Index); break;
+                    case SliceTokenParser.Kind.PinLink:
+                        if (!LinkScope.TryIndex(t.Label, axis, out int li, out error)) { error = $"'{info.RefStr}': {error}"; return false; }
+                        args[d] = li; break;
                     case SliceTokenParser.Kind.Family:
                         error = $"'{info.RefStr}': the family marker '~' is only valid in single-cube picker specs, not multi-cube expressions."; return false;
                     default:
@@ -527,6 +530,9 @@ public static class TraceExpression
                     case SliceTokenParser.Kind.KeepWhole: args[d] = Range.All; break;
                     case SliceTokenParser.Kind.KeepRange: args[d] = new Range(t.RangeStart, t.RangeEndExclusive); break;
                     case SliceTokenParser.Kind.PinIndex:  args[d] = PortSlices.PinPosition(axis, t.Index); break;
+                    case SliceTokenParser.Kind.PinLink:
+                        if (!LinkScope.TryIndex(t.Label, axis, out int li, out error)) { error = $"'{info.RefStr}': {error}"; return false; }
+                        args[d] = li; break;
                     case SliceTokenParser.Kind.Family:
                         error = $"'{info.RefStr}': the family marker '~' is only valid in single-cube picker specs, not expressions."; return false;
                     default:

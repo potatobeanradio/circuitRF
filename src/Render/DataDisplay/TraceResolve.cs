@@ -120,6 +120,8 @@ public static class TraceResolve
         t.SampleAxis = null;
         try
         {
+            // An `@name` operand of a multi-cube expression asks this trace's own link resolver (brief-ddl-1).
+            using var links = LinkScope.Enter(t.ExpressionLinks);
             SetCubeDataFromCore(t, ds, plotType, freqUnit, xDs, probe);
             // The statistical pictures' own marks (brief-yield-8): the fit over a histogram, and the limits of the
             // goals the trace draws. Read from the same DataSet, by the same expression engine, in the window and
@@ -403,6 +405,17 @@ public static class TraceResolve
         ApplyReferenceLevel(t, ds);
 
         if (!t.IsCubeBound) return;
+
+        // A linked spec refused at commit (an unknown marker, a cycle — brief-ddl-1) draws nothing and says why,
+        // until the next commit clears it.
+        if (t.LinkError is { } linkError)
+        {
+            t.ExpressionError = linkError;
+            t.InvalidSpecText = t.Expression ?? t.CubeName;
+            t.Points.Clear();
+            t.FamilyCurves.Clear();
+            return;
+        }
 
         // Derived from the cube, so it cannot outlive the resolve that produced it — the same
         // clear-first contract SetPinnedAxisDisplay has. Re-stamped below once a cube is in hand.

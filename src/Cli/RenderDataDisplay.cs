@@ -47,7 +47,9 @@ internal static class RenderDataDisplay
         /// <summary><c>--outline-text</c> (svg only, refused on the others before this is reached).</summary>
         bool         OutlineText = false,
         /// <summary>Which verb asked, for the warning a family left as text produces.</summary>
-        string       Verb = "render");
+        string       Verb = "render",
+        /// <summary><c>--marker</c>: markers moved for this render only, before links resolve (brief-ddl-1 R-ddl1-10).</summary>
+        IReadOnlyList<string>? Markers = null);
 
     public static int Draw(string path, Request req)
     {
@@ -134,9 +136,27 @@ internal static class RenderDataDisplay
 
         var pages = req.AllTabs ? Enumerable.Range(0, tabs.Count).ToList() : [tabIndex];
 
+        // ── markers and links (brief-ddl-1) ──────────────────────────────────
+
+        // A malformed --marker is the caller's typing, refused before anything is read.
+        var moves = new List<MarkerMove>();
+        foreach (string raw in req.Markers ?? [])
+        {
+            if (MarkerMove.Parse(raw) is not { } mv) return JsonRun.Fail(CliDiagnostics.RenderMarkerMalformed(raw));
+            moves.Add(mv);
+        }
+
+        // A link crosses plots and tabs, so a linked display loads every tab that holds a marker or a link, not only
+        // the pages drawn — the source of a pin on page 1 may be a marker on tab 3. A display with no link loads
+        // exactly what it always did.
+        bool linking = moves.Count > 0 || tabs.Any(HoldsLinks);
+        var loadTabs = linking
+            ? Enumerable.Range(0, tabs.Count).Where(ti => pages.Contains(ti) || HoldsMarkers(tabs[ti]) || HoldsLinks(tabs[ti])).ToList()
+            : pages;
+
         // ── sources ──────────────────────────────────────────────────────────
 
-        var (sources, refusal) = CddSources.Bind(path, config, tabs, pages, req.Data);
+        var (sources, refusal) = CddSources.Bind(path, config, tabs, loadTabs, req.Data);
         if (refusal is { } sr) return sr;
 
         RunHost.Cancellation.ThrowIfCancellationRequested();
@@ -145,27 +165,52 @@ internal static class RenderDataDisplay
 
         // ── plots ────────────────────────────────────────────────────────────
 
+        if (req.PlotIndex is { } asked)
+            foreach (int ti in pages)
+                if (asked > tabs[ti].Plots.Count)
+                    return JsonRun.Fail(CliDiagnostics.RenderNoSuchPlot(asked, tabs[ti].Plots.Count));
+
+        var loaded  = new Dictionary<(int Tab, int Plot), Plot>();
+        var docTabs = new List<LinkDocument.Tab>(tabs.Count);
+        for (int ti = 0; ti < tabs.Count; ti++)
+        {
+            var tabPlots = new List<Plot>();
+            if (loadTabs.Contains(ti))
+                for (int pi = 0; pi < tabs[ti].Plots.Count; pi++)
+                {
+                    // Without links only the plot --plot names is read, as before.
+                    if (!linking && req.PlotIndex is { } only && pi != only - 1) continue;
+                    var pc   = tabs[ti].Plots[pi];
+                    var plot = PlotConfigLoader.LoadPlot(pc, sources!);
+                    plot.LabelColumnsOutside = true;   // as the window's container does: the graph area keeps its size
+                    PlotConfigLoader.ResolveDerived(plot, sources!);
+                    loaded[(ti, pi)] = plot;
+                    tabPlots.Add(plot);
+                }
+            docTabs.Add(new LinkDocument.Tab(tabs[ti].Name, tabPlots));
+        }
+
+        if (linking)
+        {
+            var doc = new LinkDocument(docTabs);
+            foreach (var mv in moves)
+                if (mv.Apply(doc) is { } why) return JsonRun.Fail(why);
+            // The one link resolution the window runs too (R-ddl1-9).
+            LinkResolve.Resolve(doc, sources!);
+        }
+
         var placedPages = new List<List<PlacedPlot>>();
         var annotationPages = new List<AnnotationPage>();
         int plotCount   = 0;
 
         foreach (int ti in pages)
         {
-            var tabPlots = tabs[ti].Plots;
-
-            if (req.PlotIndex is { } n)
+            var placed = new List<PlacedPlot>(tabs[ti].Plots.Count);
+            for (int pi = 0; pi < tabs[ti].Plots.Count; pi++)
             {
-                if (n > tabPlots.Count)
-                    return JsonRun.Fail(CliDiagnostics.RenderNoSuchPlot(n, tabPlots.Count));
-                tabPlots = [tabPlots[n - 1]];
-            }
-
-            var placed = new List<PlacedPlot>(tabPlots.Count);
-            foreach (var pc in tabPlots)
-            {
-                var plot = PlotConfigLoader.LoadPlot(pc, sources!);
-                plot.LabelColumnsOutside = true;   // as the window's container does: the graph area keeps its size
-                PlotConfigLoader.ResolveDerived(plot, sources!);
+                if (req.PlotIndex is { } n && pi != n - 1) continue;
+                var pc   = tabs[ti].Plots[pi];
+                var plot = loaded[(ti, pi)];
                 // `plot` checks every Y spec before it authors the document, but a "vs" X side only
                 // resolves here, against the Y side's slice — so an X that does not read is refused
                 // in the resolver's own words rather than drawn as an empty frame.
@@ -368,6 +413,88 @@ internal static class RenderDataDisplay
         bool hasMultipleSources, Func<Trace, string?>? aliasFor,
         Action<SKCanvas, TransformSet, RenderTheme>? overlay = null)
         => PlotPlacement.Place(plot, left, top, width, height, freqUnit, hasMultipleSources, aliasFor, overlay);
+
+    // ── links (brief-ddl-1) ──────────────────────────────────────────────────
+
+    private static bool HoldsMarkers(TabConfig tab)
+        => tab.Plots.Any(p => p.Traces.Any(t => t.Markers.Count > 0));
+
+    private static bool HoldsLinks(TabConfig tab)
+        => tab.Plots.Any(p => p.Traces.Any(t =>
+               t.CubeSlice.Any(s => s.Link is not null || s.LinkName is not null)
+               || (t.Expression is { } e && LinkGraph.OperandNames(e).Count > 0)));
+
+    /// <summary>
+    /// One <c>--marker</c>: a marker moved to a value on its trace's X axis (the nearest sample) or to an index on it,
+    /// for this render only (R-ddl1-10). Nothing is written back to the document.
+    /// </summary>
+    internal sealed record MarkerMove(string Raw, string Name, int? Index, double Value, string Unit)
+    {
+        private static readonly System.Text.RegularExpressions.Regex Number = new(
+            @"^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*(\S*)\s*$");
+
+        /// <summary><c>m1=#17</c> or <c>m1=2.4GHz</c>; null for anything else.</summary>
+        public static MarkerMove? Parse(string raw)
+        {
+            int eq = raw.IndexOf('=');
+            if (eq <= 0 || eq == raw.Length - 1) return null;
+            string name = raw[..eq].Trim(), rhs = raw[(eq + 1)..].Trim();
+            if (name.Length == 0) return null;
+            if (rhs.StartsWith('#'))
+                return int.TryParse(rhs[1..], System.Globalization.NumberStyles.None,
+                                    System.Globalization.CultureInfo.InvariantCulture, out int idx)
+                    ? new MarkerMove(raw, name, idx, 0, "") : null;
+
+            var m = Number.Match(rhs);
+            if (!m.Success) return null;
+            // Invariant, as every number on this command line is (CliEntry.ParseHz).
+            double v = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            var (scale, unit) = SplitPrefix(m.Groups[2].Value);
+            return new MarkerMove(raw, name, null, v * scale, unit);
+        }
+
+        /// <summary>"GHz" → (1e9, "Hz"); "dBm" → (1, "dBm"); "k" → (1e3, ""); "" → (1, "").</summary>
+        private static (double Scale, string Unit) SplitPrefix(string s)
+        {
+            if (s.Length == 0) return (1, "");
+            double? p = s[0] switch
+            {
+                'f' => 1e-15, 'p' => 1e-12, 'n' => 1e-9, 'u' or 'µ' => 1e-6, 'm' => 1e-3,
+                'k' => 1e3, 'M' => 1e6, 'G' => 1e9, 'T' => 1e12, _ => null,
+            };
+            // A prefix needs a unit after it, or to stand alone; "dB", "Hz", "K" are units of their own.
+            return p is { } scale && (s.Length == 1 || char.IsUpper(s[1]) || s[1..] is "s" or "m" or "g")
+                ? (scale, s[1..]) : (1, s);
+        }
+
+        /// <summary>Moves the marker; null when done, else the refusal.</summary>
+        public CircuitRF.Diagnostics.Diagnostic? Apply(LinkDocument doc)
+        {
+            if (!doc.TryFindByName(Name, consumerTab: -1, out var site, out var why))
+                return CliDiagnostics.RenderMarkerUnresolved(Name, why);
+            var t = site.Trace;
+            if (site.Marker.FreePosition || t.IsContourTrace)
+                return CliDiagnostics.RenderMarkerNotPlaced(Raw, $"{Name} is placed freely on the chart, not on a sample.");
+
+            int sample;
+            if (Index is { } i) sample = i;
+            else
+            {
+                string axisUnit = t.IsCubeBound ? t.CubeXUnit ?? "" : "Hz";
+                if (Unit.Length > 0 && !string.Equals(Unit, axisUnit, StringComparison.Ordinal))
+                    return CliDiagnostics.RenderMarkerNotPlaced(Raw,
+                        $"{Name} is on {(t.IsCubeBound ? t.CubeXAxisName : "freq")}"
+                      + (axisUnit.Length > 0 ? $" ({axisUnit})" : ", which has no unit") + $", not in {Unit}.");
+                sample = t.NearestSampleTo(Value);
+            }
+            int count = t.IsCubeBound ? t.CubeXValues?.Count ?? 0 : t.Data.Frequencies.Length;
+            if (!t.PlaceMarkerAtSample(site.Marker, sample))
+                return CliDiagnostics.RenderMarkerNotPlaced(Raw, count > 0
+                    ? $"{Name}'s trace has samples 0..{count - 1}."
+                    : $"{Name}'s trace draws nothing to put it on.");
+            return null;
+        }
+    }
 
     // ── tabs ─────────────────────────────────────────────────────────────────
 

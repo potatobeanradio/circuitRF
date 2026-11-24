@@ -337,6 +337,19 @@ public sealed class AxisSliceConfig
     /// rather than falling back to a bare index.</summary>
     public string Label { get; set; } = "";
 
+    /// <summary>
+    /// The id of the link source that chooses this pinned axis's index (brief-ddl-1 R-ddl1-4) — a marker's
+    /// <c>Id</c>. Null for an ordinary pin. <see cref="Index"/> stays the index DRAWN, which is also what the trace
+    /// shows when the source is gone, and what an older circuitRF that does not know this field draws.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Link { get; set; }
+
+    /// <summary>The link source's name when the file was written — for a person reading the file and for the
+    /// "m1 is gone" note. Resolution uses <see cref="Link"/>, never this.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LinkName { get; set; }
+
     // The two halves of the .cdd mapping, kept adjacent on purpose. AxisSlice has six fields and this
     // DTO carried three, written and read by two hand-maintained field lists a couple of hundred
     // lines apart in DataDisplayViewModel — so a narrowed X range and a net-name label were dropped
@@ -352,10 +365,12 @@ public sealed class AxisSliceConfig
         RangeStart        = s.RangeStart,
         RangeEndExclusive = s.RangeEndExclusive,
         Label             = s.Label ?? "",
+        Link              = s.Link,
+        LinkName          = s.Link is null ? null : s.LinkName,
     };
 
     public AxisSlice ToSlice() =>
-        new(AxisName, Role, Index, RangeStart, RangeEndExclusive, Label ?? "");
+        new(AxisName, Role, Index, RangeStart, RangeEndExclusive, Label ?? "", Link, Link is null ? null : LinkName);
 }
 
 public sealed class TraceConfig
@@ -640,6 +655,13 @@ public sealed class SummaryColumnConfig
 
 public sealed class MarkerConfig
 {
+    /// <summary>
+    /// The marker's persistent identity (<c>Marker.Id</c>, a <see cref="Guid"/> string), which a linked slice pin
+    /// names (brief-ddl-1 R-ddl1-1). Always written. A file written before links existed has none, and its markers
+    /// get a fresh id as they load — nothing could have linked to them.
+    /// </summary>
+    public string? Id { get; set; }
+
     public string  Name                   { get; set; } = "m0";
     public int     Index                  { get; set; }
     public double  Freq                   { get; set; }

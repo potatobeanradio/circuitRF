@@ -2312,6 +2312,7 @@ the one that is not a drawing:
 
 ```
 circuitrf render <path.cdd> -o <out.svg|.pdf|.png> [--data file]... [--tab name|n] [--plot n] [--all-tabs]
+                 [--marker name=value|name=#index]...
 ```
 
 **It holds no data.** Its traces name a source — a path, or the sentinel `run.npy` meaning "whatever
@@ -2363,12 +2364,26 @@ the plot count, and **every source with the file it resolved to and whether `--d
 bound it**. That last is the part a caller cannot get from the picture: "the plot is empty" and "the
 plot read the wrong run" look identical.
 
+**Linked plots draw at the markers' saved positions, and `--marker` moves one first** (brief-ddl-1
+R-ddl1-10). A pin that follows a marker (`Pout[@m1, :]`, `data-display.md` §2.10) is resolved by
+`LinkResolve`, the function the window calls, after every plot is loaded — so a linked display loads every
+tab that holds a marker or a link, not only the pages drawn, and those tabs' sources must bind too. A
+display with no link loads exactly what it did before. `--marker m1=2.4GHz` puts the marker on its trace's
+sample nearest that value (the unit is checked against the trace's X axis, and a different one is a
+refusal naming both); `--marker m1=#17` puts it on sample 17. It may be repeated, applies to this render
+only, and writes nothing back. A name that is no marker is a refusal LISTING the markers; a name on two
+tabs is a refusal naming them; a marker placed freely on a chart, or an index off the trace, is a refusal
+too. This is how an agent or a build draws "the detail at this load" with no window.
+
 The gate is `tests/Ui.Tests/Render/RenderDataDisplayCliTests.cs`, which authors a display through the
 application's own view models, saves it, and compares the verb's output as a PROCESS against
 `PlotExporter`'s — for eight trace kinds (a cube slice, an expression, a "plot versus", a derived
 metric, an S→Z conversion, a stability circle, a loadpull contour and a summary-table column). The one
 normalisation is Skia's SVG element ids, whose counter is per process and in hex; the PDF is compared
 with none at all.
+`tests/Ui.Tests/DataDisplay/LinkedPlotsTests.cs` holds the linked half: the window and `CddSources`
+resolve a linked display to the same points, and `render --marker m1=#5` as a process draws the same
+bytes as the in-process composition with m1 on sample 5.
 
 ---
 

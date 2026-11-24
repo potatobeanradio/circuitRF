@@ -179,8 +179,14 @@ namespace CircuitRF.Render.DataDisplay
         }
 
         /// <summary>Copy constructor.</summary>
+        /// <remarks>
+        /// <b>It carries <see cref="Id"/></b> (brief-ddl-1 R-ddl1-1): a link names its source by id, so a copy that
+        /// silently took a new one would orphan every link to the marker it copies. Code that makes a genuinely NEW
+        /// marker from an old one (a paste, a duplicated plot or tab) assigns a fresh id itself.
+        /// </remarks>
         public Marker(Marker src)
         {
+            Id                     = src.Id;
             Name                   = src.Name;
             Index                  = src.Index;
             Freq                   = src.Freq;

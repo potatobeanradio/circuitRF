@@ -194,12 +194,22 @@ namespace CircuitRF.Render.DataDisplay
     /// <summary>Per-axis slice directive for a cube-bound trace (one entry per cube axis, in axis order).
     /// For a kept sub-range (KeepAsX + RangeEndExclusive >= 0) the axis is sliced to [RangeStart, RangeEndExclusive)
     /// (end-exclusive). RangeEndExclusive &lt; 0 means the whole axis (":"/All).</summary>
+    /// <remarks><b>A pinned axis may be LINKED</b> (brief-ddl-1 R-ddl1-4): <see cref="Link"/> is a link source's id (a
+    /// marker's <c>Id</c>) and the link resolution chooses <see cref="Index"/> from where that source sits.
+    /// <see cref="Index"/> keeps meaning "the index drawn", and is the frozen fallback when the source is gone.
+    /// <see cref="LinkName"/> is the source's name as last seen — the spelling <c>@m1</c> is written back with, never
+    /// what resolution matches on. A typed <c>@m1</c> that has not been bound to an id yet carries the name alone.</remarks>
     public readonly record struct AxisSlice(
         string AxisName, AxisRole Role, int Index,
         int RangeStart = 0, int RangeEndExclusive = -1,   // RangeEndExclusive < 0 ⇒ whole axis
-        string Label = "")                                  // net-name label for quoted shorthand; "" ⇒ emit index
+        string Label = "",                                  // net-name label for quoted shorthand; "" ⇒ emit index
+        string? Link = null,                                // link source id (DDL-1); null ⇒ an ordinary pin
+        string? LinkName = null)                            // the source's name, for display only
     {
         public bool IsNarrowedRange => Role == AxisRole.KeepAsX && RangeEndExclusive >= 0;
+
+        /// <summary>A pin whose index a link source chooses — bound to an id, or typed as <c>@name</c> and not yet bound.</summary>
+        public bool IsLinked => Role == AxisRole.PinToIndex && (Link is not null || LinkName is not null);
     }
 
     // ============================================================
@@ -1743,6 +1753,9 @@ namespace CircuitRF.Render.DataDisplay
                 : s.Role == AxisRole.FamilyIterate ? "~"
                 // 1-based port number (S[:, 2, 1] = S21); the WSProbe matrix's row/col read the
                 // same way, because its axis values are 1-based too (SliceTokenParser).
+                // A linked pin writes back as the name it follows (R-ddl1-5); an expression elsewhere (a goal)
+                // cannot follow a marker, so it takes the index the link resolved to.
+                : s.IsLinked && !forExpression && s.LinkName is { Length: > 0 } ln ? "@" + ln
                 : (s.AxisName is "i" or "j" or "row" or "col") ? (s.Index + 1).ToString()
                 : !string.IsNullOrEmpty(s.Label)   ? $"\"{s.Label}\""
                 // A `port` axis is read by VALUE, so it is written by value — see
@@ -3305,6 +3318,108 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public int? CubeMarkerSampleIndex(Marker m)
             => IsCubeBound && !IsFamily && _cubeXValues is { Length: > 0 } && Points.Count > 0 ? CubeMarkerSample(m).Sample : null;
+
+        /// <summary>
+        /// The sample a marker SITS ON — its X sample and, on a family, its curve — or null when it is not a reading of
+        /// this trace at all (a free marker, a contour marker), or the trace has nothing drawn (brief-ddl-1 R-ddl1-3).
+        /// </summary>
+        /// <remarks>
+        /// <b>The sample, never a value compared with <c>==</c></b>: a network trace's marker carries its frequency in
+        /// <see cref="Marker.Freq"/> and is matched with <see cref="NearestFrequencyIndex"/>; a cube marker carries it
+        /// in its POSITION, so the sample is <see cref="CubeMarkerSample"/>'s, which every readout already uses; a
+        /// Table marker's X is its row's, in <see cref="Marker.Freq"/>; a family's curve is the index in
+        /// <c>PositionStatic.Y</c>. X is an index into <see cref="CubeXValues"/> (or the network's frequencies) —
+        /// a position in the drawn axis, which a narrowed X range offsets from the cube's own.
+        /// </remarks>
+        public (int X, int Curve)? MarkerSampleOf(Marker m)
+        {
+            if (m.FreePosition || IsContourTrace) return null;
+            if (!IsCubeBound)
+            {
+                if (Data?.Frequencies is not { Length: > 0 }) return null;
+                int fi = NearestFrequencyIndex(m.Freq);
+                return fi < 0 ? null : (fi, -1);
+            }
+            if (_cubeXValues is not { Length: > 0 }) return null;
+            if (_lastPlotType == PlotType.Table) return (NearestCubeXIndex(m.Freq), IsFamily ? CubeMarkerCurveIndex(m) : -1);
+            if (IsFamily)
+            {
+                if (FamilyCurves.Count == 0) return null;
+                return (CubeMarkerIndex(m), CubeMarkerCurveIndex(m));
+            }
+            if (Points.Count == 0) return null;
+            return (CubeMarkerSample(m).Sample, -1);
+        }
+
+        /// <summary>
+        /// Puts a marker on sample <paramref name="sample"/> of this trace's X axis — on its current curve when the
+        /// trace is a family. The inverse of <see cref="MarkerSampleOf"/>, which reads the same sample back. False
+        /// when the sample is not on the trace. What <c>render --marker m1=#17</c> moves a marker with (R-ddl1-10).
+        /// </summary>
+        public bool PlaceMarkerAtSample(Marker m, int sample)
+        {
+            if (m.FreePosition || IsContourTrace || sample < 0) return false;
+            if (!IsCubeBound)
+            {
+                if (Data?.Frequencies is not { } f || sample >= f.Length) return false;
+                m.Freq = f[sample];
+                if (IsStabilityCircle) SnapMarkerToStabilityCircle(m, sample);
+                return true;
+            }
+            if (_cubeXValues is not { } xs || sample >= xs.Length) return false;
+            if (_lastPlotType == PlotType.Table) { m.Freq = xs[sample]; return true; }
+            if (IsFamily)
+            {
+                int c = CubeMarkerCurveIndex(m);
+                if (c >= FamilyCurves.Count || sample >= FamilyCurves[c].Points.Count) return false;
+                m.PositionStatic = new Vector2(FamilyCurves[c].Points[sample].X, c);
+                return true;
+            }
+            if (CubeSamplePosition(sample) is not { } at) return false;
+            m.PositionStatic = at;
+            return true;
+        }
+
+        /// <summary>The sample of this trace's X axis nearest to <paramref name="x"/>, in the axis's own unit (Hz for a
+        /// frequency), or −1 when the trace draws nothing. What <c>render --marker m1=2.4GHz</c> asks.</summary>
+        public int NearestSampleTo(double x)
+        {
+            if (!IsCubeBound) return Data?.Frequencies is { Length: > 0 } ? NearestFrequencyIndex(x) : -1;
+            if (_cubeXValues is not { Length: > 0 } xs) return -1;
+            int idx = 0; double best = double.PositiveInfinity;
+            for (int i = 0; i < xs.Length; i++)
+            {
+                double d = Math.Abs(xs[i] - x);
+                if (d < best) { best = d; idx = i; }
+            }
+            return idx;
+        }
+
+        // ---- Links (brief-ddl-1) --------------------------------------------
+
+        /// <summary>
+        /// What the link resolution has to say about this trace's linked pins — where a source is gone, a value off
+        /// the end of an axis, a source that gives nothing this axis can use, a cycle. Null when there is nothing to
+        /// say. Set by <c>LinkResolve</c> and by nothing else; never saved.
+        /// </summary>
+        public string? LinkNote { get; set; }
+
+        /// <summary>True when at least one linked pin is drawn at its stored index because its source is gone or is
+        /// part of a cycle (R-ddl1-7, R-ddl1-8). Set with <see cref="LinkNote"/>.</summary>
+        public bool LinkFrozen { get; set; }
+
+        /// <summary>
+        /// A linked spec that was REFUSED when it was committed — an unknown or ambiguous name, a cycle. While set,
+        /// the trace resolves to this error rather than to a picture; the next commit clears it. Never saved.
+        /// </summary>
+        public string? LinkError { get; set; }
+
+        /// <summary>
+        /// How an <c>@name</c> operand of this trace's multi-cube EXPRESSION is resolved to an index on a given axis —
+        /// installed by <c>LinkResolve</c> and read only through <c>LinkScope</c> while this trace is resolved.
+        /// Null outside a display, where an expression operand has nothing to follow.
+        /// </summary>
+        public Func<string, RfCore.Data.Axis, LinkMatchResult>? ExpressionLinks { get; set; }
 
         /// <summary>Where a marker sits to read cube sample <paramref name="sample"/> of this single-curve cube trace —
         /// its world point, on a Rect or a Smith plot alike — or null when the sample is not drawn.</summary>

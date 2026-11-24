@@ -121,42 +121,7 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
     public void ChangeToTrace(Trace newTrace)
     {
         Trace.Markers.Remove(Marker);
-        var moved = new Marker(newTrace, Marker.Freq, Marker.IsMulti, Marker.IsDelta,
-                               Marker.Index, Marker.FreqUnits)
-        {
-            Name                   = Marker.Name,
-            Style                  = Marker.Style,
-            MatrixFormat           = Marker.MatrixFormat,
-            MaximumFractionDigits  = Marker.MaximumFractionDigits,
-            UseNormalizedImpedance = Marker.UseNormalizedImpedance,
-            FormatString           = Marker.FormatString,
-            InfoBoxPos             = Marker.InfoBoxPos,
-
-            // A FREELY-PLACED MARKER KEEPS ITS PLACE (owner instruction, 2026-09-19). Its position
-            // IS its position — nothing resolves it against the trace it is stored on — so
-            // re-pointing it at another curve must not move it, and the frequency snapping below
-            // has nothing to say about it. What DOES change is that it is no longer sitting on
-            // whatever a shift-drag had landed it on: the new trace runs somewhere else, so the
-            // marker is floating again and draws as the ring rather than the triangle.
-            FreePosition           = Marker.FreePosition,
-            PositionStatic         = Marker.PositionStatic,
-            SnappedToCurve         = false,
-            Function               = Marker.Function,
-        };
-        // Keep the marker's x-position as close as possible to where it was on the old trace,
-        // so the user can track where it landed. For network (freq-swept) traces x == frequency,
-        // so snap to the new trace's nearest available frequency to the old marker's Freq.
-        if (!moved.FreePosition
-            && !newTrace.IsCubeBound && newTrace.Data?.Frequencies is { Length: > 0 } newFreqs)
-        {
-            double best = newFreqs[0], bestDiff = Math.Abs(Marker.Freq - newFreqs[0]);
-            for (int i = 1; i < newFreqs.Length; i++)
-            {
-                double d = Math.Abs(Marker.Freq - newFreqs[i]);
-                if (d < bestDiff) { bestDiff = d; best = newFreqs[i]; }
-            }
-            moved.Freq = best;
-        }
+        var moved = MovedTo(Marker, newTrace);
         newTrace.Markers.Add(moved);
         if (!moved.FreePosition && newTrace.IsStabilityCircle)
         {
@@ -169,6 +134,53 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
         }
         Container.RequestPlotRedraw();
         _parent.OnContainerPlotChanged(Container);
+    }
+
+    /// <summary>
+    /// The marker <paramref name="marker"/> becomes when it is re-pointed at <paramref name="newTrace"/> — the same
+    /// marker, so it keeps its <see cref="Marker.Id"/> and every link that follows it follows it onto the new trace
+    /// (brief-ddl-1 R-ddl1-1, gate 6).
+    /// </summary>
+    internal static Marker MovedTo(Marker marker, Trace newTrace)
+    {
+        var moved = new Marker(newTrace, marker.Freq, marker.IsMulti, marker.IsDelta,
+                               marker.Index, marker.FreqUnits)
+        {
+            Id                     = marker.Id,
+            Name                   = marker.Name,
+            Style                  = marker.Style,
+            MatrixFormat           = marker.MatrixFormat,
+            MaximumFractionDigits  = marker.MaximumFractionDigits,
+            UseNormalizedImpedance = marker.UseNormalizedImpedance,
+            FormatString           = marker.FormatString,
+            InfoBoxPos             = marker.InfoBoxPos,
+
+            // A FREELY-PLACED MARKER KEEPS ITS PLACE (owner instruction, 2026-09-19). Its position
+            // IS its position — nothing resolves it against the trace it is stored on — so
+            // re-pointing it at another curve must not move it, and the frequency snapping below
+            // has nothing to say about it. What DOES change is that it is no longer sitting on
+            // whatever a shift-drag had landed it on: the new trace runs somewhere else, so the
+            // marker is floating again and draws as the ring rather than the triangle.
+            FreePosition           = marker.FreePosition,
+            PositionStatic         = marker.PositionStatic,
+            SnappedToCurve         = false,
+            Function               = marker.Function,
+        };
+        // Keep the marker's x-position as close as possible to where it was on the old trace,
+        // so the user can track where it landed. For network (freq-swept) traces x == frequency,
+        // so snap to the new trace's nearest available frequency to the old marker's Freq.
+        if (!moved.FreePosition
+            && !newTrace.IsCubeBound && newTrace.Data?.Frequencies is { Length: > 0 } newFreqs)
+        {
+            double best = newFreqs[0], bestDiff = Math.Abs(marker.Freq - newFreqs[0]);
+            for (int i = 1; i < newFreqs.Length; i++)
+            {
+                double d = Math.Abs(marker.Freq - newFreqs[i]);
+                if (d < bestDiff) { bestDiff = d; best = newFreqs[i]; }
+            }
+            moved.Freq = best;
+        }
+        return moved;
     }
 
     // ---- Helpers ----------------------------------------------------

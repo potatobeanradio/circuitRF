@@ -200,6 +200,9 @@ public static class PlotConfigLoader
             {
                 var marker = new Marker(tr, mc.Freq, mc.IsMulti, mc.IsDelta, mc.Index, mc.FreqUnits)
                 {
+                    // The id a link names (R-ddl1-1). A file written before ids were saved has none: a fresh
+                    // one is right, because nothing can have linked to that marker.
+                    Id                     = Guid.TryParse(mc.Id, out var id) ? id : Guid.NewGuid(),
                     Name                   = mc.Name,
                     MatrixFormat           = mc.MatrixFormat,
                     MatrixFormatImpedance  = mc.MatrixFormatImpedance,

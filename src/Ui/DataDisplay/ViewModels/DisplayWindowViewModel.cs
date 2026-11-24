@@ -503,7 +503,35 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         // wiring every tab's DataDisplay to it is correct. Null-safe until the action is injected.
         tab.DataDisplay.CanvasSizeProvider = () => _getCanvasSizeAction?.Invoke() ?? (0.0, 0.0);
         tab.CloseRequested += (sender, _) => RemoveTab(sender as TabViewModel);
+        // Marker names and links are the DOCUMENT's, not the tab's (brief-ddl-1 R-ddl1-2, R-ddl1-5).
+        tab.DataDisplay.DocumentMarkerIndexProvider = GetNextMarkerIndex;
+        tab.DataDisplay.LinkDocumentProvider        = BuildLinkDocument;
         return tab;
+    }
+
+    /// <summary>
+    /// The lowest <c>m&lt;n&gt;</c> free across EVERY tab of this display (brief-ddl-1 R-ddl1-2), so a typed
+    /// <c>@m1</c> means one marker. Names already duplicated across tabs in an existing file are left alone (DDL-0 D5).
+    /// </summary>
+    public int GetNextMarkerIndex()
+        => LinkDocument.NextMarkerIndex(Tabs.SelectMany(t => t.DataDisplay.Plots)
+                                            .SelectMany(c => c.PlotVM.Plot.Traces)
+                                            .SelectMany(t => t.Markers));
+
+    /// <summary>Every tab and plot of this display, as the links see them.</summary>
+    internal LinkDocument BuildLinkDocument()
+        => new([.. Tabs.Select(t => new LinkDocument.Tab(t.Name, [.. t.DataDisplay.Plots.Select(c => c.PlotVM.Plot)]))]);
+
+    /// <summary>
+    /// Resolves every linked pin of the display through the one resolution path (<see cref="LinkResolve"/>, which
+    /// <c>circuitrf render</c> also calls), and redraws what moved.
+    /// </summary>
+    internal void ResolveLinks()
+    {
+        var moved = LinkResolve.Resolve(BuildLinkDocument(), new LibraryDataSources(DataSourceLibrary));
+        if (moved.Count == 0) return;
+        foreach (var c in Tabs.SelectMany(t => t.DataDisplay.Plots))
+            if (c.PlotVM.Plot.Traces.Any(t => moved.Contains(t))) c.RequestPlotRedraw();
     }
 
     // ---- Internal tab add / remove (called by undo commands) ------------
@@ -1209,6 +1237,9 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             await tab.DataDisplay.LoadFromTabConfigAsync(tc, configDir);
             Tabs.Add(tab);
         }
+
+        // Links cross plots and tabs, so they resolve once every tab is in (brief-ddl-1 R-ddl1-9).
+        ResolveLinks();
 
         if (Tabs.Count > 0)
         {

@@ -2960,6 +2960,23 @@ internal static class CliDiagnostics
         "render.tab.not-found", DiagnosticSeverity.Error,
         "render: no tab '{asked}'. This display has {available}.", ("asked", asked), ("available", available));
 
+    /// <summary>brief-ddl-1 R-ddl1-10: a <c>--marker</c> that is not <c>name=value</c> or <c>name=#index</c>.</summary>
+    public static Diagnostic RenderMarkerMalformed(string text) => Diagnostic.Create(
+        "render.marker.malformed", DiagnosticSeverity.Error,
+        "render: --marker '{text}' — write name=value with its unit (m1=2.4GHz) or name=#index (m1=#17).",
+        ("text", text));
+
+    /// <summary>brief-ddl-1 R-ddl1-10: a <c>--marker</c> naming no marker, or one the display cannot tell apart —
+    /// the reason lists the markers, or the tabs the name is on.</summary>
+    public static Diagnostic RenderMarkerUnresolved(string name, string reason) => Diagnostic.Create(
+        "render.marker.not-found", DiagnosticSeverity.Error,
+        "render: --marker {name}: {reason}", ("name", name), ("reason", reason));
+
+    /// <summary>brief-ddl-1 R-ddl1-10: the marker exists but cannot be put where <c>--marker</c> asked.</summary>
+    public static Diagnostic RenderMarkerNotPlaced(string text, string reason) => Diagnostic.Create(
+        "render.marker.not-placed", DiagnosticSeverity.Error,
+        "render: --marker {text} — {reason}", ("text", text), ("reason", reason));
+
     public static Diagnostic RenderNoSuchPlot(int asked, int count) => Diagnostic.Create(
         "render.plot.not-found", DiagnosticSeverity.Error,
         "render: --plot {asked} — this tab has {count} plot(s).", ("asked", asked), ("count", count));

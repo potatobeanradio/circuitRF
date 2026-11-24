@@ -170,6 +170,10 @@ namespace CircuitRF.Render.DataDisplay
                         slice[i] = new AxisSlice(axis.Name, AxisRole.FamilyIterate, 0); famCount++; break;
                     case SliceTokenParser.Kind.PinIndex:
                         slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, t.Index, Label: t.Label); break;
+                    case SliceTokenParser.Kind.PinLink:
+                        // The NAME only: LinkCommit binds it to the source's id when the spec is committed, and the
+                        // link resolution chooses the index (R-ddl1-5). Until then it draws at 0.
+                        slice[i] = new AxisSlice(axis.Name, AxisRole.PinToIndex, 0, LinkName: t.Label); break;
                     default:
                         return false;   // error already set by SliceTokenParser
                 }

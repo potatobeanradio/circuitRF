@@ -328,6 +328,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         Inspector.PushUndo         = PushUndoCommand;
         Inspector.FollowDisplaySource = () => parent.FollowDisplaySource(this);
         Inspector.MarkerBoxesStale = RequestInfoBoxRebuild;
+        Inspector.LinkDocumentProvider = parent.CurrentLinkDocument;
 
         // The Data Display widens a rectangular plot's canvas for its extra Y-label columns, so the
         // graph area keeps its size however many traces it carries.

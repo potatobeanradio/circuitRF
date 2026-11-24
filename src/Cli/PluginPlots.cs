@@ -135,7 +135,7 @@ public static class PluginPlots
         for (int i = 0; i < pc.Traces.Count && i < c.Plot.Traces.Count; i++)
             pc.Traces[i].Markers = [.. c.Plot.Traces[i].Markers.Select(m => new MarkerConfig
             {
-                Name = m.Name, Index = m.Index, Freq = m.Freq, FreqUnits = m.FreqUnits, MatrixFormat = m.MatrixFormat,
+                Id = m.Id.ToString("D"), Name = m.Name, Index = m.Index, Freq = m.Freq, FreqUnits = m.FreqUnits, MatrixFormat = m.MatrixFormat,
                 PositionStaticX = m.PositionStatic.X, PositionStaticY = m.PositionStatic.Y,
             })];
         var config = new DataDisplayConfig
