@@ -119,12 +119,72 @@ public sealed class FilterMaskGoalsTests
 
         // No schematic to send it to: said, and nothing is sent.
         FilterMaskSpec? sent = null;
-        vm.MaskGoalSink = (_, m) => { sent = m; return "sent"; };
+        vm.MaskGoalSink = (_, m, _) => { sent = m; return "sent"; };
         Assert.Contains("no schematic", vm.SendMaskToOptimizer());
         Assert.Null(sent);
 
         vm.SchematicProvider = () => new CircuitRF.Ui.ViewModels.SchematicViewModel(new SchematicEditModel());
         Assert.Equal("sent", vm.SendMaskToOptimizer());
         Assert.Equal(vm.CurrentMask, sent);
+    }
+
+    [Fact]
+    public async Task ALadderThatMissesCanStillBePlaced_AndItsPartsGoToTheOptimizer()
+    {
+        var vm = new LcFilterDesignerViewModel { Response = FilterResponse.Chebyshev, Form = NetworkForm.Lowpass };
+        vm.OrderMode = FilterOrderMode.Specify;
+        vm.OrderText = "5";
+        vm.UnitA = vm.UnitB = "MHz";
+        vm.FaText = "1000"; vm.FbText = "1300";
+        vm.ApText = "0.5"; vm.RippleText = "0.5"; vm.AsText = "30";
+        vm.SeriesChoice = vm.SeriesChoices.Single(c => c.Value == FilterSeriesKind.E12);
+        await vm.DesignAsync(0);
+        Assert.False(vm.MaskMet);
+
+        var model = new SchematicEditModel { GridSize = 100, GridSnap = true };
+        var sheet = new CircuitRF.Ui.ViewModels.SchematicViewModel(model);
+        vm.SchematicProvider = () => sheet;
+        vm.RefreshPlacement();
+        // Place component and Apply stay closed to a miss; Place filter does not, and says why.
+        Assert.False(vm.CanPlace);
+        Assert.True(vm.CanPlaceLadder);
+        Assert.Contains("misses the mask", vm.PlaceLadderTip);
+
+        sheet.PointerWorldProvider = () => (0, 0);
+        Assert.Contains("misses the mask", vm.PlaceFilter());
+        sheet.OnPointerPressed(0, 0, Avalonia.Input.KeyModifiers.None);
+        var parts = model.Components.Where(c => c.Symbol is SymbolKind.Inductor or SymbolKind.Capacitor).ToList();
+        Assert.Equal(vm.Elements.Count, parts.Count);
+
+        IReadOnlyList<TunableEntry>? variables = null;
+        vm.MaskGoalSink = (_, _, v) => { variables = v; return "sent"; };
+        Assert.Equal("sent", vm.SendMaskToOptimizer());
+        Assert.NotNull(variables);
+        Assert.Equal(parts.Select(p => p.InstanceName + "." + (p.Symbol == SymbolKind.Inductor ? "L" : "C")).Order(),
+                     variables!.Select(v => v.Key).Order());
+        Assert.All(variables!, v =>
+        {
+            Assert.True(v.Opt);
+            Assert.Equal(TuneDiscrete.E12, v.Discrete);
+            Assert.True(TunableValue.TryParse(v.Min!, out _, out _, out double lo));
+            Assert.True(TunableValue.TryParse(v.Max!, out _, out _, out double hi));
+            Assert.Equal(4, hi / lo, 9);
+        });
+
+        // A ladder taken off the sheet again is not sent.
+        model.Components.Clear();
+        vm.SendMaskToOptimizer();
+        Assert.Empty(variables!);
+    }
+
+    [Fact]
+    public void ALibraryPartIsTunedAsItsPart()
+    {
+        var part = new EditableComponent { InstanceName = "L3", Symbol = SymbolKind.SpiceModel };
+        var cap = new EditableComponent { InstanceName = "C2", Symbol = SymbolKind.Capacitor };
+        cap.Parameters.Add(new EditableParameter { Name = "C", Expression = "1.5", Unit = "pF" });
+        var v = FilterMaskGoals.LadderTunables([part, cap], FilterSeriesKind.VendorLibrary);
+        Assert.Equal(["L3.Part", "C2.C"], v.Select(e => e.Key));
+        Assert.Equal(("0.75 pF", "3 pF", TuneDiscrete.None), (v[1].Min, v[1].Max, v[1].Discrete));
     }
 }

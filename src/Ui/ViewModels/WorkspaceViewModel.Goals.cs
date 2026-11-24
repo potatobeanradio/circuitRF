@@ -96,18 +96,20 @@ public partial class WorkspaceViewModel
     /// so sending a changed mask does not leave the old one behind.
     /// </summary>
     /// <returns>What happened, for the Designer's status line.</returns>
-    internal static string SendFilterMaskGoals(SchematicViewModel schematic, FilterMaskSpec mask)
+    internal static string SendFilterMaskGoals(SchematicViewModel schematic, FilterMaskSpec mask,
+                                                IReadOnlyList<TunableEntry> variables)
     {
         List<WorkspaceViewModel> live;
         lock (LiveWorkspaces)
             live = LiveWorkspaces.Select(w => w.TryGetTarget(out var t) ? t : null).OfType<WorkspaceViewModel>().ToList();
         foreach (var ws in live)
-            if (ws.FindSchematicDocumentWithFrame(schematic, out var doc, out _))
-                return ws.AddFilterMaskGoals(doc, mask);
+            if (ws.FindSchematicDocumentWithFrame(schematic, out var doc, out int frame))
+                return ws.AddFilterMaskGoals(doc, mask, frame == 0 ? variables : [], frame == 0 ? 0 : variables.Count);
         return "The schematic is not open in a workspace window. Open it and send the mask again.";
     }
 
-    private string AddFilterMaskGoals(SchematicDocument sd, FilterMaskSpec mask)
+    private string AddFilterMaskGoals(SchematicDocument sd, FilterMaskSpec mask, IReadOnlyList<TunableEntry> variables,
+                                      int variablesInsideACell)
     {
         var bench = sd.NavFrames[0].Session;
         var model = bench.EditModel;
@@ -127,6 +129,13 @@ public partial class WorkspaceViewModel
             g.Name = UniqueGoalName(g.Name, setup.Goals);
             setup.Goals.Add(g);
         }
+        // The ladder Place filter put down: each part an optimizer variable. An entry the sheet already has keeps
+        // its own settings and is only switched on for the optimizer.
+        foreach (var v in variables)
+        {
+            if (setup.Variables.FirstOrDefault(e => e.Key == v.Key) is { } existing) existing.Opt = true;
+            else setup.Variables.Add(v.Clone());
+        }
         bench.Execute(new SetTuningSetupCommand(model, setup, "Add filter mask goals"));
 
         ShowToolPanelCore(DockPanelIds.Optimizer);
@@ -135,7 +144,9 @@ public partial class WorkspaceViewModel
 
         string summary = $"Sent the mask to the Optimizer as {made.Goals.Count} goal{(made.Goals.Count == 1 ? "" : "s")} on " +
                          $"dB({made.Analysis}.S({made.OutPort}, {made.InPort}))" +
-                         (replaced > 0 ? $", replacing {replaced} from an earlier send" : "") + ".";
+                         (replaced > 0 ? $", replacing {replaced} from an earlier send" : "") + "." +
+                         (variables.Count > 0 ? $" The placed ladder's {variables.Count} part{(variables.Count == 1 ? " is" : "s are")} its variables." : "") +
+                         (variablesInsideACell > 0 ? " The ladder was placed inside a cell, so its parts were not made variables; add them in the Optimizer." : "");
         Messages.Info(summary + " " + string.Join("; ", made.Goals.Select(g =>
             $"{g.Name} {(g.Type == GoalType.Ge ? "≥" : "≤")} {g.Limit} dB over {g.Range!.Lo} to {g.Range.Hi}")));
         foreach (var n in made.Notes) Messages.Info("Send mask to Optimizer: " + n);

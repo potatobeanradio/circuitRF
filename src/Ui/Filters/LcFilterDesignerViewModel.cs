@@ -362,6 +362,20 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>Why they cannot, or what they do — the buttons' tooltip.</summary>
     [ObservableProperty] private string _placeTip = "";
 
+    /// <summary>
+    /// True when Place filter can run: there is a ladder and a schematic. Unlike Place component and Apply,
+    /// a ladder that misses the mask can still be placed, at the values the table shows, so the Optimizer can
+    /// tune it in the circuit (Send mask to Optimizer makes its parts the variables).
+    /// </summary>
+    [ObservableProperty] private bool _canPlaceLadder;
+
+    /// <summary>Place filter's tooltip: what it does, and when the ladder misses the mask, that it does.</summary>
+    [ObservableProperty] private string _placeLadderTip = "";
+
+    /// <summary>The parts of the ladder Place filter last put down, and the schematic it went into: what Send mask
+    /// to Optimizer makes tunable. Held by reference, so a part renamed when it was placed is found by its new name.</summary>
+    private (global::CircuitRF.Ui.ViewModels.SchematicViewModel Sheet, List<EditableComponent> Parts, FilterSeriesKind Series)? _placedLadder;
+
     /// <summary>Whether Place filter replaces the Filter the window was opened on (phase 2 of FD-P).</summary>
     [ObservableProperty] private bool _replaceTarget;
 
@@ -394,7 +408,19 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             PlaceTip = "Places the design on the schematic: it follows the pointer, a click puts it down, "
                      + "Escape drops it.";
         }
+
+        bool ladder = _lastSpec is not null && Ladder.Elements.Count > 0 && Cnl.Length > 0;
+        CanPlaceLadder = ladder && PlacementSchematic is not null;
+        PlaceLadderTip = !ladder ? PlaceTip
+            : PlacementSchematic is null ? "There is no schematic to place into. Open a schematic and try again."
+            : MaskMet ? PlaceTip
+            : $"This ladder misses the mask by {MissText}. Place filter puts it down anyway, at the values the table shows, "
+              + "so it can be tuned in the circuit: Send mask to Optimizer then adds the goals and makes its parts the variables.";
     }
+
+    /// <summary>How far the last design misses the mask, as words.</summary>
+    private string MissText => double.IsFinite(_lastMissDb) ? _lastMissDb.ToString("0.###", CultureInfo.InvariantCulture) + " dB" : "an unknown amount";
+    private double _lastMissDb;
 
     /// <summary>
     /// Place filter: the realised ladder at the values the table shows, armed as a paste ghost on the schematic. On a
@@ -406,18 +432,23 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     public string PlaceFilter()
     {
         RefreshPlacement();
-        if (!CanPlace || PlacementSchematic is not { } schematic) return PlaceTip;
-        if (ReplaceTarget && CanReplaceTarget) return ReplaceFilter();
+        if (!CanPlaceLadder || PlacementSchematic is not { } schematic) return PlaceLadderTip;
+        string miss = MaskMet ? "" : $" It misses the mask by {MissText}: Send mask to Optimizer to tune it in.";
+        if (ReplaceTarget && CanReplaceTarget) return ReplaceFilter() + miss;
         if (FilterPlacement.WantsPorts(schematic.EditModel))
-            return schematic.ArmFragmentPlacement(FilterPlacement.PortedLadderFragment(Ladder, _ladderParts,
-                                                                                        SchematicTechnology.Of(schematic.EditModel)))
-                ? "Click on the schematic to place the ladder. It ends in ports 1 and 2, ready for an S-parameter analysis."
+        {
+            var ported = FilterPlacement.PortedLadderFragment(Ladder, _ladderParts, SchematicTechnology.Of(schematic.EditModel));
+            Remember(schematic, ported);
+            return schematic.ArmFragmentPlacement(ported)
+                ? "Click on the schematic to place the ladder. It ends in ports 1 and 2, ready for an S-parameter analysis." + miss
                 : "There is no ladder to place.";
+        }
         var (inName, outName) = FilterPlacement.EndNames(schematic.EditModel);
         var fragment = FilterPlacement.LadderFragment(Ladder, inName, outName, _ladderParts,
                                                       SchematicTechnology.Of(schematic.EditModel));
+        Remember(schematic, fragment);
         return schematic.ArmFragmentPlacement(fragment)
-            ? $"Click on the schematic to place the ladder. Its ends are the nets {inName} and {outName}."
+            ? $"Click on the schematic to place the ladder. Its ends are the nets {inName} and {outName}." + miss
             : "There is no ladder to place.";
     }
 
@@ -431,7 +462,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// Where Send mask to Optimizer hands the mask: the workspace holding the schematic. A seam, so a
     /// test can stand in for the workspace window.
     /// </summary>
-    public Func<global::CircuitRF.Ui.ViewModels.SchematicViewModel, FilterMaskSpec, string> MaskGoalSink { get; set; } =
+    public Func<global::CircuitRF.Ui.ViewModels.SchematicViewModel, FilterMaskSpec,
+                IReadOnlyList<CircuitRF.Core.Design.TunableEntry>, string> MaskGoalSink { get; set; } =
         global::CircuitRF.Ui.ViewModels.WorkspaceViewModel.SendFilterMaskGoals;
 
     /// <summary>
@@ -446,7 +478,24 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         if (CurrentMask is not { } mask) return "There is no mask to send: design a response with a passband and a stopband first.";
         if (PlacementSchematic is not { } schematic)
             return "There is no schematic to send the mask to. Open the schematic the filter is placed on and try again.";
-        return MaskGoalSink(schematic, mask);
+        return MaskGoalSink(schematic, mask, PlacedLadderTunables(schematic));
+    }
+
+    /// <summary>The ladder's own parts in a fragment about to be placed — the ones Send mask to Optimizer tunes.</summary>
+    private void Remember(global::CircuitRF.Ui.ViewModels.SchematicViewModel schematic, SchematicEditModel fragment) =>
+        _placedLadder = (schematic,
+                         fragment.Components.Where(c => c.Symbol is SymbolKind.Inductor or SymbolKind.Capacitor or SymbolKind.SpiceModel).ToList(),
+                         Series);
+
+    /// <summary>
+    /// The variables Send mask to Optimizer adds on <paramref name="schematic"/>: the parts of the ladder Place
+    /// filter last put there that are still on it (<see cref="FilterMaskGoals.LadderTunables"/>), else none.
+    /// </summary>
+    internal IReadOnlyList<CircuitRF.Core.Design.TunableEntry> PlacedLadderTunables(global::CircuitRF.Ui.ViewModels.SchematicViewModel schematic)
+    {
+        if (_placedLadder is not { } placed || !ReferenceEquals(placed.Sheet, schematic)) return [];
+        var onSheet = placed.Parts.Where(p => schematic.EditModel.Components.Contains(p)).ToList();
+        return FilterMaskGoals.LadderTunables(onSheet, placed.Series);
     }
 
     /// <summary>
@@ -478,6 +527,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         if (Ladder.Elements.Count == 0) return "There is no ladder to place.";
         var fragment = FilterPlacement.ReplacementFragment(schematic.EditModel, target, Ladder, _ladderParts,
                                                            SchematicTechnology.Of(schematic.EditModel));
+        Remember(schematic, fragment.Ladder);
         schematic.Execute(new global::CircuitRF.Ui.Commands.Schematic.FilterReplaceCommand(
             schematic.EditModel, target, fragment, ids => schematic.Selection.SetAll(ids)));
         Target = null;
@@ -938,6 +988,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             .ToDictionary(g => g.Key, g => g.First().Chosen!.Vendor!, StringComparer.Ordinal);
         _lastSpec = null;
         _lastIdeal = null;
+        _lastMissDb = r.MissDb;
         MaskMet = !r.Failed && !(r.MissDb > (r.Cnl.Length > 0 ? FilterMask.LadderToleranceDb : FilterMask.ToleranceDb));
         if (r.Failed)
         {
@@ -981,7 +1032,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             : r.Status;
         if (!MaskMet)
             Status = ($"This design misses the mask by {(double.IsFinite(r.MissDb) ? r.MissDb.ToString("0.###", CultureInfo.InvariantCulture) + " dB" : "an unknown amount")}, "
-                     + "so it cannot be placed or applied. "
+                     + "so it cannot be applied or placed as a Filter; Place filter still puts the ladder down for the Optimizer to tune. "
                      + (Series != FilterSeriesKind.Exact ? "Finer values, a higher order or a looser mask meets it. "
                                                          : "A higher order (or Minimum) or a looser mask meets it. ")
                      + Status).Trim();

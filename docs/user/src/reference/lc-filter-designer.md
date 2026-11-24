@@ -49,7 +49,9 @@ When the edges as typed miss (a Chebyshev built at a 0.1 dB ripple against an Ap
 moves the cutoff into the slack Ap leaves before trying the next order. With an E-series or a
 vendor library it checks the ladder at its snapped values too, so a value a few percent off cannot
 push an edge out. A design that still misses, at an order you typed, is drawn with the miss said in
-the status line, and cannot be applied or placed.
+the status line, and cannot be applied or placed as a Filter. **Place filter still puts its ladder
+down**, at the values the table shows, so it can be tuned in the circuit (see
+[Tuning it in the circuit](#optimizer)); its tooltip says by how much it misses.
 
 **When an E-series or a library is what misses, the window offers a search.** Under the reason in
 Design information it asks whether to look for other values, with a **Search** button. The search
@@ -231,8 +233,23 @@ Each band is the one the window checks, out to a decade past the outer edges, cu
 sweep; a band the sweep does not reach gets no goal, and Messages names it. The Optimizer opens on
 that schematic with the goals added as one undo step, and sending again replaces the goals an earlier
 send made. It works whether or not the design meets the mask, since tuning is the way back in. A
-schematic with no S-parameter analysis is told to add one first. Make the ladder's parts tunable
-(as for any part) to give the optimizer something to move.
+schematic with no S-parameter analysis is told to add one first.
+
+**The ladder Place filter last put on that schematic becomes the optimizer's variables** in the same
+step, each part still on the sheet under whatever name it was given when placed:
+
+| Values | Each element's variable |
+|---|---|
+| Exact | its value, between half and twice what was placed |
+| E6, E12, E24, E96 | its value over the same range, on that series |
+| Vendor library | its `Part`: the parts of the same kind in its own library |
+
+A part the sheet already has a variable for keeps its own settings and is switched on for the
+optimizer. A ladder placed inside a cell rather than on the bench gets goals only; add its parts in
+the Optimizer. So a design the Designer cannot make meet the mask can be placed, sent, and run: a
+Chebyshev lowpass at 1000 and 1300 MHz with Ap 0.5 dB and As 30 dB, at order 9 on E12, misses by
+1.35 dB with nearest values, and the Optimizer moved its parts to other E12 values and
+met both goals.
 
 ## The same thing from the command line {#headless}
 

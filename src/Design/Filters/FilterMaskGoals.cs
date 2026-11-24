@@ -118,5 +118,46 @@ public static class FilterMaskGoals
         return Number(hz / scale) + " " + unit;
     }
 
+    /// <summary>
+    /// The placed ladder's parts as optimizer variables, so the Optimizer can tune the ladder the Designer placed:
+    /// a library part as its <c>Part</c> (the parts of the same kind in its own library), an L or C as its value
+    /// between half and twice what it was placed at, on the chosen E-series when the values were one. A
+    /// component that is neither is left out.
+    /// </summary>
+    public static IReadOnlyList<TunableEntry> LadderTunables(IEnumerable<EditableComponent> parts, FilterSeriesKind series)
+    {
+        var entries = new List<TunableEntry>();
+        foreach (var c in parts)
+        {
+            if (c.Symbol == SymbolKind.SpiceModel)
+            {
+                entries.Add(new TunableEntry { Key = c.InstanceName + ".Part", Opt = true });
+                continue;
+            }
+            string? name = c.Symbol switch { SymbolKind.Inductor => "L", SymbolKind.Capacitor => "C", _ => null };
+            if (name is null || c.Parameters.FirstOrDefault(p => p.Name == name) is not { } param) continue;
+            if (!double.TryParse(param.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !(v > 0))
+                continue;
+            string unit = param.Unit.Length > 0 ? " " + param.Unit : "";
+            entries.Add(new TunableEntry
+            {
+                Key = c.InstanceName + "." + name,
+                Opt = true,
+                Min = Number(v / 2) + unit,
+                Max = Number(v * 2) + unit,
+                Scale = TuneScale.Log,
+                Discrete = series switch
+                {
+                    FilterSeriesKind.E6 => TuneDiscrete.E6,
+                    FilterSeriesKind.E12 => TuneDiscrete.E12,
+                    FilterSeriesKind.E24 => TuneDiscrete.E24,
+                    FilterSeriesKind.E96 => TuneDiscrete.E96,
+                    _ => TuneDiscrete.None,
+                },
+            });
+        }
+        return entries;
+    }
+
     private static string Number(double v) => Math.Round(v, 9).ToString("0.#########", CultureInfo.InvariantCulture);
 }

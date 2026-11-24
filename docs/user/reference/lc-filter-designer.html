@@ -90,7 +90,9 @@ When the edges as typed miss (a Chebyshev built at a 0.1 dB ripple against an Ap
 moves the cutoff into the slack Ap leaves before trying the next order. With an E-series or a
 vendor library it checks the ladder at its snapped values too, so a value a few percent off cannot
 push an edge out. A design that still misses, at an order you typed, is drawn with the miss said in
-the status line, and cannot be applied or placed.</p>
+the status line, and cannot be applied or placed as a Filter. <strong>Place filter still puts its ladder
+down</strong>, at the values the table shows, so it can be tuned in the circuit (see
+<a href="#optimizer">Tuning it in the circuit</a>); its tooltip says by how much it misses.</p>
 <p><strong>When an E-series or a library is what misses, the window offers a search.</strong> Under the reason in
 Design information it asks whether to look for other values, with a <strong>Search</strong> button. The search
 tries the designs the mask allows (the orders from the one that missed, deeper floors and re-centred
@@ -306,8 +308,37 @@ ports):</p>
 sweep; a band the sweep does not reach gets no goal, and Messages names it. The Optimizer opens on
 that schematic with the goals added as one undo step, and sending again replaces the goals an earlier
 send made. It works whether or not the design meets the mask, since tuning is the way back in. A
-schematic with no S-parameter analysis is told to add one first. Make the ladder's parts tunable
-(as for any part) to give the optimizer something to move.</p>
+schematic with no S-parameter analysis is told to add one first.</p>
+<p><strong>The ladder Place filter last put on that schematic becomes the optimizer's variables</strong> in the same
+step, each part still on the sheet under whatever name it was given when placed:</p>
+<table>
+<thead>
+<tr>
+<th>Values</th>
+<th>Each element's variable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exact</td>
+<td>its value, between half and twice what was placed</td>
+</tr>
+<tr>
+<td>E6, E12, E24, E96</td>
+<td>its value over the same range, on that series</td>
+</tr>
+<tr>
+<td>Vendor library</td>
+<td>its <code>Part</code>: the parts of the same kind in its own library</td>
+</tr>
+</tbody>
+</table>
+<p>A part the sheet already has a variable for keeps its own settings and is switched on for the
+optimizer. A ladder placed inside a cell rather than on the bench gets goals only; add its parts in
+the Optimizer. So a design the Designer cannot make meet the mask can be placed, sent, and run: a
+Chebyshev lowpass at 1000 and 1300 MHz with Ap 0.5 dB and As 30 dB, at order 9 on E12, misses by
+1.35 dB with nearest values, and the Optimizer moved its parts to other E12 values and
+met both goals.</p>
 <h2 id="headless">The same thing from the command line</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>
 <p>The verb calls the same synthesis the window calls. The options are in <a href="cli.html#filter-lc">CLI › filter lc</a>.</p>

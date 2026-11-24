@@ -156,13 +156,13 @@
                     ToolTip.Tip="Apply to Filter — write this specification and the Designer's settings onto the Filter">
                 <mi:MaterialIcon Kind="SquareEditOutline" Width="16" Height="16"/>
             </Button>
-            <Button Name="PlaceFilterButton" Padding="6,3" Click="OnPlaceFilter" IsEnabled="{Binding CanPlace}"
+            <Button Name="PlaceFilterButton" Padding="6,3" Click="OnPlaceFilter" IsEnabled="{Binding CanPlaceLadder}"
                     ToolTip.ShowOnDisabled="True">
                 <ToolTip.Tip>
                     <TextBlock MaxWidth="360" TextWrapping="Wrap">
                         <Run FontWeight="SemiBold" Text="Place filter — the LC ladder: on a schematic with no ports, ending in ports 1 and 2; otherwise ends labelled IN and OUT"/>
                         <LineBreak/>
-                        <Run Text="{Binding PlaceTip}"/>
+                        <Run Text="{Binding PlaceLadderTip}"/>
                     </TextBlock>
                 </ToolTip.Tip>
                 <mi:MaterialIcon Kind="Ladder" Width="16" Height="16"/>

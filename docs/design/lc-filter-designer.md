@@ -284,3 +284,14 @@ S-parameter analysis's sweep. The ports are the sheet's lowest two numbers (1 an
 Designer's toolbar button hands the mask to `WorkspaceViewModel.SendFilterMaskGoals`, which finds the
 workspace window holding the placement schematic, replaces the goals an earlier send made
 (`mask_pass…`, `mask_stop…`) in one `SetTuningSetupCommand`, and shows the Optimizer on that bench.
+
+## A ladder that misses, placed for the Optimizer (2026-11-24)
+
+Place filter is gated on `CanPlaceLadder` (a ladder and a schematic), not on the mask; Place component
+and Apply keep `CanPlace`, which requires it. The Designer holds the fragment's own part objects
+(`Remember`): `SchematicPasteCommand` takes the fragment's objects over and renames them in place, so
+the references give the names they were placed under. Send mask to Optimizer passes
+`FilterMaskGoals.LadderTunables` of those still on the sheet — `Name.L`/`Name.C` with `opt`, a ×½..×2
+log range and the E-series as `Discrete`, or `Name.Part` (kind `same`) for a library part — and
+`SendFilterMaskGoals` adds them only when the sheet is the bench's top frame, since a key inside a cell
+needs its cell's prefix.
