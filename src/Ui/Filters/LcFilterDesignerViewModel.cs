@@ -9,6 +9,7 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Engine;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
@@ -44,6 +45,13 @@ public sealed record FilterAssignment(string Name, string Expression, string? Un
 /// <summary>One row of the Elliptic type picker.</summary>
 public sealed record EllipticTypeChoice(EllipticType Value, string Label)
 {
+    public override string ToString() => Label;
+}
+
+/// <summary>One entry of the Values dropdown: an IEC series, Exact, or the workspace's vendor library.</summary>
+public sealed record FilterSeriesChoice(FilterSeriesKind Value, string Label)
+{
+    /// <inheritdoc/>
     public override string ToString() => Label;
 }
 
@@ -99,8 +107,14 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         new(EllipticType.C, "c — even, equal terminations"),
     ];
 
-    /// <summary>Exact, or an IEC series.</summary>
+    /// <summary>Exact, an IEC series, or the workspace's vendor library.</summary>
     public IReadOnlyList<FilterSeriesKind> SeriesKinds { get; } = Enum.GetValues<FilterSeriesKind>();
+
+    /// <summary>The Values dropdown's entries, one per <see cref="SeriesKinds"/> member.</summary>
+    public IReadOnlyList<FilterSeriesChoice> SeriesChoices { get; } =
+        Enum.GetValues<FilterSeriesKind>()
+            .Select(k => new FilterSeriesChoice(k, k == FilterSeriesKind.VendorLibrary ? "Vendor library" : k.ToString()))
+            .ToList();
 
     /// <summary>Compute the smallest order that meets the mask, or type one.</summary>
     public IReadOnlyList<FilterOrderMode> OrderModes { get; } =
@@ -159,7 +173,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>The schematic that owns <see cref="Target"/>.</summary>
     public global::CircuitRF.Ui.ViewModels.SchematicViewModel? Schematic { get; set; }
 
-    /// <summary>A workspace root, so Load library series has somewhere to look.</summary>
+    /// <summary>A workspace root, so the Vendor library values have somewhere to look.</summary>
     public string? WorkspaceRoot { get; set; }
 
     [ObservableProperty] private FilterResponse _response = FilterResponse.Butterworth;
@@ -175,16 +189,43 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private bool _rippleRelevant;
     [ObservableProperty] private FilterSeriesKind _series = FilterSeriesKind.Exact;
+
+    /// <summary>The Values dropdown's selection, kept in step with <see cref="Series"/>.</summary>
+    [ObservableProperty] private FilterSeriesChoice? _seriesChoice;
+
+    /// <summary>
+    /// True when Values is Vendor library: only then are the Inductors and Capacitors series pickers
+    /// shown, and only then does the table offer a part per element.
+    /// </summary>
+    [ObservableProperty] private bool _isVendorLibrary;
+
+    /// <summary>The inductor and capacitor series pickers are shown: Vendor library, with a series found.</summary>
+    [ObservableProperty] private bool _showLibraryPickers;
+
+    /// <summary>
+    /// The vendor library part each element of the ladder last designed is built from, by element
+    /// name: what Place filter and Replace this Filter place in place of a generic L or C.
+    /// </summary>
+    private Dictionary<string, VendorPartRef> _ladderParts = new(StringComparer.Ordinal);
+
+    /// <summary>The vendor parts the current ladder uses, by element name (read by tests).</summary>
+    internal IReadOnlyDictionary<string, VendorPartRef> LadderParts => _ladderParts;
+
+    /// <summary>True once the workspace's libraries have been indexed for this window.</summary>
+    private bool _librariesLoaded;
+
+    /// <summary>Why Vendor library has nothing to offer, said beside every design while it is chosen.</summary>
+    private string _libraryNote = "";
     [ObservableProperty] private FilterOrderMode _orderMode = FilterOrderMode.Minimum;
     /// <summary>The prefix each edge box is typed in (owner, 2026-11-21: one per box, not one for all).</summary>
-    [ObservableProperty] private string _unitA = "GHz";
-    [ObservableProperty] private string _unitB = "GHz";
-    [ObservableProperty] private string _unitC = "GHz";
-    [ObservableProperty] private string _unitD = "GHz";
+    [ObservableProperty] private string _unitA = "MHz";
+    [ObservableProperty] private string _unitB = "MHz";
+    [ObservableProperty] private string _unitC = "MHz";
+    [ObservableProperty] private string _unitD = "MHz";
 
     /// <summary>The prefixes of the manual plot range's Fmin and Fmax boxes.</summary>
-    [ObservableProperty] private string _unitFmin = "GHz";
-    [ObservableProperty] private string _unitFmax = "GHz";
+    [ObservableProperty] private string _unitFmin = "MHz";
+    [ObservableProperty] private string _unitFmax = "MHz";
 
     /// <summary>
     /// The unit the plot's frequency axis is drawn in: the passband edge's own box (Fp, or Fp1 on a
@@ -210,10 +251,10 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     [ObservableProperty] private string _asText = "20";
     [ObservableProperty] private string _sourceText = "50";
     [ObservableProperty] private string _loadText = "50";
-    [ObservableProperty] private string _faText = "0.5";
-    [ObservableProperty] private string _fbText = "1";
-    [ObservableProperty] private string _fcText = "2";
-    [ObservableProperty] private string _fdText = "2.5";
+    [ObservableProperty] private string _faText = "500";
+    [ObservableProperty] private string _fbText = "1000";
+    [ObservableProperty] private string _fcText = "2000";
+    [ObservableProperty] private string _fdText = "2500";
     [ObservableProperty] private bool _showC;
     [ObservableProperty] private bool _showD;
     [ObservableProperty] private bool _orderEditable;
@@ -254,10 +295,10 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>True when the Fmin / Fmax boxes are the plot span.</summary>
     [ObservableProperty] private bool _plotRangeIsManual;
     /// <summary>Manual plot start, in the current frequency unit.</summary>
-    [ObservableProperty] private string _plotFminText = "0.4";
+    [ObservableProperty] private string _plotFminText = "400";
 
     /// <summary>Manual plot stop, in the current frequency unit.</summary>
-    [ObservableProperty] private string _plotFmaxText = "2.8";
+    [ObservableProperty] private string _plotFmaxText = "2800";
 
 
     /// <summary>True while Design rebuilds rows — suppresses per-row redesign loops.</summary>
@@ -294,7 +335,15 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     internal FilterSpecMaskOverlay MagnitudeMask { get; private set; } = null!;
 
     /// <summary>True when a placed Filter can take Apply.</summary>
-    public bool CanApply => Target is { Symbol: SymbolKind.Filter } && Schematic is not null;
+    public bool CanApply => Target is { Symbol: SymbolKind.Filter } && Schematic is not null && MaskMet;
+
+    /// <summary>
+    /// True when the last design — the ladder as it would be placed, snapped values included — meets
+    /// the mask. Nothing that misses it is placed or applied.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApply))]
+    private bool _maskMet;
 
     /// <summary>
     /// The schematic Place filter / Place component go into when the window was opened standalone
@@ -313,6 +362,20 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>Why they cannot, or what they do — the buttons' tooltip.</summary>
     [ObservableProperty] private string _placeTip = "";
 
+    /// <summary>
+    /// True when Place filter can run: there is a ladder and a schematic. Unlike Place component and Apply,
+    /// a ladder that misses the mask can still be placed, at the values the table shows, so the Optimizer can
+    /// tune it in the circuit (Send mask to Optimizer makes its parts the variables).
+    /// </summary>
+    [ObservableProperty] private bool _canPlaceLadder;
+
+    /// <summary>Place filter's tooltip: what it does, and when the ladder misses the mask, that it does.</summary>
+    [ObservableProperty] private string _placeLadderTip = "";
+
+    /// <summary>The parts of the ladder Place filter last put down, and the schematic it went into: what Send mask
+    /// to Optimizer makes tunable. Held by reference, so a part renamed when it was placed is found by its new name.</summary>
+    private (global::CircuitRF.Ui.ViewModels.SchematicViewModel Sheet, List<EditableComponent> Parts, FilterSeriesKind Series)? _placedLadder;
+
     /// <summary>Whether Place filter replaces the Filter the window was opened on (phase 2 of FD-P).</summary>
     [ObservableProperty] private bool _replaceTarget;
 
@@ -329,7 +392,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// </summary>
     public void RefreshPlacement()
     {
-        if (_lastSpec is null)
+        if (_lastSpec is null || !MaskMet)
         {
             CanPlace = false;
             PlaceTip = Status.Length > 0 ? Status : "There is no design to place.";
@@ -345,7 +408,19 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             PlaceTip = "Places the design on the schematic: it follows the pointer, a click puts it down, "
                      + "Escape drops it.";
         }
+
+        bool ladder = _lastSpec is not null && Ladder.Elements.Count > 0 && Cnl.Length > 0;
+        CanPlaceLadder = ladder && PlacementSchematic is not null;
+        PlaceLadderTip = !ladder ? PlaceTip
+            : PlacementSchematic is null ? "There is no schematic to place into. Open a schematic and try again."
+            : MaskMet ? PlaceTip
+            : $"This ladder misses the mask by {MissText}. Place filter puts it down anyway, at the values the table shows, "
+              + "so it can be tuned in the circuit: Send mask to Optimizer then adds the goals and makes its parts the variables.";
     }
+
+    /// <summary>How far the last design misses the mask, as words.</summary>
+    private string MissText => double.IsFinite(_lastMissDb) ? _lastMissDb.ToString("0.###", CultureInfo.InvariantCulture) + " dB" : "an unknown amount";
+    private double _lastMissDb;
 
     /// <summary>
     /// Place filter: the realised ladder at the values the table shows, armed as a paste ghost on the schematic. On a
@@ -357,17 +432,70 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     public string PlaceFilter()
     {
         RefreshPlacement();
-        if (!CanPlace || PlacementSchematic is not { } schematic) return PlaceTip;
-        if (ReplaceTarget && CanReplaceTarget) return ReplaceFilter();
+        if (!CanPlaceLadder || PlacementSchematic is not { } schematic) return PlaceLadderTip;
+        string miss = MaskMet ? "" : $" It misses the mask by {MissText}: Send mask to Optimizer to tune it in.";
+        if (ReplaceTarget && CanReplaceTarget) return ReplaceFilter() + miss;
         if (FilterPlacement.WantsPorts(schematic.EditModel))
-            return schematic.ArmFragmentPlacement(FilterPlacement.PortedLadderFragment(Ladder))
-                ? "Click on the schematic to place the ladder. It ends in ports 1 and 2, ready for an S-parameter analysis."
+        {
+            var ported = FilterPlacement.PortedLadderFragment(Ladder, _ladderParts, SchematicTechnology.Of(schematic.EditModel));
+            Remember(schematic, ported);
+            return schematic.ArmFragmentPlacement(ported)
+                ? "Click on the schematic to place the ladder. It ends in ports 1 and 2, ready for an S-parameter analysis." + miss
                 : "There is no ladder to place.";
+        }
         var (inName, outName) = FilterPlacement.EndNames(schematic.EditModel);
-        var fragment = FilterPlacement.LadderFragment(Ladder, inName, outName);
+        var fragment = FilterPlacement.LadderFragment(Ladder, inName, outName, _ladderParts,
+                                                      SchematicTechnology.Of(schematic.EditModel));
+        Remember(schematic, fragment);
         return schematic.ArmFragmentPlacement(fragment)
-            ? $"Click on the schematic to place the ladder. Its ends are the nets {inName} and {outName}."
+            ? $"Click on the schematic to place the ladder. Its ends are the nets {inName} and {outName}." + miss
             : "There is no ladder to place.";
+    }
+
+    /// <summary>
+    /// The mask the last design was checked against, or null when the specification states none (a
+    /// Bessel or Gaussian response, or edges that do not parse).
+    /// </summary>
+    public FilterMaskSpec? CurrentMask => _lastSpec?.Mask;
+
+    /// <summary>
+    /// Where Send mask to Optimizer hands the mask: the workspace holding the schematic. A seam, so a
+    /// test can stand in for the workspace window.
+    /// </summary>
+    public Func<global::CircuitRF.Ui.ViewModels.SchematicViewModel, FilterMaskSpec,
+                IReadOnlyList<CircuitRF.Core.Design.TunableEntry>, string> MaskGoalSink { get; set; } =
+        global::CircuitRF.Ui.ViewModels.WorkspaceViewModel.SendFilterMaskGoals;
+
+    /// <summary>
+    /// Send mask to Optimizer: the mask as goals on the schematic the Designer places into, read off
+    /// its S-parameter analysis between its first two ports (<see cref="FilterMaskGoals"/>). Offered
+    /// whether or not the design meets the mask, since tuning the placed ladder back inside it is
+    /// exactly what the goals are for.
+    /// </summary>
+    /// <returns>What happened, for the status line.</returns>
+    public string SendMaskToOptimizer()
+    {
+        if (CurrentMask is not { } mask) return "There is no mask to send: design a response with a passband and a stopband first.";
+        if (PlacementSchematic is not { } schematic)
+            return "There is no schematic to send the mask to. Open the schematic the filter is placed on and try again.";
+        return MaskGoalSink(schematic, mask, PlacedLadderTunables(schematic));
+    }
+
+    /// <summary>The ladder's own parts in a fragment about to be placed — the ones Send mask to Optimizer tunes.</summary>
+    private void Remember(global::CircuitRF.Ui.ViewModels.SchematicViewModel schematic, SchematicEditModel fragment) =>
+        _placedLadder = (schematic,
+                         fragment.Components.Where(c => c.Symbol is SymbolKind.Inductor or SymbolKind.Capacitor or SymbolKind.SpiceModel).ToList(),
+                         Series);
+
+    /// <summary>
+    /// The variables Send mask to Optimizer adds on <paramref name="schematic"/>: the parts of the ladder Place
+    /// filter last put there that are still on it (<see cref="FilterMaskGoals.LadderTunables"/>), else none.
+    /// </summary>
+    internal IReadOnlyList<CircuitRF.Core.Design.TunableEntry> PlacedLadderTunables(global::CircuitRF.Ui.ViewModels.SchematicViewModel schematic)
+    {
+        if (_placedLadder is not { } placed || !ReferenceEquals(placed.Sheet, schematic)) return [];
+        var onSheet = placed.Parts.Where(p => schematic.EditModel.Components.Contains(p)).ToList();
+        return FilterMaskGoals.LadderTunables(onSheet, placed.Series);
     }
 
     /// <summary>
@@ -397,7 +525,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         if (!schematic.EditModel.Components.Contains(target))
             return "The Filter this window was opened on is no longer on the schematic.";
         if (Ladder.Elements.Count == 0) return "There is no ladder to place.";
-        var fragment = FilterPlacement.ReplacementFragment(schematic.EditModel, target, Ladder);
+        var fragment = FilterPlacement.ReplacementFragment(schematic.EditModel, target, Ladder, _ladderParts,
+                                                           SchematicTechnology.Of(schematic.EditModel));
+        Remember(schematic, fragment.Ladder);
         schematic.Execute(new global::CircuitRF.Ui.Commands.Schematic.FilterReplaceCommand(
             schematic.EditModel, target, fragment, ids => schematic.Selection.SetAll(ids)));
         Target = null;
@@ -413,6 +543,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     public LcFilterDesignerViewModel()
     {
         ResponseChoice = ResponseChoices[0];
+        SeriesChoice = SeriesChoices[0];
         EllipticTypeChoice = EllipticTypeChoices[0];
         PlotRangeChoice = PlotRangeChoices[0];
         OrderEditable = false;
@@ -422,6 +553,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         MagnitudePlot.Axes.LockedPanning = true;
         PhasePlot.Axes.LockedPanning = true;
         MagnitudeMask = new FilterSpecMaskOverlay(MagnitudePlot);
+        // On the container too, not only on the control: Copy and Export compose from containers, and
+        // a mask known only to the control was drawn on screen and missing from every exported plot.
+        MagnitudeContainer.Overlay = MagnitudeMask;
         PlotHost.SelectOnly((PlotContainerViewModel?)null);
         ApplyLabels();
     }
@@ -456,12 +590,46 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     partial void OnAsTextChanged(string value) => Design();
     partial void OnSourceTextChanged(string value) => Design();
     partial void OnLoadTextChanged(string value) => Design();
+    // A ladder is built between two resistances: an edit that is not a real number (50+j10, 50 ohm, j25) is
+    // refused as it is typed, and the box keeps what it held.
+    partial void OnSourceTextChanged(string? oldValue, string newValue)
+    {
+        if (!IsRealNumberText(newValue)) SourceText = oldValue ?? "";
+    }
+    partial void OnLoadTextChanged(string? oldValue, string newValue)
+    {
+        if (!IsRealNumberText(newValue)) LoadText = oldValue ?? "";
+    }
+
+    /// <summary>
+    /// True when <paramref name="text"/> holds only what a real number is written with: digits, a decimal point,
+    /// an exponent and its sign. A complex value, a unit or a name is not.
+    /// </summary>
+    internal static bool IsRealNumberText(string? text) =>
+        text is null || text.All(c => c is >= '0' and <= '9' or '.' or 'e' or 'E' or '+' or '-' or ' ');
     // A minimum-order design writes the order it found back into the box; that is a result, not an edit.
     partial void OnOrderTextChanged(string value) { if (!_writingOrder) Design(); }
     private bool _writingOrder;
 
     partial void OnFirstChanged(FilterFirstElement value) => Design();
-    partial void OnSeriesChanged(FilterSeriesKind value) => Design();
+    partial void OnSeriesChanged(FilterSeriesKind value)
+    {
+        SeriesChoice = SeriesChoices.FirstOrDefault(c => c.Value == value);
+        IsVendorLibrary = value == FilterSeriesKind.VendorLibrary;
+        // Choosing the entry IS the load: the libraries are indexed the first time it is chosen.
+        if (IsVendorLibrary && !_librariesLoaded) LoadLibraries();
+        ShowLibraryPickers = IsVendorLibrary && LibraryAvailable;
+        OnPropertyChanged(nameof(SearchQuestion));
+        OnPropertyChanged(nameof(CanSearchValues));
+        Design();
+    }
+
+    partial void OnSeriesChoiceChanged(FilterSeriesChoice? value)
+    {
+        if (value is not null && value.Value != Series) Series = value.Value;
+    }
+
+    partial void OnLibraryAvailableChanged(bool value) => ShowLibraryPickers = IsVendorLibrary && value;
     // A prefix change rescales its own box, so the frequency it states is unchanged, and redraws.
     partial void OnUnitAChanged(string? oldValue, string newValue) { FaText = ConvertEdge(FaText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
     partial void OnUnitBChanged(string? oldValue, string newValue) { FbText = ConvertEdge(FbText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
@@ -559,7 +727,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         }
         if (generation != _designGeneration) return;
 
-        if (!TrySpec(out var spec, out string? error))
+        bool valid = TrySpec(out var spec, out string? error);
+        if (_pinned is not null && SpecSignature() != _pinnedSignature) DropPin();
+        _searchable = valid && spec.Mask is not null
+                      && spec.Response is not (FilterResponse.Bessel or FilterResponse.Gaussian);
+        if (valid && _pinned is not null) spec = spec with { Pinned = _pinned };
+        if (!valid)
         {
             Elements.Clear();
             Cnl = "";
@@ -571,12 +744,13 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             ClearPlots();
             ShowMaskAlone();
             RefreshPlacement();
+            OnPropertyChanged(nameof(CanSearchValues));
             return;
         }
 
         var freqs = Frequencies(spec);
         var snap = new SnapInputs(Series, new Dictionary<string, (FilterLibrarySeries, FilterPart)>(_partOverrides),
-                                  InductorChoice, CapacitorChoice);
+                                  InductorChoice, CapacitorChoice, WorkspaceRoot);
         Status = "Designing…";
         DesignOutcome outcome;
         try
@@ -588,18 +762,25 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             return;
         }
         if (generation != _designGeneration) return;
-        Apply(spec, outcome);
+        Apply(outcome.UsedSpec ?? spec, outcome);
     }
 
     /// <summary>What one design produced, ready to be shown.</summary>
     private sealed record DesignOutcome(
         FilterNetwork? Ideal, FilterRealization? Real, List<FilterElement>? Used, List<SnapRow> Rows,
-        string Cnl, SNP? IdealSnp, SNP? LadderSnp, double Rs, double Rl, string Status, bool Failed);
+        string Cnl, SNP? IdealSnp, SNP? LadderSnp, double Rs, double Rl, string Status, bool Failed)
+    {
+        /// <summary>The specification as built: the order and floor the mask search settled on.</summary>
+        public Spec? UsedSpec { get; init; }
+
+        /// <summary>How far what would be placed leaves the mask, dB; zero or less meets it.</summary>
+        public double MissDb { get; init; }
+    }
 
     /// <summary>The window state the snap reads, copied so the pool thread never touches the view model.</summary>
     private sealed record SnapInputs(
         FilterSeriesKind Series, Dictionary<string, (FilterLibrarySeries Series, FilterPart Part)> Overrides,
-        FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors);
+        FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors, string? Workspace);
 
     /// <summary>One table row's content, before it becomes a <see cref="FilterElementRow"/>.</summary>
     private sealed record SnapRow(
@@ -608,29 +789,82 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
 
     private static DesignOutcome Compute(Spec spec, double[] freqs, SnapInputs snap, CancellationToken ct)
     {
-        // The ideal transfer can fail at an order the ladder still reaches; prefer the ladder over a
-        // blank window.
-        FilterNetwork? ideal = null;
-        string idealNote = "";
-        try
+        // The design that meets the mask: from the closed-form order up (Minimum) or at the typed
+        // order (Specify), at the shallowest floor from As down whose ladder exists. A Minimum that
+        // finds none produces nothing — never a filter outside its own mask.
+        FilterMaskChoice? choice = null;
+        string? searchWhy = null;
+        if (spec.Pinned is { } pinned)
         {
-            ideal = FilterNetwork.Create(spec.Response, spec.Form, spec.Order,
-                                          spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb, spec.AsDb, 0,
-                                          spec.EllipticType);
+            choice = pinned;
+            spec = spec with { Order = choice.Order, DesignAsDb = choice.AstopDb, EllipticType = choice.EllipticType,
+                               FcHz = choice.FcHz, F1Hz = choice.F1Hz, F2Hz = choice.F2Hz };
         }
-        catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException)
+        else if (spec.Mask is { } mask && spec.Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
         {
-            idealNote = e.Message;
+            int max = spec.OrderFromMinimum ? Math.Max(spec.Order, FilterMask.MaxOrder) : spec.Order;
+            // The ladder as it will be built (snapped to the chosen series) has to meet the mask too:
+            // an E-series value a few percent off pushes an edge sized with no margin out of it, and
+            // re-centred edges or the next order up have the margin. A typed order that still misses
+            // is shown, and the miss blocks it below.
+            Func<FilterMaskChoice, bool>? accept = null;
+            if (snap.Series != FilterSeriesKind.Exact)
+                accept = c =>
+                {
+                    if (c.Ladder.Realization is not { } r) return true;
+                    var rows = new List<SnapRow>();
+                    var built = Snap(r, snap, rows);
+                    // A coarse look turns most candidates away at a fraction of the cost; a miss
+                    // anywhere is a miss.
+                    return SnappedMissDb(built, rows, r, mask, snap.Workspace, 24) <= FilterMask.LadderToleranceDb
+                        && SnappedMissDb(built, rows, r, mask, snap.Workspace, 400) <= FilterMask.LadderToleranceDb;
+                };
+            choice = FilterMask.Find(spec.Response, spec.Form, spec.Order, max, spec.FcHz, spec.F1Hz, spec.F2Hz,
+                                     spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask,
+                                     accept, ct, out searchWhy);
+            if (choice is null && spec.OrderFromMinimum)
+                return new DesignOutcome(null, null, null, [], "", null, null, 0, 0, searchWhy ?? "", Failed: true)
+                    { UsedSpec = spec };
+            // A typed order whose snapped ladder misses everywhere: show the first design the mask
+            // allows at that order, so the miss is drawn (and the search offered) rather than a
+            // bare refusal.
+            if (choice is null && accept is not null)
+                choice = FilterMask.Candidates(spec.Response, spec.Form, spec.Order, spec.Order, spec.FcHz, spec.F1Hz,
+                                               spec.F2Hz, spec.RippleDb, spec.SourceOhms, spec.First,
+                                               spec.RequestedEllipticType, mask, ct).FirstOrDefault();
+            if (choice is not null)
+                spec = spec with { Order = choice.Order, DesignAsDb = choice.AstopDb, EllipticType = choice.EllipticType,
+                                  FcHz = choice.FcHz, F1Hz = choice.F1Hz, F2Hz = choice.F2Hz };
         }
         ct.ThrowIfCancellationRequested();
 
-        var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
-                                             spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
-                                             spec.SourceOhms, spec.First, spec.AsDb, spec.EllipticType);
+        // The ideal transfer can fail at an order the ladder still reaches; prefer the ladder over a
+        // blank window.
+        FilterNetwork? ideal = choice?.Ideal;
+        string idealNote = "";
+        if (ideal is null)
+        {
+            try
+            {
+                ideal = FilterNetwork.Create(spec.Response, spec.Form, spec.Order,
+                                              spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb, spec.BuildAsDb, 0,
+                                              spec.EllipticType);
+            }
+            catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException)
+            {
+                idealNote = e.Message;
+            }
+        }
+        ct.ThrowIfCancellationRequested();
+
+        var built = choice?.Ladder
+                    ?? FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
+                                               spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
+                                               spec.SourceOhms, spec.First, spec.BuildAsDb, spec.EllipticType);
         if (ideal is null && !built.Ok)
             return new DesignOutcome(null, null, null, [], "", null, null, 0, 0,
                                      idealNote.Length > 0 ? idealNote : (built.Refusal?.Message ?? "No ladder."),
-                                     Failed: true);
+                                     Failed: true) { UsedSpec = spec };
         ct.ThrowIfCancellationRequested();
 
         double rs = spec.SourceOhms;
@@ -644,14 +878,17 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         if (built.Realization is { } real)
         {
             used = Snap(real, snap, rows);
-            cnl = FilterLadder.ToCnl(used, real.SourceOhms, real.LoadOhms);
+            // A library part is its own model here, as it is when placed: the curve, the mask check
+            // and Place all see the same circuit.
+            cnl = FilterLadderCircuit.ToCnl(used, PartsOf(rows), real.SourceOhms, real.LoadOhms);
             rs = real.SourceOhms;
             rl = real.LoadOhms;
             try
             {
-                ladderSnp = Run(cnl, freqs, real.SourceOhms);
+                ladderSnp = Run(cnl, freqs, real.SourceOhms, snap.Workspace);
             }
-            catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException
+                                           or IOException or KeyNotFoundException)
             {
                 note = e.Message;
             }
@@ -665,8 +902,78 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         {
             note = built.Refusal?.Message ?? "";
         }
+
+        // What is placed is checked, not what was designed: the snapped ladder when there is one
+        // (an E-series or a library part can push it out of the mask), else the ideal block.
+        double miss = 0;
+        if (spec.Mask is { } m2)
+        {
+            // Values that are not Exact name parts a ladder is built from: with no ladder there is
+            // nothing to build them into, so nothing meets the mask.
+            miss = cnl.Length > 0 ? LadderMissDb(cnl, m2, rs, snap.Workspace)
+                 : snap.Series != FilterSeriesKind.Exact ? double.PositiveInfinity
+                 : ideal is not null ? FilterMask.WorstMissDb(m2, f => FilterMask.IdealLossDb(ideal, f))
+                 : double.PositiveInfinity;
+            if (miss > FilterMask.ToleranceDb && choice is null && searchWhy is not null)
+                note = (searchWhy + " " + note).Trim();
+        }
+        if (choice is not null && spec.BuildAsDb > spec.AsDb + 1e-9)
+            note = ($"Built for {spec.BuildAsDb:0.###} dB of stopband, deeper than As: at {spec.AsDb:0.###} dB "
+                    + $"this {spec.Response} has no ladder with every element positive. " + note).Trim();
         return new DesignOutcome(ideal, built.Realization, used, rows, cnl, idealSnp, ladderSnp, rs, rl,
-                                 note.Length > 0 ? note.Trim() : idealNote, Failed: false);
+                                 note.Length > 0 ? note.Trim() : idealNote, Failed: false)
+            { UsedSpec = spec, MissDb = miss };
+    }
+
+    /// <summary>The library part behind each element that has one, by element name.</summary>
+    private static Dictionary<string, VendorPartRef> PartsOf(List<SnapRow> rows) =>
+        rows.Where(r => r.Chosen?.Vendor is not null)
+            .GroupBy(r => r.Exact.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Chosen!.Vendor!, StringComparer.Ordinal);
+
+    /// <summary>
+    /// How far a snapped ladder leaves the mask, from the fast nodal solve, each library part as its
+    /// own model's impedance: the search's cheap judge, which the engine run then confirms.
+    /// </summary>
+    private static double SnappedMissDb(List<FilterElement> used, List<SnapRow> rows, FilterRealization real,
+                                        FilterMaskSpec mask, string? workspace, int perBand)
+    {
+        var (pass, stop) = FilterMask.CheckFrequencies(mask, perBand);
+        double[] all = [.. pass, .. stop];
+        if (all.Length == 0) return 0;
+        var z = new Complex[]?[used.Count];
+        for (int k = 0; k < rows.Count && k < z.Length; k++)
+            if (rows[k].Chosen?.Vendor is { } v) z[k] = FilterLadderCircuit.PartImpedance(v, all, workspace);
+        var loss = FilterLadder.InsertionLossDb(used, real.SourceOhms, real.LoadOhms, all, z);
+        double worst = double.NegativeInfinity;
+        for (int i = 0; i < all.Length; i++)
+        {
+            double l = double.IsNaN(loss[i]) ? double.PositiveInfinity : loss[i];
+            worst = Math.Max(worst, i < pass.Length ? l - mask.ApDb : mask.AsDb - l);
+        }
+        return double.IsNegativeInfinity(worst) ? 0 : worst;
+    }
+
+    /// <summary>How far the ladder netlist <paramref name="cnl"/> leaves the mask, dB (zero or less meets it).</summary>
+    private static double LadderMissDb(string cnl, FilterMaskSpec mask, double z0, string? workspace, int perBand = 400)
+    {
+        var (pass, stop) = FilterMask.CheckFrequencies(mask, perBand);
+        double[] all = [.. pass, .. stop];
+        if (all.Length == 0) return 0;
+        SNP snp;
+        try { snp = Run(cnl, all, z0, workspace); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException
+                                       or IOException or KeyNotFoundException)
+        {
+            return double.PositiveInfinity;
+        }
+        var loss = new Dictionary<double, double>(all.Length);
+        for (int i = 0; i < all.Length && i < snp.Frequencies.Length; i++)
+        {
+            double mag = snp.Matrices[i][1, 0].Magnitude;
+            loss[all[i]] = mag > 0 ? -20 * Math.Log10(mag) : double.PositiveInfinity;
+        }
+        return FilterMask.WorstMissDb(mask, f => loss.TryGetValue(f, out double v) ? v : double.PositiveInfinity, perBand);
     }
 
     /// <summary>Shows one design. Runs on the UI thread.</summary>
@@ -675,15 +982,30 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         Elements.Clear();
         Cnl = r.Cnl;
         Ladder = MatchLadderLayout.Empty;
+        _ladderParts = r.Rows
+            .Where(row => row.Chosen?.Vendor is not null)
+            .GroupBy(row => row.Exact.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Chosen!.Vendor!, StringComparer.Ordinal);
         _lastSpec = null;
         _lastIdeal = null;
+        _lastMissDb = r.MissDb;
+        MaskMet = !r.Failed && !(r.MissDb > (r.Cnl.Length > 0 ? FilterMask.LadderToleranceDb : FilterMask.ToleranceDb));
         if (r.Failed)
         {
             Status = r.Status;
             DesignInfo = "";
             ClearPlots();
+            ShowMaskAlone();
             RefreshPlacement();
+            OnPropertyChanged(nameof(CanSearchValues));
             return;
+        }
+        if (spec.OrderFromMinimum)
+        {
+            // The order the mask search settled on is a result, not an edit: it must not design again.
+            _writingOrder = true;
+            try { OrderText = spec.Order.ToString(CultureInfo.InvariantCulture); }
+            finally { _writingOrder = false; }
         }
 
         if (r.Real is { } real && r.Used is { } used)
@@ -705,15 +1027,28 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                          ? $"\nElliptic type: {EllipticTypes.Letter(spec.EllipticType)}" : "") +
                      $"\nMinimum insertion loss: {minIl:0.0000} dB" +
                      (r.Real is { } rr ? $"\nLoad: {rr.LoadOhms:0.###} Ω" : "");
-        Status = r.Status;
+        Status = IsVendorLibrary && !LibraryAvailable && _libraryNote.Length > 0
+            ? (_libraryNote + " " + r.Status).Trim()
+            : r.Status;
+        if (!MaskMet)
+            Status = ($"This design misses the mask by {(double.IsFinite(r.MissDb) ? r.MissDb.ToString("0.###", CultureInfo.InvariantCulture) + " dB" : "an unknown amount")}, "
+                     + "so it cannot be applied or placed as a Filter; Place filter still puts the ladder down for the Optimizer to tune. "
+                     + (Series != FilterSeriesKind.Exact ? "Finer values, a higher order or a looser mask meets it. "
+                                                         : "A higher order (or Minimum) or a looser mask meets it. ")
+                     + Status).Trim();
+        if (MaskMet && spec.Pinned is not null)
+            Status = ("Values found by the search: each element is the series value the table shows, "
+                      + "picked so the ladder meets the mask. " + Status).Trim();
         BuildPlots(r.IdealSnp, r.LadderSnp, spec);
         RefreshPlacement();
+        OnPropertyChanged(nameof(CanSearchValues));
     }
 
     /// <summary>Indexes the workspace's vendor libraries into inductor and capacitor series.</summary>
     [RelayCommand]
     public void LoadLibraries()
     {
+        _librariesLoaded = true;
         InductorSeries.Clear();
         CapacitorSeries.Clear();
         var notes = new List<string>();
@@ -723,11 +1058,14 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             else CapacitorSeries.Add(s);
         }
         LibraryAvailable = InductorSeries.Count > 0 || CapacitorSeries.Count > 0;
+        _libraryNote = LibraryAvailable
+            ? ""
+            : notes.FirstOrDefault()
+              ?? "This workspace has no vendor library with inductor or capacitor series; every value is exact.";
         Status = LibraryAvailable
             ? $"{InductorSeries.Count} inductor series, {CapacitorSeries.Count} capacitor series."
-            : notes.FirstOrDefault()
-              ?? "This workspace has no vendor library with inductor or capacitor series.";
-        if (LibraryAvailable) Design();
+            : _libraryNote;
+        if (LibraryAvailable && IsVendorLibrary) Design();
     }
 
     /// <summary>
@@ -750,7 +1088,13 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             OrderText = ((int)order).ToString(CultureInfo.InvariantCulture);
         OrderMode = Enum.TryParse<FilterOrderMode>(Expr("OrderMode"), true, out var mode) ? mode : FilterOrderMode.Specify;
         if (Enum.TryParse<FilterFirstElement>(Expr("First"), true, out var first)) First = first;
-        if (Enum.TryParse<FilterSeriesKind>(Expr("Values"), true, out var values)) Series = values;
+        if (Enum.TryParse<FilterSeriesKind>(Expr("Values"), true, out var values) && Enum.IsDefined(values))
+            Series = values;
+        // A block applied before Vendor library was a Values entry names its series beside an IEC
+        // series, and the library won wherever it had a part: that is Vendor library now.
+        if (Expr("LSeries").Length > 0 || Expr("CSeries").Length > 0
+            || ParseParts(Expr("Parts")).Any(x => !x.SeriesKey.StartsWith(FilterValues.IecLibrary + ":", StringComparison.Ordinal)))
+            Series = FilterSeriesKind.VendorLibrary;
 
         // The boxes are filled in GHz, then each is shown in the unit its edge was applied in.
         Unit = "GHz";
@@ -778,29 +1122,38 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         FcText = Stored(boxes[2]) ?? FcText;
         FdText = Stored(boxes[3]) ?? FdText;
         SeedEdges(Ghz("Fc") ?? 1, Ghz("F1") ?? 0.9, Ghz("F2") ?? 1.1);
+        // A mask stored whole is what reopens: the cutoff was derived from it, and can sit inside
+        // the slack Ap or a deeper floor leaves rather than on an edge.
+        var stored = boxes.Where(b => b.Length > 0).Select(Stored).ToList();
+        if (stored.All(t => t is not null))
+        {
+            FaText = stored[0]!;
+            FbText = stored[1]!;
+            if (stored.Count > 2) { FcText = stored[2]!; FdText = stored[3]!; }
+        }
 
         if (Num(Expr("Ripple"), out double ripple))
             RippleText = ripple.ToString("0.####", CultureInfo.InvariantCulture);
         ApText = Num(Expr("Ap"), out double ap) ? ap.ToString("0.####", CultureInfo.InvariantCulture) : RippleText;
         if (EllipticTypes.TryParse(Expr("EllipticType"), out var et))
             EllipticTypeChoice = EllipticTypeChoices.First(c => c.Value == et);
-        if (Num(Expr("Astop"), out double ast))
-            AsText = ast.ToString("0.####", CultureInfo.InvariantCulture);
+        if (Num(Expr("AsMask"), out double asMask) || Num(Expr("Astop"), out asMask))
+            AsText = asMask.ToString("0.####", CultureInfo.InvariantCulture);
         SourceText = Ohms("Zin", 50).ToString("0.####", CultureInfo.InvariantCulture);
         LoadText = Ohms("Zout", 50).ToString("0.####", CultureInfo.InvariantCulture);
-        // Each box's prefix: its own mask edge's unit, else the cutoff it holds, else GHz. Setting
-        // it converts the box out of GHz.
-        string BoxUnit(int i, string cutoff)
+        // Each box's prefix: its own mask edge's unit, else MHz (the edges' default). Setting it
+        // converts the box out of GHz.
+        string BoxUnit(int i)
         {
             var p = boxes[i].Length > 0 ? Param(boxes[i]) : null;
             if (p is not null && !string.IsNullOrWhiteSpace(p.Expression)) return UnitOf(p.Unit);
-            return UnitOf(Param(cutoff)?.Unit);
+            // No mask edge stored yet: the edges default to MHz, like a fresh window.
+            return "MHz";
         }
-        bool edgeForm = Form is NetworkForm.Lowpass or NetworkForm.Highpass;
-        UnitA = BoxUnit(0, edgeForm ? "Fc" : "F1");
-        UnitB = BoxUnit(1, edgeForm ? "Fc" : "F1");
-        UnitC = BoxUnit(2, "F2");
-        UnitD = BoxUnit(3, "F2");
+        UnitA = BoxUnit(0);
+        UnitB = BoxUnit(1);
+        UnitC = BoxUnit(2);
+        UnitD = BoxUnit(3);
         UnitFmin = UnitFmax = Unit;
         SeedLibrary(Expr("LSeries"), Expr("CSeries"), Expr("Parts"));
         ApplyLabels();
@@ -817,7 +1170,22 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     private void SeedLibrary(string lSeries, string cSeries, string parts)
     {
         _partOverrides.Clear();
+        DropPin();
         if (lSeries.Length == 0 && cSeries.Length == 0 && parts.Length == 0) return;
+        var iec = ParseParts(parts).Where(x => x.SeriesKey.StartsWith(FilterValues.IecLibrary + ":", StringComparison.Ordinal)).ToList();
+        if (Series is not (FilterSeriesKind.Exact or FilterSeriesKind.VendorLibrary))
+            foreach (var (element, key, partName) in iec)
+            {
+                var series = new[] { FilterValues.IecSeries(Series, true), FilterValues.IecSeries(Series, false) }
+                    .FirstOrDefault(x => x.Key == key);
+                if (series?.Parts.FirstOrDefault(x => x.Name == partName) is { } part)
+                    _partOverrides[element] = (series, part);
+            }
+        if (lSeries.Length == 0 && cSeries.Length == 0 && iec.Count == ParseParts(parts).Count())
+        {
+            Design();
+            return;
+        }
         LoadLibraries();
         var missing = new List<string>();
         FilterLibrarySeries? Find(IEnumerable<FilterLibrarySeries> list, string key)
@@ -829,7 +1197,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         }
         InductorChoice = Find(InductorSeries, lSeries);
         CapacitorChoice = Find(CapacitorSeries, cSeries);
-        foreach (var (element, key, partName) in ParseParts(parts))
+        foreach (var (element, key, partName) in ParseParts(parts).Where(x => !iec.Contains(x)))
         {
             var series = InductorSeries.Concat(CapacitorSeries).FirstOrDefault(x => x.Key == key);
             var part = series?.Parts.FirstOrDefault(x => x.Name == partName);
@@ -842,21 +1210,22 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     }
 
     /// <summary>The Parts value as written: <c>element=library: series|part</c>, separated by ';'.</summary>
-    internal static IEnumerable<(string Element, string SeriesKey, string Part)> ParseParts(string text)
-    {
-        foreach (string item in text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            int eq = item.IndexOf('=');
-            int bar = item.LastIndexOf('|');
-            if (eq <= 0 || bar <= eq + 1 || bar == item.Length - 1) continue;
-            yield return (item[..eq].Trim(), item[(eq + 1)..bar].Trim(), item[(bar + 1)..].Trim());
-        }
-    }
+    internal static IEnumerable<(string Element, string SeriesKey, string Part)> ParseParts(string text) =>
+        FilterBlockLadder.ParseParts(text);
 
     /// <summary>The hand-picked parts, written the way <see cref="ParseParts"/> reads them.</summary>
     private string PartsText() =>
-        string.Join("; ", _partOverrides.OrderBy(o => o.Key, StringComparer.Ordinal)
+        string.Join("; ", _partOverrides.Where(o => AppliesToSeries(o.Value.Series))
+                                        .OrderBy(o => o.Key, StringComparer.Ordinal)
                                         .Select(o => $"{o.Key}={o.Value.Series.Key}|{o.Value.Part.Name}"));
+
+    /// <summary>True when a picked part's series is one the chosen Values builds with.</summary>
+    private bool AppliesToSeries(FilterLibrarySeries series) => Series switch
+    {
+        FilterSeriesKind.Exact         => false,
+        FilterSeriesKind.VendorLibrary => series.Library != FilterValues.IecLibrary,
+        _                              => series.Key == FilterValues.IecSeries(Series, series.Inductors).Key,
+    };
 
     /// <summary>
     /// Puts a Filter's own cutoff (GHz) into the boxes that edge belongs to — the passband edges,
@@ -939,12 +1308,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// </remarks>
     public IReadOnlyList<FilterAssignment>? FilterAssignments()
     {
-        if (_lastSpec is not { } spec) return null;
+        if (_lastSpec is not { } spec || !MaskMet) return null;
         // Each edge is written in the prefix of the box it was typed in.
         string[] units = [UnitA, UnitB, UnitC, UnitD];
         double[] boxHz = [spec.EdgeAHz, spec.EdgeBHz, spec.EdgeCHz, spec.EdgeDHz];
         string In(double hz, int box) =>
-            (hz / ScaleOf(units[box])).ToString("0.#########", CultureInfo.InvariantCulture);
+            (hz / ScaleOf(units[box])).ToString("0.##############", CultureInfo.InvariantCulture);
         // A cutoff is one of the boxes (which one depends on form and family): the box it equals.
         int BoxOf(double hz, int fallback)
         {
@@ -957,7 +1326,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             new("Form", spec.Form.ToString()),
             new("Order", spec.Order.ToString(CultureInfo.InvariantCulture)),
             new("Ripple", RippleText.Trim()),
-            new("Astop", AsText.Trim()),
+            // The floor the ladder was built at (As, or deeper when the ladder needed it); the mask's own
+            // As rides beside it so the Designer reopens on the mask as typed.
+            new("Astop", Math.Abs(spec.BuildAsDb - spec.AsDb) < 1e-9
+                ? AsText.Trim()
+                : spec.BuildAsDb.ToString("0.######", CultureInfo.InvariantCulture)),
+            new("AsMask", AsText.Trim(), "dB"),
             new("Zin", SourceText.Trim()),
             new("Zout", LoadText.Trim()),
             new("EllipticType", (EllipticTypeChoice?.Value ?? EllipticType.Auto).ToString()),
@@ -965,9 +1339,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             new("OrderMode", OrderMode.ToString()),
             new("First", spec.First.ToString()),
             new("Values", Series.ToString()),
-            new("LSeries", InductorChoice?.Key ?? ""),
-            new("CSeries", CapacitorChoice?.Key ?? ""),
-            new("Parts", PartsText()),
+            new("LSeries", IsVendorLibrary ? InductorChoice?.Key ?? "" : ""),
+            new("CSeries", IsVendorLibrary ? CapacitorChoice?.Key ?? "" : ""),
+            new("Parts", Series != FilterSeriesKind.Exact ? PartsText() : ""),
             new("Synthesis", "On"),
         };
         bool edge = spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass;
@@ -1049,6 +1423,147 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>Formats an L/C value the way the Exact / Used columns do.</summary>
     public string FormatElementValue(bool inductor, double v) => Eng(inductor, v);
 
+    // ── The search for a passing design ───────────────────────────────────────────────────────
+
+    /// <summary>The design the value search settled on, held while the specification stays as it was.</summary>
+    private FilterMaskChoice? _pinned;
+    private string? _pinnedSignature;
+
+    /// <summary>True when the part overrides were set by the search (and go when the pin does).</summary>
+    private bool _picksFromSearch;
+
+    /// <summary>True when the last specification could be searched: valid, with a mask to meet.</summary>
+    private bool _searchable;
+
+    private CancellationTokenSource? _searchCts;
+
+    /// <summary>True while the value search runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSearchValues))]
+    private bool _isSearching;
+
+    /// <summary>What the value search is trying now.</summary>
+    [ObservableProperty] private string _searchProgress = "";
+
+    /// <summary>
+    /// True when the design misses the mask with snapped values and a search could find other
+    /// values (or, for a library, other series) that meet it.
+    /// </summary>
+    public bool CanSearchValues => !MaskMet && Series != FilterSeriesKind.Exact && _searchable && !IsSearching;
+
+    /// <summary>The question beside the miss.</summary>
+    public string SearchQuestion => IsVendorLibrary
+        ? "Search other parts, element by element, across every pairing of an inductor series with a "
+          + "capacitor series, for a design that meets the mask?"
+        : $"Search other {Series} values, element by element, for a design that meets the mask?";
+
+    /// <summary>Everything a design is built from, as text: a change to any of it ends a pinned search result.</summary>
+    private string SpecSignature() => string.Join("|",
+        Response, Form, OrderMode, OrderText, ApText, RippleText, AsText, FaText, FbText, FcText, FdText,
+        UnitA, UnitB, UnitC, UnitD, SourceText, LoadText, First, EllipticTypeChoice?.Value, Series,
+        InductorChoice?.Key, CapacitorChoice?.Key);
+
+    private void DropPin()
+    {
+        _pinned = null;
+        _pinnedSignature = null;
+        if (_picksFromSearch) _partOverrides.Clear();
+        _picksFromSearch = false;
+    }
+
+    /// <summary>
+    /// Looks for a design whose ladder meets the mask with values from the chosen series: other
+    /// orders and floors the mask allows, each element's neighbouring values, and for Vendor library
+    /// every pairing of an inductor series with a capacitor series. What it finds is held (Order
+    /// becomes Specify at its order) until the specification changes.
+    /// </summary>
+    [RelayCommand]
+    public async Task SearchValuesAsync()
+    {
+        if (IsSearching) return;
+        if (!TrySpec(out var spec, out string? error))
+        {
+            Status = error ?? "";
+            return;
+        }
+        if (spec.Mask is not { } mask) return;
+        var pairs = new List<(FilterLibrarySeries?, FilterLibrarySeries?)>();
+        if (IsVendorLibrary)
+        {
+            if (!_librariesLoaded) LoadLibraries();
+            var ls = InductorSeries.Count > 0 ? InductorSeries.Select(x => (FilterLibrarySeries?)x).ToList() : [null];
+            var cs = CapacitorSeries.Count > 0 ? CapacitorSeries.Select(x => (FilterLibrarySeries?)x).ToList() : [null];
+            // The chosen pair first, then every other pairing.
+            pairs.AddRange(from l in ls from c in cs select (l, c));
+            pairs = pairs.OrderBy(p => p.Item1 == InductorChoice && p.Item2 == CapacitorChoice ? 0 : 1).ToList();
+            if (InductorSeries.Count == 0 && CapacitorSeries.Count == 0)
+            {
+                Status = (_libraryNote.Length > 0 ? _libraryNote : "This workspace's vendor libraries hold no inductor or capacitor series.")
+                         + " There is nothing to search.";
+                return;
+            }
+        }
+        else
+        {
+            pairs.Add((FilterValues.IecSeries(Series, true), FilterValues.IecSeries(Series, false)));
+        }
+
+        string? workspace = WorkspaceRoot;
+        _searchCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        IsSearching = true;
+        SearchProgress = "Searching…";
+        var progress = new Progress<string>(t => { if (IsSearching) SearchProgress = "Searching: " + t + "…"; });
+        FilterValueSearchResult? found;
+        string why = "";
+        try
+        {
+            found = await Task.Run(() => FilterValueSearch.Run(
+                spec.Response, spec.Form, spec.Order, FilterMask.MaxOrder, spec.FcHz, spec.F1Hz, spec.F2Hz,
+                spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask, pairs,
+                // A library part is judged as its own model, so what is found passes as placed.
+                IsVendorLibrary ? (part, hz) => part.Vendor is { } v ? FilterLadderCircuit.PartImpedance(v, hz, workspace) : null : null,
+                progress, cts.Token, out why, out _), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "The search was cancelled. " + Status;
+            return;
+        }
+        finally
+        {
+            IsSearching = false;
+            SearchProgress = "";
+            if (_searchCts == cts) _searchCts = null;
+        }
+        if (found is null)
+        {
+            Status = why;
+            return;
+        }
+
+        // Hold what was found: its series, its values, its order. Each assignment below would redesign
+        // on its own; the pin is set before any of them runs, so every one builds the found design.
+        _pinned = found.Choice;
+        _partOverrides.Clear();
+        foreach (var (element, pick) in found.Picks) _partOverrides[element] = pick;
+        _picksFromSearch = true;
+        if (IsVendorLibrary)
+        {
+            InductorChoice = found.Inductors;
+            CapacitorChoice = found.Capacitors;
+        }
+        OrderMode = FilterOrderMode.Specify;
+        OrderText = found.Choice.Order.ToString(CultureInfo.InvariantCulture);
+        _pinnedSignature = SpecSignature();
+        await DesignAsync(0);
+    }
+
+    /// <summary>Stops the value search.</summary>
+    [RelayCommand]
+    public void CancelSearch() => _searchCts?.Cancel();
+
     /// <summary>A Series / Part dropdown changed — keep the override and redesign.</summary>
     internal void OnRowPartChanged(FilterElementRow row)
     {
@@ -1077,7 +1592,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         SNP? ladderSnp = null;
         if (!string.IsNullOrEmpty(Cnl))
         {
-            try { ladderSnp = Run(Cnl, freqs, _lastRs); }
+            try { ladderSnp = Run(Cnl, freqs, _lastRs, WorkspaceRoot); }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
             {
                 Status = e.Message;
@@ -1112,7 +1627,23 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         double FcHz, double F1Hz, double F2Hz, double RippleDb, double AsDb,
         double SourceOhms, double LoadOhms,
         double PassLoHz, double PassHiHz, bool PassIsOutside,
-        double ApDb, double EdgeAHz, double EdgeBHz, double EdgeCHz, double EdgeDHz);
+        double ApDb, double EdgeAHz, double EdgeBHz, double EdgeCHz, double EdgeDHz)
+    {
+        /// <summary>The stopband floor the design is built at: As, or deeper when a ladder needs it (FilterMask.Find).</summary>
+        public double DesignAsDb { get; init; } = double.NaN;
+
+        /// <summary>The elliptic type as chosen (Auto, a, b, c), resolved per order by the mask search.</summary>
+        public EllipticType RequestedEllipticType { get; init; } = EllipticType.Auto;
+
+        /// <summary>The mask every design is checked against; null for a family with none to meet.</summary>
+        public FilterMaskSpec? Mask { get; init; }
+
+        /// <summary>The floor the ladder and the ideal block are built at.</summary>
+        public double BuildAsDb => double.IsNaN(DesignAsDb) ? AsDb : DesignAsDb;
+
+        /// <summary>A design the value search settled on, built as it is rather than searched for again.</summary>
+        public FilterMaskChoice? Pinned { get; init; }
+    }
 
     private bool TrySpec(out Spec spec, out string? error)
     {
@@ -1173,13 +1704,44 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                 break;
         }
 
+        // Synthesis ripple is its own box. The order is sized against the
+        // ripple the ladder is BUILT at — sizing it against Ap, as it once was, gave an order whose
+        // stopband was shallower than As whenever Ripple sat below Ap.
+        if (!double.TryParse(RippleText, NumberStyles.Float, CultureInfo.InvariantCulture, out double rippleIn)
+            || rippleIn < 0)
+        { error = "Ripple is a number of dB, zero or more."; return false; }
+        double ripple = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic
+            ? (rippleIn > 0 ? rippleIn : 0.1)
+            : 0.1;
+        bool rippled = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic;
+        // Ap left at 0 means the −3.01 dB edge, as the order formula reads it.
+        double apMask = ap > 0 ? ap : 3.0102999566;
+        if (rippled && ripple > apMask + FilterMask.ToleranceDb)
+        {
+            error = $"Ripple ({ripple:0.###} dB) is more than Ap ({apMask:0.###} dB), so the passband misses the mask "
+                  + "at every order. Lower the ripple or raise Ap.";
+            return false;
+        }
+
+        // A Butterworth's −3.01 dB point is its cutoff. With Ap tighter than that, the cutoff moves
+        // out so the passband edge sits at exactly −Ap and the mask's passband is met.
+        if (Response == FilterResponse.Butterworth && apMask < 3.0102999566)
+        {
+            double n0 = FilterOrder.Minimum(Response, Form, apMask, astop, fp, fs, fp1, fp2, fs1, fs2) ?? 1;
+            if (OrderMode != FilterOrderMode.Minimum
+                && int.TryParse(OrderText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int typed) && typed >= 1)
+                n0 = typed;
+            double omegaP = Math.Pow(Math.Sqrt(Math.Pow(10, apMask / 10) - 1), 1.0 / n0);   // < 1
+            (fc, f1, f2) = ButterworthEdges(Form, fc, f1, f2, omegaP);
+        }
+
         bool fromMin = false;
         int order;
         if (OrderMode == FilterOrderMode.Minimum
             && Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
         {
-            var n = FilterOrder.Minimum(Response, Form, ap, astop, fp, fs, fp1, fp2, fs1, fs2,
-                                        SelectedEllipticType);
+            var n = FilterOrder.Minimum(Response, Form, apMask, astop,
+                                        fp, fs, fp1, fp2, fs1, fs2, SelectedEllipticType);
             if (n is null)
             {
                 error = "The mask edges do not form a transition (Fs must sit outside the passband).";
@@ -1203,19 +1765,39 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             { error = "Order is a whole number, 1 or more."; return false; }
         }
 
-        // Synthesis ripple is its own box. Order still uses Ap with As and the edges.
-        if (!double.TryParse(RippleText, NumberStyles.Float, CultureInfo.InvariantCulture, out double rippleIn)
-            || rippleIn < 0)
-        { error = "Ripple is a number of dB, zero or more."; return false; }
-        double ripple = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic
-            ? (rippleIn > 0 ? rippleIn : 0.1)
-            : 0.1;
         var type = Response == FilterResponse.Elliptic
             ? EllipticTypes.Resolve(SelectedEllipticType, order)
             : EllipticType.A;
         spec = new Spec(Response, Form, order, fromMin, First, type, fc, f1, f2, ripple, astop, rs, rl,
-                        passLo, passHi, outside, ap, a, b, c, d);
+                        passLo, passHi, outside, ap, a, b, c, d)
+        {
+            DesignAsDb = astop,
+            RequestedEllipticType = SelectedEllipticType,
+            Mask = new FilterMaskSpec(Form, apMask, astop, a, b, c, d),
+        };
         return true;
+    }
+
+    /// <summary>
+    /// The Butterworth cutoff that puts the passband edge at prototype frequency
+    /// <paramref name="omegaP"/> (below 1): the edge is where the loss is Ap, not 3.01 dB.
+    /// </summary>
+    private static (double Fc, double F1, double F2) ButterworthEdges(NetworkForm form, double fc, double f1, double f2,
+                                                                      double omegaP)
+    {
+        switch (form)
+        {
+            case NetworkForm.Lowpass:  return (fc / omegaP, f1, f2);
+            case NetworkForm.Highpass: return (fc * omegaP, f1, f2);
+            default:
+            {
+                // Same centre; the bandwidth scaled so the old edges map to ±omegaP.
+                double f0 = Math.Sqrt(f1 * f2);
+                double bw = form == NetworkForm.Bandstop ? (f2 - f1) * omegaP : (f2 - f1) / omegaP;
+                double lo = (-bw + Math.Sqrt(bw * bw + 4 * f0 * f0)) / 2;
+                return (fc, lo, lo + bw);
+            }
+        }
     }
 
     private static bool Hz(string text, double scale, out double hz)
@@ -1237,33 +1819,14 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         var used = new List<FilterElement>(real.Elements.Count);
         foreach (var e in real.Elements)
         {
-            double value = FilterValues.Snap(e.Inductor, e.Value, snap.Series);
-            string partName = "";
-            string seriesName = snap.Series == FilterSeriesKind.Exact ? "" : snap.Series.ToString();
-            string tolerance = FilterValues.ToleranceOf(snap.Series);
-            FilterLibrarySeries? series = e.Inductor ? snap.Inductors : snap.Capacitors;
-            FilterPart? chosen = null;
-
-            if (snap.Overrides.TryGetValue(e.Name, out var ov) && ov.Series.Inductors == e.Inductor)
-            {
-                series = ov.Series;
-                chosen = ov.Part;
-                value = chosen.Value;
-                partName = chosen.Name;
-                seriesName = series.Label;
-                tolerance = chosen.Tolerance;
-            }
-            else if (series is not null && FilterValues.Nearest(e.Value, series.Parts) is { } near)
-            {
-                chosen = near;
-                value = near.Value;
-                partName = near.Name;
-                seriesName = series.Label;
-                tolerance = near.Tolerance;
-            }
-
+            // The one rule a simulated Filter block builds with too (FilterBlockLadder).
+            var (value, series, chosen) = FilterValues.Choose(e, snap.Series, snap.Inductors, snap.Capacitors,
+                                                              snap.Overrides);
+            string seriesName = series?.Label
+                ?? (snap.Series is FilterSeriesKind.Exact or FilterSeriesKind.VendorLibrary ? "" : snap.Series.ToString());
+            string tolerance = chosen?.Tolerance ?? FilterValues.ToleranceOf(snap.Series);
             used.Add(e with { Value = value });
-            rows.Add(new SnapRow(e, value, seriesName, partName, tolerance, series, chosen));
+            rows.Add(new SnapRow(e, value, seriesName, chosen?.Name ?? "", tolerance, series, chosen));
         }
         return used;
     }
@@ -1271,7 +1834,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>Fills the element table from a design's rows. UI thread.</summary>
     private void FillRows(List<SnapRow> rows)
     {
-        bool library = LibraryAvailable && (InductorSeries.Count > 0 || CapacitorSeries.Count > 0);
+        bool library = IsVendorLibrary && LibraryAvailable && (InductorSeries.Count > 0 || CapacitorSeries.Count > 0);
         int row = 0;
         _fillingRows = true;
         try
@@ -1409,9 +1972,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         return snp;
     }
 
-    private static SNP Run(string cnl, double[] freqs, double z0)
+    private static SNP Run(string cnl, double[] freqs, double z0, string? workspace = null)
     {
-        var (lib, tb) = new CnlReader().Read(cnl);
+        var (lib, tb) = FilterLadderCircuit.Read(cnl, workspace);
         var netlist = new Elaborator(lib).Elaborate(tb);
         var ds = SParameterEngine.Run(netlist, freqs);
         var cube = ds["S"];

@@ -43,7 +43,7 @@ public class FilterPlaceAndTileTests
     private static async Task<LcFilterDesignerViewModel> Designed(
         FilterResponse response, NetworkForm form, Action<LcFilterDesignerViewModel>? edit = null)
     {
-        var vm = new LcFilterDesignerViewModel { Response = response, Form = form };
+        var vm = new LcFilterDesignerViewModel { Response = response, Form = form, Unit = "GHz" };
         edit?.Invoke(vm);
         await vm.DesignAsync(0);
         Assert.True(vm.Elements.Count > 0, vm.Status);
@@ -279,7 +279,9 @@ public class FilterPlaceAndTileTests
         Assert.Contains("Kind=\"Ladder\"", toolbar);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(toolbar, "<uictl:PaletteGlyphControl Kind=\"Snp\""));
         Assert.DoesNotContain("SaveNetlistButton", xaml);
-        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(toolbar, "<mi:MaterialIcon ").Count);
+        // Send mask to Optimizer is the Optimizer's own TargetVariant glyph.
+        Assert.Contains("Kind=\"TargetVariant\"", toolbar);
+        Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(toolbar, "<mi:MaterialIcon ").Count);
         // A prefix picker shares its box's value column; a third side-panel column squeezed the
         // shared label column out of line with every other card.
         Assert.DoesNotContain("SharedSizeGroup=\"FltUnit\"", xaml);
@@ -632,6 +634,7 @@ public class FilterPlaceAndTileTests
         designer.SeedFrom(filter);
         await designer.DesignAsync(0);
         Assert.True(designer.CanReplaceTarget);
+        Assert.True(designer.MaskMet, designer.Status);
         designer.ReplaceTarget = true;
         int undoBefore = sheet.UndoRedo.Entries.Count();
         designer.PlaceFilter();

@@ -84,8 +84,8 @@ elaborates the `.cnl` and runs `SParameterEngine` on the thread pool, and applie
 the UI thread — only the latest request's, a superseded one is cancelled or dropped. Both curves go on
 one magnitude plot; phase and group delay go on the second. `FilterOrder.Minimum` is the closed-form
 order for Butterworth, Chebyshev, inverse Chebyshev and elliptic against the mask (for elliptic
-Auto/b/c, the smallest order whose type as built meets the stop edge); the window can
-take that or a typed override. `FilterLadderDrawing` places by ARM — `FilterRealization.Arms` names the elements each arm became —
+Auto/b/c, the smallest order whose type as built meets the stop edge). It is only where the
+search starts (see "The mask guarantee" below); the window can take that or a typed override. `FilterLadderDrawing` places by ARM — `FilterRealization.Arms` names the elements each arm became —
 and reads the arm's own topology: a spine element or chain, a through-path L∥C (C on the spine, L
 on a rail above), the three-branch bandpass/bandstop box ((series L–C) ∥ L ∥ C: pair above, L on
 the spine, C below), adjacent shunt legs, or a stub column whose parallel sections are legs either
@@ -97,7 +97,8 @@ side of it joined by bars. The pane and its Copy wire from one routine,
 none, 2 when an argument does not parse.
 
 Apply to Filter writes the specification onto a placed Filter through one `SetParametersCommand`.
-The snap stays in the netlist, not on the block.
+The snap is not written onto the block; with Values other than Exact the block simulates as the
+snapped ladder (see Vendor library below).
 
 ## Placing, Synthesise…, and the Designer's settings on the block (FD-P, 2026-11-21)
 
@@ -112,7 +113,10 @@ existed) is added with the registry's own unit and dimension.
 and `Parts` (`element=library: series|part; …`). `ComponentTypeRegistry.IsLcFilterDesignerParameter`
 names them and `NetExtractor` drops them, so the netlist line is identical with or without them and a
 blank edge never reaches the `.cnl` as `Fs=` — the empty-value trap. The edges are written in the
-window's frequency unit and the unit rides on the parameter, so Seed reopens in that unit.
+window's frequency unit and the unit rides on the parameter, so Seed reopens in that unit. The one
+exception (2026-11-23): a locked block whose `Values` is not Exact is emitted as its ladder, read from
+`Values`, `First`, `LSeries`, `CSeries` and `Parts` (see Vendor library below); the `Filter` line itself,
+for Exact, is unchanged.
 `SeedFrom` puts the stored edges in their boxes first, then the block's own cutoff over the edge it
 names, so an edit to `F1` in Properties still wins; each missing setting falls back to what Seed
 derived before (Ap from Ripple, edges from the cutoff, Specify for the order). A library series is
@@ -172,11 +176,122 @@ Match. The Filter entries in `components.md`, `system-components.md` and `dynami
 bandstop and point at the designer. The parameter descriptions live on the registry, which is what
 the parameter editor and `{{table: components/Filter}}` both read.
 
-## Known limitation: library series are not carried onto the schematic
+## Vendor library, placed and simulated (2026-11-23)
 
-When a library series is loaded (`LSeries`, `CSeries`, `Parts`), the realisation table snaps each
-element to the nearest stated value and names the part, and `Apply to Filter` stores the choice on the
-block so the window reopens on it. **Place filter** and **Replace this Filter** do not use it:
-`FilterPlacement.LadderFragment` builds the ladder from `MatchSchematicCopy`'s generic inductor and
-capacitor symbols at the snapped value, with no reference to the library part. Placing the
-library parts themselves is future work.
+**Vendor library is a Values entry** (`FilterSeriesKind.VendorLibrary`, appended so a stored `Values`
+keeps its meaning). Choosing it indexes the workspace's libraries (`LoadLibraries`, once per window);
+the Inductors and Capacitors pickers show only while it is chosen (`ShowLibraryPickers`), and the table
+offers per-element parts only then. There is no Load button. An IEC series ignores the library picks,
+and Apply writes `LSeries`/`CSeries`/`Parts` blank unless Values is Vendor library. A block applied
+before the entry existed (an IEC `Values` beside library names) reopens on Vendor library, which is
+what its library picks meant.
+
+**One value rule.** `FilterValues.Choose` is what the table, a placed ladder and a simulated block
+build each element with: the hand-picked part, else the nearest part of the element's series, else the
+exact value. `FilterPart.Vendor` carries the `VendorPartRef` so the part can be placed and simulated.
+
+**Place filter / Replace this Filter place the parts.** `FilterPlacement.LadderFragment` takes the
+element-to-part map and turns each generic L or C into a SpiceModel carrying the part's `File`, `Name`
+and `Glyph` (`VendorPartPlacement.Parameters`) and its case-size footprint — what a palette drop of
+the part builds. The glyph is the built-in L or C, so the pins land where the generic symbol's did.
+
+**A designed block simulates as its ladder when Values is not Exact** (`FilterBlockLadder`, in
+`src/Design/Filters`). `NetExtractor` emits, for a locked Filter (`Synthesis` not `Off`), one cell
+`LcFilter_<instance>` holding the ladder — a vendor part through `EmitSpiceModel`, the path a placed
+library part takes, any other element as an ideal L or C — and one instance of it on the block's two
+nets. Exact keeps the ideal `Filter` line, which is the exact ladder's response. A ladder that cannot
+be built (a non-numeric field, a library part the workspace no longer holds) is a Messages line and
+the ideal block. The parts inside the cell are removed from `PlacedVendorParts`, so they offer no
+`.Part` tunable of their own. `IL` is not modelled by the ladder.
+
+**Two window fixes.** The mask overlay is set on `MagnitudeContainer.Overlay` as well as on the
+control, so Export and Copy (which compose from containers) draw it. `MatchSchematicCanvas.FitOnResize`
+(off by default, on in this window) re-fits the ladder whenever the pane changes size.
+
+## The mask guarantee (2026-11-23)
+
+The Designer never returns a filter outside its own mask. `FilterMask` (`src/Core/Systems`) holds the
+mask (`FilterMaskSpec`, the four edge boxes in Hz with Ap and As), the check
+(`WorstMissDb`: each band sampled log-spaced out to a decade past its outer edge; loss above Ap in a
+passband or below As in a stopband is a miss, 1e-6 dB tolerance for the ideal, 1e-3 dB for a ladder
+netlist whose values are written to finite digits) and the search, `FilterMask.Find`:
+
+- Orders from the closed-form minimum (computed at Ap, which bounds every ripple at or under it) up
+  to 31 in Minimum, or the typed order alone in Specify. Even inverse Chebyshev and even type-a
+  elliptic are skipped.
+- For inverse Chebyshev and elliptic, design floors As + {0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 40} dB.
+  At a shallow floor those ladders can need a negative element (no zero order is positive); a
+  deeper floor fixes it. `Astop` on the block is the floor built at, `AsMask` the mask's.
+- At each order and floor, the edges as typed first, then `Balance`: the edges widened or narrowed
+  about the centre (`ScaleEdges`) by a bisection that equalises the passband's miss with the
+  stopband's. That spends the slack Ap leaves over the Ripple (the reported Chebyshev case: built at
+  0.1 dB against Ap 3 dB, the formula's order 5 missed) and the slack a deeper floor leaves.
+- The ladder must synthesise, and with an E-series or a vendor library the snapped ladder must meet
+  the mask as well (`accept`, coarse sample first). A snapped rejection moves to the next order, for
+  `SnapOrderWindow` (6) orders past the first exact success, then gives up and says the series is
+  too coarse.
+
+A Minimum that finds nothing shows the mask alone and the reason. A Specify design that misses is
+drawn with the miss in the status line, and `MaskMet` false blocks Apply, Place filter, Place
+component and Replace this Filter. Reopening a block whose mask edges are all stored shows the mask,
+not the shifted cutoff.
+
+## The search for a passing design (2026-11-23)
+
+`FilterValueSearch.Run` (`src/Design/Filters`) is what Search under a snapped miss runs. It walks
+`FilterMask.Candidates` (the same enumeration `Find` takes its first from: orders, floors, and the
+given then balanced edges, lazily) for `OrderWindow` (6) orders past the first, fitting values to at
+most `CandidatesPerOrder` (4) designs an order, for each `(inductor series, capacitor series)` pair
+it is handed. An IEC series is handed as a `FilterLibrarySeries` too (`FilterValues.IecSeries`,
+library name `IEC 60063`, the span `Snap` uses), so both cases are one search.
+
+The fit is coordinate descent over each element's nearest value and `Neighbours` (3) either side:
+single elements first, then adjacent pairs when single moves stall. The score is the worst miss
+plus a quarter of the mean excess over the grid, because the worst miss alone is flat wherever one
+frequency dominates. Responses come from `FilterLadder.InsertionLossDb`, a small nodal solve of the
+same circuit `ToCnl` writes, matched to the engine to 1e-6 dB by test, which is what makes thousands
+of evaluations affordable. A coarse pass (24 points a band) is confirmed on the full 400-point grid.
+
+The view model pins the result (`Spec.Pinned`): `Compute` builds that exact design instead of
+searching, while `SpecSignature()` is unchanged, and the picks are `_partOverrides` for every
+element. `FilterValues.Choose` honours an IEC pick when it is from the chosen series, so the block's
+`Parts` (`element=IEC 60063: E12 inductors|10nH`) is what `FilterBlockLadder.Build` and `SeedFrom`
+read back. A pick from a series other than the chosen Values is never written.
+
+## Library parts as their models (2026-11-23)
+
+With Vendor library, the Designer's ladder netlist is `FilterLadderCircuit.ToCnl` (`src/Design/Filters`):
+`FilterLadder.ToCnl` with each element that has a library part written as a `SpiceModel` line naming
+it, read back through `NetExtractor.ResolveNetlistSpiceModels` against the workspace — the resolution a
+placed part gets. The curve, the 400-point mask check and Apply/Place all use that circuit, so the
+window cannot show a pass the placed ladder does not have. A part that is a model folder keeps its
+stated value.
+
+The search and the snapped acceptance inside the mask search cannot afford a netlist per candidate.
+`FilterLadderCircuit.PartImpedance` measures each part once, in series between two 50 ohm ports
+(Z = 2·z0·(1/S21 − 1)), cached per part and frequency set, and `FilterLadder.InsertionLossDb` takes an
+optional per-element impedance in place of the ideal L or C. The candidate is judged on 24 points per
+band first and 400 only when that passes. Pairings of series past ten are shortlisted by how close
+each series' nearest parts are to the ideal impedance at the passband centre
+(`FilterValueSearch.Shortlist`).
+
+## The mask as optimizer goals (2026-11-23)
+
+`FilterMaskGoals.For` (`src/Design/Filters`) turns a `FilterMaskSpec` into `OptimizationGoal`s on
+`dB(SPn.S(out, in))`: `ge −Ap` over each passband and `le −As` over each stopband, over
+`FilterMask.Bands` — the extents `CheckFrequencies` samples, now its single source — cut to the first
+S-parameter analysis's sweep. The ports are the sheet's lowest two numbers (1 and 2 when stated). The
+Designer's toolbar button hands the mask to `WorkspaceViewModel.SendFilterMaskGoals`, which finds the
+workspace window holding the placement schematic, replaces the goals an earlier send made
+(`mask_pass…`, `mask_stop…`) in one `SetTuningSetupCommand`, and shows the Optimizer on that bench.
+
+## A ladder that misses, placed for the Optimizer (2026-11-24)
+
+Place filter is gated on `CanPlaceLadder` (a ladder and a schematic), not on the mask; Place component
+and Apply keep `CanPlace`, which requires it. The Designer holds the fragment's own part objects
+(`Remember`): `SchematicPasteCommand` takes the fragment's objects over and renames them in place, so
+the references give the names they were placed under. Send mask to Optimizer passes
+`FilterMaskGoals.LadderTunables` of those still on the sheet — `Name.L`/`Name.C` with `opt`, a ×½..×2
+log range and the E-series as `Discrete`, or `Name.Part` (kind `same`) for a library part — and
+`SendFilterMaskGoals` adds them only when the sheet is the bench's top frame, since a key inside a cell
+needs its cell's prefix.

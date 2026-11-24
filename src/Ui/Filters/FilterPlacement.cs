@@ -1,4 +1,7 @@
 using System.Globalization;
+using CircuitRF.Design.Filters;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Ui.Matching;
 
@@ -20,17 +23,43 @@ public static class FilterPlacement
     /// connects to the parts around it, not to a testbench. Each end is a short wire stub carrying a
     /// net label, <paramref name="inName"/> on port 1 and <paramref name="outName"/> on port 2.
     /// </summary>
+    /// <remarks>
+    /// An element named in <paramref name="parts"/> is placed as that vendor library part — the
+    /// SpiceModel a palette drop of the part makes, with its <c>File</c>, <c>Name</c> and <c>Glyph</c> and
+    /// the footprint of its own case size on <paramref name="technology"/> — at the element's own
+    /// position and rotation. Its glyph is the built-in L or C, so its pins land where the generic
+    /// symbol's did and the wires still meet them.
+    /// </remarks>
     /// <returns>An empty model when there is no ladder.</returns>
-    public static SchematicEditModel LadderFragment(MatchLadderLayout? layout, string inName, string outName)
+    public static SchematicEditModel LadderFragment(MatchLadderLayout? layout, string inName, string outName,
+                                                    IReadOnlyDictionary<string, VendorPartRef>? parts = null,
+                                                    Technology? technology = null)
     {
         var model = MatchSchematicCopy.Build(layout);
         if (layout is null || model.Components.Count == 0) return model;
         model.Components.RemoveAll(c => c.Symbol is SymbolKind.TermG or SymbolKind.Term);
+        UseVendorParts(model, parts, technology);
 
         double y = MatchLadderLayout.SpineY;
         AddStub(model, layout.PortLeftX, layout.PortLeftX - StubLength, y, inName);
         AddStub(model, layout.PortRightX, layout.PortRightX + StubLength, y, outName);
         return model;
+    }
+
+    /// <summary>
+    /// Turns a generic L or C of the ladder into <paramref name="part"/>, the way
+    /// <c>SchematicViewModel.CommitVendorPlacement</c> builds a placed part: a SpiceModel carrying the
+    /// part's three hidden parameters, and the footprint its case size gives.
+    /// </summary>
+    private static void UseVendorPart(EditableComponent c, VendorPartRef part, Technology? technology)
+    {
+        c.Symbol = SymbolKind.SpiceModel;
+        c.Parameters.Clear();
+        foreach (var (name, value) in VendorPartPlacement.Parameters(part))
+            c.Parameters.Add(new EditableParameter { Name = name, Expression = value, ShowOnSchematic = false });
+        if (VendorPartPlacement.Footprint(part, technology) is { } footprint)
+            c.Parameters.Add(new EditableParameter
+                { Name = CircuitRF.Core.Design.ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
     }
 
     /// <summary>
@@ -44,9 +73,27 @@ public static class FilterPlacement
 
     /// <summary>
     /// The ladder with its two terminations as ports — port 1 at the source resistance, port 2 at the load — exactly as
-    /// the pane draws it (<see cref="MatchSchematicCopy.Build"/>).
+    /// the pane draws it (<see cref="MatchSchematicCopy.Build"/>). An element named in <paramref name="parts"/> is that
+    /// vendor library part, as in <see cref="LadderFragment"/>.
     /// </summary>
-    public static SchematicEditModel PortedLadderFragment(MatchLadderLayout? layout) => MatchSchematicCopy.Build(layout);
+    public static SchematicEditModel PortedLadderFragment(MatchLadderLayout? layout,
+                                                          IReadOnlyDictionary<string, VendorPartRef>? parts = null,
+                                                          Technology? technology = null)
+    {
+        var model = MatchSchematicCopy.Build(layout);
+        UseVendorParts(model, parts, technology);
+        return model;
+    }
+
+    /// <summary>Each generic L or C of a ladder fragment named in <paramref name="parts"/>, as that part.</summary>
+    private static void UseVendorParts(SchematicEditModel model, IReadOnlyDictionary<string, VendorPartRef>? parts,
+                                       Technology? technology)
+    {
+        if (parts is not { Count: > 0 }) return;
+        foreach (var c in model.Components)
+            if (parts.TryGetValue(c.InstanceName, out var part) && VendorPartPlacement.GlyphKind(part.Glyph) == c.Symbol)
+                UseVendorPart(c, part, technology);
+    }
 
     private static void AddStub(SchematicEditModel model, double inner, double outer, double y, string name)
     {
@@ -109,7 +156,8 @@ public static class FilterPlacement
     /// one; otherwise it takes a fresh <c>IN</c>/<c>OUT</c> pair (<see cref="EndNames"/>).</para>
     /// </remarks>
     public static (SchematicEditModel Ladder, List<EditableNetLabel> PinLabels) ReplacementFragment(
-        SchematicEditModel sheet, EditableComponent filter, MatchLadderLayout layout)
+        SchematicEditModel sheet, EditableComponent filter, MatchLadderLayout layout,
+        IReadOnlyDictionary<string, VendorPartRef>? parts = null, Technology? technology = null)
     {
         var defs = sheet.PortDefsOf(filter).OrderBy(d => d.PortIndex).ToList();
         var pins = defs.Select(d => sheet.PortWorldOf(filter, d)).ToList();
@@ -118,7 +166,7 @@ public static class FilterPlacement
         string inName = existing.In ?? freshIn;
         string outName = existing.Out ?? freshOut;
 
-        var ladder = LadderFragment(layout, inName, outName);
+        var ladder = LadderFragment(layout, inName, outName, parts, technology);
         // Below the block, centred on it, on the connection grid.
         double grid = sheet.GridSize > 0 ? sheet.GridSize : 100.0;
         double cx = (layout.PortLeftX + layout.PortRightX) / 2;
@@ -170,9 +218,7 @@ public static class FilterPlacement
     /// Whether the design holds the block is <see cref="IsLocked"/>.
     /// </summary>
     public static bool IsDesigned(EditableComponent filter) =>
-        filter.Symbol == SymbolKind.Filter
-        && filter.Parameters.Any(p => p.Name is "Ap" or "Fp" or "Fs" or "Fp1" or "Fs1" or "Fs2" or "Fp2"
-                                      && !string.IsNullOrWhiteSpace(p.Expression));
+        filter.Symbol == SymbolKind.Filter && FilterBlockLadder.IsDesigned(filter.Parameters);
 
     /// <summary>
     /// True when <paramref name="filter"/>'s design holds it (Use Synthesis): it carries a design
@@ -180,9 +226,7 @@ public static class FilterPlacement
     /// through Synthesise… only; with Use Synthesis off it is a plain Filter that keeps the design.
     /// </summary>
     public static bool IsLocked(EditableComponent filter) =>
-        IsDesigned(filter)
-        && !string.Equals(filter.Parameters.FirstOrDefault(p => p.Name == "Synthesis")?.Expression.Trim(), "Off",
-                          StringComparison.OrdinalIgnoreCase);
+        filter.Symbol == SymbolKind.Filter && FilterBlockLadder.IsLocked(filter.Parameters);
 
     /// <summary>True when <paramref name="name"/> is a value <see cref="IsLocked"/> holds: every one but <c>IL</c>,
     /// which the Designer does not write.</summary>

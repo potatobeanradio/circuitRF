@@ -156,13 +156,13 @@
                     ToolTip.Tip="Apply to Filter — write this specification and the Designer's settings onto the Filter">
                 <mi:MaterialIcon Kind="SquareEditOutline" Width="16" Height="16"/>
             </Button>
-            <Button Name="PlaceFilterButton" Padding="6,3" Click="OnPlaceFilter" IsEnabled="{Binding CanPlace}"
+            <Button Name="PlaceFilterButton" Padding="6,3" Click="OnPlaceFilter" IsEnabled="{Binding CanPlaceLadder}"
                     ToolTip.ShowOnDisabled="True">
                 <ToolTip.Tip>
                     <TextBlock MaxWidth="360" TextWrapping="Wrap">
                         <Run FontWeight="SemiBold" Text="Place filter — the LC ladder: on a schematic with no ports, ending in ports 1 and 2; otherwise ends labelled IN and OUT"/>
                         <LineBreak/>
-                        <Run Text="{Binding PlaceTip}"/>
+                        <Run Text="{Binding PlaceLadderTip}"/>
                     </TextBlock>
                 </ToolTip.Tip>
                 <mi:MaterialIcon Kind="Ladder" Width="16" Height="16"/>
@@ -177,6 +177,10 @@
                     </TextBlock>
                 </ToolTip.Tip>
                 <uictl:PaletteGlyphControl Kind="Snp" PortCount="2" Monochrome="True" Width="16" Height="16"/>
+            </Button>
+            <Button Name="SendMaskButton" Padding="6,3" Click="OnSendMask"
+                    ToolTip.Tip="Send mask to Optimizer — the passband and stopband limits as goals on |S21| in dB, on the schematic Place filter goes into, read through its S-parameter analysis">
+                <mi:MaterialIcon Kind="TargetVariant" Width="16" Height="16"/>
             </Button>
             <!-- Lit = Place filter replaces the Filter this window was opened on. A Button bound to
                  Classes.ToolActive, as the Match Designer's panel lamps are: the view model owns the
@@ -208,9 +212,11 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Source"/></StackPanel>
-                                <TextBox Grid.Column="1" Classes="num" Text="{Binding SourceText}"/>
+                                <TextBox Name="SourceBox" Grid.Column="1" Classes="num" Text="{Binding SourceText}"
+                                         ToolTip.Tip="The source resistance, ohms: a real number. A complex value is refused as it is typed."/>
                                 <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Load"/></StackPanel>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding LoadText}"/>
+                                <TextBox Name="LoadBox" Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding LoadText}"
+                                         ToolTip.Tip="The load resistance, ohms: a real number. A complex value is refused as it is typed."/>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -336,23 +342,20 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Values"/>
-                            <ComboBox ItemsSource="{Binding SeriesKinds}" SelectedItem="{Binding Series}"
-                                      ToolTip.Tip="Exact theoretical values, or the nearest IEC preferred number."/>
-                            <Button Content="Load library series" Command="{Binding LoadLibrariesCommand}"
-                                    HorizontalAlignment="Left" Margin="0,2,0,0"
-                                    ToolTip.Tip="Index the workspace's vendor libraries and offer one inductor series and one capacitor series."/>
-                            <TextBlock Classes="lbl" Text="Inductors" IsVisible="{Binding LibraryAvailable}"/>
+                            <ComboBox ItemsSource="{Binding SeriesChoices}" SelectedItem="{Binding SeriesChoice}"
+                                      ToolTip.Tip="Exact theoretical values, the nearest IEC preferred number, or real parts from the workspace's vendor libraries."/>
+                            <TextBlock Classes="lbl" Text="Inductors" IsVisible="{Binding ShowLibraryPickers}"/>
                             <ComboBox ItemsSource="{Binding InductorSeries}" SelectedItem="{Binding InductorChoice}"
-                                      IsVisible="{Binding LibraryAvailable}">
+                                      IsVisible="{Binding ShowLibraryPickers}">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="df:FilterLibrarySeries">
                                         <TextBlock Text="{Binding Label}"/>
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
-                            <TextBlock Classes="lbl" Text="Capacitors" IsVisible="{Binding LibraryAvailable}"/>
+                            <TextBlock Classes="lbl" Text="Capacitors" IsVisible="{Binding ShowLibraryPickers}"/>
                             <ComboBox ItemsSource="{Binding CapacitorSeries}" SelectedItem="{Binding CapacitorChoice}"
-                                      IsVisible="{Binding LibraryAvailable}">
+                                      IsVisible="{Binding ShowLibraryPickers}">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="df:FilterLibrarySeries">
                                         <TextBlock Text="{Binding Label}"/>
@@ -407,6 +410,16 @@
                             <TextBlock Classes="cardhdr" Text="Design information"/>                            <TextBlock Classes="note" Text="{Binding DesignInfo}"/>
                             <TextBlock Classes="warn" Text="{Binding Status}"
                                        IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <!-- A miss with snapped values: offer the search for values that meet the mask. -->
+                            <StackPanel Spacing="4" Margin="0,4,0,0" IsVisible="{Binding CanSearchValues}">
+                                <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding SearchQuestion}"/>
+                                <Button Content="Search" Command="{Binding SearchValuesCommand}" HorizontalAlignment="Left"
+                                        ToolTip.Tip="Tries other orders the mask allows, each element's neighbouring values and, for Vendor library, every pairing of series. What it finds replaces the design until the specification changes."/>
+                            </StackPanel>
+                            <StackPanel Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsSearching}">
+                                <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding SearchProgress}"/>
+                                <Button Content="Cancel" Command="{Binding CancelSearchCommand}" HorizontalAlignment="Left"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -421,7 +434,7 @@
                 <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
                         BorderBrush="{DynamicResource CrfTileBorderBrush}">
                     <Panel>
-                        <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
+                        <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}" FitOnResize="True"/>
                         <Button HorizontalAlignment="Left" VerticalAlignment="Top"
                                 Margin="4" Padding="6,3" Click="OnZoomFit"
                                 ToolTip.Tip="Zoom to Fit  (F)">

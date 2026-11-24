@@ -42,28 +42,53 @@ that: its load is the ratio the family produces (1 for Butterworth, a particular
 even-order Chebyshev). When the two disagree, the window says what the ladder's load is and Apply
 keeps the impedances you typed on the block.
 
-It is direct synthesis. There is no optimiser in the window. A mask the snapped ladder misses is
-the existing optimizer's problem, on an E-series or on a part.
+It is direct synthesis, and **the window never hands back a filter outside its own mask.** The
+order formula only says where to start: the window checks each candidate's response against the
+mask, band by band out to a decade past the outer edges, and takes the first that stays inside it.
+When the edges as typed miss (a Chebyshev built at a 0.1 dB ripple against an Ap of 3 dB, say), it
+moves the cutoff into the slack Ap leaves before trying the next order. With an E-series or a
+vendor library it checks the ladder at its snapped values too, so a value a few percent off cannot
+push an edge out. A design that still misses, at an order you typed, is drawn with the miss said in
+the status line, and cannot be applied or placed as a Filter. **Place filter still puts its ladder
+down**, at the values the table shows, so it can be tuned in the circuit (see
+[Tuning it in the circuit](#optimizer)); its tooltip says by how much it misses.
+
+**When an E-series or a library is what misses, the window offers a search.** Under the reason in
+Design information it asks whether to look for other values, with a **Search** button. The search
+tries the designs the mask allows (the orders from the one that missed, deeper floors and re-centred
+edges), and for each it moves the elements one at a time, then in neighbouring pairs, to the values
+around their nearest one in the series: up to three either side, the nearest not always being the
+best. With Vendor library it does the same over every pairing of an inductor series with a capacitor
+series in the workspace's libraries, the chosen pair first. It stops at the first ladder that meets
+the mask, checked on the same grid as every design, and the window then shows that design: Order
+switches to Specify at the order found, the library series become the pair it used, and each
+element's part is the one it picked. **Cancel** stops it. Changing anything in the specification
+drops what it found and designs afresh. When nothing works, the status line says how close it came.
+
+Apply writes the picked values to the block's `Parts` (for an E-series, as values of that series),
+so the block simulates, and the Designer reopens on, exactly that ladder.
 
 ## The specification {#spec}
 
 | Control | What it sets |
 |---|---|
-| Source, Load | The two resistances, in ohms. |
+| Source, Load | The two resistances, in ohms: a real number each. A complex value, a unit or a name is refused as you type it, and the box keeps what it held. |
 | First element | Series or parallel. Parallel starts the ladder on a shunt arm. |
 | Order | The **prototype** order. A bandpass or bandstop replaces each element by a resonator, so an all-pole order 3 is six elements and a tank becomes four. |
 | Response | In Shape. Maximally Flat, Chebyshev, Inverse Chebyshev, Elliptic, Bessel-Thomson, Gaussian. |
 | Type | In Shape, for Elliptic only. **Auto** (a at odd order, c at even order), **a** (classical), **b** (even order, unequal terminations), **c** (even order, equal terminations). |
 | Form | Lowpass, highpass, bandpass, bandstop. |
-| Order | **Minimum** is the smallest prototype order that meets Ap, As and the mask edges. **Specify** types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder). |
-| Ap, Ripple, As | Passband attenuation, synthesis ripple and stopband attenuation, in dB. Ripple is enabled only for Chebyshev and elliptic, the two families that have one; the others build at a fixed ripple. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording. |
-| Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. Each edge has its own prefix (Hz, kHz, MHz, GHz) beside it; changing one rescales that box only, so the frequency it states is unchanged. The plot's axis reads in the passband edge's prefix. |
+| Order | **Minimum** is the smallest prototype order whose ladder meets the mask (Ap, As and the edges), checked rather than taken from the order formula. **Specify** types N, and a design that misses the mask at that order cannot be applied or placed. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder). |
+| Ap, Ripple, As | Passband attenuation, synthesis ripple and stopband attenuation, in dB. Ripple is enabled only for Chebyshev and elliptic, the two families that have one; the others build at a fixed ripple. Ripple may not exceed Ap. Inverse Chebyshev and elliptic read As as the stopband floor; at a shallow As their ladder can need a negative element, so the window then builds them deeper than As (and says so) at edges that still meet the mask's As. Hover the labels for the same wording. |
+| Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. Each edge has its own prefix (Hz, kHz, MHz, GHz) beside it; changing one rescales that box only, so the frequency it states is unchanged. The edges start in MHz. The plot's axis reads in the passband edge's prefix. |
 
 The cutoff the ladder is built at is Fp for a lowpass or highpass, the passband edges for a
 bandpass, and Fp1 and Fp2 for a bandstop — the passband edges either side of the rejected band.
 Inverse Chebyshev is the one exception: its edge is where As is first met, so it is built at Fs
 (Fs1 and Fs2 on a band form). The other edges are the mask: where you want the stopband floor, not
-a second cutoff.
+a second cutoff. Those are the edges as typed; when the mask leaves room (Ap above the Ripple, a
+Butterworth asked for less than 3.01 dB at Fp, or a stopband built deeper than As), the cutoff
+moves off them so the response sits inside the mask.
 
 The plot draws that mask by role. Passband edges and the −Ap limit are blue, stopband edges and
 the −As limit are red, and each limit spans only its own band, with the side a trace must not
@@ -98,6 +123,8 @@ bandpass or bandstop series arm with a transmission zero is a box of three paral
 series resonator on top, its inductor on the line, its capacitor below; and a parallel resonator to
 ground is two adjacent legs. Every label sits beside its own symbol. **Copy** puts the same drawing
 on the clipboard, and pasted into a schematic it extracts to exactly the ladder in the table.
+Resizing the window re-fits the ladder, so it stays centred and whole in its pane. Exporting or
+copying the magnitude plot keeps the mask lines and their labels, as drawn on screen.
 
 **Design** on the toolbar rebuilds the ladder and the curves. Every edit redesigns after a
 short pause, off the window's thread, so typing an order of 25 does not freeze the window; the
@@ -116,28 +143,43 @@ The realization table has the theoretical value and the value that is written.
 |---|---|
 | Exact | The continued-fraction value, in henries or farads. |
 | E6, E12, E24, E96 | The nearest IEC 60063 preferred number, nearest by ratio — the same snap the Smith chart and the optimizer use. |
-| A library series | **Load library series** indexes the workspace's vendor libraries. Pick one inductor series and one capacitor series. Each element becomes the nearest stated value in that series, and the row names the part. |
+| Vendor library | Real parts from the workspace's vendor libraries. Choosing it indexes the libraries and shows an **Inductors** and a **Capacitors** series list, which are hidden for every other choice. Each element becomes the nearest stated value in its series, and the row names the part; the table's Series and Part lists pick a different part for one element. |
 
-A workspace with no vendor library leaves the series lists empty and says so. It does not fall
-back to an E-series. The power-integrity part library is a different drawer and is not read here.
+A workspace with no vendor library shows no series lists and says so, and every value stays exact.
+It does not fall back to an E-series. An element whose kind has no series chosen keeps its exact
+value. The power-integrity part library is a different drawer and is not read here.
 
-**Known limitation: a placed ladder does not use the library parts.** With a library series loaded,
-the table names each part and the ladder is drawn at that part's value, but **Place filter** and
-**Replace this Filter** put ordinary inductors and capacitors on the schematic, at those values.
-They are not the vendor parts, and nothing on the placed ladder refers back to the library part.
-The block written by **Apply to Filter** or **Place component** remembers the series and parts, so
-the window reopens on them. Placing the library parts themselves is planned for a later release.
+With Vendor library chosen, **Place filter** and **Replace this Filter** place the library parts
+themselves: each element is the vendor part the table names, exactly as if it had been placed from
+the palette, with its case size's footprint on a board technology.
+
+**A library part is judged as its model, not as its stated value.** A real inductor or capacitor has
+loss, a parasitic in parallel or in series and a self-resonance, and near a few gigahertz those move a
+filter a long way from the ideal ladder at the same values. So with Vendor library the curve, the
+mask check and the search all simulate each element as the part's own SPICE model, read through the
+workspace exactly as a placed part is: what the window draws is what the placed ladder or Filter
+block simulates. A design whose parts cannot meet the mask says so, with how far it misses, rather
+than showing an ideal curve the circuit will not follow. A part that is a model folder rather than a
+SPICE subcircuit keeps its stated value. With many series in the libraries the search tries the ten
+pairings whose parts sit closest to the values the design needs at the band's centre, and says so.
 
 ## Where the result goes {#place}
 
 **Apply to Filter**, when the window was opened on a placed Filter, writes the whole specification
 onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
-impedances, so the ideal block and the ladder are the same response. It also writes the window's
+impedances, so the ideal block and the ladder are the same response. Astop is the floor the design
+was built at; when that is deeper than the mask's As, `AsMask` keeps the mask's. It also writes the window's
 own settings, which the block keeps for the Designer and does not simulate: Ap, every mask edge
 (`Fp`, `Fs` or `Fp1`, `Fs1`, `Fs2`, `Fp2`), Minimum or Specify for the order, the first element, the
 value series and the library series and parts. **Synthesise…** on that Filter later reopens the
-window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
-because the block has no elements.
+window exactly as it was applied, with nothing derived again.
+
+**What the block simulates follows Values.** With Exact, the Filter is the ideal transfer function,
+which is the exact ladder's own response. With an E-series or Vendor library, a Filter that carries a
+design simulates as its ladder: the snapped values, or the vendor library parts its properties name,
+so the run uses what the properties say. A part the workspace's libraries no longer hold is reported
+in Messages, and the block then simulates as the ideal filter. With **Use Synthesis** unticked the
+block is always the ideal transfer function, since its fields may no longer match the design.
 
 **A Filter that carries a design is locked.** Its properties and its parameter dialog show the same
 fields the window does, in the window's order, but greyed, and its values cannot be edited on the
@@ -173,6 +215,41 @@ move it.
 To get the ladder as a netlist, use `circuitrf filter lc … -o filter.cnl`: two terminations and the
 inductors and capacitors between them. That file is what `sparam` simulates, and it is the same
 netlist the plot was drawn from.
+
+## Tuning it in the circuit {#optimizer}
+
+**Send mask to Optimizer** (the target button on the toolbar) turns the mask into optimizer goals on
+the schematic Place filter goes into, so a placed ladder can be tuned back inside it as built, its
+board and parts included. It adds one goal per band on |S21| in dB, read through the schematic's
+S-parameter analysis from its lowest-numbered port to the next (1 to 2 on a ladder placed with
+ports):
+
+| Goal | Holds |
+|---|---|
+| `mask_pass` | at least −Ap over the passband |
+| `mask_stop` (`mask_stop_lower`, `mask_stop_upper` for a bandpass) | at most −As over each stopband |
+
+Each band is the one the window checks, out to a decade past the outer edges, cut to the analysis's
+sweep; a band the sweep does not reach gets no goal, and Messages names it. The Optimizer opens on
+that schematic with the goals added as one undo step, and sending again replaces the goals an earlier
+send made. It works whether or not the design meets the mask, since tuning is the way back in. A
+schematic with no S-parameter analysis is told to add one first.
+
+**The ladder Place filter last put on that schematic becomes the optimizer's variables** in the same
+step, each part still on the sheet under whatever name it was given when placed:
+
+| Values | Each element's variable |
+|---|---|
+| Exact | its value, between half and twice what was placed |
+| E6, E12, E24, E96 | its value over the same range, on that series |
+| Vendor library | its `Part`: the parts of the same kind in its own library |
+
+A part the sheet already has a variable for keeps its own settings and is switched on for the
+optimizer. A ladder placed inside a cell rather than on the bench gets goals only; add its parts in
+the Optimizer. So a design the Designer cannot make meet the mask can be placed, sent, and run: a
+Chebyshev lowpass at 1000 and 1300 MHz with Ap 0.5 dB and As 30 dB, at order 9 on E12, misses by
+1.35 dB with nearest values, and the Optimizer moved its parts to other E12 values and
+met both goals.
 
 ## The same thing from the command line {#headless}
 

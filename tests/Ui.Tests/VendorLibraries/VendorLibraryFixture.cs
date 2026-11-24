@@ -17,16 +17,19 @@ internal static class VendorLibraryFixture
     public const int Parts = 300;
 
     /// <summary>Writes the library under <paramref name="root"/> and returns every part name in it.</summary>
-    public static List<string> Write(string root)
+    /// <param name="physical">Models a filter can be built from: an inductor with a small parallel
+    /// capacitance and a capacitor with a small series inductance, both resonating well above the decade past a stopband edge the Designer checks, rather than the default inductor
+    /// carrying a series 0.05 pF (which blocks it outright). The parts' names and values are the same.</param>
+    public static List<string> Write(string root, bool physical = false)
     {
         var names = new List<string>();
         Directory.CreateDirectory(Path.Combine(root, "capacitors"));
         Directory.CreateDirectory(Path.Combine(root, "inductors"));
         Directory.CreateDirectory(Path.Combine(root, "general"));
 
-        File.WriteAllText(Path.Combine(root, "capacitors", "series-a.lib"), Capacitors("A", 120, spaced: true, names));
-        File.WriteAllText(Path.Combine(root, "general", "series-g.lib"), Capacitors("G", 100, spaced: false, names));
-        File.WriteAllText(Path.Combine(root, "inductors", "series-l.lib"), Inductors(80, names));
+        File.WriteAllText(Path.Combine(root, "capacitors", "series-a.lib"), Capacitors("A", 120, spaced: true, names, physical));
+        File.WriteAllText(Path.Combine(root, "general", "series-g.lib"), Capacitors("G", 100, spaced: false, names, physical));
+        File.WriteAllText(Path.Combine(root, "inductors", "series-l.lib"), Inductors(80, names, physical));
         File.WriteAllText(Path.Combine(root, "capacitors", "readme.txt"),
             "Read me.\nThese models are small-signal, at 25 degC and zero bias.\n");
         File.WriteAllText(Path.Combine(root, "inductors", "empty.lib"), "");
@@ -123,7 +126,7 @@ internal static class VendorLibraryFixture
     /// Capacitors with a Description header. <paramref name="spaced"/> picks between two editions'
     /// layouts: <c>* Property : C = …</c> with bracketed units, or <c>*Property:C=…</c> with bare ones.
     /// </summary>
-    private static string Capacitors(string series, int count, bool spaced, List<string> names)
+    private static string Capacitors(string series, int count, bool spaced, List<string> names, bool physical = false)
     {
         var sb = new StringBuilder("* Synthetic test library. Not a real product.\n\n");
         for (int i = 0; i < count; i++)
@@ -155,7 +158,7 @@ internal static class VendorLibraryFixture
             sb.Append("*****************************************\n");
             sb.Append(CultureInfo.InvariantCulture, $".SUBCKT {name} Port1 Port2\n");
             sb.Append(CultureInfo.InvariantCulture, $"C1 Port1 n1 {pf}p\n");
-            sb.Append("L1 n1 n2 0.3n\n");
+            sb.Append(physical ? "L1 n1 n2 0.001n\n" : "L1 n1 n2 0.3n\n");
             sb.Append("R1 n2 Port2 0.05\n");
             sb.Append(CultureInfo.InvariantCulture, $".ENDS {name}\n\n");
         }
@@ -163,7 +166,7 @@ internal static class VendorLibraryFixture
     }
 
     /// <summary>Inductors: no Description line, the other range spelling, a current-bias line.</summary>
-    private static string Inductors(int count, List<string> names)
+    private static string Inductors(int count, List<string> names, bool physical = false)
     {
         var sb = new StringBuilder();
         for (int i = 0; i < count; i++)
@@ -178,7 +181,7 @@ internal static class VendorLibraryFixture
             sb.Append("*   DC Bias Current = 0 A\n");
             sb.Append(CultureInfo.InvariantCulture, $".subckt {name} 1 2\n");
             sb.Append(CultureInfo.InvariantCulture, $"L1 1 n1 {nh:0.0}n Rser=0.1\n");
-            sb.Append("C1 n1 2 0.05p\n");
+            sb.Append(physical ? "R2 n1 2 0.01\nC1 1 2 0.001p\n" : "C1 n1 2 0.05p\n");
             sb.Append(CultureInfo.InvariantCulture, $".ends {name}\n");
         }
         return sb.ToString();

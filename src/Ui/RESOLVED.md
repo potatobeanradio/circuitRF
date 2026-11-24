@@ -42881,7 +42881,7 @@ disabled, and a Filter that carries a design edited only through Synthesise….
   designer; Place component carries the SnP part's library glyph (the S-Parameter Viewer's). Save
   netlist is gone with its handler and the view model's `NetlistText()` — `circuitrf filter lc -o`
   writes the netlist. The toolbar test asserts the word and both glyphs.
-- **Limitation, deliberately left for a later release: a placed ladder does not use the library
+- **Limitation (lifted 2026-11-23, see the next entry): a placed ladder did not use the library
   parts.** With a library series loaded the table snaps each element to a stated value and names the
   part, and Apply to Filter stores `LSeries`/`CSeries`/`Parts` on the block so the window reopens on
   them. Place filter and Replace this Filter build the ladder in `FilterPlacement.LadderFragment`
@@ -42891,3 +42891,99 @@ disabled, and a Filter that carries a design edited only through Synthesise….
   EM, Touchstone extraction); this one is the lumped LC ladder with standard part values. Names, icons
   and the CLI noun (`filter lc`) are kept apart on purpose.
 
+## LC Filter Designer — Vendor library as a Values entry, placed and simulated (2026-11-23)
+
+- **Vendor library moved into the Values dropdown** and the Load button went. Choosing the entry is
+  the load; the Inductors/Capacitors pickers bind `ShowLibraryPickers` (Vendor library AND a series
+  found). The dropdown binds `SeriesChoices`/`SeriesChoice` (a label record), because the enum's own
+  name would read "VendorLibrary". `FilterSeriesKind.VendorLibrary` is APPENDED, and
+  `FilterValues.Snap` had to learn it: its switch fell through to E12 for an unknown kind.
+- **Place filter / Replace this Filter place the vendor parts.** The ladder's L/C components are
+  matched to the design by instance name (the drawing keeps the element name) and rebuilt as SpiceModel
+  parts, as `CommitVendorPlacement` builds one. Only a part whose glyph is the same L or C is swapped,
+  so the pin geometry the wires were drawn to is unchanged.
+- **A designed Filter with Values other than Exact simulates as its ladder** (`FilterBlockLadder` +
+  `NetExtractor.EmitFilterLadderInstance`): the properties named library parts the run never used. The
+  library parts go through `EmitSpiceModel`, the placed-part path, and are then removed from
+  `PlacedVendorParts` so they offer no tunable keyed to an instance that is not on the sheet.
+- **Exported plots had no mask.** `PlotExporter.Place` composes from the CONTAINER's `Overlay`; only
+  the control's was set. The Smith Chart had already hit this (R-smith7-5).
+- **The ladder pane re-fits on resize** through `MatchSchematicCanvas.FitOnResize` (opt-in: the Match
+  Designer keeps the user's zoom across a resize). The fit happens in the next render, via `Fit()`,
+  which never invalidates from the render pass.
+
+## LC Filter Designer — Minimum returned filters outside the mask (2026-11-23)
+
+Two reported cases, one narrow 2.4 GHz bandpass (10 MHz transitions, Ap 3, Ripple 0.1, As 20):
+
+- **Chebyshev, Minimum gave order 5 and missed the stopband.** `FilterOrder.Minimum` was fed Ap
+  while the ladder is built at Ripple; at 0.1 dB ripple order 5 is far short. Now the formula's
+  order is only a start, and `FilterMask.Find` checks every candidate against the mask. It also
+  moves the cutoff into the slack Ap leaves over the Ripple, so this case gets order 7.
+- **Inverse Chebyshev had no ladder at all** ("no order of its transmission zeros gives a ladder
+  with every element positive"). Measured: at As 20 no odd order from 5 to 11 has a positive
+  ladder; order 5 needs about 24.25 dB and order 7 about 42 dB, and then the passband misses at
+  the typed edges. The search now builds deeper than As and re-centres the edges, and this case
+  gets order 9 built at 60 dB that meets the 20 dB mask. Applied, `Astop` is the built floor and the
+  new `AsMask` parameter keeps the mask's, which the Designer reopens on.
+- Also closed: Butterworth with Ap under 3.01 dB now moves its cutoff so Fp meets Ap; an E-series or
+  library ladder is checked at its snapped values (Minimum searches on, Specify blocks); any design
+  that misses cannot be applied or placed; Ripple above Ap is refused.
+- **Trap:** with snapping, a mask nothing can meet would search every order and floor to 31 (44 s
+  measured for an E12 elliptic). A snapped rejection now skips to the next order and stops six
+  orders past the first exact success.
+- **Trap:** a placed block's cutoff is no longer one of the mask edges, so `SeedFrom` reopens on the
+  stored mask edges whenever all of them are present; and the cutoff is written to 14 decimals,
+  because 9 moved a placed block's response by 1e-9 against the Designer's.
+
+## LC Filter Designer — searching for values that meet the mask (2026-11-23)
+
+When a snapped ladder (E-series or Vendor library) misses the mask, the Designer now asks under the
+reason whether to search, and the search (`FilterValueSearch`) picks each element's value from its
+neighbours in the series, over the designs the mask allows and, for a library, every pairing of
+series. Measured on this container: a Chebyshev lowpass 1000/1300 MHz, 0.5 dB, 30 dB at E12 missed
+at every order to 13 with nearest values and passes at order 10 with picks, in about 0.6 s; library
+cases took 0.02 to 8 s.
+
+- **Trap:** an E-series had no way to name a value other than the nearest, so a found design could
+  not be kept on the block. IEC series are now also `FilterLibrarySeries` (`FilterValues.IecSeries`),
+  and `Parts` names picks from them; `SeedFrom` must not read those as a Vendor library block, which
+  it did by the old rule that any `Parts` meant Vendor library.
+- **Trap:** the found design is pinned rather than searched for again. A Specify redesign at the
+  found order would take the first candidate whose snapped ladder passes, and a zero family's
+  element names can differ between candidates, so the picks could land on the wrong elements.
+- **Trap:** a value set judged by the worst miss alone stalls: moving one element rarely changes the
+  worst frequency. The score adds the mean excess, and adjacent pairs move together when single
+  moves stall; that took one library case from 0.063 to 0.015 dB short of the mask.
+
+## LC Filter Designer — library parts judged as their models (2026-11-23)
+
+A Vendor library design drew an ideal ladder at the parts' stated values, while the placed ladder and
+the Filter block simulate each part's own SPICE model. Near a few gigahertz a small chip inductor's
+parallel capacitance and a capacitor's series inductance move the response far off: a reported
+bandpass at 2 to 2.7 GHz looked inside its mask in the window and peaked near −8 dB when placed. The
+curve, the mask check and the search now judge the circuit as built (`FilterLadderCircuit` in
+`src/Design/Filters`): the ladder netlist names each part as a `SpiceModel` line, resolved through
+the workspace exactly as a placed part is. The same bandpass now says it misses, and by how much.
+
+- **Trap:** simulating every candidate as a netlist made the search unusable. Each part's two-terminal
+  impedance is measured once from its model (series between two 50 ohm ports, cached per part and
+  frequency set) and the fast nodal judge (`FilterLadder.InsertionLossDb`) takes it in place of the
+  ideal L or C; a test holds the two equal to six places.
+- **Trap:** a library with dozens of inductor and capacitor series gives thousands of pairings (over
+  two thousand in one real set, more than ten minutes). The search keeps the chosen pair first and
+  then the pairings whose nearest parts are closest to the needed impedance at the passband centre,
+  ten in all, and says so.
+- **Trap:** a Specify order with no buildable ladder fell back to the ideal curve and read as met.
+  It now draws the first candidate at that order, and a non-exact design with no ladder is a miss.
+- The test fixture's inductor used a 0.05 pF series capacitor, which blocks DC; filter tests use a
+  physical variant (parallel capacitance, small series resistance) so a real-model judge can pass.
+
+## LC Filter Designer — merging typed-box redesign with the mask search (2026-11-23)
+
+Main made every typed box design again, guarding only the closed-form order write. The mask search's
+own write of the order it settled on was unguarded, so each Minimum design scheduled another, and a
+caller reading the order meanwhile could see the closed-form start value of that second design's
+in-flight run (Apply then reopen read 3 where the design was 7). That write is a result too and is now
+guarded. Place filter's new ported form on a sheet with no ports also carries the vendor library
+parts, as the labelled form does.

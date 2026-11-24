@@ -23,6 +23,12 @@ public enum FilterSeriesKind
     E24,
     /// <summary>IEC 60063, ninety-six values a decade.</summary>
     E96,
+    /// <summary>
+    /// Real parts from the workspace's vendor libraries: one inductor series and one capacitor series,
+    /// each element the nearest stated value (or a hand-picked part). An element whose kind has no
+    /// series chosen keeps its exact value. Appended, so a stored <c>Values</c> keeps its meaning.
+    /// </summary>
+    VendorLibrary,
 }
 
 /// <summary>
@@ -40,7 +46,9 @@ public enum FilterOrderMode
 }
 
 /// <summary>One part a library series offers, in base SI, with its stated tolerance when known.</summary>
-public sealed record FilterPart(string Name, double Value, string Tolerance = "")
+/// <param name="Vendor">The library part itself, which is what a placed ladder and a simulated Filter use;
+/// null for a part built by hand (a test).</param>
+public sealed record FilterPart(string Name, double Value, string Tolerance = "", VendorPartRef? Vendor = null)
 {
     /// <inheritdoc/>
     public override string ToString() => Name;
@@ -77,7 +85,7 @@ public static class FilterValues
     /// <summary>The value <paramref name="exact"/> snaps to, or itself for <see cref="FilterSeriesKind.Exact"/>.</summary>
     public static double Snap(bool inductor, double exact, FilterSeriesKind kind)
     {
-        if (kind == FilterSeriesKind.Exact) return exact;
+        if (kind is FilterSeriesKind.Exact or FilterSeriesKind.VendorLibrary) return exact;
         var mantissas = kind switch
         {
             FilterSeriesKind.E6  => PreferredValues.E6,
@@ -111,6 +119,78 @@ public static class FilterValues
             }
         }
         return chosen;
+    }
+
+    /// <summary>
+    /// The value one element is built with, and the library part behind it when there is one: the
+    /// exact value, the IEC series' nearest preferred value, or for <see cref="FilterSeriesKind.VendorLibrary"/>
+    /// the hand-picked part in <paramref name="overrides"/>, else the nearest part of the element's own
+    /// series, else the exact value. The one rule the Designer's table, a placed ladder and a simulated
+    /// Filter block all build with.
+    /// </summary>
+    public static (double Value, FilterLibrarySeries? Series, FilterPart? Part) Choose(
+        FilterElement element, FilterSeriesKind kind,
+        FilterLibrarySeries? inductors, FilterLibrarySeries? capacitors,
+        IReadOnlyDictionary<string, (FilterLibrarySeries Series, FilterPart Part)>? overrides)
+    {
+        if (kind == FilterSeriesKind.Exact)
+            return (element.Value, null, null);
+        if (kind != FilterSeriesKind.VendorLibrary)
+        {
+            // A value the search for a passing design picked: another value of the same series.
+            if (overrides is not null && overrides.TryGetValue(element.Name, out var pick)
+                && pick.Series.Library == IecLibrary && pick.Series.Inductors == element.Inductor
+                && pick.Series.Key == IecSeries(kind, element.Inductor).Key)
+                return (pick.Part.Value, null, null);
+            return (Snap(element.Inductor, element.Value, kind), null, null);
+        }
+        if (overrides is not null && overrides.TryGetValue(element.Name, out var ov) && ov.Series.Inductors == element.Inductor)
+            return (ov.Part.Value, ov.Series, ov.Part);
+        var series = element.Inductor ? inductors : capacitors;
+        if (series is not null && Nearest(element.Value, series.Parts) is { } near)
+            return (near.Value, series, near);
+        return (element.Value, series, null);
+    }
+
+    /// <summary>The library name an IEC series goes by when its values are handled as parts.</summary>
+    public const string IecLibrary = "IEC 60063";
+
+    private static readonly Dictionary<(FilterSeriesKind, bool), FilterLibrarySeries> IecCache = [];
+
+    /// <summary>
+    /// An IEC series as a list of parts, over the span <see cref="Snap"/> uses: what the search for a
+    /// passing design picks other values from, and what a block's <c>Parts</c> names them by.
+    /// </summary>
+    public static FilterLibrarySeries IecSeries(FilterSeriesKind kind, bool inductors)
+    {
+        lock (IecCache)
+        {
+            if (IecCache.TryGetValue((kind, inductors), out var cached)) return cached;
+            var mantissas = kind switch
+            {
+                FilterSeriesKind.E6  => PreferredValues.E6,
+                FilterSeriesKind.E24 => PreferredValues.E24,
+                FilterSeriesKind.E96 => PreferredValues.E96,
+                _ => PreferredValues.E12,
+            };
+            var values = PreferredValues.Series(mantissas, inductors ? -10 : -13, inductors ? -5 : -8);
+            var parts = values.Select(v => new FilterPart(ValueName(v, inductors ? "H" : "F"), v, ToleranceOf(kind)))
+                              .ToList();
+            var series = new FilterLibrarySeries(IecLibrary, "", $"{kind} {(inductors ? "inductors" : "capacitors")}",
+                                                 inductors, parts);
+            IecCache[(kind, inductors)] = series;
+            return series;
+        }
+    }
+
+    /// <summary>A value as a part name: three significant figures and an SI prefix, e.g. <c>4.7nH</c>.</summary>
+    private static string ValueName(double v, string unit)
+    {
+        string[] prefixes = ["f", "p", "n", "u", "m", ""];
+        int i = 0;
+        double scaled = v * 1e15;
+        while (i < prefixes.Length - 1 && Math.Abs(scaled) >= 1000) { scaled /= 1000; i++; }
+        return scaled.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + prefixes[i] + unit;
     }
 
     /// <summary>
@@ -165,7 +245,7 @@ public static class FilterValues
                 var parts = entries
                     .Where(e => e.Header.Quantity == quantity && e.Header.Value is > 0)
                     .Select(e => new FilterPart(e.Part, e.Header.Value!.Value,
-                                                ToleranceOf(e.Header, e.Part)))
+                                                ToleranceOf(e.Header, e.Part), VendorPartRef.For(library, e)))
                     .OrderBy(p => p.Value)
                     .ToList();
                 if (parts.Count == 0) return;

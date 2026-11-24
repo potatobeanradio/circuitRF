@@ -21,7 +21,7 @@ public class LcFilterDesignerMaskTests
     private static async Task<LcFilterDesignerViewModel> Designed(
         FilterResponse response, NetworkForm form, Action<LcFilterDesignerViewModel>? edit = null)
     {
-        var vm = new LcFilterDesignerViewModel { Response = response, Form = form };
+        var vm = new LcFilterDesignerViewModel { Response = response, Form = form, Unit = "GHz" };
         edit?.Invoke(vm);
         await vm.DesignAsync(0);
         return vm;
@@ -62,16 +62,17 @@ public class LcFilterDesignerMaskTests
         double fp1 = Ghz(vm.FaText), fs1 = Ghz(vm.FbText), fs2 = Ghz(vm.FcText), fp2 = Ghz(vm.FdText);
         var applied = vm.FilterAssignments()!.ToDictionary(a => a.Name, a => a.Expression);
         bool inv = response == FilterResponse.InvChebyshev;
-        Assert.Equal(inv ? fs1 : fp1, Ghz(applied["F1"]), 3);
-        Assert.Equal(inv ? fs2 : fp2, Ghz(applied["F2"]), 3);
-
-        // Butterworth's edge is its 3.01 dB point, which Ap 0.5 dB is not; the rest meet Ap there.
-        double passLimit = response == FilterResponse.Butterworth ? 3.0103 : 0.5;
-        foreach (double f in new[] { fp1, fp2 })
-            Assert.True(LadderDb(vm.Cnl, f) <= passLimit + 1e-3, $"{response}: {LadderDb(vm.Cnl, f):F3} dB at Fp {f:G4}");
+        // Butterworth's cutoff is its 3.01 dB point, so to meet Ap 0.5 dB at Fp it is moved past it.
         if (response != FilterResponse.Butterworth)
-            foreach (double f in new[] { fs1, fs2 })
-                Assert.True(LadderDb(vm.Cnl, f) >= 30 - 1e-3, $"{response}: {LadderDb(vm.Cnl, f):F3} dB at Fs {f:G4}");
+        {
+            Assert.Equal(inv ? fs1 : fp1, Ghz(applied["F1"]), 3);
+            Assert.Equal(inv ? fs2 : fp2, Ghz(applied["F2"]), 3);
+        }
+
+        foreach (double f in new[] { fp1, fp2 })
+            Assert.True(LadderDb(vm.Cnl, f) <= 0.5 + 1e-3, $"{response}: {LadderDb(vm.Cnl, f):F3} dB at Fp {f:G4}");
+        foreach (double f in new[] { fs1, fs2 })
+            Assert.True(LadderDb(vm.Cnl, f) >= 30 - 1e-3, $"{response}: {LadderDb(vm.Cnl, f):F3} dB at Fs {f:G4}");
     }
 
     [Fact]
