@@ -1,3 +1,4 @@
+using System.Numerics;
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 
@@ -21,7 +22,8 @@ public sealed record FilterValueSearchResult(
 /// looks for one that does: through the designs the mask search offers (order, floor, re-centred
 /// edges), through every pairing of an inductor series with a capacitor series it is given, and
 /// through each element's neighbouring values in its series rather than only the nearest. Each
-/// candidate is judged by the ladder's own response against the mask, so what it returns meets it.
+/// candidate is judged by the ladder's own response against the mask, a library part as its own
+/// model's impedance when the caller supplies it, so what it returns meets it as placed.
 /// </summary>
 public static class FilterValueSearch
 {
@@ -47,6 +49,7 @@ public static class FilterValueSearch
         double fcHz, double f1Hz, double f2Hz, double rippleDb, double sourceOhms,
         FilterFirstElement first, EllipticType requestedType, FilterMaskSpec mask,
         IReadOnlyList<(FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors)> pairs,
+        Func<FilterPart, IReadOnlyList<double>, Complex[]?>? partImpedance,
         IProgress<string>? progress, CancellationToken ct, out string why, out double closestMissDb)
     {
         why = "";
@@ -60,10 +63,17 @@ public static class FilterValueSearch
         var fine = Grid(mask, 400);
         int firstOrder = 0;
         int lastOrder = 0, perOrder = 0;
+        string shortlistNote = "";
         foreach (var choice in FilterMask.Candidates(response, form, startOrder, maxOrder, fcHz, f1Hz, f2Hz,
                                                      rippleDb, sourceOhms, first, requestedType, mask, ct))
         {
-            if (firstOrder == 0) firstOrder = choice.Order;
+            if (firstOrder == 0)
+            {
+                firstOrder = choice.Order;
+                // Many series: fit the few whose parts, as modelled, come nearest this ladder's elements.
+                if (pairs.Count > MaxPairs && choice.Ladder.Realization is { } first0)
+                    pairs = Shortlist(pairs, first0, mask, partImpedance, ct, out shortlistNote);
+            }
             if (choice.Order > firstOrder + OrderWindow) break;
             if (choice.Order != lastOrder) perOrder = 0;
             lastOrder = choice.Order;
@@ -76,7 +86,7 @@ public static class FilterValueSearch
                 progress?.Report($"Order {choice.Order}" +
                                  (choice.AstopDb > mask.AsDb + 1e-9 ? $", built for {choice.AstopDb:0.#} dB" : "") +
                                  (pairs.Count > 1 ? $", {lSeries?.Label ?? "exact"} with {cSeries?.Label ?? "exact"}" : ""));
-                var found = Fit(real, lSeries, cSeries, mask, coarse, fine, ct, out double miss);
+                var found = Fit(real, lSeries, cSeries, mask, coarse, fine, partImpedance, ct, out double miss);
                 closestMissDb = Math.Min(closestMissDb, miss);
                 if (found is null) continue;
                 var (used, picks) = found.Value;
@@ -86,11 +96,62 @@ public static class FilterValueSearch
         why = firstOrder == 0
             ? "No design meets the mask with an LC ladder even at exact values, so no choice of values can."
             : $"No choice of values from orders {firstOrder} to {lastOrder}"
-              + (pairs.Count > 1 ? $", over {pairs.Count} pairings of inductor and capacitor series," : "")
+              + (pairs.Count > 1 ? $", over {pairs.Count} pairings of inductor and capacitor series{shortlistNote}," : "")
               + " meets the mask"
               + (double.IsFinite(closestMissDb) ? $" (the closest misses by {closestMissDb:0.###} dB)." : ".")
               + " A finer series, a wider transition or a looser mask does.";
         return null;
+    }
+
+    /// <summary>The most pairings of series the search fits values over; more are shortlisted first.</summary>
+    public const int MaxPairs = 10;
+
+    /// <summary>How many inductor series, and how many capacitor series, a shortlist keeps.</summary>
+    public const int ShortlistPerKind = 3;
+
+    /// <summary>
+    /// The pairings worth fitting when there are too many: the first pairing given (the one chosen),
+    /// then the <see cref="ShortlistPerKind"/> inductor and capacitor series whose nearest parts, as
+    /// modelled at the passband's centre, come closest to the ideal elements of <paramref name="real"/>.
+    /// A series with no part within a factor of two of some element is last.
+    /// </summary>
+    private static IReadOnlyList<(FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors)> Shortlist(
+        IReadOnlyList<(FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors)> pairs, FilterRealization real,
+        FilterMaskSpec mask, Func<FilterPart, IReadOnlyList<double>, Complex[]?>? partImpedance, CancellationToken ct,
+        out string note)
+    {
+        var (pass, _) = FilterMask.CheckFrequencies(mask, 24);
+        double f0 = pass.Length > 0 ? Math.Sqrt(pass.Min() * pass.Max()) : 1e9;
+        double w0 = 2 * Math.PI * f0;
+        double Score(FilterLibrarySeries series)
+        {
+            double total = 0;
+            int count = 0;
+            foreach (var e in real.Elements.Where(e => e.Inductor == series.Inductors))
+            {
+                ct.ThrowIfCancellationRequested();
+                var part = FilterValues.Nearest(e.Value, series.Parts);
+                if (part is null || Math.Abs(Math.Log(part.Value / e.Value)) > Math.Log(2)) { total += 10; count++; continue; }
+                Complex ideal = e.Inductor ? new Complex(0, w0 * e.Value) : new Complex(0, -1 / (w0 * e.Value));
+                Complex actual = partImpedance is not null && part.Vendor is not null && partImpedance(part, [f0]) is { } z
+                    ? z[0]
+                    : e.Inductor ? new Complex(0, w0 * part.Value) : new Complex(0, -1 / (w0 * part.Value));
+                total += Complex.Abs(Complex.Log(actual / ideal));
+                count++;
+            }
+            return count == 0 ? 0 : total / count;
+        }
+        List<FilterLibrarySeries?> Best(IEnumerable<FilterLibrarySeries?> list) =>
+            list.Distinct().OrderBy(x => x is null ? 0 : Score(x)).Take(ShortlistPerKind).ToList();
+        var ls = Best(pairs.Select(p => p.Inductors));
+        var cs = Best(pairs.Select(p => p.Capacitors));
+        var result = new List<(FilterLibrarySeries?, FilterLibrarySeries?)> { pairs[0] };
+        foreach (var l in ls)
+            foreach (var c in cs)
+                if (!(l == pairs[0].Inductors && c == pairs[0].Capacitors)) result.Add((l, c));
+        int nl = pairs.Select(p => p.Inductors).Distinct().Count(), nc = pairs.Select(p => p.Capacitors).Distinct().Count();
+        note = $" (the chosen pair, then the {ls.Count} of {nl} inductor and {cs.Count} of {nc} capacitor series nearest the ideal elements)";
+        return result;
     }
 
     /// <summary>The mask's pass and stop frequencies at <paramref name="perBand"/> points a band.</summary>
@@ -108,7 +169,7 @@ public static class FilterValueSearch
     private static (List<FilterElement> Used, Dictionary<string, (FilterLibrarySeries, FilterPart)> Picks)? Fit(
         FilterRealization real, FilterLibrarySeries? lSeries, FilterLibrarySeries? cSeries, FilterMaskSpec mask,
         (double[] Pass, double[] Stop, double[] All) coarse, (double[] Pass, double[] Stop, double[] All) fine,
-        CancellationToken ct, out double missDb)
+        Func<FilterPart, IReadOnlyList<double>, Complex[]?>? partImpedance, CancellationToken ct, out double missDb)
     {
         var elements = real.Elements;
         int n = elements.Count;
@@ -128,7 +189,15 @@ public static class FilterValueSearch
         // excess over the whole grid breaks those ties and pulls the rest of the response in too.
         (double Worst, double Score) Judge((double[] Pass, double[] Stop, double[] All) grid)
         {
-            var loss = FilterLadder.InsertionLossDb(used, real.SourceOhms, real.LoadOhms, grid.All);
+            // A library part as its own model's impedance, where one is given: what is placed is judged.
+            Complex[]?[]? z = null;
+            if (partImpedance is not null)
+            {
+                z = new Complex[]?[n];
+                for (int k = 0; k < n; k++)
+                    if (options[k][pick[k]].Part is { Vendor: not null } part) z[k] = partImpedance(part, grid.All);
+            }
+            var loss = FilterLadder.InsertionLossDb(used, real.SourceOhms, real.LoadOhms, grid.All, z);
             double worst = double.NegativeInfinity, excess = 0;
             for (int i = 0; i < loss.Length; i++)
             {

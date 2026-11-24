@@ -42934,3 +42934,26 @@ cases took 0.02 to 8 s.
 - **Trap:** a value set judged by the worst miss alone stalls: moving one element rarely changes the
   worst frequency. The score adds the mean excess, and adjacent pairs move together when single
   moves stall; that took one library case from 0.063 to 0.015 dB short of the mask.
+
+## LC Filter Designer — library parts judged as their models (2026-11-23)
+
+A Vendor library design drew an ideal ladder at the parts' stated values, while the placed ladder and
+the Filter block simulate each part's own SPICE model. Near a few gigahertz a small chip inductor's
+parallel capacitance and a capacitor's series inductance move the response far off: a reported
+bandpass at 2 to 2.7 GHz looked inside its mask in the window and peaked near −8 dB when placed. The
+curve, the mask check and the search now judge the circuit as built (`FilterLadderCircuit` in
+`src/Design/Filters`): the ladder netlist names each part as a `SpiceModel` line, resolved through
+the workspace exactly as a placed part is. The same bandpass now says it misses, and by how much.
+
+- **Trap:** simulating every candidate as a netlist made the search unusable. Each part's two-terminal
+  impedance is measured once from its model (series between two 50 ohm ports, cached per part and
+  frequency set) and the fast nodal judge (`FilterLadder.InsertionLossDb`) takes it in place of the
+  ideal L or C; a test holds the two equal to six places.
+- **Trap:** a library with dozens of inductor and capacitor series gives thousands of pairings (over
+  two thousand in one real set, more than ten minutes). The search keeps the chosen pair first and
+  then the pairings whose nearest parts are closest to the needed impedance at the passband centre,
+  ten in all, and says so.
+- **Trap:** a Specify order with no buildable ladder fell back to the ideal curve and read as met.
+  It now draws the first candidate at that order, and a non-exact design with no ladder is a miss.
+- The test fixture's inductor used a 0.05 pF series capacitor, which blocks DC; filter tests use a
+  physical variant (parallel capacitance, small series resistance) so a real-model judge can pass.

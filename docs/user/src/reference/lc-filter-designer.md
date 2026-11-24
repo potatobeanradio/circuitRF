@@ -151,6 +151,16 @@ With Vendor library chosen, **Place filter** and **Replace this Filter** place t
 themselves: each element is the vendor part the table names, exactly as if it had been placed from
 the palette, with its case size's footprint on a board technology.
 
+**A library part is judged as its model, not as its stated value.** A real inductor or capacitor has
+loss, a parasitic in parallel or in series and a self-resonance, and near a few gigahertz those move a
+filter a long way from the ideal ladder at the same values. So with Vendor library the curve, the
+mask check and the search all simulate each element as the part's own SPICE model, read through the
+workspace exactly as a placed part is: what the window draws is what the placed ladder or Filter
+block simulates. A design whose parts cannot meet the mask says so, with how far it misses, rather
+than showing an ideal curve the circuit will not follow. A part that is a model folder rather than a
+SPICE subcircuit keeps its stated value. With many series in the libraries the search tries the ten
+pairings whose parts sit closest to the values the design needs at the band's centre, and says so.
+
 ## Where the result goes {#place}
 
 **Apply to Filter**, when the window was opened on a placed Filter, writes the whole specification

@@ -257,3 +257,20 @@ searching, while `SpecSignature()` is unchanged, and the picks are `_partOverrid
 element. `FilterValues.Choose` honours an IEC pick when it is from the chosen series, so the block's
 `Parts` (`element=IEC 60063: E12 inductors|10nH`) is what `FilterBlockLadder.Build` and `SeedFrom`
 read back. A pick from a series other than the chosen Values is never written.
+
+## Library parts as their models (2026-11-23)
+
+With Vendor library, the Designer's ladder netlist is `FilterLadderCircuit.ToCnl` (`src/Design/Filters`):
+`FilterLadder.ToCnl` with each element that has a library part written as a `SpiceModel` line naming
+it, read back through `NetExtractor.ResolveNetlistSpiceModels` against the workspace — the resolution a
+placed part gets. The curve, the 400-point mask check and Apply/Place all use that circuit, so the
+window cannot show a pass the placed ladder does not have. A part that is a model folder keeps its
+stated value.
+
+The search and the snapped acceptance inside the mask search cannot afford a netlist per candidate.
+`FilterLadderCircuit.PartImpedance` measures each part once, in series between two 50 ohm ports
+(Z = 2·z0·(1/S21 − 1)), cached per part and frequency set, and `FilterLadder.InsertionLossDb` takes an
+optional per-element impedance in place of the ideal L or C. The candidate is judged on 24 points per
+band first and 400 only when that passes. Pairings of series past ten are shortlisted by how close
+each series' nearest parts are to the ideal impedance at the passband centre
+(`FilterValueSearch.Shortlist`).

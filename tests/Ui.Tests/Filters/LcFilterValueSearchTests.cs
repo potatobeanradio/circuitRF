@@ -153,11 +153,11 @@ public sealed class LcFilterValueSearchTests : IDisposable
     {
         string ws = Path.Combine(_dir, "ws"), lib = Path.Combine(_dir, "lib");
         Directory.CreateDirectory(ws);
-        VendorLibraryFixture.Write(lib);
+        VendorLibraryFixture.Write(lib, physical: true);
         WorkspacePersistence.SaveToFile(Path.Combine(ws, ".cws"),
             new CwsFile { VendorLibraries = [new CwsVendorLibraryRef { Name = "Test", Path = lib }] });
 
-        var vm = await Lowpass(FilterResponse.Chebyshev, "4000", "5000", "0.5", "0.5", "30",
+        var vm = await Lowpass(FilterResponse.Chebyshev, "4000", "5000", "0.5", "0.5", "25",
                                FilterSeriesKind.VendorLibrary, ws);
         Assert.False(vm.MaskMet);
         Assert.True(vm.CanSearchValues, vm.Status);
@@ -169,9 +169,12 @@ public sealed class LcFilterValueSearchTests : IDisposable
         Assert.All(vm.Elements, r => Assert.StartsWith("TST", r.Part));
         Assert.NotNull(vm.InductorChoice);
         Assert.NotNull(vm.CapacitorChoice);
-        foreach (double mhz in new[] { 1000.0, 4000 })
-            Assert.True(LossDb(vm.Cnl, mhz * 1e6) <= 0.5 + 1e-3);
-        Assert.True(LossDb(vm.Cnl, 5000e6) >= 30 - 1e-3);
+        // The window's ladder is the parts as modelled, resolved through the workspace as a placed ladder is.
+        var s21 = FilterLadderCircuit.S21(vm.Cnl, [1000e6, 4000e6, 5000e6], ws);
+        Assert.Contains("SpiceModel:", vm.Cnl);
+        Assert.True(-20 * Math.Log10(s21[0].Magnitude) <= 0.5 + 1e-3);
+        Assert.True(-20 * Math.Log10(s21[1].Magnitude) <= 0.5 + 1e-3);
+        Assert.True(-20 * Math.Log10(s21[2].Magnitude) >= 25 - 1e-3);
         var applied = Applied(vm);
         Assert.Equal(vm.Elements.Count, FilterBlockLadder.ParseParts(applied["Parts"]).Count());
     }

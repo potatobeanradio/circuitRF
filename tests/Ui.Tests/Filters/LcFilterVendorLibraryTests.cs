@@ -37,7 +37,7 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
         string lib = Path.Combine(_dir, "lib");
         _sheetDir = Path.Combine(_ws, "cells", "top", "schematic");
         Directory.CreateDirectory(_sheetDir);
-        VendorLibraryFixture.Write(lib);
+        VendorLibraryFixture.Write(lib, physical: true);
         WorkspacePersistence.SaveToFile(Path.Combine(_ws, ".cws"),
             new CwsFile { VendorLibraries = [new CwsVendorLibraryRef { Name = "Test", Path = lib }] });
     }
@@ -55,6 +55,9 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
         vm.OrderText = "3";
         vm.FaText = "3";
         vm.FbText = "9";
+        // A mask the fixture's parts meet as modelled (their parasitics move a 3.01 dB edge).
+        vm.ApText = "4";
+        vm.AsText = "20";
         vm.SeriesChoice = vm.SeriesChoices.Single(c => c.Value == values);
         if (values == FilterSeriesKind.VendorLibrary && library)
         {
@@ -63,6 +66,7 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
         }
         await vm.DesignAsync(0);
         Assert.True(vm.Elements.Count > 0, vm.Status);
+        if (values == FilterSeriesKind.VendorLibrary && library) Assert.True(vm.MaskMet, vm.Status);
         return vm;
     }
 
@@ -292,6 +296,40 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TheDesignersCurveIsThePlacedBlocksResponse_TheLibraryPartsAsTheirModels()
+    {
+        var vm = await Designed(FilterSeriesKind.VendorLibrary);
+        Assert.Contains("SpiceModel:", vm.Cnl);
+        var (extracted, _) = PlacedBlock(vm);
+        var block = Assert.Single(extracted.TestBench.Instances);
+        using var blockNet = new Elaborator(extracted.Library).Elaborate(WithTerms(extracted.TestBench, block));
+        double[] hz = [0.5e9, 2e9, 3e9, 5e9, 9e9];
+        var designer = FilterLadderCircuit.S21(vm.Cnl, hz, _ws);
+        for (int i = 0; i < hz.Length; i++)
+            Assert.Equal(S21Db(blockNet, hz[i]), 20 * Math.Log10(designer[i].Magnitude), 6);
+    }
+
+    [Fact]
+    public async Task TheFastJudgeWithPartImpedances_IsTheCircuitOfTheParts()
+    {
+        var vm = await Designed(FilterSeriesKind.VendorLibrary);
+        var parts = vm.LadderParts;
+        Assert.NotEmpty(parts);
+        var built = FilterLadder.Synthesize(FilterResponse.Butterworth, NetworkForm.Lowpass, 3, 3e9, 0, 0, 0, 50,
+                                            FilterFirstElement.Parallel, 40, EllipticType.A);
+        var real = built.Realization!;
+        Assert.Contains(real.Elements, e => parts.ContainsKey(e.Name));
+        double[] hz = [0.5e9, 2e9, 3e9, 5e9, 9e9];
+        string cnl = FilterLadderCircuit.ToCnl(real.Elements, parts, real.SourceOhms, real.LoadOhms);
+        var circuit = FilterLadderCircuit.S21(cnl, hz, _ws);
+        var z = real.Elements.Select(e => parts.TryGetValue(e.Name, out var p) ? FilterLadderCircuit.PartImpedance(p, hz, _ws) : null).ToList();
+        Assert.Contains(z, a => a is not null);
+        var fast = FilterLadder.InsertionLossDb(real.Elements, real.SourceOhms, real.LoadOhms, hz, z);
+        for (int i = 0; i < hz.Length; i++)
+            Assert.Equal(-20 * Math.Log10(circuit[i].Magnitude), fast[i], 6);
+    }
 
     private static TestBench WithTerms(TestBench extracted, Instance block)
     {

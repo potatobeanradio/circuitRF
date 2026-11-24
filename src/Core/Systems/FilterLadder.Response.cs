@@ -5,12 +5,14 @@ namespace CircuitRF.Core.Systems;
 public static partial class FilterLadder
 {
     /// <summary>
-    /// The insertion loss, dB, of a ladder of ideal L and C between <paramref name="rs"/> and
+    /// The insertion loss, dB, of a ladder of L and C (ideal, or each as a given impedance) between <paramref name="rs"/> and
     /// <paramref name="rl"/>, at each of <paramref name="hz"/>: a small nodal solve per frequency,
     /// the same circuit <see cref="ToCnl"/> writes, fast enough to judge thousands of value choices.
     /// </summary>
+    /// <param name="impedance">Per element, its impedance at each of <paramref name="hz"/> in place of the
+    /// ideal L or C (a real part's own response); null, or a null entry, for the ideal element.</param>
     public static double[] InsertionLossDb(IReadOnlyList<FilterElement> elements, double rs, double rl,
-                                           IReadOnlyList<double> hz)
+                                           IReadOnlyList<double> hz, IReadOnlyList<Complex[]?>? impedance = null)
     {
         var index = new Dictionary<string, int>(StringComparer.Ordinal) { ["p1"] = 0 };
         int Node(string name)
@@ -37,7 +39,9 @@ public static partial class FilterLadder
             for (int k = 0; k < elements.Count; k++)
             {
                 var e = elements[k];
-                Complex g = e.Inductor ? 1 / new Complex(0, w * e.Value) : new Complex(0, w * e.Value);
+                Complex g = impedance is not null && k < impedance.Count && impedance[k] is { } z
+                    ? 1 / z[f]
+                    : e.Inductor ? 1 / new Complex(0, w * e.Value) : new Complex(0, w * e.Value);
                 var (a, b) = ends[k];
                 if (a >= 0) y[a, a] += g;
                 if (b >= 0) y[b, b] += g;

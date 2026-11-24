@@ -635,7 +635,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
 
         var freqs = Frequencies(spec);
         var snap = new SnapInputs(Series, new Dictionary<string, (FilterLibrarySeries, FilterPart)>(_partOverrides),
-                                  InductorChoice, CapacitorChoice);
+                                  InductorChoice, CapacitorChoice, WorkspaceRoot);
         Status = "Designing…";
         DesignOutcome outcome;
         try
@@ -665,7 +665,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>The window state the snap reads, copied so the pool thread never touches the view model.</summary>
     private sealed record SnapInputs(
         FilterSeriesKind Series, Dictionary<string, (FilterLibrarySeries Series, FilterPart Part)> Overrides,
-        FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors);
+        FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors, string? Workspace);
 
     /// <summary>One table row's content, before it becomes a <see cref="FilterElementRow"/>.</summary>
     private sealed record SnapRow(
@@ -697,11 +697,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                 accept = c =>
                 {
                     if (c.Ladder.Realization is not { } r) return true;
-                    string cnl = FilterLadder.ToCnl(Snap(r, snap, []), r.SourceOhms, r.LoadOhms);
+                    var rows = new List<SnapRow>();
+                    var built = Snap(r, snap, rows);
                     // A coarse look turns most candidates away at a fraction of the cost; a miss
                     // anywhere is a miss.
-                    return LadderMissDb(cnl, mask, r.SourceOhms, 24) <= FilterMask.LadderToleranceDb
-                        && LadderMissDb(cnl, mask, r.SourceOhms) <= FilterMask.LadderToleranceDb;
+                    return SnappedMissDb(built, rows, r, mask, snap.Workspace, 24) <= FilterMask.LadderToleranceDb
+                        && SnappedMissDb(built, rows, r, mask, snap.Workspace, 400) <= FilterMask.LadderToleranceDb;
                 };
             choice = FilterMask.Find(spec.Response, spec.Form, spec.Order, max, spec.FcHz, spec.F1Hz, spec.F2Hz,
                                      spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask,
@@ -709,6 +710,13 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             if (choice is null && spec.OrderFromMinimum)
                 return new DesignOutcome(null, null, null, [], "", null, null, 0, 0, searchWhy ?? "", Failed: true)
                     { UsedSpec = spec };
+            // A typed order whose snapped ladder misses everywhere: show the first design the mask
+            // allows at that order, so the miss is drawn (and the search offered) rather than a
+            // bare refusal.
+            if (choice is null && accept is not null)
+                choice = FilterMask.Candidates(spec.Response, spec.Form, spec.Order, spec.Order, spec.FcHz, spec.F1Hz,
+                                               spec.F2Hz, spec.RippleDb, spec.SourceOhms, spec.First,
+                                               spec.RequestedEllipticType, mask, ct).FirstOrDefault();
             if (choice is not null)
                 spec = spec with { Order = choice.Order, DesignAsDb = choice.AstopDb, EllipticType = choice.EllipticType,
                                   FcHz = choice.FcHz, F1Hz = choice.F1Hz, F2Hz = choice.F2Hz };
@@ -755,14 +763,17 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         if (built.Realization is { } real)
         {
             used = Snap(real, snap, rows);
-            cnl = FilterLadder.ToCnl(used, real.SourceOhms, real.LoadOhms);
+            // A library part is its own model here, as it is when placed: the curve, the mask check
+            // and Place all see the same circuit.
+            cnl = FilterLadderCircuit.ToCnl(used, PartsOf(rows), real.SourceOhms, real.LoadOhms);
             rs = real.SourceOhms;
             rl = real.LoadOhms;
             try
             {
-                ladderSnp = Run(cnl, freqs, real.SourceOhms);
+                ladderSnp = Run(cnl, freqs, real.SourceOhms, snap.Workspace);
             }
-            catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
+            catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException
+                                           or IOException or KeyNotFoundException)
             {
                 note = e.Message;
             }
@@ -782,7 +793,10 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         double miss = 0;
         if (spec.Mask is { } m2)
         {
-            miss = cnl.Length > 0 ? LadderMissDb(cnl, m2, rs)
+            // Values that are not Exact name parts a ladder is built from: with no ladder there is
+            // nothing to build them into, so nothing meets the mask.
+            miss = cnl.Length > 0 ? LadderMissDb(cnl, m2, rs, snap.Workspace)
+                 : snap.Series != FilterSeriesKind.Exact ? double.PositiveInfinity
                  : ideal is not null ? FilterMask.WorstMissDb(m2, f => FilterMask.IdealLossDb(ideal, f))
                  : double.PositiveInfinity;
             if (miss > FilterMask.ToleranceDb && choice is null && searchWhy is not null)
@@ -796,15 +810,45 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             { UsedSpec = spec, MissDb = miss };
     }
 
+    /// <summary>The library part behind each element that has one, by element name.</summary>
+    private static Dictionary<string, VendorPartRef> PartsOf(List<SnapRow> rows) =>
+        rows.Where(r => r.Chosen?.Vendor is not null)
+            .GroupBy(r => r.Exact.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Chosen!.Vendor!, StringComparer.Ordinal);
+
+    /// <summary>
+    /// How far a snapped ladder leaves the mask, from the fast nodal solve, each library part as its
+    /// own model's impedance: the search's cheap judge, which the engine run then confirms.
+    /// </summary>
+    private static double SnappedMissDb(List<FilterElement> used, List<SnapRow> rows, FilterRealization real,
+                                        FilterMaskSpec mask, string? workspace, int perBand)
+    {
+        var (pass, stop) = FilterMask.CheckFrequencies(mask, perBand);
+        double[] all = [.. pass, .. stop];
+        if (all.Length == 0) return 0;
+        var z = new Complex[]?[used.Count];
+        for (int k = 0; k < rows.Count && k < z.Length; k++)
+            if (rows[k].Chosen?.Vendor is { } v) z[k] = FilterLadderCircuit.PartImpedance(v, all, workspace);
+        var loss = FilterLadder.InsertionLossDb(used, real.SourceOhms, real.LoadOhms, all, z);
+        double worst = double.NegativeInfinity;
+        for (int i = 0; i < all.Length; i++)
+        {
+            double l = double.IsNaN(loss[i]) ? double.PositiveInfinity : loss[i];
+            worst = Math.Max(worst, i < pass.Length ? l - mask.ApDb : mask.AsDb - l);
+        }
+        return double.IsNegativeInfinity(worst) ? 0 : worst;
+    }
+
     /// <summary>How far the ladder netlist <paramref name="cnl"/> leaves the mask, dB (zero or less meets it).</summary>
-    private static double LadderMissDb(string cnl, FilterMaskSpec mask, double z0, int perBand = 400)
+    private static double LadderMissDb(string cnl, FilterMaskSpec mask, double z0, string? workspace, int perBand = 400)
     {
         var (pass, stop) = FilterMask.CheckFrequencies(mask, perBand);
         double[] all = [.. pass, .. stop];
         if (all.Length == 0) return 0;
         SNP snp;
-        try { snp = Run(cnl, all, z0); }
-        catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
+        try { snp = Run(cnl, all, z0, workspace); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException
+                                       or IOException or KeyNotFoundException)
         {
             return double.PositiveInfinity;
         }
@@ -1342,6 +1386,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             pairs.Add((FilterValues.IecSeries(Series, true), FilterValues.IecSeries(Series, false)));
         }
 
+        string? workspace = WorkspaceRoot;
         _searchCts?.Cancel();
         var cts = new CancellationTokenSource();
         _searchCts = cts;
@@ -1355,6 +1400,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             found = await Task.Run(() => FilterValueSearch.Run(
                 spec.Response, spec.Form, spec.Order, FilterMask.MaxOrder, spec.FcHz, spec.F1Hz, spec.F2Hz,
                 spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask, pairs,
+                // A library part is judged as its own model, so what is found passes as placed.
+                IsVendorLibrary ? (part, hz) => part.Vendor is { } v ? FilterLadderCircuit.PartImpedance(v, hz, workspace) : null : null,
                 progress, cts.Token, out why, out _), cts.Token);
         }
         catch (OperationCanceledException)
@@ -1423,7 +1470,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         SNP? ladderSnp = null;
         if (!string.IsNullOrEmpty(Cnl))
         {
-            try { ladderSnp = Run(Cnl, freqs, _lastRs); }
+            try { ladderSnp = Run(Cnl, freqs, _lastRs, WorkspaceRoot); }
             catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
             {
                 Status = e.Message;
@@ -1801,9 +1848,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         return snp;
     }
 
-    private static SNP Run(string cnl, double[] freqs, double z0)
+    private static SNP Run(string cnl, double[] freqs, double z0, string? workspace = null)
     {
-        var (lib, tb) = new CnlReader().Read(cnl);
+        var (lib, tb) = FilterLadderCircuit.Read(cnl, workspace);
         var netlist = new Elaborator(lib).Elaborate(tb);
         var ds = SParameterEngine.Run(netlist, freqs);
         var cube = ds["S"];
