@@ -624,8 +624,51 @@ public partial class PlotInspectorViewModel : ViewModelBase
         _plot.TableOptimum = value;
         OnPropertyChanged(nameof(IsTableOptimumMxp));
         OnPropertyChanged(nameof(IsTableOptimumMxe));
+        OnPropertyChanged(nameof(IsTableOptimumAtMarker));
+        if (value == TableOptimum.AtMarker) RefreshTableMarkers();
         RebuildSummary();
+        if (value == TableOptimum.AtMarker) FollowLinksForEdit?.Invoke();
     }
+
+    // ── At marker (brief-ddl-3 R-ddl3-5): every column read at the load a marker sits on ──────────────
+    public bool IsTableOptimumAtMarker => TableOptimum == TableOptimum.AtMarker;
+    [RelayCommand] private void SetTableOptimumAtMarker() => TableOptimum = TableOptimum.AtMarker;
+
+    /// <summary>The markers in the display that give a load — on a loadpull's contours or on its GammaLoad trace.</summary>
+    [ObservableProperty] private IReadOnlyList<LinkSourceItem> _tableMarkers = [];
+    [ObservableProperty] private LinkSourceItem? _selectedTableMarker;
+    private bool _settingTableMarker;
+
+    internal void RefreshTableMarkers()
+    {
+        if (LinkDocumentProvider?.Invoke() is not { } doc) { TableMarkers = []; return; }
+        var sources = new LibraryDataSources(_library);
+        int tab = Math.Max(0, doc.Tabs.Select((t, i) => (t, i)).FirstOrDefault(x => x.t.Plots.Contains(_plot)).i);
+        TableMarkers = [.. doc.Markers()
+            .Where(site => LoadpullLinks.PositionOf(site, sources) is not null)
+            .Select(site => new LinkSourceItem(site.Marker.Id.ToString("D"), site.Marker.Name,
+                $"{LinkCatalog.PlotName(doc, site.TabIndex, site.Plot, tab)}, {LinkGraph.NameOf(site.Trace)}",
+                Matches: true, Supplies: "a load", CycleChain: null))];
+        _settingTableMarker = true;
+        SelectedTableMarker = TableMarkers.FirstOrDefault(i => string.Equals(i.Id, _plot.TableMarkerLink, StringComparison.OrdinalIgnoreCase));
+        _settingTableMarker = false;
+    }
+
+    partial void OnSelectedTableMarkerChanged(LinkSourceItem? value)
+    {
+        if (_settingTableMarker || value is null || string.Equals(value.Id, _plot.TableMarkerLink, StringComparison.OrdinalIgnoreCase)) return;
+        _plot.TableMarkerLink     = value.Id;
+        _plot.TableMarkerLinkName = value.Name;
+        FollowLinksForEdit?.Invoke();
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// The loadpull read controls — Interp/Nearest and the compression — on a plot whose traces follow a load
+    /// (brief-ddl-3 R-ddl3-2): the same two settings the summary table reads by, in the same place it offers them.
+    /// </summary>
+    public bool ShowLoadpullReadControls
+        => !IsSummaryTable && _plot.Traces.Any(t => t.Slice?.Any(x => x.IsLinked && x.AxisName == "gridPoint") == true);
 
     // ── MXP / MXE segmented selector (replaces the Load combobox) ──────────────
     public bool IsTableOptimumMxp => TableOptimum == TableOptimum.Mxp;
@@ -657,6 +700,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         _plot.TableReadMode = value;
         RebuildSummary();
         OnPropertyChanged(nameof(IsInterp));
+        FollowLinksForEdit?.Invoke();   // a trace reading a load at a marker reads it the new way
     }
 
     /// <summary>Checkbox-friendly view of TableReadMode: true = Interp, false = Nearest.</summary>
@@ -681,6 +725,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _plot.TableCompression = value;
             OnPropertyChanged();
             RebuildSummary();
+            FollowLinksForEdit?.Invoke();
         }
     }
 
@@ -1548,6 +1593,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         ApplyTrialSelection();
         foreach (var vm in Traces) vm.RefreshDescription();
         OnPropertyChanged(nameof(ShowSpecLinesToggle));
+        OnPropertyChanged(nameof(ShowLoadpullReadControls));
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
     }
 

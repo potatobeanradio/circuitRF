@@ -103,7 +103,8 @@ public partial class MarkerInfoBoxView : UserControl
             onContourModeToggled: () => Vm.RequestRedraw(),
             onShowInfoBoxToggled: () => Vm.Container.RequestInfoBoxRebuild(),
             onVswrToggled:        () => { Vm.RequestRedraw(); Vm.Container.RequestPlotRedraw(); },
-            linkTargets:          Vm.Container.LinkTargetsFor(Vm.Marker));
+            linkTargets:          Vm.Container.LinkTargetsFor(Vm.Marker),
+            onSnapToggled:        () => { Vm.OnMarkerMoved(); Vm.Container.RequestInfoBoxRebuild(); });
     }
 
     /// <summary>
@@ -148,7 +149,8 @@ public partial class MarkerInfoBoxView : UserControl
         Action?                                   onContourModeToggled = null,
         Action?                                   onShowInfoBoxToggled = null,
         Action?                                   onVswrToggled = null,
-        System.Collections.Generic.IReadOnlyList<(string Label, bool IsLinked, Action Toggle)>? linkTargets = null)
+        System.Collections.Generic.IReadOnlyList<(string Label, bool IsLinked, Action Toggle)>? linkTargets = null,
+        Action?                                   onSnapToggled = null)
     {
         menu.Items.Clear();
 
@@ -256,6 +258,38 @@ public partial class MarkerInfoBoxView : UserControl
                 onContourModeToggled?.Invoke();
             };
             menu.Items.Add(snapItem);
+        }
+
+        // brief-ddl-3 R-ddl3-1: a marker on a loadpull's own loads is snapped to a measured load by default, as a
+        // contour marker can be. Unticked it is placed anywhere — and the plots following it read the loadpull there.
+        if (trace.IsLoadpullLoadTrace && hostPlot.PlotType == PlotType.Smith && marker.MarkerKind != MarkerKind.Contour)
+        {
+            bool onLoad = !marker.FreePosition || marker.SnappedToCurve;
+            var snapLoad = new MenuItem
+            {
+                Header = "Snap to Point",
+                Icon   = new MaterialIcon
+                {
+                    Kind = onLoad ? MaterialIconKind.CheckboxOutline : MaterialIconKind.CheckboxBlankOutline,
+                },
+            };
+            snapLoad.Click += (_, _) =>
+            {
+                if (onLoad)
+                {
+                    // Free from where it stands: the position IS the load it was on.
+                    marker.PositionStatic = trace.GetMarkerDataLocation(marker);
+                    marker.FreePosition   = true;
+                }
+                else
+                {
+                    // Bound to the trace again; its position resolves to the nearest measured load.
+                    marker.FreePosition = false;
+                }
+                marker.SnappedToCurve = false;
+                onSnapToggled?.Invoke();
+            };
+            menu.Items.Add(snapLoad);
         }
 
         var showBoxItem = new MenuItem

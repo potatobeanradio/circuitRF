@@ -118,6 +118,11 @@ public static class TraceResolve
         t.BarWidth  = null;
         t.NormalFit = null;
         t.SampleAxis = null;
+        // A synthesised curve is said again by its link on every resolve (brief-ddl-3), and only while the trace still
+        // follows one: an edit that unlinked it must not leave the model drawn in place of the measurement.
+        t.IsSynthesized  = false;
+        t.SynthesisLabel = null;
+        if (t.AfterResolve is not null && !(t.Slice?.Any(s => s.IsLinked) ?? false)) t.AfterResolve = null;
         try
         {
             // An `@name` operand of a multi-cube expression asks this trace's own link resolver (brief-ddl-1).
@@ -135,6 +140,8 @@ public static class TraceResolve
             // The trial views (brief-yield-9): colour by, the nominal, the envelope, the fit, and which trial
             // each curve, point or bar is — from the same DataSet, by the same expression engine.
             TrialResolve.Apply(t, ds, plotType, freqUnit);
+            // A link that replaces the curve (a drive-up synthesised at a free load, brief-ddl-3) has the last word.
+            t.AfterResolve?.Invoke(t, plotType, freqUnit);
         }
         catch (Exception ex)
         {

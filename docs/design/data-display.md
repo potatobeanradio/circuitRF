@@ -364,6 +364,33 @@ character, so every place the label is drawn shows it without a renderer of its 
 trace that carried a source names its newly frozen dependents once in Messages ("Pout on Rect 1 no
 longer follows m1; it shows gridPoint 17").
 
+**A loadpull read at any load (DDL-3).** A marker on a loadpull's contours, or on its GammaLoad Smith trace, gives a
+loadpull `LinkPosition`: the load in the loadpull's stored Γ basis (50 Ω), the file, group and frequency index it
+was read against, and whether it is snapped to a measured load. A GammaLoad marker is snapped by default; its
+context menu's **Snap to Point** unties it, after which it is dragged anywhere, draws the free-marker ring, and
+Shift-drag puts it back on a MEASURED load (never on the line drawn between two). A trace on the same loadpull whose
+`gridPoint` pin follows such a position reads (`LoadpullLinks.Read`):
+- **snapped** → that node's index — the measured curve, exactly;
+- **free, Nearest** → the nearest load's index, measured, with the card naming the load and its distance;
+- **free, Interp** (the default) → `LoadpullSurface.GetPowerSweep` at the load, with the plot's compression and the
+  source contour's kernel and smoothing. Y and the versus X map to surface metrics through `LoadpullFomDialect`; with
+  no versus X the X is the sweep key `PavlDbm`, labelled "available input power". A quantity the surface cannot fit
+  is refused by name on the card and that trace takes the nearest load.
+The read mode and compression are the plot's own `TableReadMode` and `TableCompression` — the summary table's — and
+the inspector shows them on any plot holding such a trace. The consumer also reads at the position's frequency
+index unless its own frequency pin follows a link.
+
+**A synthesised curve is drawn as a model.** It is dashed (`Trace.DrawnLineType`), its label reads `Pout @ m1
+(interpolated, Γ 0.42∠151°)`, and the pin row says "→ interpolated" rather than an index. Outside the convex hull of the
+measured loads (`LoadpullSurface.IsInsideMeasured` / `DistanceOutsideMeasured`) the card says it is extrapolated and
+by how much. The replacement rides on `Trace.AfterResolve`, run at the end of every `TraceResolve` of that trace, so a
+card edit or a re-run re-resolves the trace without dropping the model back to a stored index.
+
+**Cost.** One surface per (DataSet, group) is cached (`LoadpullLinks.Surface`), so the first read at a frequency builds
+the three RBF stacks and every later read only evaluates. Until they are built, a drag leaves the consumer as it was
+and it updates on release (`LoadpullSurface.HasPowerSweepStacks`); after that it follows the drag. Measured figures are
+in `src/Render/DataDisplay/RESOLVED.md`.
+
 **Paste.** Every pasted marker takes a new id, and a link inside the pasted set that followed one of
 them follows its copy (`LinkRemap.Renew`), so a pasted overview and detail pair drives itself; a link to
 a marker outside the set keeps following the original. Pasted names are made unique across the whole

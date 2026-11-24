@@ -66,7 +66,7 @@ namespace CircuitRF.Render.DataDisplay
                     StrokeCap   = SKStrokeCap.Round,
                     StrokeJoin  = SKStrokeJoin.Round
                 };
-                paint.PathEffect = LinePathEffect(props.LineType, strokeW);
+                paint.PathEffect = LinePathEffect(trace.DrawnLineType, strokeW);
                 bool coloured = trace.LabelsFamilyCurves;
                 for (int k = 0; k < trace.FamilyCurves.Count; k++)
                 {
@@ -126,7 +126,7 @@ namespace CircuitRF.Render.DataDisplay
                     StrokeJoin  = SKStrokeJoin.Round
                 };
 
-                paint.PathEffect = LinePathEffect(props.LineType, strokeW);
+                paint.PathEffect = LinePathEffect(trace.DrawnLineType, strokeW);
 
                 canvas.DrawPath(path, paint);
 

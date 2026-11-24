@@ -1334,3 +1334,26 @@ resampled with `toFootprintEdge`: values run one cell diagonal past the footprin
 `SurfaceGrid.ClipRadius`, and `DrawTopoMapFill` clips to it (antialiased), so the colour goes right up to a smooth edge.
 The iso-line grid keeps the old mask, so no line is drawn in the extra ring. Gate:
 `LpwWaveLoadpullTests.AFillGrid_IsWholeUnderItsFootprintCircle_SoTheFillReachesTheClippedEdge`.
+
+## Loadpull at a marker anywhere on the Γ plane (brief-ddl-3, 2026-11-24)
+
+**Cost of a synthesised drive-up, measured once (scratch harness, Release, analytic loadpull, 36 drive steps, 3 dB
+compression).** The first `GetPowerSweep` at a frequency builds three RBF stacks (the sweep key, X and Y, 32 back-off
+slices each); every later read at a new Γ only evaluates them:
+
+| loads | first read (builds the stacks) | each later read |
+|---|---|---|
+| 7×7 (49) | 7.3 ms | 0.043 ms |
+| 15×15 (225) | 63.6 ms | 0.132 ms |
+
+So a consumer follows a drag frame by frame once its stacks exist, and the only frame worth deferring is the first.
+That is why the rule is "updates on release until the stacks for this consumer are cached"
+(`LoadpullSurface.HasPowerSweepStacks`) rather than a timer, and why the surface is cached per (DataSet, group)
+(`LoadpullLinks.Surface`, a weak table on the DataSet so a re-run's new DataSet gets a new surface). No timing test.
+
+**`GetPowerSweep`'s low-power clamp was only meaningful for one X.** It compared the first synthesised X with the
+sweep key's floor — an available-input-power level in dBm — and replaced it when higher. With X = PavlDbm that guards
+against extrapolation noise; with X = Pout (about the gain above the drive) it always fired and pulled the first
+point down to the drive floor, a spike back at the low-power end of every Pout-axis curve. It now applies only when
+X is the sweep key. Gate: `tests/RfCore.Tests/LoadpullOffGridTests.cs`.
+

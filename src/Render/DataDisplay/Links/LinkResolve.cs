@@ -14,6 +14,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using RfCore.Data;
+using RfCore.Loadpull;
 
 namespace CircuitRF.Render.DataDisplay;
 
@@ -48,7 +49,18 @@ public static class LinkResolve
             }
 
             if (LinkGraph.IsSingleCube(t))
-                frozen |= ResolveSlice(t, graph.SlotsOf(t), cycle is not null, sources, notes);
+            {
+                var (f, deferred, synthesis) = ResolveSlice(t, plot, graph.SlotsOf(t), cycle is not null, sources, notes, released);
+                if (deferred)
+                {
+                    // A synthesised read whose surface is not built yet waits for the drag to end (R-ddl3-7).
+                    done.Remove(t);
+                    t.LinkNote = string.Join(" ", notes.Distinct(StringComparer.Ordinal));
+                    continue;
+                }
+                frozen |= f;
+                t.AfterResolve = synthesis;
+            }
             else
                 t.ExpressionLinks = ExpressionResolver(doc, doc.TabOf(t), sources, cycle is not null, notes, () => frozen = true);
 
@@ -60,6 +72,22 @@ public static class LinkResolve
             t.LinkNote   = notes.Count > 0 ? string.Join(" ", notes.Distinct(StringComparer.Ordinal)) : null;
             t.LinkFrozen = frozen;
         }
+
+        // Summary tables read at a marker (R-ddl3-5): leaf consumers, after every trace the marker could sit on has
+        // followed whatever it follows. A marker that is gone leaves the table at the load it last gave.
+        foreach (var plot in doc.Tabs.SelectMany(tab => tab.Plots).Distinct())
+        {
+            if (plot.TableOptimum != TableOptimum.AtMarker || !plot.Traces.Any(x => x.IsSummaryColumn)) continue;
+            if (plot.TableMarkerLink is { } id && doc.FindMarker(id) is { } site)
+            {
+                plot.TableMarkerLinkName = site.Marker.Name;
+                if (LoadpullLinks.PositionOf(site, sources) is { } pos) plot.TableMarkerPosition = pos;
+            }
+            var ds    = sources.SelectedData;
+            var views = ds is null ? [] : LoadpullRecognition.FindLoadpullViews(ds);
+            SummaryResolve.Rebuild(plot, ds, ContourResolve.GroupFor(views, plot.SummaryLoadpullGroup));
+            done.AddRange(plot.Traces.Where(x => x.IsSummaryColumn));
+        }
         return done;
     }
 
@@ -70,13 +98,19 @@ public static class LinkResolve
     /// </summary>
     public static bool UpdatesOnRelease(Trace t) => t.IsContourTrace;
 
-    /// <summary>The pinned entries of a single-cube consumer, each at the index its source chooses. True when any is frozen.</summary>
-    private static bool ResolveSlice(Trace t, IReadOnlyList<LinkGraph.Slot> slots, bool inCycle,
-                                     IPlotDataSources sources, List<string> notes)
+    /// <summary>
+    /// The pinned entries of a single-cube consumer, each at the index its source chooses: whether any is frozen, whether
+    /// the consumer waits for a drag to end, and the synthesised curve that replaces its own when a loadpull read at a
+    /// free load calls for one (brief-ddl-3).
+    /// </summary>
+    private static (bool Frozen, bool Deferred, Action<Trace, PlotType, FreqUnit>? Synthesis) ResolveSlice(
+        Trace t, Plot plot, IReadOnlyList<LinkGraph.Slot> slots, bool inCycle,
+        IPlotDataSources sources, List<string> notes, bool released)
     {
         var slice = (AxisSlice[])t.Slice!.Clone();
-        DataCube? cube = t.SourcePath is { } sp && sources.DataFor(sp) is { } ds && ds.Contains(t.CubeName!)
-            ? ds[t.CubeName!] : null;
+        DataSet? data = t.SourcePath is { } sp ? sources.DataFor(sp) : null;
+        DataCube? cube = data is not null && data.Contains(t.CubeName!) ? data[t.CubeName!] : null;
+        Action<Trace, PlotType, FreqUnit>? synthesis = null;
         bool frozen = false;
         foreach (var slot in slots)
         {
@@ -90,6 +124,20 @@ public static class LinkResolve
             if (axis is not null && !inCycle)
             {
                 var value = ValueOf(slot, sources);
+                // A loadpull position on this loadpull's gridPoint: the node, the nearest node, or a synthesised curve.
+                if (value.Position is { IsLoadpull: true } pos && entry.AxisName == "gridPoint" && data is not null)
+                {
+                    slice[slot.SliceIndex] = entry;
+                    var kind = LoadpullLinks.Read(t, plot, slice, slot.SliceIndex, pos, value.Name, data, released, notes,
+                                                  out int lpIndex, out var lpSynthesis);
+                    if (kind == LoadpullLinks.ReadKind.Deferred) return (frozen, true, null);
+                    if (kind != LoadpullLinks.ReadKind.NotLoadpull)
+                    {
+                        slice[slot.SliceIndex] = entry with { Index = lpIndex };
+                        synthesis ??= lpSynthesis;
+                        continue;
+                    }
+                }
                 var r = LinkMatch.Match(value, axis, entry.Index);
                 entry = entry with { Index = r.Index };
                 if (r.Note is { } n) notes.Add(slot.Error is { } err && r.Kind == LinkMatchKind.Frozen ? err : n);
@@ -101,7 +149,7 @@ public static class LinkResolve
         t.Slice = slice;
         // A renamed marker keeps its links (D1); the spec text the card shows follows the new name.
         if (renamed && t.Expression is not null) t.Expression = t.BuildPickerExpression();
-        return frozen;
+        return (frozen, false, synthesis);
     }
 
     /// <summary>

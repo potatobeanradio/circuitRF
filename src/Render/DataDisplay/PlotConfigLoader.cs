@@ -76,6 +76,8 @@ public static class PlotConfigLoader
         plot.TableOptimum                = pc.TableOptimum;
         plot.TableReadMode               = pc.TableReadMode;
         plot.TableCompression            = pc.TableCompression > 0 ? pc.TableCompression : 3.0;
+        plot.TableMarkerLink             = pc.TableMarkerLink;
+        plot.TableMarkerLinkName         = pc.TableMarkerLinkName;
         plot.TableCompressionReference   = pc.TableCompressionReference;
         plot.TableCompressionType        = pc.TableCompressionType;
         plot.SummaryLoadpullGroup        = pc.SummaryLoadpullGroup;

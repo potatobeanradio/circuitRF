@@ -2065,6 +2065,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             TableOptimum                = plot.TableOptimum,
             TableReadMode               = plot.TableReadMode,
             TableCompression            = plot.TableCompression,
+            TableMarkerLink             = plot.TableOptimum == TableOptimum.AtMarker ? plot.TableMarkerLink : null,
+            TableMarkerLinkName         = plot.TableOptimum == TableOptimum.AtMarker ? plot.TableMarkerLinkName : null,
             TableCompressionReference   = plot.TableCompressionReference,
             TableCompressionType        = plot.TableCompressionType,
             SummaryLoadpullGroup        = plot.SummaryLoadpullGroup,

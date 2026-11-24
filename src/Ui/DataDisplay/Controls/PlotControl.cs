@@ -2817,7 +2817,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     InvalidateVisual();
                     PlotChanged?.Invoke(this, EventArgs.Empty);
                 },
-                linkTargets: ContainerProvider?.Invoke()?.LinkTargetsFor(marker));
+                linkTargets: ContainerProvider?.Invoke()?.LinkTargetsFor(marker),
+                onSnapToggled: () =>
+                {
+                    InvalidateVisual();
+                    PlotChanged?.Invoke(this, EventArgs.Empty);
+                    MarkerMoved?.Invoke(this, EventArgs.Empty);
+                });
             menu.Items.Add(new Separator());
             menu.Items.Add(AddAsGoalItem(trace, "Add as Goal…"));
             menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
@@ -3075,7 +3081,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
                 var  world   = new System.Numerics.Vector2((float)fwx, (float)fwy);
                 bool snapped = false;
-                if (shift && plot is not null && SnapToNearestCurve(plot, world, tf) is { } onCurve)
+                // A loadpull's own loads snap to a MEASURED load, not to the line drawn between two of them
+                // (brief-ddl-3 R-ddl3-1): a point on that line is no load anyone measured.
+                if (shift && trace.IsLoadpullLoadTrace && trace.NearestDrawnPoint(world) is { } load)
+                {
+                    world   = load;
+                    snapped = true;
+                }
+                else if (shift && plot is not null && SnapToNearestCurve(plot, world, tf) is { } onCurve)
                 {
                     world   = onCurve;
                     snapped = true;

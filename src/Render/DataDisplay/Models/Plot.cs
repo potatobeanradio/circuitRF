@@ -873,6 +873,16 @@ namespace CircuitRF.Render.DataDisplay
         public TableOptimum  TableOptimum     { get; set; } = TableOptimum.Mxp;
         public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
         public double        TableCompression { get; set; } = 3.0;
+
+        /// <summary>The marker a summary table reads at when <see cref="TableOptimum"/> is <c>AtMarker</c> — its id
+        /// (brief-ddl-3 R-ddl3-5). Null otherwise.</summary>
+        public string?       TableMarkerLink     { get; set; }
+        /// <summary>That marker's name as last seen, for the file and the picker.</summary>
+        public string?       TableMarkerLinkName { get; set; }
+        /// <summary>The load that marker last gave, set by the link resolution and read by <c>SummaryResolve</c>, so every
+        /// rebuild of the table — a compression change, a re-run — reads at it. Never saved.</summary>
+        public LinkPosition? TableMarkerPosition { get; set; }
+
         /// <summary>The gain the summary's compression is measured on: null/<c>Gt_dB</c> (the default) or <c>Gp_dB</c>.</summary>
         public string?       TableCompressionReference { get; set; }
         /// <summary>Where the summary's compression is measured from: the running maximum (default) or the small-signal gain.</summary>

@@ -179,6 +179,70 @@ namespace RfCore.Loadpull
 
         public int GridPointCount(int freqIdx) => _freqs[freqIdx].NGrid;
 
+        /// <summary>Grid point <paramref name="gi"/>'s load at <paramref name="freqIdx"/>: its Γ (as stored) or its Z.</summary>
+        public Complex GridCoord(int freqIdx, int gi, SurfacePlane plane = SurfacePlane.Gamma)
+            => plane == SurfacePlane.Gamma ? _freqs[freqIdx].Gammas[gi] : _freqs[freqIdx].Zs[gi];
+
+        /// <summary>The index on the <c>gridPoint</c> axis of the measured load nearest <paramref name="coord"/>
+        /// (in the stored Γ, or in Z), or −1 when there are none — a free marker's Nearest read (brief-ddl-3 R-ddl3-2).</summary>
+        public int NearestGridPoint(int freqIdx, Complex coord, SurfacePlane plane = SurfacePlane.Gamma)
+        {
+            var fs = _freqs[freqIdx];
+            int best = -1; double bestD2 = double.PositiveInfinity;
+            for (int gi = 0; gi < fs.NGrid; gi++)
+            {
+                var c = plane == SurfacePlane.Gamma ? fs.Gammas[gi] : fs.Zs[gi];
+                double dx = c.Real - coord.Real, dy = c.Imaginary - coord.Imaginary, d2 = dx * dx + dy * dy;
+                if (d2 < bestD2) { bestD2 = d2; best = gi; }
+            }
+            return best;
+        }
+
+        /// <summary>Whether <paramref name="metric"/> is one this surface can fit — a drive-up it carries.</summary>
+        public bool HasMetric(int freqIdx, string metric) => _freqs[freqIdx].DriveUps.ContainsKey(metric);
+
+        /// <summary>
+        /// Whether <paramref name="coord"/> lies inside the convex hull of the loads measured at <paramref name="freqIdx"/>
+        /// — on its boundary counts as inside. Outside it, anything read off the surface is an extrapolation
+        /// (brief-ddl-3 R-ddl3-4).
+        /// </summary>
+        public bool IsInsideMeasured(int freqIdx, Complex coord, SurfacePlane plane = SurfacePlane.Gamma)
+            => DistanceOutsideMeasured(freqIdx, coord, plane) <= 1e-9;
+
+        /// <summary>How far <paramref name="coord"/> lies outside that hull, in the plane's own units (|ΔΓ|, or Ω):
+        /// 0 inside it, +∞ when fewer than three loads were measured.</summary>
+        public double DistanceOutsideMeasured(int freqIdx, Complex coord, SurfacePlane plane = SurfacePlane.Gamma)
+        {
+            var key = (freqIdx, plane);
+            if (!_hulls.TryGetValue(key, out var hull))
+            {
+                var fs  = _freqs[freqIdx];
+                var pts = new List<Complex>(fs.NGrid);
+                for (int gi = 0; gi < fs.NGrid; gi++)
+                {
+                    var c = plane == SurfacePlane.Gamma ? fs.Gammas[gi] : fs.Zs[gi];
+                    if (double.IsFinite(c.Real) && double.IsFinite(c.Imaginary)) pts.Add(c);
+                }
+                _hulls[key] = hull = ConvexHull(pts);
+            }
+            if (hull.Count < 3) return double.PositiveInfinity;
+            if (InsideHull(hull, coord.Real, coord.Imaginary)) return 0;
+            double best = double.PositiveInfinity;
+            for (int i = 0, j = hull.Count - 1; i < hull.Count; j = i++)
+                best = Math.Min(best, DistanceToSegment(coord, hull[j], hull[i]));
+            return best;
+        }
+
+        private readonly Dictionary<(int, SurfacePlane), IReadOnlyList<Complex>> _hulls = new();
+
+        private static double DistanceToSegment(Complex p, Complex a, Complex b)
+        {
+            var ab = b - a;
+            double len2 = ab.Real * ab.Real + ab.Imaginary * ab.Imaginary;
+            double t = len2 > 0 ? Math.Clamp(((p - a).Real * ab.Real + (p - a).Imaginary * ab.Imaginary) / len2, 0, 1) : 0;
+            return Complex.Abs(p - (a + t * ab));
+        }
+
         public double MedianCompression(int freqIdx)     => _freqs[freqIdx].MedianCompression;
         public double RecommendedCompression(int freqIdx) => _freqs[freqIdx].RecommendedCompression;
 
@@ -1245,7 +1309,10 @@ namespace RfCore.Loadpull
 
             // Low-power HACK: clamp result_x[0] to prevent extrapolation noise
             // at the low end of the sweep (mirrors SPLData: if result_x[0] > min_sweep_key).
-            if (resultX[0] > minSweepKey) resultX[0] = minSweepKey;
+            // ONLY when X is the sweep key itself (brief-ddl-3 R-ddl3-3): min_sweep_key is an available-input-power
+            // floor in dBm, and comparing a different X with it — Pout, some 15 dB above the drive — pulled the
+            // curve's first X down to the drive's floor and drew a spike back to it at the low-power end.
+            if (metricX == SweepKeyName && resultX[0] > minSweepKey) resultX[0] = minSweepKey;
 
             // Sort all three arrays jointly by resultSweep (ascending domain for interp)
             var sorted = SortJointly(resultSweep, resultX, resultY, numSlices);
@@ -1267,6 +1334,22 @@ namespace RfCore.Loadpull
             }
 
             return new PowerSweep(finalX, finalY, metricX, metricY);
+        }
+
+        /// <summary>
+        /// Whether <see cref="GetPowerSweep"/> with these arguments would only EVALUATE — its three stacks are already
+        /// built — rather than fit 3 × <see cref="NumInterpStacks"/> surfaces first. What a display asks to decide whether
+        /// a consumer can follow a drag or must wait for its release (brief-ddl-3 R-ddl3-7).
+        /// </summary>
+        public bool HasPowerSweepStacks(
+            int freqIdx, string metricX, string metricY, double compressionVal, SurfacePlane plane, double? z0 = null,
+            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3,
+            string? compressionReference = null, CompressionType compressionType = CompressionType.Gmax)
+        {
+            var comp = ConstraintSpec.AtCompression(compressionVal, compressionReference, compressionType);
+            bool Has(string m) => _stackCache.ContainsKey(new StackKey(freqIdx, m, compressionVal, comp.Reference,
+                                                                       comp.CompressionType, plane, z0, kernel, smooth));
+            return Has(SweepKeyName) && Has(metricX) && Has(metricY);
         }
 
         // ── BuildStackAtCompression ──────────────────────────────────────

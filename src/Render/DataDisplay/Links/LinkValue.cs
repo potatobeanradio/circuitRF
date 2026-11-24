@@ -27,11 +27,28 @@ public sealed record LinkCoordinate(
     string? SourcePath, string Group, string Axis, int Index, double Value, string Unit,
     IReadOnlyList<double> AxisValues);
 
-/// <summary>Where a marker on a Smith or contour plot sits, as a point on the Γ plane — DDL-3 consumes it.</summary>
-/// <param name="Gamma">The reflection coefficient the marker stands on.</param>
+/// <summary>Where a marker on a Smith or contour plot sits, as a point on the Γ plane.</summary>
+/// <param name="Gamma">The reflection coefficient the marker stands on. For a LOADPULL position (<paramref name="SourcePath"/>
+/// set) it is in the loadpull's own stored basis, which is what its surface is fitted in.</param>
 /// <param name="ReferenceZ0">The impedance <paramref name="Gamma"/> is referred to.</param>
-/// <param name="Snapped">True when the marker is on a sample of its trace; false when it was placed freely.</param>
-public sealed record LinkPosition(Complex Gamma, Complex ReferenceZ0, bool Snapped);
+/// <param name="Snapped">True when the marker is on a sample (a measured load); false when it was placed freely.</param>
+/// <param name="SourcePath">The loadpull file the position was read against — null for a position on any other Smith
+/// trace (brief-ddl-3 R-ddl3-1).</param>
+/// <param name="Group">That file's loadpull group ("" for the top level).</param>
+/// <param name="FreqIndex">The frequency (leading-axis) index it was read at (R-ddl3-6).</param>
+/// <param name="Node">The <c>gridPoint</c> a snapped marker sits on, when its trace says so directly.</param>
+/// <param name="Kernel">The RBF kernel the source's contours fit with — a synthesised read uses the same.</param>
+/// <param name="Smooth">That fit's smoothing.</param>
+public sealed record LinkPosition(
+    Complex Gamma, Complex ReferenceZ0, bool Snapped,
+    string? SourcePath = null, string? Group = null, int FreqIndex = 0, int? Node = null,
+    RfCore.Loadpull.RbfKernel Kernel = RfCore.Loadpull.RbfKernel.Multiquadric, double Smooth = 1e-3)
+{
+    /// <summary>The load as an impedance.</summary>
+    public Complex Z => ReferenceZ0 * (1 + Gamma) / (1 - Gamma);
+
+    public bool IsLoadpull => SourcePath is not null;
+}
 
 /// <summary>A plain value with its unit — what a display control supplies (DDL-5).</summary>
 public sealed record LinkScalar(double Value, string Unit);

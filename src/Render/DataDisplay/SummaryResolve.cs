@@ -51,8 +51,12 @@ public static class SummaryResolve
             return false;
         }
 
+        bool atMarker = plot.TableOptimum == TableOptimum.AtMarker;
         LoadpullSurface surface;
-        try { surface = new LoadpullSurface(ds, lpGroup); }
+        // At a marker the table is re-read on every move of it, so it reads the one cached surface the links use
+        // (brief-ddl-3 R-ddl3-7) rather than refitting every column each time.
+        try { surface = atMarker ? LoadpullLinks.Surface(ds, lpGroup) ?? throw new InvalidOperationException()
+                                 : new LoadpullSurface(ds, lpGroup); }
         catch
         {
             plot.SummaryFreqs = null;
@@ -74,6 +78,15 @@ public static class SummaryResolve
         bool nearest   = plot.TableReadMode == TableReadMode.Nearest;
 
         var optima = new System.Numerics.Complex?[nFreq];
+        if (atMarker)
+        {
+            // Every row read at the marker's load (R-ddl3-5): ZL is that load, and a marker snapped to a measured load
+            // reads that node's measured values in either mode.
+            var pos = plot.TableMarkerPosition;
+            for (int fi = 0; fi < nFreq; fi++) optima[fi] = pos?.Z;
+            nearest |= pos?.Snapped == true;
+        }
+        else
         for (int fi = 0; fi < nFreq; fi++)
         {
             var mxx = plot.TableOptimum == TableOptimum.Mxp

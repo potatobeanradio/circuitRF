@@ -54,8 +54,9 @@ public static class MarkerLinkSource
             }
         }
 
-        LinkPosition? position = null;
-        if (site.Plot.PlotType is PlotType.Smith && (t.IsComplexPlanePlot || t.IsContourTrace || m.FreePosition))
+        // A loadpull position (brief-ddl-3) carries the file, group and frequency it was read against.
+        LinkPosition? position = LoadpullLinks.PositionOf(site, sources);
+        if (position is null && site.Plot.PlotType is PlotType.Smith && (t.IsComplexPlanePlot || t.IsContourTrace || m.FreePosition))
         {
             var at = t.GetMarkerDataLocation(m);
             position = new LinkPosition(new Complex(at.X, at.Y), t.MarkerZ0, Snapped: !m.FreePosition || m.SnappedToCurve);

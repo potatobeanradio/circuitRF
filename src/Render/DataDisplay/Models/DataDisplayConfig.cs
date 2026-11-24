@@ -163,6 +163,11 @@ public sealed class PlotContainerConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
     public double        TableCompression { get; set; } = 3.0;
+    /// <summary>The marker an <c>AtMarker</c> summary reads at (brief-ddl-3 R-ddl3-5); omitted otherwise.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string?       TableMarkerLink     { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string?       TableMarkerLinkName { get; set; }
     // Brief LPW (R-lpw-7) — the summary's compression reference, table-wide; omitted at the defaults (Gt, Gmax).
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string?       TableCompressionReference { get; set; }

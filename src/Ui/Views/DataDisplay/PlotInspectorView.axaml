@@ -652,6 +652,13 @@
                                 ToolTip.Tip="MXE — max-efficiency optimum">
                             <TextBlock Text="MXE" FontSize="10"/>
                         </Button>
+                        <Button Classes="seg-btn"
+                                Classes.active="{Binding IsTableOptimumAtMarker}"
+                                Command="{Binding SetTableOptimumAtMarkerCommand}"
+                                Padding="5,2"
+                                ToolTip.Tip="Read every column at the load a marker sits on">
+                            <TextBlock Text="At marker" FontSize="10"/>
+                        </Button>
                     </StackPanel>
                     <CheckBox Content="Interp"
                               IsChecked="{Binding IsInterp, Mode=TwoWay}"
@@ -665,6 +672,22 @@
                                    Width="48"
                                    ToolTip.Tip="Table-wide compression point (dB)"/>
                     <TextBlock Text="dB" Classes="label"/>
+                </StackPanel>
+                <!-- brief-ddl-3 R-ddl3-5: which marker the table reads at. Its own row, so the row above keeps
+                     its width. -->
+                <StackPanel Orientation="Horizontal" Spacing="4"
+                            IsVisible="{Binding IsTableOptimumAtMarker}">
+                    <TextBlock Text="At" Classes="label"/>
+                    <ComboBox ItemsSource="{Binding TableMarkers}"
+                              SelectedItem="{Binding SelectedTableMarker, Mode=TwoWay}"
+                              PlaceholderText="Choose a marker"
+                              MinWidth="160">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{ReflectionBinding Label}" FontSize="{StaticResource FontSize}"/>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
                 </StackPanel>
                 <!-- The summary's compression reference, table-wide (brief LPW R-lpw-7): its own row, so the row
                      above keeps the inspector's width. -->
@@ -680,6 +703,24 @@
                               MinWidth="66"
                               ToolTip.Tip="Gmax: from the gain's running maximum. Gss: from its small-signal value at the lowest drive"/>
                 </StackPanel>
+            </StackPanel>
+
+            <!-- brief-ddl-3 R-ddl3-2: a plot whose traces read a loadpull at a marker reads it by the same two
+                 settings the summary table offers — interpolated or the nearest measured load, at a compression. -->
+            <StackPanel Orientation="Horizontal" Spacing="8"
+                        IsVisible="{Binding ShowLoadpullReadControls}">
+                <CheckBox Content="Interp"
+                          IsChecked="{Binding IsInterp, Mode=TwoWay}"
+                          FontSize="10"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="On = a drive-up interpolated at the marker's load; Off = the nearest measured load"/>
+                <TextBlock Text="Comp" Classes="label"/>
+                <NumericUpDown Value="{Binding TableCompression, Mode=TwoWay}"
+                               Minimum="0" Maximum="20" Increment="0.5"
+                               FormatString="F1"
+                               Width="48"
+                               ToolTip.Tip="The compression the interpolated drive-up is built at (dB)"/>
+                <TextBlock Text="dB" Classes="label"/>
             </StackPanel>
 
             <Separator/>

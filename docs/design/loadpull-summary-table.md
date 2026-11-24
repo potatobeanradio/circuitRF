@@ -44,6 +44,15 @@ each metric is read at that coordinate (interpolated or nearest-measured, user's
   the table evaluates at*.
 - Visible only when `PlotType == Table`. (For non-Table plots the header keeps its current layout.)
 
+### 2.1b At marker (brief-ddl-3 R-ddl3-5)
+A third optimum, **At marker**, reads every column at the load a marker sits on instead of at MXP or MXE: a marker
+on a loadpull's contours, or on its GammaLoad Smith trace, anywhere on the plane. A picker under the row names the
+marker (`Plot.TableMarkerLink`, saved as `TableMarkerLink`/`TableMarkerLinkName`). The table adds no per-cell logic:
+the marker's load, as Z, takes the place of the optimum coordinate in §3, every row reads at it, and ZL is that load.
+A marker snapped to a measured load reads that node's measured values in either read mode. The load is resolved by the
+display's link resolution (`data-display.md` §2.10), which sets `Plot.TableMarkerPosition` and rebuilds the table, so
+the table follows the marker while it is dragged; a marker that is gone leaves the table at the load it last gave.
+
 ### 2.2 Interp / Nearest selector — NEW control, table-wide
 - A second new selector lets the user choose how each metric is read at the optimum load:
   - **Interp** — evaluate the metric's RBF surface at the (interpolated) optimum coordinate.

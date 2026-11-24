@@ -391,9 +391,9 @@ namespace CircuitRF.Render.DataDisplay
             using var paint = new SKPaint
             {
                 Style = SKPaintStyle.Stroke, IsAntialias = true, Color = color, StrokeWidth = sw,
-                StrokeCap = props.LineType == LineType.Dotted ? SKStrokeCap.Round : SKStrokeCap.Butt,
+                StrokeCap = trace.DrawnLineType == LineType.Dotted ? SKStrokeCap.Round : SKStrokeCap.Butt,
             };
-            switch (props.LineType)
+            switch (trace.DrawnLineType)
             {
                 case LineType.Dashed:
                     for (float x = x0; x < x1; x += sw * 5f)

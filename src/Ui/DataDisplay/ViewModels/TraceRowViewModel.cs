@@ -3484,7 +3484,9 @@ public partial class TraceRowViewModel : ViewModelBase
         if (r.LinkId is { } id)
         {
             if (doc.FindMarker(id) is { } site)
-                text = $"@{site.Marker.Name} → {entry.Index}" + Reading(MarkerLinkSource.Resolve(site, sources), r.AxisName);
+                // A drive-up synthesised at a free load has no index to report: it is not any measured load (brief-ddl-3).
+                text = $"@{site.Marker.Name} → {(_trace.IsSynthesized && r.AxisName == "gridPoint" ? "interpolated" : entry.Index.ToString())}"
+                     + Reading(MarkerLinkSource.Resolve(site, sources), r.AxisName);
             else
             {
                 dangling = true;

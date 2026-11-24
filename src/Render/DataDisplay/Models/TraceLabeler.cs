@@ -178,6 +178,8 @@ namespace CircuitRF.Render.DataDisplay
         /// the axis and its index when the owner resolved none ("gridPoint 17").</summary>
         private static string LinkedToken(Trace t, AxisSlice s)
         {
+            // A curve synthesised at a free load names the load, and says it is a model (brief-ddl-3 R-ddl3-4).
+            if (t.IsSynthesized && s.AxisName == "gridPoint" && t.SynthesisLabel is { } synth) return synth;
             if (t.PinnedAxisDisplay(s.AxisName) is { Length: > 0 } d)
             {
                 int eq = d.IndexOf('=');

@@ -3413,6 +3413,47 @@ namespace CircuitRF.Render.DataDisplay
         public HashSet<string> FrozenLinks { get; } = new(StringComparer.Ordinal);
 
         /// <summary>
+        /// The curve drawn is a MODEL, synthesised from a loadpull surface at a load between the measured ones
+        /// (brief-ddl-3 R-ddl3-4), not a measurement. It draws dashed and its label says "interpolated".
+        /// Set by the link resolution; never saved.
+        /// </summary>
+        public bool IsSynthesized { get; set; }
+
+        /// <summary>What the label says about a synthesised curve: "interpolated, Γ 0.42∠151°". Null otherwise.</summary>
+        public string? SynthesisLabel { get; set; }
+
+        /// <summary>
+        /// Run after every resolution of this trace, so a curve the link resolution replaced — a synthesised drive-up —
+        /// survives any other re-resolve (a card edit, a re-run) exactly as the link made it. Installed and cleared by
+        /// <c>LinkResolve</c>; null on every trace that does not follow a position.
+        /// </summary>
+        public Action<Trace, PlotType, FreqUnit>? AfterResolve { get; set; }
+
+        /// <summary>Whether this trace draws a loadpull's own loads — its <c>GammaLoad</c> cube — whose markers can be
+        /// snapped to a measured load or placed anywhere (brief-ddl-3 R-ddl3-1).</summary>
+        public bool IsLoadpullLoadTrace
+            => IsCubeBound && CubeName is { } cn && (cn == "GammaLoad" || cn.EndsWith(".GammaLoad", StringComparison.Ordinal));
+
+        /// <summary>The drawn sample nearest <paramref name="world"/>, or null when nothing is drawn — where a
+        /// Shift-drag puts a free marker on a loadpull's grid.</summary>
+        public Vector2? NearestDrawnPoint(Vector2 world)
+        {
+            if (Points.Count == 0) return null;
+            int best = 0; float bestD = float.PositiveInfinity;
+            for (int i = 0; i < Points.Count; i++)
+            {
+                float d = Vector2.DistanceSquared(Points[i], world);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return Points[best];
+        }
+
+        /// <summary>The line type a curve is DRAWN with: a synthesised curve draws dashed whatever its solid line
+        /// type says, so a model never reads as a measurement (R-ddl3-4).</summary>
+        public LineType DrawnLineType
+            => IsSynthesized && Properties.LineType == LineType.Solid ? LineType.Dashed : Properties.LineType;
+
+        /// <summary>
         /// A linked spec that was REFUSED when it was committed — an unknown or ambiguous name, a cycle. While set,
         /// the trace resolves to this error rather than to a picture; the next commit clears it. Never saved.
         /// </summary>
