@@ -676,6 +676,41 @@ public partial class PlotInspectorViewModel : ViewModelBase
         }
     }
 
+    /// <summary>The gain the summary's compression is measured on — "Gt" (the default) or "Gp"; table-wide (brief LPW).</summary>
+    public string TableCompressionReference
+    {
+        get => RfCore.Loadpull.CompressionGain.Short(_plot.TableCompressionReference);
+        set
+        {
+            string r = RfCore.Loadpull.CompressionGain.Normalize(value);
+            string? stored = r == RfCore.Loadpull.CompressionGain.Gt ? null : r;
+            if (_plot.TableCompressionReference == stored) return;
+            _plot.TableCompressionReference = stored;
+            OnPropertyChanged();
+            RebuildSummary();
+        }
+    }
+
+    /// <summary>Where the summary's compression is measured from — "Gmax" (the default) or "Gss"; table-wide.</summary>
+    public string TableCompressionType
+    {
+        get => _plot.TableCompressionType.ToString();
+        set
+        {
+            var t = value == nameof(RfCore.Loadpull.CompressionType.Gss)
+                ? RfCore.Loadpull.CompressionType.Gss : RfCore.Loadpull.CompressionType.Gmax;
+            if (_plot.TableCompressionType == t) return;
+            _plot.TableCompressionType = t;
+            OnPropertyChanged();
+            RebuildSummary();
+        }
+    }
+
+    public IReadOnlyList<string> CompressionReferenceOptions => s_compressionReferences;
+    private static readonly string[] s_compressionReferences = ["Gt", "Gp"];
+    public IReadOnlyList<string> CompressionTypeOptions => s_compressionTypes;
+    private static readonly string[] s_compressionTypes = ["Gmax", "Gss"];
+
     /// <summary>Label for the loadpull add-trace button: "+ Summary" on a Table, "+ Contour" otherwise.</summary>
     public string AddLoadpullTraceLabel => _plot.PlotType == PlotType.Table ? "+ Summary" : "+ Contour";
 

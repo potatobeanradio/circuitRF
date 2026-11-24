@@ -1668,3 +1668,35 @@ only a Doppler (`TxVel`), 10 Msym/s over 0.2 ms: 200 Hz read −0.5 Hz, 500 Hz r
   `Interpolated`, and the auto-zoom box still frames the measured loads. The summary table and the Model Composer's validation
   read the same `Interpolated`. The fit is approximating (smoothing 0.1), so its peak reads 41.53 dBm where the best measured
   load reads 41.43. Gates: `LoadpullMxpTests` (MXP on the axis, levels strictly inside), `ContourExtractorTests`.
+
+## Measured-wave loadpull files: what the samples say about their conventions (brief LPW, 2026-11-24)
+
+Three checks against the measured sample files attached to the issue the brief came from (one `.lpcwave`, one
+`.satwave`, three `.cst` at f0, f0 + 2f0 and f0 + 2f0 + 3f0), run out of the repository; no row of them is committed.
+The committed fixtures (`testdata/lpw`) are a synthetic analytic device written in the same layouts
+(`LpwSyntheticDevice`), and `LpwWaveLoadpullTests` holds them byte for byte to its output.
+
+1. **Every sample reads**, through `LoadpullFiles.Read`: the f0 `.cst` 12 blocks of 2 to 14 drives, the 2f0 one 20
+   blocks of 23 to 30, the 3f0 one 20 blocks of 18 to 27 (ragged, NaN-padded); the `.lpcwave` 12 loads of 23 to 27
+   drives; the `.satwave` one load of 26.
+2. **The `.lpcwave`/`.satwave` waves are RMS, and the dialect's computed columns are reproduced from them** by
+   `LoadpullWaves` to the files' rounding: `PinDelWaves` and `PoutWaves` within 0.005 dB, `GainWavesPwr` 0.005 dB,
+   `GainWavesTrd` 0.007 dB, `PAEffWaves` 0.016 %, `OutEffWaves` 0.007 %, `|GinWaves@F0|` 0.0005 — with ΓS taken from the
+   header's polar source impedance. **`PinWaves[dBm]` is the AVAILABLE power at the device's plane, not the incident
+   power**: it equals P(a₁ − ΓS·b₁)/(1 − |ΓS|²) to 0.007 dB and differs from P(a₁) by up to 2.6 dB, and `GainWavesTrd` is
+   `PoutWaves − PinWaves`. `Psource[dBm]` is the generator's setting and sat 24 dB below it (a driver in the path). The
+   reader therefore takes `PinWaves` as `PavlDbm` when a file has both — before this, `Psource` was the drive axis, so
+   Pout − PavlDbm read some 24 dB of "gain" more than the file's own transducer gain, and a model validated against such a
+   file was driven 24 dB short.
+3. **The `.cst` waves are peak.** Read as peak (P = ½|x|²) the blocks give drain efficiencies up to 42 %, 46 % and 53 %
+   and 4.3 to 6.7 W/mm on the stated 0.05 mm periphery; read as RMS, 84 %, 92 % and 105 % — the last is impossible —
+   and up to 13.3 W/mm. At f0, a₂/b₂ at the first drive reproduces each block's `#GAMMALOAD` within 0.008. At 2f0 and
+   3f0 a₂/b₂ is noise at the lowest drives (|Γ| > 1), so the per-load harmonic Γ is weighted by P(b₂): it reads |Γ₂|
+   0.38–0.41 in one file and 0.60–0.64 in the other, and |Γ₃| 0.54. The convention is still unstated by the format; the
+   issue's author was asked to confirm.
+
+Two deliberate departures from the brief's table: `IRL_dB` keeps this repository's sign (20·log₁₀|Γin|, a good match
+negative — the `.spl` reader, `LoadpullDerivedFields` and the simulated post-processor all store it so; one cube name
+must not change sign with the file format); and `Pdc_W` needs the drain's V and I but adds the gate's V·I only when the
+file states both, since some `.lpcwave` files log no gate current and leaving PAE out over the negligible term would
+discard it.

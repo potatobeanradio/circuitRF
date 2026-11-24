@@ -1,0 +1,3 @@
+# The synthetic loadpull fixtures are held byte for byte to LpwSyntheticDevice (CRLF, as the formats are written):
+# no line-ending conversion on checkout or commit.
+* -text

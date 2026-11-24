@@ -62,6 +62,8 @@ namespace CircuitRF.Render.DataDisplay
             "PAE"                           => "PAE (%)",
             "AMPM_deg" or "AMPM"            => "AM/PM (°)",
             "IRL_dB" or "IRL"               => "IRL (dB)",
+            "PinInc_dBm"                    => "Pin incident (dBm)",
+            "PinDel_dBm"                    => "Pin delivered (dBm)",
             _                               => metric,
         };
 

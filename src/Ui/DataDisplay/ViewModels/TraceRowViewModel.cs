@@ -123,7 +123,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         // §6: use alias-group comparison so Gain/Gt/Gp and DE/PAE/Efficiency are treated
         // as the same concept — a constraint metric that aliases to the primary is disabled.
-        string primaryGroup = MetricAliasGroup(ContourMetricName);
+        string primaryGroup = MetricAliasGroup(_trace.ContourData?.MetricName ?? ContourMetricName);
         ConstraintMetricOptions.Clear();
         foreach (var m in AvailableMetrics)
             ConstraintMetricOptions.Add(new ConstraintMetricItem(m, MetricAliasGroup(m) != primaryGroup));
@@ -144,17 +144,37 @@ public partial class TraceRowViewModel : ViewModelBase
         }
     }
 
-    private static string MetricAliasGroup(string? metric) => metric switch
-    {
-        "Gain" or "Gt" or "Gp" or "Gt_dB" or "Gp_dB" => "Gain",
-        "DE" or "PAE" or "Efficiency"  => "Efficiency",
-        _                              => metric ?? "",
-    };
+    private static string MetricAliasGroup(string? metric) => ContourData.MetricAliasGroup(metric);
 
     [ObservableProperty] private string?          _contourMetricName;
     [ObservableProperty] private ConstraintKind   _contourConstraintKind = ConstraintKind.Compression;
     [ObservableProperty] private string           _contourConstraintMetric = "";
     [ObservableProperty] private double           _contourConstraintValue = 3.0;
+    // Brief LPW (R-lpw-7) — the gain a compression contour is measured on, and from where.
+    [ObservableProperty] private string           _contourCompressionReference = "Gt";
+    [ObservableProperty] private string           _contourCompressionType = "Gmax";
+
+    /// <summary>The gains a compression can be read on: Gt (transducer) or Gp (power).</summary>
+    public IReadOnlyList<string> CompressionReferenceOptions => s_compressionReferences;
+    private static readonly string[] s_compressionReferences = ["Gt", "Gp"];
+    /// <summary>Where a compression is measured from: the gain's running maximum, or its small-signal value.</summary>
+    public IReadOnlyList<string> CompressionTypeOptions => s_compressionTypes;
+    private static readonly string[] s_compressionTypes = ["Gmax", "Gss"];
+
+    partial void OnContourCompressionReferenceChanged(string value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        string r = CompressionGain.Normalize(value);
+        cd.CompressionReference = r == CompressionGain.Gt ? null : r;
+        RebuildContour();
+    }
+
+    partial void OnContourCompressionTypeChanged(string value)
+    {
+        if (_suppressContourCallback || _trace.ContourData is not { } cd) return;
+        cd.CompressionType = value == nameof(CompressionType.Gss) ? CompressionType.Gss : CompressionType.Gmax;
+        RebuildContour();
+    }
     [ObservableProperty] private int              _contourFreqIndex;
     [ObservableProperty] private string?          _selectedLoadpullGroup;
     [ObservableProperty] private ContourLevelMode _contourLevelMode;
@@ -231,6 +251,8 @@ public partial class TraceRowViewModel : ViewModelBase
         "DE" or "PAE" or "Efficiency"  => "%",
         "AMPM_deg"                     => "deg",
         "IRL_dB" or "NF"               => "dB",
+        "PinInc_dBm" or "PinDel_dBm" or "PavlDbm" => "dBm",
+        _ when LoadpullWaves.IsHarmonicPowerMetric(metric ?? "") => "dBm",
         _                              => "",
     };
 
@@ -252,20 +274,11 @@ public partial class TraceRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsCompressionConstraint));
         OnPropertyChanged(nameof(IsConstantMetricConstraint));
         OnPropertyChanged(nameof(ConstraintUnits));
-        // §8: when switching to ConstantMetric ensure a valid metric is selected.
+        // §8: when switching to ConstantMetric ensure a valid metric is selected. The greyed choices are recomputed from
+        // the metric the card plots NOW: a new contour's list was built while its metric was still the placeholder
+        // "Pout", so the first "enabled" constant was the plotted metric itself (Pout_dBm at constant Pout_dBm).
         if (value == ConstraintKind.ConstantMetric)
-        {
-            var first = ConstraintMetricOptions.FirstOrDefault(m => m.IsEnabled);
-            if (first is not null &&
-                (string.IsNullOrEmpty(cd.ConstraintMetricName) || cd.ConstraintMetricName == cd.MetricName))
-            {
-                _suppressContourCallback = true;
-                ContourConstraintMetric = first.Name;
-                SelectedConstraintMetricItem = first;
-                cd.ConstraintMetricName = first.Name;
-                _suppressContourCallback = false;
-            }
-        }
+            RebuildConstraintMetricOptions();
         RebuildContour();
     }
 
@@ -573,10 +586,21 @@ public partial class TraceRowViewModel : ViewModelBase
         // The lookup and the pickers are this view model's; the geometry is ContourResolve's
         // (RND-4 R-rnd4-2) — the same function `circuitrf render` calls, so a headless contour is
         // the contour on screen rather than one that resembles it.
-        if (!EnsureLoadpullSurface()) { ContourResolve.ClearGrid(cd); return; }
+        if (!EnsureLoadpullSurface()) { ContourResolve.ClearGrid(cd); cd.Status = null; RaiseContourStatus(); return; }
 
         ContourResolve.Rebuild(_trace, _loadpullSurface!, _parent.PlotType);
+        RaiseContourStatus();
         _parent.Notify();
+    }
+
+    /// <summary>The card's one line when the contour cannot be drawn (too few loads reach the constraint); empty when it drew.</summary>
+    public string ContourStatus => _trace.ContourData?.Status ?? "";
+    public bool HasContourStatus => ContourStatus.Length > 0;
+
+    private void RaiseContourStatus()
+    {
+        OnPropertyChanged(nameof(ContourStatus));
+        OnPropertyChanged(nameof(HasContourStatus));
     }
 
     private bool EnsureLoadpullSurface()
@@ -677,6 +701,7 @@ public partial class TraceRowViewModel : ViewModelBase
         "Pout_dBm", "Pout_W", "Gt_dB", "Gp_dB", "Efficiency", "PAE", "Pdc_W",
         "Zin_real", "Zin_imag", "IRL_dB", "AMPM_deg",
         "NF",   // brief NZ-6 — present only when the run asked for noise, then always offered
+        "PinInc_dBm", "PinDel_dBm",   // brief LPW — the input powers a wave file gives, offered as constant levels too
     };
 
     private void RebuildMetricList()
@@ -694,6 +719,9 @@ public partial class TraceRowViewModel : ViewModelBase
                 string key = kvp.Key;
                 if (NonMetricCubes.Contains(key) || key.StartsWith("__", StringComparison.Ordinal)) continue;
                 if (!kvp.Value.Axes.Any(a => a.Name == "gridPoint")) continue;
+                // A contour is a REAL field: a complex cube over the grid (ZLoad, a wave file's GammaLoadMeas or its
+                // per-load harmonic loads) is a termination, not a metric, and the surface cannot fit it.
+                if (kvp.Value.DataKind == DataKind.Complex) continue;
                 // A contour metric is a scalar field over {gridPoint[, pinStep]}; the interface spectra
                 // (V/INl) carry node/harmonic axes and are not selectable metrics — exclude them.
                 if (kvp.Value.Axes.Any(a => a.Name is "node" or "harmonic")) continue;
@@ -851,8 +879,11 @@ public partial class TraceRowViewModel : ViewModelBase
     private void RebuildSummaryMetricOptions()
     {
         SummaryMetricOptions.Clear();
-        foreach (var m in new[] { "Pout_dBm", "Efficiency", "Gt_dB", "Gp_dB", "PAE", "AMPM_deg", "IRL_dB", "Pdc_W", "NF" })
+        foreach (var m in new[] { "Pout_dBm", "Efficiency", "Gt_dB", "Gp_dB", "PAE", "AMPM_deg", "IRL_dB", "Pdc_W", "NF",
+                                  "PinInc_dBm", "PinDel_dBm" })   // brief LPW: the input powers a wave file gives
             if (AvailableMetrics.Contains(m)) SummaryMetricOptions.Add(m);
+        foreach (var m in AvailableMetrics)                         // ...and its harmonic powers
+            if (LoadpullWaves.IsHarmonicPowerMetric(m)) SummaryMetricOptions.Add(m);
         SummaryMetricOptions.Add("Zload");
         // Zin is offered when the Zin_real cube EXISTS in the dataset — not gated on AvailableMetrics,
         // which drops low-variance cubes (input impedance is often near-constant across the load grid,
@@ -931,7 +962,8 @@ public partial class TraceRowViewModel : ViewModelBase
                     : sc.UnitLabel,                                  // magnitude-inferred (bug 5 option b)
                 SummaryColumnKind.Metric  => sc.MetricName switch
                 {
-                    "Pout_dBm"        => "dBm",
+                    "Pout_dBm" or "PinInc_dBm" or "PinDel_dBm" => "dBm",
+                    var m when LoadpullWaves.IsHarmonicPowerMetric(m) => "dBm",
                     "Pout_W" or "Pdc_W" => "W",
                     "Efficiency" or "PAE" => "%",
                     "AMPM_deg"        => "°",
@@ -2824,6 +2856,8 @@ public partial class TraceRowViewModel : ViewModelBase
             _contourConstraintKind   = cd.ContourConstraintKind;
             _contourConstraintMetric = cd.ConstraintMetricName;
             _contourConstraintValue  = cd.ConstraintValue;
+            _contourCompressionReference = CompressionGain.Short(cd.CompressionReference);
+            _contourCompressionType  = cd.CompressionType.ToString();
             _contourFreqIndex        = cd.FreqIndex;
             _contourLevelMode        = cd.LevelMode;
             _contourLevelStart       = cd.LevelStart;

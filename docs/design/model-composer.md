@@ -1171,7 +1171,12 @@ Biases run in parallel; a cancelled run throws and reports nothing. Items carry 
 **Large-signal data** (`DataConditions.LargeSignal`): `Measurement` (`PowerSweep`, `TwoTone`, `Loadpull`), the
 frequency, spacing, bias, `SourceZ`/`LoadZ` and their harmonic lists (a harmonic not listed is shorted). A CSV maps
 `pin pout gain pae de id ig im3 im5` — powers in dBm, gain in dB, efficiencies in %, a unit on those refused unless it is
-that one; a loadpull file is `Format: loadpull` through RfCore's `.spl`/`.lpcwave` readers. The cache never imports a
+that one; a loadpull file is `Format: loadpull`, read through `RfCore.Loadpull.LoadpullFiles.Read` — the call the Data
+Display and `render` make — so it is a `.spl`, `.lpcwave`, `.satwave` or `.cst` (brief LPW). A file of ONE load (a
+`.satwave`, a one-block `.cst`) is also accepted as a `PowerSweep` set: its drive-up is the sweep (available power, Pout,
+Gt, PAE, drain efficiency, the bias currents), and every condition the set does not state is the file's — frequency,
+bias, source and load terminations, and the load's harmonic terminations where the waves measured them
+(`GammaLoad_<n>f0`). So such a set needs nothing typed but `Measurement: PowerSweep`. The cache never imports a
 large-signal set. The data is compared at the device plane: pads are not re-embedded for large signal.
 
 ### 14.5 Loadpull of a composed FET
@@ -1186,8 +1191,13 @@ composed FET like any other device.
 Validation against a loadpull file generates an `lp` testbench over the file's own loads (the grid written as a `.gam`
 beside it) and runs it through the loadpull engine, each load driven up to `ValidationSettings.Compression` (3 dB of Gt by
 default; the model's ladder steps by the smallest gap between the measured drives and runs 10 dB past the highest).
+`ValidationSettings.CompressionReference` (`Gt`, the default, or `Gp`) and `CompressionType` (`Gmax`, the default, or
+`Gss`) choose the gain and where the depth is measured from, as a contour's compression does (brief LPW, R-lpw-7); the
+engine is run with `GainType` set to match, and 3 dB further for `Gss`, since from the small-signal gain the same depth is
+reached at a higher drive when the gain expands first. Both keys are written only when they differ from the default.
 Model and measurement are compared **at compression**, never drive by drive: `AtCompression` reads each load's figures
-where its own Gt has fallen that far below its running maximum, interpolated between the two drives either side, and
+where its own reference gain has fallen that far below its running maximum (or its first drive's, for `Gss`),
+interpolated between the two drives either side, and
 every figure the file carries is compared — Pout, Gt, PAE and drain efficiency (RMS), AM/PM, and Zin as the VSWR between
 measured and model (`Mismatch`, |Z1 − Z2| / |Z1 + Z2*|, needs no reference). Each side's MXP and MXE at compression are
 compared by their Pout or efficiency and by their load, as a VSWR. Only loads the MEASUREMENT reaches compression at count;

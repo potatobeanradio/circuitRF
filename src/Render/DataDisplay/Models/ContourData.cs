@@ -57,7 +57,14 @@ namespace CircuitRF.Render.DataDisplay
         public ConstraintKind ContourConstraintKind { get; set; } = ConstraintKind.Compression;
         public string         ConstraintMetricName  { get; set; } = "";
         public double         ConstraintValue       { get; set; } = 3.0;
+        /// <summary>The gain a compression constraint is measured on: null/<c>Gt_dB</c> (the default) or <c>Gp_dB</c>.</summary>
+        public string?        CompressionReference  { get; set; }
+        /// <summary>Where a compression constraint is measured from: the running maximum (default) or the small-signal gain.</summary>
+        public CompressionType CompressionType      { get; set; } = CompressionType.Gmax;
         public int            FreqIndex             { get; set; } = 0;
+        /// <summary>Why nothing is drawn, when nothing can be (too few loads reach the constraint); null when the
+        /// contour drew. Set by <c>ContourResolve.Rebuild</c>; not persisted.</summary>
+        public string?        Status                { get; set; }
         /// <summary>Which recognized loadpull group (analysis name, e.g. "LP1"/"LPP1") this contour is
         /// built from when the source carries more than one. Null/empty = the first loadpull view.</summary>
         public string?        LoadpullGroup         { get; set; }
@@ -164,7 +171,8 @@ namespace CircuitRF.Render.DataDisplay
             if (ContourConstraintKind == ConstraintKind.Compression)
             {
                 string c = FormatCompression(ConstraintValue);
-                return $"P-{c}dB {displayName} ({unit})";
+                string q = CompressionGain.Qualifier(CompressionReference, CompressionType);
+                return q.Length == 0 ? $"P-{c}dB {displayName} ({unit})" : $"P-{c}dB ({q}) {displayName} ({unit})";
             }
             else
             {
@@ -182,6 +190,10 @@ namespace CircuitRF.Render.DataDisplay
 
         private static string MetricDisplayName(string metric) => metric switch
         {
+            "PinInc_dBm"                            => "Pin (incident)",
+            "PinDel_dBm"                            => "Pin (delivered)",
+            "PavlDbm"                               => "Pavl",
+            _ when HarmonicPower(metric) is var (kind, n) && n > 0 => $"{kind} @{n}f0",
             "Pout_dBm" or "Pout_W"                  => "Pout",
             "Gp_dB" or "Gp"                         => "Gp",     // power gain — distinct from transducer gain
             "Gain" or "Gt" or "Gt_dB"               => "Gain",
@@ -195,6 +207,8 @@ namespace CircuitRF.Render.DataDisplay
 
         private static string MetricUnit(string metric) => metric switch
         {
+            "PinInc_dBm" or "PinDel_dBm" or "PavlDbm" => "dBm",
+            _ when LoadpullWaves.IsHarmonicPowerMetric(metric) => "dBm",
             "Pout_dBm" or "Pout"                    => "dBm",
             "Pout_W" or "Pdc_W"                     => "W",
             "Gain" or "Gt" or "Gp" or "Gt_dB" or "Gp_dB" => "dB",
@@ -209,6 +223,51 @@ namespace CircuitRF.Render.DataDisplay
         /// "%" for efficiency). Empty when the metric has no unit. Used by the marker InfoBox/editor
         /// so the metric readout reads "Pout=12.3 dBm".</summary>
         public string MetricUnitString => MetricUnit(MetricName);
+
+        /// <summary>
+        /// The quantity a metric name measures, for the rule that a contour is never held at a constant level of what it
+        /// plots: two names in one group pin the plotted metric to itself and draw meaningless lines. Pout in dBm and in
+        /// W are one quantity; so are the gains, the efficiencies and the input powers (brief LPW R-lpw-8). The contour
+        /// card greys the constraint choices in the plotted metric's group, and <c>ContourResolve</c> draws nothing for a
+        /// pair that reaches it anyway (a hand-written or older <c>.cdd</c>).
+        /// </summary>
+        public static string MetricAliasGroup(string? metric) => metric switch
+        {
+            "Pout" or "Pout_dBm" or "Pout_W"          => "Pout",
+            "Gain" or "Gt" or "Gp" or "Gt_dB" or "Gp_dB" => "Gain",
+            "DE" or "PAE" or "Efficiency"             => "Efficiency",
+            "PinInc_dBm" or "PinDel_dBm" or "PavlDbm" => "InputPower",
+            _                                         => metric ?? "",
+        };
+
+        /// <summary>
+        /// The MEASURED load (a scatter node, in the fit's plane) where the contoured metric is highest or lowest at this
+        /// contour's constraint — where the toolbar's Maximum / Minimum marker lands on a contour plot. Null when the
+        /// contour has no scatter (nothing drawn).
+        /// </summary>
+        public System.Numerics.Complex? ExtremeNode(bool maximum)
+        {
+            if (Scatter is not { } s || s.Values.Length == 0) return null;
+            int best = -1;
+            for (int i = 0; i < s.Values.Length; i++)
+            {
+                if (double.IsNaN(s.Values[i])) continue;
+                if (best < 0 || (maximum ? s.Values[i] > s.Values[best] : s.Values[i] < s.Values[best])) best = i;
+            }
+            return best < 0 ? null : s.Coords[best];
+        }
+
+        /// <summary>The display unit of any metric name ("dBm", "%", …; "" when it has none).</summary>
+        public static string UnitOf(string metric) => MetricUnit(metric);
+
+        /// <summary>("Pout", 2) for <c>Pout_2f0_dBm</c>, ("Pin (delivered)", 3) for <c>PinDel_3f0_dBm</c>; ("", 0) otherwise.</summary>
+        private static (string Kind, int N) HarmonicPower(string metric)
+        {
+            if (!LoadpullWaves.IsHarmonicPowerMetric(metric)) return ("", 0);
+            bool pout = metric.StartsWith("Pout_", StringComparison.Ordinal);
+            string mid = metric[(pout ? 5 : 7)..^6];
+            return (pout ? "Pout" : "Pin (delivered)", int.Parse(mid, System.Globalization.CultureInfo.InvariantCulture));
+        }
 
         private static string FormatCompression(double value)
         {
@@ -229,6 +288,8 @@ namespace CircuitRF.Render.DataDisplay
             ContourConstraintKind = ContourConstraintKind,
             ConstraintMetricName  = ConstraintMetricName,
             ConstraintValue       = ConstraintValue,
+            CompressionReference  = CompressionReference,
+            CompressionType       = CompressionType,
             FreqIndex             = FreqIndex,
             LoadpullGroup         = LoadpullGroup,
             LevelMode             = LevelMode,
@@ -329,6 +390,8 @@ namespace CircuitRF.Render.DataDisplay
             "Gain" or "Gt_dB" or "Gp_dB" or "Gt" or "Gp" => (-10.0, 0.5,  50.0),
             "AMPM_deg" or "AMPM"          => (-200.0, 5.0, 200.0),
             "IRL_dB"                      => (-60.0, 2.0,   0.0),
+            "PinInc_dBm" or "PinDel_dBm"  => (-30.0, 0.5,  60.0),
+            _ when RfCore.Loadpull.LoadpullWaves.IsHarmonicPowerMetric(metric) => (-60.0, 1.0, 60.0),
             _                             => (  0.0, 1.0,  10.0),
         };
 

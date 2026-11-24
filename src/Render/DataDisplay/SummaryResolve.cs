@@ -69,7 +69,7 @@ public static class SummaryResolve
         plot.SummaryAxisName = surface.LeadingAxisName;
         plot.SummaryAxisUnit = surface.LeadingAxisUnit;
 
-        var constraint = ConstraintSpec.AtCompression(plot.TableCompression);
+        var constraint = ConstraintSpec.AtCompression(plot.TableCompression, plot.TableCompressionReference, plot.TableCompressionType);
         var plane      = SurfacePlane.Z;
         bool nearest   = plot.TableReadMode == TableReadMode.Nearest;
 

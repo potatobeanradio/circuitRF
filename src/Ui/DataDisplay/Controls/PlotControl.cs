@@ -1357,7 +1357,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             if (props.IsLeftButtonPressed && ContainerProvider?.Invoke() is { MarkerToolArmed: true } container)
             {
-                if (TryAddMarkerNearPoint(_dragStartScreen, container.MarkerToolFunction)) container.DisarmMarkerTool();
+                if (TryAddArmedContourMarker(_dragStartScreen, container.MarkerToolFunction)
+                    || TryAddMarkerNearPoint(_dragStartScreen, container.MarkerToolFunction)) container.DisarmMarkerTool();
                 e.Handled = true;
                 return;
             }
@@ -2515,14 +2516,32 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             return true;
         }
 
-        // Returns true if it added a contour marker at the cursor world point.
-        private bool TryAddContourMarker(Trace trace, Point canvasPt)
+        /// <summary>
+        /// The toolbar's armed Add Marker, on a plot that holds a contour: a contour has no samples to snap to, so the
+        /// marker goes on the plot's FIRST contour — at the click for Normal, or on the measured load where its metric is
+        /// highest (Maximum) or lowest (Minimum), snapped to that node. Placed once: the marker keeps the Normal function,
+        /// since min/max tracking is a Rect-trace rule that would mark a Γ-plane marker unavailable.
+        /// </summary>
+        private bool TryAddArmedContourMarker(Point canvasPt, MarkerFunction function)
+        {
+            if (_plot?.Traces.FirstOrDefault(t => t.IsContourTrace && !t.IsAnnotation) is not { } contour) return false;
+            if (function == MarkerFunction.Normal) return TryAddContourMarker(contour, canvasPt);
+            if (function is not (MarkerFunction.Minimum or MarkerFunction.Maximum)) return false;
+            return contour.ContourData?.ExtremeNode(function == MarkerFunction.Maximum) is { } node
+                && TryAddContourMarker(contour, canvasPt, node);
+        }
+
+        // Returns true if it added a contour marker at the cursor world point (or at <paramref name="atNode"/>, a measured
+        // load, snapped to it).
+        private bool TryAddContourMarker(Trace trace, Point canvasPt, System.Numerics.Complex? atNode = null)
         {
             if (_plot is null || !trace.IsContourTrace) return false;
 
             var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
             var (wx, wy) = tf.PrimaryFromCanvas((float)canvasPt.X, (float)canvasPt.Y);
-            var world = new System.Numerics.Vector2((float)wx, (float)wy);
+            var world = atNode is { } n
+                ? new System.Numerics.Vector2((float)n.Real, (float)n.Imaginary)
+                : new System.Numerics.Vector2((float)wx, (float)wy);
 
             int idx    = NextMarkerIndexProvider?.Invoke() ?? (trace.Markers.Count + 1);
             var marker = new Marker(trace, 0.0, false, false, idx, _plot.FreqUnits)
@@ -2535,6 +2554,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 MatrixFormat          = _plot.PlotType is PlotType.Smith or PlotType.Polar
                     ? MatrixFormat.MA
                     : MatrixFormat.RI,
+                ContourSnapped        = atNode is not null,
             };
             marker.PositionStatic = trace.ResolveContourMarkerPosition(marker, world);
 

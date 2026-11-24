@@ -3154,9 +3154,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             FileTypeFilter =
             [
                 new FilePickerFileType("Loadpull / Data Files")
-                    { Patterns = ["*.spl", "*.lpcwave", "*.npy", "*.ds", .. CircuitRF.Ui.Controls.TouchstonePatterns.Snp] },
+                    { Patterns = [.. RfCore.Loadpull.LoadpullFiles.Patterns, "*.npy", "*.ds", .. CircuitRF.Ui.Controls.TouchstonePatterns.Snp] },
                 new FilePickerFileType("Loadpull (SPL)")  { Patterns = ["*.spl"] },
                 new FilePickerFileType("Loadpull (LPCW)") { Patterns = ["*.lpcwave"] },
+                new FilePickerFileType("Loadpull waves (CST, SATWAVE)") { Patterns = ["*.cst", "*.satwave"] },
                 new FilePickerFileType("NumPy Array")     { Patterns = ["*.npy"] },
                 new FilePickerFileType("Binary dataset (*.ds)") { Patterns = ["*.ds"] },
                 new FilePickerFileType("Touchstone")      { Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.Snp },
@@ -12141,8 +12142,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             .Where(p =>
             {
                 var ext = System.IO.Path.GetExtension(p);
-                return string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase)
+                return RfCore.Loadpull.LoadpullFiles.IsLoadpullExtension(ext)   // .spl, .lpcwave, .satwave, .cst
                     || string.Equals(ext, ".ds", StringComparison.OrdinalIgnoreCase);   // a binary simulation dataset
             })
             .Select(p => WorkspaceRefs.ResolveExternalRef(p, lpRoot))

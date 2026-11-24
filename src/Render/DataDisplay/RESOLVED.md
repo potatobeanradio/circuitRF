@@ -1323,3 +1323,14 @@ every frame, and building a picture it never reuses would cost 59 ms a frame on 
 members are asked for again. Only the members are cached; band, nominal and selection still draw over them in plan
 order. Opt-in per call because the same renderer writes SVG and PDF, and raster images only, whose memory may be freed
 on any thread. Gate: `TrialLayerCacheTests`.
+
+## A Smith-chart topography fill ended on a staircase of grid cells (2026-11-24)
+
+On a measured `.cst` (loads out to |Γ| ≈ 0.78) the P-3dB Pout topography had a jagged rim. The fill grid
+(`LoadpullSurface.Resample` over [−1, 1]², 80 points) masks everything beyond the outermost load's |Γ| × 1.02 to NaN, and
+`ContourRenderer.BuildGeqRegionPath` skips any cell with a NaN corner — so the fill stopped on whole 0.025-wide cells.
+The renderer's circular clip was the UNIT disk, which only trims a footprint that reaches |Γ| = 1. Now the fill grid is
+resampled with `toFootprintEdge`: values run one cell diagonal past the footprint, the grid carries that footprint as
+`SurfaceGrid.ClipRadius`, and `DrawTopoMapFill` clips to it (antialiased), so the colour goes right up to a smooth edge.
+The iso-line grid keeps the old mask, so no line is drawn in the extra ring. Gate:
+`LpwWaveLoadpullTests.AFillGrid_IsWholeUnderItsFootprintCircle_SoTheFillReachesTheClippedEdge`.

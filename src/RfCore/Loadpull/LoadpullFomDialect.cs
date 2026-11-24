@@ -60,8 +60,18 @@ namespace RfCore.Loadpull
 
             // ── Available source power (PavlDbm axis) ─────────────
             ["Pin_avail_dBm"]     = new("PavlDbm",   FomScale.PassThrough),
+            // Psource is the generator's setting, on the instrument side of the source path; PinWaves is the power
+            // available at the device's plane — the dialect's own GainWavesTrd is PoutWaves − PinWaves, and PinWaves is
+            // P(bg)/(1 − |ΓS|²) from the wave columns (brief LPW). LpcwaveReader takes PinWaves when a file has both.
             ["Psource[dBm]"]      = new("PavlDbm",   FomScale.PassThrough),
             ["PinWaves[dBm]"]     = new("PavlDbm",   FomScale.PassThrough),
+
+            // ── Delivered input power (brief LPW, R-lpw-3) ────────
+            ["PinDelWaves[dBm]"]  = new("PinDel_dBm", FomScale.PassThrough),
+
+            // ── Harmonic output power (F1 = 2f0, F2 = 3f0) ────────
+            ["PoutWaves@F1[dBm]"] = new("Pout_2f0_dBm", FomScale.PassThrough),
+            ["PoutWaves@F2[dBm]"] = new("Pout_3f0_dBm", FomScale.PassThrough),
 
             // ── Load-side bias (drain) ────────────────────────────
             ["Vq_out_v"]          = new("BiasVLoad", FomScale.PassThrough),
@@ -95,6 +105,14 @@ namespace RfCore.Loadpull
             // Brief NZ-6 — the noise figure (dB, SSB) a Noise=yes loadpull writes. A reader older than this entry skips the
             // column, as it skips any header this table does not name.
             ["NF"]                = new("NF",         FomScale.PassThrough),
+            // Brief LPW — the wave-derived input powers and the harmonic powers, so a written file reads back.
+            ["PavlDbm"]           = new("PavlDbm",      FomScale.PassThrough),
+            ["PinInc_dBm"]        = new("PinInc_dBm",   FomScale.PassThrough),
+            ["PinDel_dBm"]        = new("PinDel_dBm",   FomScale.PassThrough),
+            ["Pout_2f0_dBm"]      = new("Pout_2f0_dBm", FomScale.PassThrough),
+            ["Pout_3f0_dBm"]      = new("Pout_3f0_dBm", FomScale.PassThrough),
+            ["PinDel_2f0_dBm"]    = new("PinDel_2f0_dBm", FomScale.PassThrough),
+            ["PinDel_3f0_dBm"]    = new("PinDel_3f0_dBm", FomScale.PassThrough),
         };
 
         public static double Apply(double v, FomScale scale) => scale switch

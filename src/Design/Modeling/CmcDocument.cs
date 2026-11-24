@@ -60,7 +60,7 @@ public enum LargeSignalMeasurement
     PowerSweep,
     /// <summary>Two equal tones about <see cref="LargeSignalConditions.FrequencyHz"/>; a CSV of pin, pout, im3 (and im5).</summary>
     TwoTone,
-    /// <summary>A loadpull file (<c>.spl</c> or <c>.lpcwave</c>), read through RfCore's readers.</summary>
+    /// <summary>A loadpull file (<c>.spl</c>, <c>.lpcwave</c>, <c>.satwave</c> or <c>.cst</c>), read through RfCore's <c>LoadpullFiles</c>.</summary>
     Loadpull,
 }
 
@@ -133,7 +133,8 @@ public sealed record ImportSettings
 
     /// <summary>True for the formats whose sources are named arrays mapped by <see cref="Arrays"/>.</summary>
     public static bool IsArrayFormat(string format) => format is Npy or Mat or Npz or Ds;
-    /// <summary>A loadpull file, <c>.spl</c> or <c>.lpcwave</c> (a <see cref="LargeSignalMeasurement.Loadpull"/> set, MC-11).</summary>
+    /// <summary>A loadpull file, <c>.spl</c>, <c>.lpcwave</c>, <c>.satwave</c> or <c>.cst</c> (a <see cref="LargeSignalMeasurement.Loadpull"/>
+    /// set, MC-11; or a <see cref="LargeSignalMeasurement.PowerSweep"/> set when the file holds one load, brief LPW).</summary>
     public const string Loadpull = "loadpull";
 
     public required string Format { get; init; }

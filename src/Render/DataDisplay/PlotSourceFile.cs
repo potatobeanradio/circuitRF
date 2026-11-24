@@ -81,11 +81,9 @@ public static class PlotSourceFile
 
             // brief-paa-6 — a loadpull interchange file, read as the Data Display's library reads it, so a contour over a .spl draws headlessly
             // (render, UiSnapshot) and not only in a window. The importer below is the .npy reader and refused every one of these.
-            string ext = Path.GetExtension(path);
-            if (string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase))
-                return (RfCore.Loadpull.SplReader.ReadSpl(path), null, null, []);
-            if (string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase))
-                return (RfCore.Loadpull.LpcwaveReader.ReadLpcwave(path), null, null, []);
+            // Brief LPW: every loadpull format through the one dispatcher (.spl, .lpcwave, .satwave, .cst).
+            if (RfCore.Loadpull.LoadpullFiles.IsLoadpullExtension(Path.GetExtension(path)))
+                return (RfCore.Loadpull.LoadpullFiles.Read(path), null, null, []);
 
             // anything else the importer recognizes.
             var (other, _) = DataSetImporter.Import(path);

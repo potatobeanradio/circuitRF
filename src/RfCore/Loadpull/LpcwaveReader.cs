@@ -22,7 +22,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using RfCore.Data;
 
@@ -119,21 +121,32 @@ namespace RfCore.Loadpull
 
         // ── Parse one frequency block ────────────────────────────────────────────
 
-        private sealed class FreqBlock
+        /// <summary>
+        /// One frequency's loadpull, before assembly: FOMs over <c>gi*NPin + pi</c>, the load grid, and the complex cubes
+        /// the waves give. Built by this reader, by <see cref="SatwaveReader"/> through <see cref="BuildBlock"/>, and by
+        /// <see cref="CstReader"/> directly; assembled by <see cref="Assemble"/> for all three.
+        /// </summary>
+        internal sealed class FreqBlock
         {
             public double FreqGHz;
             public int NGrid;
             public int NPin;           // max drive-up steps (ragged → NaN-padded)
             public bool IsLoadpull = true; // false = sourcepull
-            public Complex[] GammaLoad = Array.Empty<Complex>();
+            public Complex[] GammaLoad = Array.Empty<Complex>();   // referenced to 50 Ω
+            public double    Z0Load = 50.0;                        // the reference ZLoad is computed at
             public double[]  PinAxis   = Array.Empty<double>();
             public Dictionary<string, double[]> Foms = new(StringComparer.Ordinal);
+            /// <summary>Complex cubes over {gridPoint, pinStep} (the measured load per drive).</summary>
+            public Dictionary<string, Complex[]> DriveComplex = new(StringComparer.Ordinal);
+            /// <summary>Complex cubes over {gridPoint} (the per-load harmonic loads).</summary>
+            public Dictionary<string, Complex[]> LoadComplex = new(StringComparer.Ordinal);
             // Raw derivation inputs (null when column absent)
             public double[]? GinMag;       // |Γin| (linear)
             public double[]? GinPhase;     // ∠Γin (degrees)
             public double[]? TransPhase;   // transducer phase (degrees)
-            public Complex   SourceGamma;  // per-freq source Γ (from first grid/pin)
+            public Complex   SourceGamma;  // per-freq source Γ (from first grid/pin, or the header)
             public bool      HasSourceGamma;
+            public double    Z0Source = 50.0;
             public Complex   FixedLoadZ;   // a sourcepull's "! Load Impedance", Ω
             public bool      HasFixedLoadZ;
         }
@@ -153,6 +166,7 @@ namespace RfCore.Loadpull
                 if (t.StartsWith("! Source Impedance", StringComparison.OrdinalIgnoreCase))
                 { isLoadpull = true; break; }
             }
+            var header = ReadHeader(lines);
 
             // ── Find column header line ──────────────────────────────────────────
             // First non-comment, non-empty, non-separator line after the FileInfo block.
@@ -176,50 +190,8 @@ namespace RfCore.Loadpull
             // Data rows provide columns [3..] only.
             var headerParts = lines[headerLine].Trim()
                 .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-
-            // FOM columns (indices into headerParts starting at 3)
             const int dataOffset = 3; // skip Point, Gamma, Phase[deg]
-            var fomCols = new List<(int RelIdx, string CanonicalName, FomScale Scale)>();
-            for (int i = dataOffset; i < headerParts.Length; i++)
-            {
-                if (LoadpullFomDialect.Map.TryGetValue(headerParts[i], out var entry))
-                    fomCols.Add((i - dataOffset, entry.CanonicalName, entry.Scale));
-            }
-
-            int nDataCols = headerParts.Length - dataOffset;
-
-            // ── Pin column (within data-row relative index) ──────────────────────
-            int pinRelIdx = -1;
-            for (int i = dataOffset; i < headerParts.Length; i++)
-            {
-                var h = headerParts[i];
-                if (h.Equals("Psource[dBm]",  StringComparison.OrdinalIgnoreCase)
-                    || h.Equals("PinWaves[dBm]", StringComparison.OrdinalIgnoreCase))
-                {
-                    pinRelIdx = i - dataOffset;
-                    break;
-                }
-            }
-
-            // ── Raw derivation input columns (not in dialect Map) ────────────────
-            int ginMagRelIdx  = -1, ginPhRelIdx  = -1;
-            int transPhRelIdx = -1;
-            int srcGMagRelIdx = -1, srcGPhRelIdx = -1;
-            for (int i = dataOffset; i < headerParts.Length; i++)
-            {
-                var h = headerParts[i];
-                int rel = i - dataOffset;
-                if      (h.Equals("|GinWaves@F0|",       StringComparison.OrdinalIgnoreCase)) ginMagRelIdx  = rel;
-                else if (h.Equals("PhiinWaves@F0[deg]",  StringComparison.OrdinalIgnoreCase)) ginPhRelIdx   = rel;
-                else if (h.Equals("PhiLWaves@F0[deg]",   StringComparison.OrdinalIgnoreCase)) transPhRelIdx = rel;
-                else if (h.Equals("|GS@F0|",             StringComparison.OrdinalIgnoreCase)) srcGMagRelIdx = rel;
-                else if (h.Equals("PhiS@F0[deg]",        StringComparison.OrdinalIgnoreCase)) srcGPhRelIdx  = rel;
-                // SPL-style names (lpcwave files may mix both dialects)
-                else if (h.Equals("Gamma_in_mag",    StringComparison.OrdinalIgnoreCase) && ginMagRelIdx  < 0) ginMagRelIdx  = rel;
-                else if (h.Equals("Gamma_in_phase",  StringComparison.OrdinalIgnoreCase) && ginPhRelIdx   < 0) ginPhRelIdx   = rel;
-                else if (h.Equals("trans_phase",     StringComparison.OrdinalIgnoreCase) && transPhRelIdx < 0) transPhRelIdx = rel;
-                else if (h.Equals("Refl_dB",         StringComparison.OrdinalIgnoreCase)) { /* handled via ginMag fallback */ }
-            }
+            var columns = headerParts.Length > dataOffset ? headerParts[dataOffset..] : Array.Empty<string>();
 
             // ── Scan grid points ─────────────────────────────────────────────────
             var gridGammas  = new List<Complex>();
@@ -244,15 +216,132 @@ namespace RfCore.Loadpull
                 else if (currentDriveup is not null)
                 {
                     // Data row: values for FOM columns
-                    var vals = ParseDoubleRow(t, nDataCols);
+                    var vals = ParseDoubleRow(t, columns.Length);
                     if (vals is not null)
                         currentDriveup.Add(vals);
                 }
             }
 
-            int nGrid = gridGammas.Count;
-            if (nGrid == 0)
+            if (gridGammas.Count == 0)
                 throw new FormatException(".lpcwave: no grid points (# lines) found.");
+
+            return BuildBlock(columns, gridGammas, driveups, freqGhz, isLoadpull, fixedLoadZ, header);
+        }
+
+        /// <summary>What a <c>!</c> header states that the waves need: the characteristic impedances and the source Γ.</summary>
+        internal readonly record struct WaveHeader(double Z0Source, double Z0Load, Complex? SourceGamma);
+
+        /// <summary>
+        /// Reads <c>! Char.Impedances = Source: 50 + 0j Ohm   Load: 50 + 0j Ohm</c> and the source termination at f0 —
+        /// <c>! Source Impedance (Polar) = 0.32, -179.65(deg)</c>, <c>! Source Impedances (Polar) F0: 0.32, -179.65(deg)</c>
+        /// or <c>! Source Impedances (Polar) = F0: 0.320&lt;-179.6(deg)</c>.
+        /// </summary>
+        internal static WaveHeader ReadHeader(IEnumerable<string> lines)
+        {
+            double z0s = 50.0, z0l = 50.0;
+            Complex? gs = null;
+            foreach (var l in lines)
+            {
+                var t = l.Trim();
+                if (!t.StartsWith('!')) continue;
+                var body = t.TrimStart('!').Trim();
+                if (body.StartsWith("Char.Impedances", StringComparison.OrdinalIgnoreCase))
+                {
+                    z0s = RealAfter(body, "Source:") ?? z0s;
+                    z0l = RealAfter(body, "Load:") ?? z0l;
+                }
+                else if (gs is null && body.StartsWith("Source Impedance", StringComparison.OrdinalIgnoreCase)
+                         && body.Contains("(Polar)", StringComparison.OrdinalIgnoreCase))
+                {
+                    gs = ParsePolarF0(body);
+                }
+            }
+            return new WaveHeader(z0s, z0l, gs);
+        }
+
+        /// <summary>The first number after <paramref name="key"/> in <paramref name="s"/>, or null.</summary>
+        private static double? RealAfter(string s, string key)
+        {
+            int k = s.IndexOf(key, StringComparison.OrdinalIgnoreCase);
+            if (k < 0) return null;
+            var tokens = s[(k + key.Length)..].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            return tokens.Length > 0 && double.TryParse(tokens[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+                ? v : null;
+        }
+
+        /// <summary>
+        /// The f0 reflection of a polar header: the text after <c>=</c> (and after <c>F0:</c> when present), read as
+        /// <c>mag, deg</c> or <c>mag&lt;deg</c>, up to <c>(deg)</c>. Null when it does not read.
+        /// </summary>
+        internal static Complex? ParsePolarF0(string body)
+        {
+            string rest = body;
+            int f0 = rest.IndexOf("F0:", StringComparison.OrdinalIgnoreCase);
+            if (f0 >= 0) rest = rest[(f0 + 3)..];
+            else
+            {
+                int eq = rest.IndexOf('=');
+                if (eq < 0) return null;
+                rest = rest[(eq + 1)..];
+            }
+            int degEnd = rest.IndexOf("(deg)", StringComparison.OrdinalIgnoreCase);
+            if (degEnd < 0) return null;
+            var parts = rest[..degEnd].Split(new[] { ',', '<', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) return null;
+            if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double mag)) return null;
+            if (!double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double deg)) return null;
+            return Complex.FromPolarCoordinates(mag, deg * Math.PI / 180.0);
+        }
+
+        /// <summary>
+        /// The column handling every <c>.lpcwave</c>-dialect file shares (R-lpw-5): maps the data-row
+        /// <paramref name="columns"/> through <see cref="LoadpullFomDialect"/>, pads ragged drive-ups with NaN, reads the
+        /// wave columns (<c>A1reF0 … B2imF0</c>, and <c>…F1</c>, <c>…F2</c> for 2f0, 3f0) as RMS, and derives what the
+        /// file does not state. A <c>.lpcwave</c> hands it one grid point per <c>#</c> line; a <c>.satwave</c> one.
+        /// </summary>
+        internal static FreqBlock BuildBlock(
+            IReadOnlyList<string> columns, List<Complex> gridGammas, List<List<double[]>> driveups,
+            double freqGhz, bool isLoadpull, Complex? fixedLoadZ, WaveHeader header)
+        {
+            int Col(string name)
+            {
+                for (int i = 0; i < columns.Count; i++)
+                    if (columns[i].Equals(name, StringComparison.OrdinalIgnoreCase)) return i;
+                return -1;
+            }
+
+            // ── Drive column: the available power AT THE DEVICE, PinWaves, over the generator's setting, Psource ─
+            // Both map to PavlDbm, and they are not the same power: in a measured file Psource sat 24 dB below PinWaves (a
+            // driver between them), while the file's own transducer gain is PoutWaves − PinWaves. So a file stating
+            // PinWaves takes it, load by load, and its Psource is not read as PavlDbm.
+            int pinWavesIdx = Col("PinWaves[dBm]"), psourceIdx = Col("Psource[dBm]");
+            int pinRelIdx = pinWavesIdx >= 0 ? pinWavesIdx : psourceIdx;
+            bool perLoadDrive = pinWavesIdx >= 0;
+
+            var fomCols = new List<(int RelIdx, string CanonicalName, FomScale Scale)>();
+            for (int i = 0; i < columns.Count; i++)
+                if (LoadpullFomDialect.Map.TryGetValue(columns[i], out var entry) && !(perLoadDrive && i == psourceIdx))
+                    fomCols.Add((i, entry.CanonicalName, entry.Scale));
+
+            // ── Raw derivation input columns (not in dialect Map) ────────────────
+            int ginMagRelIdx  = -1, ginPhRelIdx  = -1;
+            int transPhRelIdx = -1;
+            int srcGMagRelIdx = -1, srcGPhRelIdx = -1;
+            for (int rel = 0; rel < columns.Count; rel++)
+            {
+                var h = columns[rel];
+                if      (h.Equals("|GinWaves@F0|",       StringComparison.OrdinalIgnoreCase)) ginMagRelIdx  = rel;
+                else if (h.Equals("PhiinWaves@F0[deg]",  StringComparison.OrdinalIgnoreCase)) ginPhRelIdx   = rel;
+                else if (h.Equals("PhiLWaves@F0[deg]",   StringComparison.OrdinalIgnoreCase)) transPhRelIdx = rel;
+                else if (h.Equals("|GS@F0|",             StringComparison.OrdinalIgnoreCase)) srcGMagRelIdx = rel;
+                else if (h.Equals("PhiS@F0[deg]",        StringComparison.OrdinalIgnoreCase)) srcGPhRelIdx  = rel;
+                // SPL-style names (lpcwave files may mix both dialects)
+                else if (h.Equals("Gamma_in_mag",    StringComparison.OrdinalIgnoreCase) && ginMagRelIdx  < 0) ginMagRelIdx  = rel;
+                else if (h.Equals("Gamma_in_phase",  StringComparison.OrdinalIgnoreCase) && ginPhRelIdx   < 0) ginPhRelIdx   = rel;
+                else if (h.Equals("trans_phase",     StringComparison.OrdinalIgnoreCase) && transPhRelIdx < 0) transPhRelIdx = rel;
+            }
+
+            int nGrid = gridGammas.Count;
 
             // Find max drive-up length (for ragged NaN-padding)
             int nPin = 0;
@@ -267,7 +356,9 @@ namespace RfCore.Loadpull
                 var du0 = driveups[0];
                 for (int pi = 0; pi < nPin; pi++)
                 {
-                    if (pi < du0.Count && pinRelIdx >= 0 && pinRelIdx < du0[pi].Length)
+                    if (pinRelIdx < 0)
+                        pinAxis[pi] = pi + 1;            // no drive column: the step number (PavlDbm comes from the waves)
+                    else if (pi < du0.Count && pinRelIdx < du0[pi].Length)
                         pinAxis[pi] = du0[pi][pinRelIdx];
                     else
                         pinAxis[pi] = double.NaN;
@@ -285,6 +376,8 @@ namespace RfCore.Loadpull
                 HasFixedLoadZ = fixedLoadZ is not null,
                 GammaLoad  = gridGammas.ToArray(),
                 PinAxis    = pinAxis,
+                Z0Source   = header.Z0Source,
+                Z0Load     = header.Z0Load,
             };
             foreach (var (_, canon, _) in fomCols)
             {
@@ -296,37 +389,42 @@ namespace RfCore.Loadpull
                 }
             }
 
-            // ── Fill FOM data ───────────────────────────────────────────────────
-            for (int gi = 0; gi < nGrid; gi++)
+            // Every column of every row, NaN where the drive-up is short — the one place a ragged row is padded.
+            double Cell(int gi, int pi, int rel)
             {
                 var du = gi < driveups.Count ? driveups[gi] : null;
+                if (du is null || pi >= du.Count || rel < 0) return double.NaN;
+                var row = du[pi];
+                return rel < row.Length ? row[rel] : double.NaN;
+            }
+
+            // ── Fill FOM data ───────────────────────────────────────────────────
+            for (int gi = 0; gi < nGrid; gi++)
                 for (int pi = 0; pi < nPin; pi++)
                 {
                     int idx = gi * nPin + pi;
-                    if (du is null || pi >= du.Count) continue; // stays NaN
-
-                    var row = du[pi];
                     foreach (var (relIdx, canon, scale) in fomCols)
                     {
-                        double v = relIdx < row.Length ? row[relIdx] : double.NaN;
-                        block.Foms[canon][idx] = double.IsNaN(v) ? v : LoadpullFomDialect.Apply(v, scale);
+                        double v = Cell(gi, pi, relIdx);
+                        if (!double.IsNaN(v)) block.Foms[canon][idx] = LoadpullFomDialect.Apply(v, scale);
                     }
                 }
+
+            // A generator setting (Psource) is one ladder for every load: PavlDbm is the pin axis at every grid point.
+            // PinWaves is measured per load and is kept as it reads.
+            if (!perLoadDrive && pinRelIdx >= 0)
+            {
+                if (!block.Foms.ContainsKey("PavlDbm"))
+                    block.Foms["PavlDbm"] = new double[nGrid * nPin];
+                for (int gi2 = 0; gi2 < nGrid; gi2++)
+                    for (int pi2 = 0; pi2 < nPin; pi2++)
+                        block.Foms["PavlDbm"][gi2 * nPin + pi2] = block.PinAxis[pi2];
             }
 
-            // Overwrite PavlDbm with pin-axis values for consistency with pinStep axis.
-            if (!block.Foms.ContainsKey("PavlDbm"))
-                block.Foms["PavlDbm"] = new double[nGrid * nPin];
-            for (int gi2 = 0; gi2 < nGrid; gi2++)
-                for (int pi2 = 0; pi2 < nPin; pi2++)
-                    block.Foms["PavlDbm"][gi2 * nPin + pi2] = block.PinAxis[pi2];
-
-            // ── Capture source Γ from first grid/pin (setup constant, MA pair); a sourcepull's is the swept one ───
-            if (isLoadpull && srcGMagRelIdx >= 0 && srcGPhRelIdx >= 0 && driveups.Count > 0 && driveups[0].Count > 0)
+            // ── Source Γ: the setup constant (MA pair columns, first grid/pin), else the header; a sourcepull's is the swept one ─
+            if (isLoadpull && srcGMagRelIdx >= 0 && srcGPhRelIdx >= 0)
             {
-                var r0  = driveups[0][0];
-                double mag = srcGMagRelIdx < r0.Length ? r0[srcGMagRelIdx] : double.NaN;
-                double phd = srcGPhRelIdx  < r0.Length ? r0[srcGPhRelIdx]  : double.NaN;
+                double mag = Cell(0, 0, srcGMagRelIdx), phd = Cell(0, 0, srcGPhRelIdx);
                 if (!double.IsNaN(mag) && !double.IsNaN(phd))
                 {
                     double phR = phd * Math.PI / 180.0;
@@ -334,59 +432,109 @@ namespace RfCore.Loadpull
                     block.HasSourceGamma = true;
                 }
             }
-
-            // ── Allocate raw derivation capture arrays ───────────────────────────
-            bool hasGin = ginMagRelIdx >= 0 && ginPhRelIdx >= 0;
-            if (hasGin)
+            if (isLoadpull && !block.HasSourceGamma && header.SourceGamma is { } hgs)
             {
-                block.GinMag   = new double[nGrid * nPin];
-                block.GinPhase = new double[nGrid * nPin];
-                Array.Fill(block.GinMag,   double.NaN);
-                Array.Fill(block.GinPhase, double.NaN);
+                block.SourceGamma    = hgs;
+                block.HasSourceGamma = true;
+            }
+
+            // ── Raw derivation capture arrays ────────────────────────────────────
+            double[] Capture(int rel)
+            {
+                var a = new double[nGrid * nPin];
+                for (int gi = 0; gi < nGrid; gi++)
+                    for (int pi = 0; pi < nPin; pi++)
+                        a[gi * nPin + pi] = Cell(gi, pi, rel);
+                return a;
+            }
+            if (ginMagRelIdx >= 0 && ginPhRelIdx >= 0)
+            {
+                block.GinMag   = Capture(ginMagRelIdx);
+                block.GinPhase = Capture(ginPhRelIdx);
             }
             if (transPhRelIdx >= 0)
-            {
-                block.TransPhase = new double[nGrid * nPin];
-                Array.Fill(block.TransPhase, double.NaN);
-            }
-
-            if (hasGin || transPhRelIdx >= 0)
-            {
-                for (int gi = 0; gi < nGrid; gi++)
-                {
-                    var du = gi < driveups.Count ? driveups[gi] : null;
-                    for (int pi = 0; pi < nPin; pi++)
-                    {
-                        if (du is null || pi >= du.Count) continue;
-                        var row = du[pi];
-                        int idx = gi * nPin + pi;
-                        if (hasGin)
-                        {
-                            block.GinMag![idx]   = ginMagRelIdx < row.Length ? row[ginMagRelIdx]  : double.NaN;
-                            block.GinPhase![idx] = ginPhRelIdx  < row.Length ? row[ginPhRelIdx]   : double.NaN;
-                        }
-                        if (transPhRelIdx >= 0)
-                            block.TransPhase![idx] = transPhRelIdx < row.Length ? row[transPhRelIdx] : double.NaN;
-                    }
-                }
-            }
+                block.TransPhase = Capture(transPhRelIdx);
 
             // .lpcwave has no reflection-coefficient/return-loss column (unlike .spl's "Refl_dB"/
             // "ReflectCoefficient") — confirmed directly against the real test fixtures' own column
-            // headers, not assumed — so IRL_dB derivation is never available from this format.
+            // headers, not assumed — so IRL_dB here comes from |Γin| (or, below, from the waves).
             LoadpullDerivedFields.Derive(
                 block.Foms, block.NGrid, block.NPin,
                 block.GinMag, block.GinPhase, block.TransPhase, reflDb: null, reflLin: null);
+
+            // ── The waves (R-lpw-2): A1reF0 … B2imF0, then …F1 (2f0), …F2 (3f0) while all eight are there ─
+            // RMS: this dialect's own computed columns (PinDelWaves = |a1|² − |b1|², PoutWaves = |b2|² − |a2|², in W) are
+            // reproduced from its wave columns with P = |x|² to the file's rounding.
+            var a1 = new List<Complex[]>(); var b1 = new List<Complex[]>();
+            var a2 = new List<Complex[]>(); var b2 = new List<Complex[]>();
+            for (int k = 0; ; k++)
+            {
+                int[] idx =
+                {
+                    Col($"A1reF{k}"), Col($"A1imF{k}"), Col($"B1reF{k}"), Col($"B1imF{k}"),
+                    Col($"A2reF{k}"), Col($"A2imF{k}"), Col($"B2reF{k}"), Col($"B2imF{k}"),
+                };
+                if (Array.Exists(idx, i => i < 0)) break;
+                Complex[] Wave(int re, int im)
+                {
+                    var w = new Complex[nGrid * nPin];
+                    for (int gi = 0; gi < nGrid; gi++)
+                        for (int pi = 0; pi < nPin; pi++)
+                            w[gi * nPin + pi] = new Complex(Cell(gi, pi, re), Cell(gi, pi, im));
+                    return w;
+                }
+                a1.Add(Wave(idx[0], idx[1])); b1.Add(Wave(idx[2], idx[3]));
+                a2.Add(Wave(idx[4], idx[5])); b2.Add(Wave(idx[6], idx[7]));
+            }
+            if (a1.Count > 0 && isLoadpull)
+            {
+                block.Foms.TryGetValue("BiasVSrc", out var vin);
+                block.Foms.TryGetValue("BiasISrc", out var iin);
+                block.Foms.TryGetValue("BiasVLoad", out var vout);
+                block.Foms.TryGetValue("BiasILoad", out var iout);
+                LoadpullWaves.Derive(new LoadpullWaveInputs
+                {
+                    NGrid = nGrid, NPin = nPin, Convention = WaveConvention.Rms,
+                    Z0Source = header.Z0Source, Z0Load = header.Z0Load,
+                    GammaSource = block.HasSourceGamma ? block.SourceGamma : Complex.Zero,
+                    A1 = a1, B1 = b1, A2 = a2, B2 = b2,
+                    Vin = vin, Iin = iin, Vout = vout, Iout = iout,
+                }, block.Foms, block.DriveComplex, block.LoadComplex);
+            }
 
             return block;
         }
 
         // ── Assemble DataSet ─────────────────────────────────────────────────────
 
+        /// <summary>
+        /// The canonical loadpull DataSet from parsed blocks — one per frequency; more than one is a leading <c>freq</c>
+        /// axis. Blocks with different load or drive counts are NaN-padded to the largest of each. Shared by every
+        /// reader of this family (R-lpw-4/5), so a <c>.cst</c>, a <c>.satwave</c> and a <c>.lpcwave</c> have one shape.
+        /// <paramref name="provenance"/>, when given, is kept as a hidden <c>__Provenance</c> cube whose axis labels are
+        /// the lines.
+        /// </summary>
+        internal static DataSet Assemble(List<FreqBlock> blocks, IReadOnlyList<string>? provenance = null)
+        {
+            var ds = AssembleDataSet(blocks, blocks.Count > 1);
+            if (provenance is { Count: > 0 })
+            {
+                var vals = new double[provenance.Count];
+                for (int i = 0; i < vals.Length; i++) vals[i] = i;
+                ds.Add(ProvenanceCube, new DataCube(new[] { new Axis("line", vals, "", provenance.ToArray()) }, vals));
+            }
+            return ds;
+        }
+
+        /// <summary>The hidden cube a reader keeps a file's provenance lines in (axis labels), e.g. a <c>.cst</c>'s
+        /// measurement type, swept harmonic, source termination, pulse and bias lines.</summary>
+        public const string ProvenanceCube = "__Provenance";
+
         private static DataSet AssembleDataSet(List<FreqBlock> blocks, bool multiFreq)
         {
             var ds = new DataSet();
             if (blocks.Count == 0) return ds;
+            if (multiFreq) PadToCommonShape(blocks);
 
             // A sourcepull says so, and carries its fixed load — rank 0 for one frequency, over {freq} for several.
             if (!blocks[0].IsLoadpull)
@@ -409,7 +557,7 @@ namespace RfCore.Loadpull
                 if (b0.HasSourceGamma)
                 {
                     var fa = new Axis("freq", new[] { b0.FreqGHz * 1e9 }, "Hz");
-                    ds.Add("ZSource", new DataCube(new[] { fa }, new Complex[] { GammaToZ(b0.SourceGamma) }));
+                    ds.Add("ZSource", new DataCube(new[] { fa }, new Complex[] { GammaToZ(b0.SourceGamma, b0.Z0Source) }));
                 }
             }
             else
@@ -430,9 +578,14 @@ namespace RfCore.Loadpull
                 var pinAxis  = MakePinAxis(blocks[0]);
 
                 var allFoms = new HashSet<string>(StringComparer.Ordinal);
+                var allDrive = new HashSet<string>(StringComparer.Ordinal);
+                var allLoad = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var b in blocks)
-                    foreach (var k in b.Foms.Keys)
-                        allFoms.Add(k);
+                {
+                    allFoms.UnionWith(b.Foms.Keys);
+                    allDrive.UnionWith(b.DriveComplex.Keys);
+                    allLoad.UnionWith(b.LoadComplex.Keys);
+                }
 
                 foreach (var canonName in allFoms)
                 {
@@ -440,17 +593,18 @@ namespace RfCore.Loadpull
                     for (int fi = 0; fi < nF; fi++)
                     {
                         if (!blocks[fi].Foms.TryGetValue(canonName, out var slice))
-                        {
-                            for (int i = 0; i < nGrid * nPin; i++)
-                                buf[fi * nGrid * nPin + i] = double.NaN;
-                        }
+                            Array.Fill(buf, double.NaN, fi * nGrid * nPin, nGrid * nPin);
                         else
-                        {
                             Array.Copy(slice, 0, buf, fi * nGrid * nPin, nGrid * nPin);
-                        }
                     }
                     ds.Add(canonName, new DataCube(new[] { freqAxis, gridAxis, pinAxis }, buf));
                 }
+                foreach (var name in allDrive)
+                    ds.Add(name, new DataCube(new[] { freqAxis, gridAxis, pinAxis },
+                        Stack(blocks, b => b.DriveComplex.GetValueOrDefault(name), nGrid * nPin)));
+                foreach (var name in allLoad)
+                    ds.Add(name, new DataCube(new[] { freqAxis, gridAxis },
+                        Stack(blocks, b => b.LoadComplex.GetValueOrDefault(name), nGrid)));
 
                 var gammaAll = new Complex[nF * nGrid];
                 var zAll     = new Complex[nF * nGrid];
@@ -473,12 +627,63 @@ namespace RfCore.Loadpull
                 {
                     var zSrcVals = new Complex[nF];
                     for (int fi = 0; fi < nF; fi++)
-                        zSrcVals[fi] = blocks[fi].HasSourceGamma ? GammaToZ(blocks[fi].SourceGamma) : Complex.Zero;
+                        zSrcVals[fi] = blocks[fi].HasSourceGamma ? GammaToZ(blocks[fi].SourceGamma, blocks[fi].Z0Source) : Complex.Zero;
                     ds.Add("ZSource", new DataCube(new[] { freqAxis }, zSrcVals));
                 }
             }
 
             return ds;
+        }
+
+        private static Complex[] Stack(List<FreqBlock> blocks, Func<FreqBlock, Complex[]?> pick, int per)
+        {
+            var buf = new Complex[blocks.Count * per];
+            for (int fi = 0; fi < blocks.Count; fi++)
+            {
+                var slice = pick(blocks[fi]);
+                if (slice is null) Array.Fill(buf, NaNC, fi * per, per);
+                else Array.Copy(slice, 0, buf, fi * per, per);
+            }
+            return buf;
+        }
+
+        private static readonly Complex NaNC = new(double.NaN, double.NaN);
+
+        /// <summary>
+        /// Pads every block to the largest load count and the largest drive count among them, NaN where a block has
+        /// fewer, so the per-frequency slices stack. A padded load's Γ is NaN.
+        /// </summary>
+        private static void PadToCommonShape(List<FreqBlock> blocks)
+        {
+            int nGrid = 0, nPin = 0;
+            foreach (var b in blocks) { nGrid = Math.Max(nGrid, b.NGrid); nPin = Math.Max(nPin, b.NPin); }
+            foreach (var b in blocks)
+            {
+                if (b.NGrid == nGrid && b.NPin == nPin) continue;
+                double[] PadR(double[] v)
+                {
+                    var r = new double[nGrid * nPin];
+                    Array.Fill(r, double.NaN);
+                    for (int gi = 0; gi < b.NGrid; gi++) Array.Copy(v, gi * b.NPin, r, gi * nPin, b.NPin);
+                    return r;
+                }
+                Complex[] PadC(Complex[] v, int per, int newPer, int rows)
+                {
+                    var r = new Complex[nGrid * newPer];
+                    Array.Fill(r, NaNC);
+                    for (int gi = 0; gi < rows; gi++) Array.Copy(v, gi * per, r, gi * newPer, per);
+                    return r;
+                }
+                foreach (var k in new List<string>(b.Foms.Keys)) b.Foms[k] = PadR(b.Foms[k]);
+                foreach (var k in new List<string>(b.DriveComplex.Keys)) b.DriveComplex[k] = PadC(b.DriveComplex[k], b.NPin, nPin, b.NGrid);
+                foreach (var k in new List<string>(b.LoadComplex.Keys)) b.LoadComplex[k] = PadC(b.LoadComplex[k], 1, 1, b.NGrid);
+                b.GammaLoad = PadC(b.GammaLoad, 1, 1, b.NGrid);
+                var pin = new double[nPin];
+                Array.Fill(pin, double.NaN);
+                Array.Copy(b.PinAxis, pin, b.PinAxis.Length);
+                b.PinAxis = pin;
+                b.NGrid = nGrid; b.NPin = nPin;
+            }
         }
 
         private static void AddFreqSlice(DataSet ds, FreqBlock b)
@@ -488,6 +693,10 @@ namespace RfCore.Loadpull
 
             foreach (var (canonName, data) in b.Foms)
                 ds.Add(canonName, new DataCube(new[] { gridAxis, pinAxis }, data));
+            foreach (var (name, data) in b.DriveComplex)
+                ds.Add(name, new DataCube(new[] { gridAxis, pinAxis }, data));
+            foreach (var (name, data) in b.LoadComplex)
+                ds.Add(name, new DataCube(new[] { gridAxis }, data));
 
             var zLoad = new Complex[b.NGrid];
             for (int gi = 0; gi < b.NGrid; gi++)

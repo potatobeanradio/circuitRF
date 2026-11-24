@@ -101,8 +101,7 @@ public static class WorkspaceArchiveScanner
 
         // The loadpull interchange a Data Display reads back (see the CLI's `lp` verb) — data, not
         // clutter, and unreproducible without re-running the sweep that made it.
-        if (string.Equals(ext, ".spl", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(ext, ".lpcwave", StringComparison.OrdinalIgnoreCase))
+        if (RfCore.Loadpull.LoadpullFiles.IsLoadpullExtension(ext))   // .spl, .lpcwave, .satwave, .cst
             return ("Loadpull", true);
 
         return ("Other", true);

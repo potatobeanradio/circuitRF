@@ -92,7 +92,7 @@ public static partial class ModelCommands
             ".mat" => ImportSettings.Mat,
             ".npz" => ImportSettings.Npz,
             ".ds" => ImportSettings.Ds,
-            ".spl" or ".lpcwave" => ImportSettings.Loadpull,
+            ".spl" or ".lpcwave" or ".satwave" or ".cst" => ImportSettings.Loadpull,   // RfCore's LoadpullFiles reads all four
             _ => null,
         };
     }

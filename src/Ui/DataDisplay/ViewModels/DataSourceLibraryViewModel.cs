@@ -463,7 +463,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         else if (entry.Kind == SourceKind.Spl)
         {
             DataSet data;
-            try { data = await Task.Run(() => SplReader.ReadSpl(newPath)); }
+            try { data = await Task.Run(() => LoadpullFiles.Read(newPath)); }
             catch (Exception ex) { MarkRefused(entry, ex); return; }
 
             entry.LoadError = null;
@@ -474,7 +474,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         else if (entry.Kind == SourceKind.Lpcwave)
         {
             DataSet data;
-            try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(newPath)); }
+            try { data = await Task.Run(() => LoadpullFiles.Read(newPath)); }
             catch (Exception ex) { MarkRefused(entry, ex); return; }
 
             entry.LoadError = null;
@@ -544,7 +544,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         else if (entry.Kind == SourceKind.Spl)
         {
             DataSet data;
-            try { data = await Task.Run(() => SplReader.ReadSpl(entry.FilePath!)); }
+            try { data = await Task.Run(() => LoadpullFiles.Read(entry.FilePath!)); }
             catch { return; }
 
             entry.RefreshLoadpull(data, entry.FilePath!);
@@ -554,7 +554,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         else if (entry.Kind == SourceKind.Lpcwave)
         {
             DataSet data;
-            try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(entry.FilePath!)); }
+            try { data = await Task.Run(() => LoadpullFiles.Read(entry.FilePath!)); }
             catch { return; }
 
             entry.RefreshLoadpull(data, entry.FilePath!);
@@ -750,7 +750,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
 
         DataSet data;
-        try { data = await Task.Run(() => SplReader.ReadSpl(path)); }
+        try { data = await Task.Run(() => LoadpullFiles.Read(path)); }
         catch (Exception ex) { AddRefusedEntry(path, SourceKind.Spl, ex); return; }
 
         var entry = new DataSourceEntryViewModel(path, data, null, this, SourceKind.Spl);
@@ -775,7 +775,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             return;
 
         DataSet data;
-        try { data = await Task.Run(() => LpcwaveReader.ReadLpcwave(path)); }
+        try { data = await Task.Run(() => LoadpullFiles.Read(path)); }
         catch (Exception ex) { AddRefusedEntry(path, SourceKind.Lpcwave, ex); return; }
 
         var entry = new DataSourceEntryViewModel(path, data, null, this, SourceKind.Lpcwave);
@@ -862,8 +862,10 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
         string.Equals(ext, ".npy",      StringComparison.OrdinalIgnoreCase);
     private static bool IsSplExtension(string ext)      =>
         string.Equals(ext, ".spl",      StringComparison.OrdinalIgnoreCase);
+    /// <summary>The wave-file loadpull formats — <c>.lpcwave</c>, <c>.satwave</c>, <c>.cst</c> — which share one source kind;
+    /// every one is read through <see cref="LoadpullFiles"/>.</summary>
     private static bool IsLpcwaveExtension(string ext)  =>
-        string.Equals(ext, ".lpcwave",  StringComparison.OrdinalIgnoreCase);
+        LoadpullFiles.IsLoadpullExtension(ext) && !IsSplExtension(ext);
     private static bool IsBinaryDatasetExtension(string ext) =>
         string.Equals(ext, ".ds",       StringComparison.OrdinalIgnoreCase);
 }

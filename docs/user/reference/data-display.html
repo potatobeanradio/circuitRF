@@ -1031,7 +1031,10 @@ Pout at constant 3 dB compression. Efficiency at constant Pout. Gain at constant
 <ul>
 <li><strong>Metric</strong> — what is being contoured (Pout, PAE, gain, …).</li>
 <li><strong>Constraint</strong> — the <em>other</em> metric held constant, and its value. Compression is the common case and
-has its own control.</li>
+has its own control: <strong>Of</strong> picks the gain it is measured on, Gt (transducer) or Gp (power), and
+<strong>from</strong> picks where it is measured from — Gmax, the gain's running maximum, or Gss, its small-signal value
+at the lowest drive. A device whose gain expands before it compresses reaches 3 dB from Gss at a higher
+drive than 3 dB from Gmax. The summary table has the same pair, for the whole table.</li>
 <li><strong>Levels</strong> — either a start/step/stop range or a count, plus whether to draw iso-lines, fills or
 labels.</li>
 <li><strong>Substrate</strong> — the Γ plane (a Smith chart) or the Z plane (a rectangular plot).</li>
@@ -1044,6 +1047,18 @@ optima; the distance between them is the trade-off the design has to spend. The 
 can be shown, and it is worth doing at least once: <strong>a contour is an interpolated surface, and it can
 only be trusted where the grid actually surrounds it.</strong> Contours that run off the edge of the
 constellation are extrapolation.</p>
+<h3 id="loadpull-files">Measured load-pull files</h3>
+<p>A measured load-pull opens like a simulated one: <code>.spl</code>, <code>.lpcwave</code>, <code>.satwave</code> (one load's drive-up) and
+<code>.cst</code> (a block per load, with the waves at f0 and at each harmonic it measured). Where a file carries the
+incident and reflected waves at the device's planes, the figures it does not state are worked out from
+them: the available, incident and delivered input power (<code>PavlDbm</code>, <code>PinInc_dBm</code>, <code>PinDel_dBm</code>), Pout, Gt
+against the available power, Gp against the delivered power, PAE, drain efficiency, Zin, AM/PM and the
+measured load at each drive (<code>GammaLoadMeas</code>). For each harmonic the file holds there is the power into the
+load and into the input (<code>Pout_2f0_dBm</code>, <code>PinDel_2f0_dBm</code>, …) and the load the device saw there
+(<code>GammaLoad_2f0</code>), weighted by the power sent toward it so the low drives, where it cannot be measured, count
+for little. A figure the file states is shown as the file states it.</p>
+<p>A contour at constant <code>PinDel_dBm</code> is the one to compare a model against a measurement with: both sides then
+take the same power into the device.</p>
 <p class="small">Background on the method and the surface model:
 <a href="simulations.html#loadpull">Loadpull / Sourcepull</a> and
 <a href="simulations.html#loadpull-pursuit">Loadpull Pursuit</a>.</p>

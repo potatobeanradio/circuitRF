@@ -89,7 +89,8 @@ format: its parts are imported into a 3D view, and a 3D view or a layout is expo
 <p class="small">Results are not documents either. A run writes <code>.npy</code> (see
 <a href="npy-export.html">.npy export</a>), and the Data Display, <code>circuitrf read</code> and
 <code>circuitrf plot</code> read <code>.npy</code>, Touchstone <code>.sNp</code>, the loadpull
-<code>.spl</code> and <code>.lpcwave</code>, and <strong>binary simulation datasets</strong>
+<code>.spl</code>, <code>.lpcwave</code>, <code>.satwave</code> and <code>.cst</code> (see
+<a href="data-display.html#loadpull-files">measured load-pull files</a>), and <strong>binary simulation datasets</strong>
 (<code>.ds</code>): blocks of nested sweeps, read as one group per block named after its analysis
 (<code>SP1</code>), each variable a cube on the block's sweep axes. Only a full grid is read. Export Data
 and a run verb's <code>-o out.ds</code> write one. Try <code>circuitrf read sweep.ds</code>.</p>

@@ -115,7 +115,8 @@ internal static class ValidationBench
     /// </summary>
     internal static string Loadpull(string set, string device, double ambientC, double f0, double vgs, double vds, Complex sourceZ,
                                     IReadOnlyList<Complex> sourceHarmonics, IReadOnlyList<Complex> loadHarmonics, string gamPath,
-                                    double pinStart, double pinStep, double pinMax, int maxHarm, double compression)
+                                    double pinStart, double pinStep, double pinMax, int maxHarm, double compression,
+                                    string gainType = "Gt")
     {
         var sb = new StringBuilder(Header("loadpull", set));
         sb.Append($"temp = {R(ambientC)}\nf0 = {R(f0)}\nVgs = {R(vgs)}\nVds = {R(vds)}\n\n");
@@ -123,7 +124,7 @@ internal static class ValidationBench
         sb.Append(device);
         sb.Append($"Tuner:LOAD d 0 {Harmonics(50, loadHarmonics, maxHarm)} BiasTee=on Vbias=Vds\n\n");
         sb.Append($"analysis LP1 type=loadpull Tone=f0 MaxHarm={maxHarm} LoadTuner=LOAD SourceTuner=SRC Sweep=Load TuneHarm=1 ");
-        sb.Append($"Grid=\"{gamPath.Replace('\\', '/')}\" Compression={R(compression)} GainType=Gt ");
+        sb.Append($"Grid=\"{gamPath.Replace('\\', '/')}\" Compression={R(compression)} GainType={gainType} ");
         sb.Append($"PinStart={R(pinStart)} PinStep={R(pinStep)} PinMax={R(pinMax)} {HbKeys}\n");
         return sb.ToString();
     }

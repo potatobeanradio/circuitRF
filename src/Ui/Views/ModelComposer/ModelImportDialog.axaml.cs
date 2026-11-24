@@ -37,7 +37,7 @@ public partial class ModelImportDialog : Window
                     new FilePickerFileType("Data")
                     {
                         Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.Snp,
-                                    "*.csv", "*.tsv", "*.txt", "*.npy", "*.npz", "*.mat", "*.ds", "*.spl", "*.lpcwave"],
+                                    "*.csv", "*.tsv", "*.txt", "*.npy", "*.npz", "*.mat", "*.ds", .. RfCore.Loadpull.LoadpullFiles.Patterns],
                     },
                     new FilePickerFileType("All Files") { Patterns = ["*.*"] },
                 ],

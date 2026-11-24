@@ -68,15 +68,17 @@ public class LpcwaveReaderTests
     }
 
     [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]
-    public void LpcwaveReader_Basic_PinAxisFromPsource()
+    public void LpcwaveReader_Basic_PinAxisFromPinWaves_NotPsource()
     {
-        // Psource[dBm] appears before PinWaves[dBm] → pinStep axis from Psource
-        // Grid point 001 first drive step: Psource = -7.45 dBm
+        // Brief LPW: PinWaves[dBm] is the power available at the device (the file's GainWavesTrd = PoutWaves − PinWaves);
+        // Psource[dBm] is the generator's setting. A file with both takes PinWaves.
+        // Grid point 001 first drive step: Psource = -7.45 dBm, PinWaves = -10.00 dBm, PoutWaves 3.05, GainWavesTrd 13.05.
         var path = Path.Combine(LpwaveDir(), "4x150_new_wavecal_24012020.lpcwave");
         var ds   = LpcwaveReader.ReadLpcwave(path);
 
         var pin = ds["PavlDbm"].Axis(1).Values;
-        Near(-7.45, pin[0], 0.05, "pinStep[0] dBm");
+        Near(-10.00, pin[0], 0.005, "pinStep[0] dBm");
+        Near(13.05, ds["Pout_dBm"].RealValues[0] - ds["PavlDbm"].RealValues[0], 0.005, "Pout − PavlDbm = GainWavesTrd");
     }
 
     [FixtureFact("testdata/lpwave_test_data", "ask the repo owner for these lab-measured .lpcwave files — not committed to the repository")]

@@ -777,7 +777,9 @@ public sealed partial class ModelComposerViewModel
             DataSetKind.SParams or DataSetKind.PulsedSParams => $"|ΔS| median {Num(t.SMedian)}, 95 % {Num(t.S95)}",
             DataSetKind.DcIv or DataSetKind.PulsedIv => $"Id {Num(100 * t.IvRelative)} % of range",
             DataSetKind.LargeSignal => $"{Num(t.PowerDb)} dB, {Num(t.EfficiencyPoints)} pts, {Num(t.AmPmDegrees)}°, VSWR {Num(t.ImpedanceVswr)}" +
-                                       $" · loadpull at P-{Num(settings.Compression)}dB",
+                                       $" · loadpull at P-{Num(settings.Compression)}dB" +
+                                       (RfCore.Loadpull.CompressionGain.Qualifier(settings.CompressionReference, settings.CompressionType) is { Length: > 0 } q
+                                           ? $" ({q})" : ""),
             _ => "",
         };
         var rows = Document.DataSets.Where(s => s.Kind is not DataSetKind.SimulatedTables and not DataSetKind.PassiveSParams).ToList();
@@ -803,7 +805,7 @@ public sealed partial class ModelComposerViewModel
                          ("EfficiencyPoints", "pts", "PAE and efficiency error, percentage points"),
                          ("AmPmDegrees", "°", "AM/PM error at compression, degrees"),
                          ("ImpedanceVswr", "", "Zin, and the MXP and MXE loads: the mismatch between measured and model, as a VSWR"),
-                         ("Compression", "dB", "The Gt compression a loadpull is compared at, load by load"),
+                         ("Compression", "dB", "The gain compression a loadpull is compared at, load by load (Gt from its maximum unless the .cmc's Validate settings name CompressionReference Gp or CompressionType Gss)"),
                      })
                 Tolerances.Add(new ParameterRow(key, unit, tip, CommitTolerance));
         Tolerances[0].Load(Num(t.SMedian));

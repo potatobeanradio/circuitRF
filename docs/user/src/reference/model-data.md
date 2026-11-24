@@ -77,7 +77,7 @@ bias, and the ports, nothing else.
 | Capacitances (optional) | The core's operating-point capacitances, where the simulator reports them | The same bias grid | `cgs`, `cgd`, `cds` and optionally `cm`, or the matrix `C` |
 | Temperature | Both sweeps at two or more temperatures | Spanning the junction temperatures the circuit reaches: the ambient plus the heating | A `T` grid axis, or one value per point |
 | Pulsed I–V (optional) | Transient: hold the quiescent bias until the trap and thermal states settle, step to the pulse bias, sample the currents at the sample delay | One run per quiescent point | A CSV per quiescent point, stating `Quiescent`, `PulseWidth` and `SampleDelay` |
-| Large signal (validation) | Harmonic balance: a power sweep at the operating bias, a two-tone sweep, a loadpull | Drive up into compression | A power or two-tone sweep as a [CSV](#format-large-signal); a loadpull as `.spl` or `.lpcwave` |
+| Large signal (validation) | Harmonic balance: a power sweep at the operating bias, a two-tone sweep, a loadpull | Drive up into compression | A power or two-tone sweep as a [CSV](#format-large-signal); a loadpull as `.spl`, `.lpcwave`, `.satwave` or `.cst` |
 
 **Settings on that side.** Each of these, missed, gives a model that is right at the operating point and wrong
 elsewhere:
@@ -132,7 +132,7 @@ copied, extended with more rows or arrays, and imported as shown. The
 | S-parameters from a network analyser, or a simulator's S at each bias | [A folder of Touchstone files](#format-touchstone), one per bias | `SParams`, `PulsedSParams` |
 | A simulator's tables: currents with Y, S or capacitances, over a bias grid | [Named arrays](#format-arrays): `.mat`, `.npz`, a [binary simulation dataset](#format-ds) (`.ds`) or circuitRF's `.npy` | `SimulatedTables` (also `DcIv`) |
 | Power sweeps and two-tone sweeps | [CSV](#format-large-signal) | `LargeSignal` |
-| Loadpull | `.spl` or `.lpcwave` | `LargeSignal` |
+| Loadpull | `.spl`, `.lpcwave`, `.satwave` or `.cst`; a file of one load (a `.satwave`, or a `.cst` with one block) is also a power sweep, its source and load, frequency and bias read from the file | `LargeSignal` |
 
 Currents are positive **into** the terminal, in every format. Gate is port 1 and drain port 2, with the source
 grounded.

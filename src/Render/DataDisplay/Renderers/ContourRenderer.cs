@@ -67,15 +67,17 @@ namespace CircuitRF.Render.DataDisplay
             int nBands  = levels.Levels.Length + 1;
             var palette = BuildPalette(nBands, colorMap);
 
-            // §1: on Smith/Polar (Γ-plane) clip to the unit disk so the fill has a
-            // clean circular edge rather than ragged NaN-cell gaps at the boundary.
+            // §1: on Smith/Polar (Γ-plane) clip to a circle so the fill has a clean
+            // circular edge rather than ragged NaN-cell gaps at the boundary: the
+            // measured footprint's when the grid carries it (its values run a cell
+            // past it, so the colour goes right up to the clip), else the unit disk.
             bool needsClip = plane == SurfacePlane.Gamma;
             if (needsClip)
             {
                 canvas.Save();
                 var center = tf.ToCanvas(0.0, 0.0, useSecondary: false);
                 var edge   = tf.ToCanvas(1.0, 0.0, useSecondary: false);
-                float radius = Math.Abs(edge.X - center.X) * 1.02f;
+                float radius = Math.Abs(edge.X - center.X) * (float)Math.Min(grid.ClipRadius ?? 1.02, 1.02);
                 using var circlePath = new SKPath();
                 circlePath.AddCircle(center.X, center.Y, radius);
                 canvas.ClipPath(circlePath, antialias: true);

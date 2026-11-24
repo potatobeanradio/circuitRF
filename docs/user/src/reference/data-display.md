@@ -526,7 +526,10 @@ The contour card asks for exactly that:
 
 - **Metric** — what is being contoured (Pout, PAE, gain, …).
 - **Constraint** — the *other* metric held constant, and its value. Compression is the common case and
-  has its own control.
+  has its own control: **Of** picks the gain it is measured on, Gt (transducer) or Gp (power), and
+  **from** picks where it is measured from — Gmax, the gain's running maximum, or Gss, its small-signal value
+  at the lowest drive. A device whose gain expands before it compresses reaches 3 dB from Gss at a higher
+  drive than 3 dB from Gmax. The summary table has the same pair, for the whole table.
 - **Levels** — either a start/step/stop range or a count, plus whether to draw iso-lines, fills or
   labels.
 - **Substrate** — the Γ plane (a Smith chart) or the Z plane (a rectangular plot).
@@ -539,6 +542,21 @@ optima; the distance between them is the trade-off the design has to spend. The 
 can be shown, and it is worth doing at least once: **a contour is an interpolated surface, and it can
 only be trusted where the grid actually surrounds it.** Contours that run off the edge of the
 constellation are extrapolation.
+
+### Measured load-pull files {#loadpull-files}
+
+A measured load-pull opens like a simulated one: `.spl`, `.lpcwave`, `.satwave` (one load's drive-up) and
+`.cst` (a block per load, with the waves at f0 and at each harmonic it measured). Where a file carries the
+incident and reflected waves at the device's planes, the figures it does not state are worked out from
+them: the available, incident and delivered input power (`PavlDbm`, `PinInc_dBm`, `PinDel_dBm`), Pout, Gt
+against the available power, Gp against the delivered power, PAE, drain efficiency, Zin, AM/PM and the
+measured load at each drive (`GammaLoadMeas`). For each harmonic the file holds there is the power into the
+load and into the input (`Pout_2f0_dBm`, `PinDel_2f0_dBm`, …) and the load the device saw there
+(`GammaLoad_2f0`), weighted by the power sent toward it so the low drives, where it cannot be measured, count
+for little. A figure the file states is shown as the file states it.
+
+A contour at constant `PinDel_dBm` is the one to compare a model against a measurement with: both sides then
+take the same power into the device.
 
 <p class="small">Background on the method and the surface model:
 <a href="simulations.html#loadpull">Loadpull / Sourcepull</a> and

@@ -1675,7 +1675,8 @@ namespace CircuitRF.Render.DataDisplay
             if (plot.CustomTitleOn && !string.IsNullOrEmpty(plot.CustomTitle)) return plot.CustomTitle;
             string x    = FormatCompressionToken(plot.TableCompression);
             string kind = plot.TableOptimum == TableOptimum.Mxe ? "Efficiency" : "Power";
-            return $"Max P-{x}dB {kind} Load";
+            string q    = RfCore.Loadpull.CompressionGain.Qualifier(plot.TableCompressionReference, plot.TableCompressionType);
+            return q.Length == 0 ? $"Max P-{x}dB {kind} Load" : $"Max P-{x}dB ({q}) {kind} Load";
         }
 
         private static string FormatCompressionToken(double compression)

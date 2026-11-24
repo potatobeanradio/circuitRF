@@ -217,14 +217,14 @@ public partial class DataDisplayView : UserControl
             {
                 new FilePickerFileType("Data Files")
                 {
-                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", "*.spl", "*.lpcwave", "*.ds"]
+                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", .. RfCore.Loadpull.LoadpullFiles.Patterns, "*.ds"]
                 },
                 new FilePickerFileType("Touchstone Files")
                 {
                     Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs
                 },
                 new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
-                new FilePickerFileType("Loadpull Files") { Patterns = new[] { "*.spl", "*.lpcwave" } },
+                new FilePickerFileType("Loadpull Files") { Patterns = [.. RfCore.Loadpull.LoadpullFiles.Patterns] },
                 new FilePickerFileType("Binary dataset (*.ds)") { Patterns = new[] { "*.ds" } },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }
@@ -388,14 +388,14 @@ public partial class DataDisplayView : UserControl
             {
                 new FilePickerFileType("Data Files")
                 {
-                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", "*.spl", "*.lpcwave", "*.ds"]
+                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", .. RfCore.Loadpull.LoadpullFiles.Patterns, "*.ds"]
                 },
                 new FilePickerFileType("Touchstone Files")
                 {
                     Patterns = CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs
                 },
                 new FilePickerFileType("NumPy Files") { Patterns = new[] { "*.npy" } },
-                new FilePickerFileType("Loadpull Files") { Patterns = new[] { "*.spl", "*.lpcwave" } },
+                new FilePickerFileType("Loadpull Files") { Patterns = [.. RfCore.Loadpull.LoadpullFiles.Patterns] },
                 new FilePickerFileType("Binary dataset (*.ds)") { Patterns = new[] { "*.ds" } },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }
@@ -428,7 +428,7 @@ public partial class DataDisplayView : UserControl
             {
                 new FilePickerFileType("Data Files")
                 {
-                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", "*.spl", "*.lpcwave", "*.ds"]
+                    Patterns = [.. CircuitRF.Ui.Controls.TouchstonePatterns.SnpAndTs, "*.npy", .. RfCore.Loadpull.LoadpullFiles.Patterns, "*.ds"]
                 },
                 new FilePickerFileType("All Files") { Patterns = new[] { "*.*" } }
             }

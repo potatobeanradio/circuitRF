@@ -873,6 +873,10 @@ namespace CircuitRF.Render.DataDisplay
         public TableOptimum  TableOptimum     { get; set; } = TableOptimum.Mxp;
         public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
         public double        TableCompression { get; set; } = 3.0;
+        /// <summary>The gain the summary's compression is measured on: null/<c>Gt_dB</c> (the default) or <c>Gp_dB</c>.</summary>
+        public string?       TableCompressionReference { get; set; }
+        /// <summary>Where the summary's compression is measured from: the running maximum (default) or the small-signal gain.</summary>
+        public RfCore.Loadpull.CompressionType TableCompressionType { get; set; } = RfCore.Loadpull.CompressionType.Gmax;
         /// <summary>Which recognized loadpull analysis group (e.g. "LP1"/"LPP1") the summary reads when the
         /// source carries more than one. Null/empty = the first loadpull view.</summary>
         public string?       SummaryLoadpullGroup { get; set; }

@@ -35,13 +35,56 @@ namespace RfCore.Loadpull
     //  Public value / result types
     // ================================================================
 
-    public readonly record struct ConstraintSpec(ConstraintKind Kind, string MetricName, double Value)
+    /// <summary>
+    /// What a contour, a summary or an optimum is read at: a compression level, or a constant level of another metric.
+    /// A compression is measured on <see cref="CompressionReference"/> (<c>Gt_dB</c>, the default and everything
+    /// before brief LPW, or <c>Gp_dB</c>) from <see cref="CompressionType"/>'s reference point — the running maximum
+    /// (<see cref="Loadpull.CompressionType.Gmax"/>, the default) or the small-signal gain at the first valid drive
+    /// (<see cref="Loadpull.CompressionType.Gss"/>). Both are part of the record's equality, so a fit or stack cached at
+    /// one reference is never returned for another.
+    /// </summary>
+    public readonly record struct ConstraintSpec(ConstraintKind Kind, string MetricName, double Value,
+                                                 string? CompressionReference = null,
+                                                 CompressionType CompressionType = CompressionType.Gmax)
     {
+        /// <summary>The gain compression is measured on: <c>Gt_dB</c> unless <c>Gp_dB</c> is named.</summary>
+        public string Reference => CompressionGain.Normalize(CompressionReference);
+
         public static ConstraintSpec AtCompression(double dB) =>
             new(ConstraintKind.Compression, "Compression", dB);
 
+        public static ConstraintSpec AtCompression(double dB, string? reference, CompressionType type) =>
+            new(ConstraintKind.Compression, "Compression", dB, CompressionGain.Normalize(reference), type);
+
         public static ConstraintSpec AtConstantMetric(string metric, double value) =>
             new(ConstraintKind.ConstantMetric, metric, value);
+    }
+
+    /// <summary>The gains a compression can be measured on (brief LPW, R-lpw-7).</summary>
+    public static class CompressionGain
+    {
+        public const string Gt = "Gt_dB";
+        public const string Gp = "Gp_dB";
+        public static readonly IReadOnlyList<string> All = new[] { Gt, Gp };
+
+        /// <summary><c>Gp_dB</c> (or <c>Gp</c>) → <c>Gp_dB</c>; anything else, null included, → <c>Gt_dB</c>.</summary>
+        public static string Normalize(string? reference) =>
+            reference is not null && (reference.Equals(Gp, StringComparison.OrdinalIgnoreCase)
+                                      || reference.Equals("Gp", StringComparison.OrdinalIgnoreCase)) ? Gp : Gt;
+
+        /// <summary>"Gt" / "Gp" — the short name a card or a title shows.</summary>
+        public static string Short(string? reference) => Normalize(reference) == Gp ? "Gp" : "Gt";
+
+        /// <summary>
+        /// What a title adds for a compression that is not the default: "" for Gt from its maximum (every title written
+        /// before brief LPW), else "Gp", "Gt from Gss" or "Gp from Gss".
+        /// </summary>
+        public static string Qualifier(string? reference, CompressionType type)
+        {
+            bool gp = Normalize(reference) == Gp;
+            if (!gp && type == CompressionType.Gmax) return "";
+            return type == CompressionType.Gss ? $"{Short(reference)} from Gss" : Short(reference);
+        }
     }
 
     public readonly record struct ViewBox(double MinRe, double MaxRe, double MinIm, double MaxIm)
@@ -67,12 +110,25 @@ namespace RfCore.Loadpull
         double      Smooth,
         double?     Epsilon = null);
 
+    /// <summary>
+    /// A resampled surface. <paramref name="ClipRadius"/>, when set, is the |Γ| of the measured footprint: the values run
+    /// a cell past it so every cell its edge crosses is whole, and a fill is clipped to that circle rather than ending on
+    /// the grid's staircase of whole cells.
+    /// </summary>
     public sealed record SurfaceGrid(
         double[] XSpace,
         double[] YSpace,
-        double[] Values);
+        double[] Values,
+        double?  ClipRadius = null);
 
     public sealed record MxxResult(Complex Measured, Complex Interpolated);
+
+    /// <summary>
+    /// How far a constraint reaches over the loads: <see cref="Reached"/> of <see cref="Loads"/> give a value there, a
+    /// surface needs <see cref="Needed"/>, and [<see cref="Lo"/>, <see cref="Hi"/>] is the range of constraint levels
+    /// that <see cref="Needed"/> loads or more cover (NaN when no level does). For a compression <see cref="Lo"/> is 0.
+    /// </summary>
+    public sealed record ConstraintReachInfo(int Reached, int Loads, int Needed, double Lo, double Hi);
 
     // ================================================================
     //  LoadpullSurface
@@ -191,6 +247,56 @@ namespace RfCore.Loadpull
             var fit = new LoadpullFit(rbf, plane, z0, freqIdx, metricY, constraint, kernel, smooth, epsilon);
             _cache[key] = fit;
             return fit;
+        }
+
+        // ── ConstraintReach ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// Why a fit may be missing: how many loads reach <paramref name="constraint"/> for <paramref name="metricY"/>,
+        /// and the window of constraint levels enough loads cover to make a surface (brief LPW: the contour card says
+        /// so when nothing can be drawn).
+        /// </summary>
+        public ConstraintReachInfo ConstraintReach(int freqIdx, string metricY, ConstraintSpec constraint)
+        {
+            var fs = _freqs[freqIdx];
+            int reached = Reduce(freqIdx, metricY, constraint, SurfacePlane.Gamma).Values.Length;
+            var spans = new List<(double Lo, double Hi)>();
+            fs.DriveUps.TryGetValue(metricY, out var ys);
+            if (constraint.Kind == ConstraintKind.Compression)
+            {
+                if (CompressionsFor(fs, constraint) is { } comps)
+                    for (int gi = 0; gi < fs.NGrid; gi++)
+                    {
+                        double max = double.NaN;
+                        foreach (var v in comps[gi].Compression)
+                            if (!double.IsNaN(v) && (double.IsNaN(max) || v > max)) max = v;
+                        if (!double.IsNaN(max)) spans.Add((0, max));
+                    }
+            }
+            else if (fs.DriveUps.TryGetValue(constraint.MetricName, out var doms))
+            {
+                for (int gi = 0; gi < fs.NGrid; gi++)
+                {
+                    double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+                    for (int p = 0; p < doms[gi].Length; p++)
+                    {
+                        double d = doms[gi][p];
+                        if (double.IsNaN(d) || (ys is not null && (p >= ys[gi].Length || double.IsNaN(ys[gi][p])))) continue;
+                        lo = Math.Min(lo, d); hi = Math.Max(hi, d);
+                    }
+                    if (lo <= hi) spans.Add((lo, hi));
+                }
+            }
+
+            // Coverage only changes at a span's ends, so the window is found among them.
+            double wLo = double.NaN, wHi = double.NaN;
+            foreach (var x in spans.SelectMany(sp => new[] { sp.Lo, sp.Hi }))
+                if (spans.Count(sp => sp.Lo <= x && x <= sp.Hi) >= MinFitNodes)
+                {
+                    if (double.IsNaN(wLo) || x < wLo) wLo = x;
+                    if (double.IsNaN(wHi) || x > wHi) wHi = x;
+                }
+            return new ConstraintReachInfo(reached, fs.NGrid, MinFitNodes, wLo, wHi);
         }
 
         // ── MaxPower / MaxEfficiency ─────────────────────────────────────────
@@ -379,7 +485,7 @@ namespace RfCore.Loadpull
         /// Returns a (resolution × resolution) value grid, row-major,
         /// with NaN outside the Γ-disk when plane==Gamma.
         /// </summary>
-        public SurfaceGrid Resample(LoadpullFit fit, ViewBox? box = null, int resolution = 50)
+        public SurfaceGrid Resample(LoadpullFit fit, ViewBox? box = null, int resolution = 50, bool toFootprintEdge = false)
         {
             var viewBox = box ?? RecommendedBox(fit);
             if (!viewBox.IsValid)
@@ -394,6 +500,16 @@ namespace RfCore.Loadpull
             double maxGamma = fit.Plane == SurfacePlane.Gamma
                 ? MaxNodeRadius(fit.Rbf) * 1.02
                 : double.PositiveInfinity;
+            // A fill (toFootprintEdge) is evaluated one cell diagonal past the footprint, so the cells the circle crosses
+            // have all four corners and the renderer can clip to the circle itself; iso-lines keep the footprint mask.
+            double? clip = null;
+            double evalRadius = maxGamma;
+            if (toFootprintEdge && fit.Plane == SurfacePlane.Gamma && resolution > 1)
+            {
+                clip = maxGamma;
+                double dx = (viewBox.MaxRe - viewBox.MinRe) / (resolution - 1), dy = (viewBox.MaxIm - viewBox.MinIm) / (resolution - 1);
+                evalRadius = maxGamma + Math.Sqrt(dx * dx + dy * dy);
+            }
 
             int idx = 0;
             for (int yi = 0; yi < resolution; yi++)
@@ -401,7 +517,7 @@ namespace RfCore.Loadpull
                 for (int xi = 0; xi < resolution; xi++)
                 {
                     double re = xSpace[xi], im = ySpace[yi];
-                    if (re * re + im * im > maxGamma * maxGamma)
+                    if (re * re + im * im > evalRadius * evalRadius)
                     {
                         values[idx++] = double.NaN;
                     }
@@ -412,7 +528,7 @@ namespace RfCore.Loadpull
                 }
             }
 
-            return new SurfaceGrid(xSpace, ySpace, values);
+            return new SurfaceGrid(xSpace, ySpace, values, clip);
         }
 
         // ================================================================
@@ -456,10 +572,17 @@ namespace RfCore.Loadpull
                                        // Derived display metrics (post-processor / .spl reader) — must be
                                        // loadable so the summary table's MetricAtCoord can read them.
                                        "Zin_real", "Zin_imag", "AMPM_deg", "IRL_dB",
-                                       "NF" };   // brief NZ-6: the noise figure of a Noise=yes run
+                                       "NF",     // brief NZ-6: the noise figure of a Noise=yes run
+                                       // brief LPW: the input powers at the device's plane, from the waves
+                                       "PinInc_dBm", "PinDel_dBm" };
             var metricCubes  = new Dictionary<string, DataCube>(StringComparer.Ordinal);
             foreach (var m in metricNames)
                 if (hasCube(m)) metricCubes[m] = GetCube(m);
+            // ...and the harmonic powers a wave file carries (Pout_2f0_dBm, PinDel_3f0_dBm, …), whatever n it holds.
+            if (data.Groups.Contains(group))
+            foreach (var (name, cube) in data.CubesIn(group))
+                if (LoadpullWaves.IsHarmonicPowerMetric(name) && cube.DataKind == DataKind.Real)
+                    metricCubes[name] = cube;
 
             // Detect a leading sweep axis by POSITION, not by name. The FOM cube is canonically
             // [gridPoint, pinStep] (rank 2); a sweep prepends ONE leading axis (rank 3), which may be a
@@ -544,7 +667,8 @@ namespace RfCore.Loadpull
                     }
                 }
 
-                // Compression preprocessing (§1 of brief)
+                // Compression preprocessing (§1 of brief) — the default reference, Gt from its running maximum, which the
+                // recommended compression is computed on. Any other reference is computed on first use (CompressionsFor).
                 var gtDriveUps = driveUps["Gt_dB"];
                 var compValues = new double[nGrid];
 
@@ -617,7 +741,12 @@ namespace RfCore.Loadpull
                     }
                 }
             }
-            // else Gss: ci = 0
+            else
+            {
+                // Gss: the small-signal gain is the first valid drive's.
+                ci = Array.FindIndex(gt, v => !double.IsNaN(v));
+                if (ci < 0) ci = 0;
+            }
 
             // Compression curve from ci onward (0 at ci, increasing)
             int len  = n - ci;
@@ -630,6 +759,31 @@ namespace RfCore.Loadpull
             return new GridPointCompression(ci, comp);
         }
 
+        /// <summary>
+        /// Each load's compression curve on the constraint's reference gain and type: the precomputed Gt/Gmax one, or one
+        /// computed on first use and kept on the slice. Null when the reference gain is not in the data (a file without
+        /// Gp_dB contoured at compression of Gp): nothing is drawn rather than a Gt compression mislabelled as Gp.
+        /// </summary>
+        private static GridPointCompression[]? CompressionsFor(FreqSlice fs, ConstraintSpec constraint)
+        {
+            string reference = constraint.Reference;
+            var type = constraint.CompressionType;
+            if (reference == CompressionGain.Gt && type == CompressionType.Gmax) return fs.Compressions;
+            var key = (reference, type);
+            lock (fs.OtherCompressions)
+            {
+                if (fs.OtherCompressions.TryGetValue(key, out var cached)) return cached;
+                GridPointCompression[]? result = null;
+                if (fs.DriveUps.TryGetValue(reference, out var gains))
+                {
+                    result = new GridPointCompression[fs.NGrid];
+                    for (int gi = 0; gi < fs.NGrid; gi++) result[gi] = ComputeCompression(gains[gi], type);
+                }
+                fs.OtherCompressions[key] = result;
+                return result;
+            }
+        }
+
         // ================================================================
         //  Private — scatter reduction
         // ================================================================
@@ -638,7 +792,9 @@ namespace RfCore.Loadpull
             FreqSlice fs, int gi,
             string metricY, ConstraintSpec constraint)
         {
-            var comp = fs.Compressions[gi];
+            var compressions = CompressionsFor(fs, constraint);
+            if (compressions is null) return double.NaN;
+            var comp = compressions[gi];
 
             if (constraint.Kind == ConstraintKind.Compression)
             {
@@ -1017,6 +1173,8 @@ namespace RfCore.Loadpull
             int          FreqIdx,
             string       Metric,
             double       CompressionVal,
+            string       CompressionReference,
+            CompressionType CompressionType,
             SurfacePlane Plane,
             double?      Z0,
             RbfKernel    Kernel,
@@ -1036,12 +1194,14 @@ namespace RfCore.Loadpull
         public PowerSweep? GetPowerSweep(
             int freqIdx, Complex queryCoord, string metricX, string metricY,
             double compressionVal, SurfacePlane plane, double? z0 = null,
-            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3)
+            RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3,
+            string? compressionReference = null, CompressionType compressionType = CompressionType.Gmax)
         {
+            var comp = ConstraintSpec.AtCompression(compressionVal, compressionReference, compressionType);
             // Build (or fetch cached) the three stacks
-            var sweepStack = BuildStackAtCompression(freqIdx, SweepKeyName, compressionVal, plane, z0, kernel, smooth);
-            var xStack     = BuildStackAtCompression(freqIdx, metricX,      compressionVal, plane, z0, kernel, smooth);
-            var yStack     = BuildStackAtCompression(freqIdx, metricY,      compressionVal, plane, z0, kernel, smooth);
+            var sweepStack = BuildStackAtCompression(freqIdx, SweepKeyName, comp, plane, z0, kernel, smooth);
+            var xStack     = BuildStackAtCompression(freqIdx, metricX,      comp, plane, z0, kernel, smooth);
+            var yStack     = BuildStackAtCompression(freqIdx, metricY,      comp, plane, z0, kernel, smooth);
 
             // Port of get_power_sweep: NumPoints = len(DataInterpStack[key_x])
             int numSlices = Math.Min(xStack.Slices.Count,
@@ -1118,18 +1278,20 @@ namespace RfCore.Loadpull
         /// where P_comp is the sweep-key (PavlDbm) value at the given compression.
         /// </summary>
         private InterpStack BuildStackAtCompression(
-            int freqIdx, string metric, double compressionVal,
+            int freqIdx, string metric, ConstraintSpec poutConstraint,
             SurfacePlane plane, double? z0, RbfKernel kernel, double smooth)
         {
-            var key = new StackKey(freqIdx, metric, compressionVal, plane, z0, kernel, smooth);
+            double compressionVal = poutConstraint.Value;
+            var key = new StackKey(freqIdx, metric, compressionVal, poutConstraint.Reference, poutConstraint.CompressionType,
+                                   plane, z0, kernel, smooth);
             if (_stackCache.TryGetValue(key, out var cached)) return cached;
 
             var fs = _freqs[freqIdx];
+            var stackCompressions = CompressionsFor(fs, poutConstraint) ?? fs.Compressions;
 
             // Base scatter: sweep-key (PavlDbm) values at the given compression,
             // per used grid point.  sweep_compression = DataInterp[sweep_key].di
             //                       sweep_compression_index = DataInterp[sweep_key].IndexUsed
-            var poutConstraint = ConstraintSpec.AtCompression(compressionVal);
             var baseScatter    = Reduce(freqIdx, SweepKeyName, poutConstraint, plane, z0);
 
             int nUsed = baseScatter.Coords.Length;
@@ -1164,9 +1326,9 @@ namespace RfCore.Loadpull
                     // Note: Python uses loop index i (not origIdx) — replicated here.
                     if (i < fs.NGrid && fs.DriveUps.TryGetValue(SweepKeyName, out var swDUs))
                     {
-                        int      ci       = fs.Compressions[i].CompressionIndex;
+                        int      ci       = stackCompressions[i].CompressionIndex;
                         double[] swFull   = swDUs[i]; // PavlDbm full drive-up (loop index i)
-                        double[] compArr  = fs.Compressions[i].Compression;
+                        double[] compArr  = stackCompressions[i].Compression;
                         int      len      = Math.Min(swFull.Length - ci, compArr.Length);
                         if (len >= 2)
                         {
@@ -1353,6 +1515,8 @@ namespace RfCore.Loadpull
             public double[]  PinAxis = Array.Empty<double>();
             public Dictionary<string, double[][]> DriveUps = new(StringComparer.Ordinal);
             public GridPointCompression[] Compressions = Array.Empty<GridPointCompression>();
+            /// <summary>Compression curves for references other than Gt/Gmax, computed on first use.</summary>
+            public Dictionary<(string Reference, CompressionType Type), GridPointCompression[]?> OtherCompressions = new();
             public double    MedianCompression;
             public double    RecommendedCompression;
             public Complex?  SourceZ;

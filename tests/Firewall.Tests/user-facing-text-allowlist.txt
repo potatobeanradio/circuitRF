@@ -606,15 +606,30 @@ src/RfCore/Export/NpyReader.cs|Unsupported dtype in .npy field: '{dtype}'.
 src/RfCore/Export/NpyReader.cs|format_version mismatch: file has version {foundVersion}, 
 src/RfCore/Export/NpyReader.cs|format_version missing from __meta__. 
 src/RfCore/Export/TouchstoneExporter.cs|Axis '{name}' not found in DataCube.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {blocks.Count + 1} has #BEGIN with no #END.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {blocks.Count + 1} has #END with no #BEGIN.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {block}'s #{key} '{s}' is not '|Γ| angle(deg)'.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {number} does not state #{key}.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {number} has no '#Frequency(Hz) …' column line.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {number} has no {name} column.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {number} is a '{type}' measurement; only Power Sweep is read.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {number} states #HARMONICS: {b.Harmonics}.
+src/RfCore/Loadpull/CstReader.cs|.cst: block {number}, drive {drive}: expected the {Ord(k + 1)} row at 
+src/RfCore/Loadpull/CstReader.cs|.cst: block {number}, drive {drive}: the {Ord(rows.Count % perDrive + 1)} row 
+src/RfCore/Loadpull/CstReader.cs|.cst: no #BEGIN … #END block.
 src/RfCore/Loadpull/Interp1DLinear.cs|At least 2 points are required for linear interpolation.
 src/RfCore/Loadpull/Interp1DLinear.cs|x and y must have the same length.
 src/RfCore/Loadpull/Interp1DLinear.cs|x must be strictly ascending; x[{i - 1}]={x[i - 1]}, x[{i}]={x[i]}.
 src/RfCore/Loadpull/LoadpullExportModel.cs|DataSet has no GammaLoad/ZLoad termination cube — not a loadpull dataset.
 src/RfCore/Loadpull/LoadpullExportModel.cs|Termination cube has no 'gridPoint' axis.
+src/RfCore/Loadpull/LoadpullFiles.cs|'{Path.GetFileName(path)}' is not a loadpull file (.spl, .lpcwave, .satwave or .cst).
 src/RfCore/Loadpull/LpcwaveReader.cs|.lpcwave: no column header ('Point Gamma Phase[deg] ...') found.
 src/RfCore/Loadpull/LpcwaveReader.cs|.lpcwave: no grid points (# lines) found.
 src/RfCore/Loadpull/LpcwaveWriter.cs|Loadpull DataSet has no frequency blocks.
 src/RfCore/Loadpull/Rbf2D.cs|This factorization was built for a different set of present nodes. The kernel 
+src/RfCore/Loadpull/SatwaveReader.cs|.satwave: no '! Load Impedances (Polar)' line, so the load is not known.
+src/RfCore/Loadpull/SatwaveReader.cs|.satwave: no '! TITLES:' column line.
+src/RfCore/Loadpull/SatwaveReader.cs|.satwave: no data rows.
 src/RfCore/Loadpull/SplReader.cs|.spl Freq={freqGhz} GHz: no column header ('valid ...') found.
 src/RfCore/Loadpull/SplReader.cs|.spl: no freq/grid/pin header line found.
 src/RfCore/Loadpull/SplWriter.cs|Loadpull DataSet has no frequency blocks.

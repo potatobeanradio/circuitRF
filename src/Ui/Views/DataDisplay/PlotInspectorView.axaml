@@ -29,6 +29,24 @@
     </UserControl.Resources>
 
     <UserControl.Styles>
+        <!-- ComboBox.tight — the contour card's two-letter compression pickers (Gt/Gp, Gmax/Gss), narrow enough to sit
+             on the At row. The marker editor's compact combos solved the same two traps (src/Ui/DataDisplay/RESOLVED.md):
+             the chevron's grid column is a FIXED 32 px, so the content is spanned across it — on the ContentControl
+             named `ContentPresenter`, the grid's own child — and the theme's 64 px floor is a local value on the
+             template's background border, lowered only by redefining ComboBoxThemeMinWidth in the combos' own
+             Resources (on their StackPanel below), never by a style. -->
+        <Style Selector="ComboBox.tight">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Padding" Value="6,2,4,2"/>
+        </Style>
+        <Style Selector="ComboBox.tight /template/ PathIcon#DropDownGlyph">
+            <Setter Property="IsVisible" Value="False"/>
+            <Setter Property="Width"     Value="0"/>
+            <Setter Property="MinWidth"  Value="0"/>
+        </Style>
+        <Style Selector="ComboBox.tight /template/ ContentControl#ContentPresenter">
+            <Setter Property="Grid.ColumnSpan" Value="2"/>
+        </Style>
         <!-- ── Segmented toggle buttons ─────────────────────────────────────
              The BASE look (Button.seg-btn, and the .active accent on its ContentPresenter) is an
              application-scope style now — see Styles/CircuitRfStyles.axaml. What stays here is the
@@ -648,6 +666,20 @@
                                    ToolTip.Tip="Table-wide compression point (dB)"/>
                     <TextBlock Text="dB" Classes="label"/>
                 </StackPanel>
+                <!-- The summary's compression reference, table-wide (brief LPW R-lpw-7): its own row, so the row
+                     above keeps the inspector's width. -->
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="Comp of" Classes="label"/>
+                    <ComboBox ItemsSource="{Binding CompressionReferenceOptions}"
+                              SelectedItem="{Binding TableCompressionReference, Mode=TwoWay}"
+                              MinWidth="56"
+                              ToolTip.Tip="The gain the compression is measured on: Gt (transducer) or Gp (power)"/>
+                    <TextBlock Text="from" Classes="label"/>
+                    <ComboBox ItemsSource="{Binding CompressionTypeOptions}"
+                              SelectedItem="{Binding TableCompressionType, Mode=TwoWay}"
+                              MinWidth="66"
+                              ToolTip.Tip="Gmax: from the gain's running maximum. Gss: from its small-signal value at the lowest drive"/>
+                </StackPanel>
             </StackPanel>
 
             <Separator/>
@@ -939,38 +971,57 @@
                                                       ToolTip.Tip="FOM metric to contour"/>
                                         </Grid>
 
-                                        <!-- Constraint row: kind toggle + value -->
-                                        <Grid ColumnDefinitions="50,Auto,*">
+                                        <!-- Constraint row: kind toggle + value, then (Comp only) the gain the compression
+                                             is measured on and where from (brief LPW R-lpw-7). A WrapPanel so a narrow card
+                                             wraps the pair to a second line; the pair is AFTER every always-shown control,
+                                             so toggling Comp/Const moves nothing on the row. -->
+                                        <Grid ColumnDefinitions="50,*">
                                             <TextBlock Grid.Column="0" Text="At"
-                                                       Classes="label"/>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                                                <Button Classes="seg-btn"
-                                                        Classes.active="{Binding IsCompressionConstraint}"
-                                                        Command="{Binding SetConstraintCompressionCommand}"
-                                                        Padding="5,2"
-                                                        ToolTip.Tip="Compression-dB slice">
-                                                    <TextBlock Text="Comp" FontSize="10"/>
-                                                </Button>
-                                                <Button Classes="seg-btn"
-                                                        Classes.active="{Binding IsConstantMetricConstraint}"
-                                                        Command="{Binding SetConstraintConstantCommand}"
-                                                        Padding="5,2"
-                                                        ToolTip.Tip="Constant-metric slice">
-                                                    <TextBlock Text="Const" FontSize="10"/>
-                                                </Button>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="2"
-                                                        Orientation="Horizontal" Spacing="2"
-                                                        Margin="3,0,0,0">
-                                                <NumericUpDown Value="{Binding ContourConstraintValue, Mode=TwoWay}"
-                                                               Minimum="-999" Maximum="999"
-                                                               Increment="0.5"
-                                                               FormatString="F1"
-                                                               Width="46"
-                                                               ToolTip.Tip="Constraint value (dB compression or metric constant)"/>
-                                                <TextBlock Text="{Binding ConstraintUnits}"
-                                                           Classes="label" VerticalAlignment="Center"/>
-                                            </StackPanel>
+                                                       Classes="label" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                            <WrapPanel Grid.Column="1" Orientation="Horizontal">
+                                                <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,3,2">
+                                                    <Button Classes="seg-btn"
+                                                            Classes.active="{Binding IsCompressionConstraint}"
+                                                            Command="{Binding SetConstraintCompressionCommand}"
+                                                            Padding="5,2"
+                                                            ToolTip.Tip="Compression-dB slice">
+                                                        <TextBlock Text="Comp" FontSize="10"/>
+                                                    </Button>
+                                                    <Button Classes="seg-btn"
+                                                            Classes.active="{Binding IsConstantMetricConstraint}"
+                                                            Command="{Binding SetConstraintConstantCommand}"
+                                                            Padding="5,2"
+                                                            ToolTip.Tip="Constant-metric slice">
+                                                        <TextBlock Text="Const" FontSize="10"/>
+                                                    </Button>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,4,2">
+                                                    <NumericUpDown Value="{Binding ContourConstraintValue, Mode=TwoWay}"
+                                                                   Minimum="-999" Maximum="999"
+                                                                   Increment="0.5"
+                                                                   FormatString="F1"
+                                                                   Width="46"
+                                                                   ToolTip.Tip="Constraint value (dB compression or metric constant)"/>
+                                                    <TextBlock Text="{Binding ConstraintUnits}"
+                                                               Classes="label" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="3" Margin="0,0,0,2"
+                                                            IsVisible="{Binding IsCompressionConstraint}">
+                                                    <StackPanel.Resources>
+                                                        <x:Double x:Key="ComboBoxThemeMinWidth">0</x:Double>
+                                                    </StackPanel.Resources>
+                                                    <TextBlock Text="of" Classes="label" VerticalAlignment="Center"/>
+                                                    <ComboBox ItemsSource="{Binding CompressionReferenceOptions}"
+                                                              SelectedItem="{Binding ContourCompressionReference, Mode=TwoWay}"
+                                                              Classes="tight" Width="40"
+                                                              ToolTip.Tip="The gain the compression is measured on: Gt (transducer) or Gp (power)"/>
+                                                    <TextBlock Text="from" Classes="label" VerticalAlignment="Center"/>
+                                                    <ComboBox ItemsSource="{Binding CompressionTypeOptions}"
+                                                              SelectedItem="{Binding ContourCompressionType, Mode=TwoWay}"
+                                                              Classes="tight" Width="50"
+                                                              ToolTip.Tip="Gmax: from the gain's running maximum. Gss: from its small-signal value at the lowest drive"/>
+                                                </StackPanel>
+                                            </WrapPanel>
                                         </Grid>
 
                                         <!-- Constant-metric name (shown when Const kind) — §7: same metric disabled -->
@@ -1036,63 +1087,60 @@
                                                       FontSize="{StaticResource FontSize}"/>
                                         </StackPanel>
 
-                                        <!-- Level-set mode toggle -->
-                                        <Grid ColumnDefinitions="50,Auto">
+                                        <!-- Levels: the mode toggle, then (on the same row, wrapping when the card is narrow)
+                                             either Start : Step : Stop or N. The fields come AFTER the toggle, so switching
+                                             Range/Count moves neither button. -->
+                                        <Grid ColumnDefinitions="50,*">
                                             <TextBlock Grid.Column="0" Text="Levels"
-                                                       Classes="label"/>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                                                <Button Classes="seg-btn"
-                                                        Classes.active="{Binding IsRangeLevelMode}"
-                                                        Command="{Binding SetRangeLevelModeCommand}"
-                                                        Padding="5,2"
-                                                        ToolTip.Tip="Specify levels as start:step:stop">
-                                                    <TextBlock Text="Range" FontSize="10"/>
-                                                </Button>
-                                                <Button Classes="seg-btn"
-                                                        Classes.active="{Binding IsCountLevelMode}"
-                                                        Command="{Binding SetCountLevelModeCommand}"
-                                                        Padding="5,2"
-                                                        ToolTip.Tip="Specify number of evenly-spaced levels">
-                                                    <TextBlock Text="Count" FontSize="10"/>
-                                                </Button>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <!-- Range fields: Start / Step / Stop -->
-                                        <Grid ColumnDefinitions="36,Auto,36,Auto,36"
-                                              IsVisible="{Binding IsRangeLevelMode}">
-                                            <NumericUpDown Grid.Column="0"
-                                                           Value="{Binding ContourLevelStart, Mode=TwoWay}"
-                                                           Minimum="-9999" Maximum="9999"
-                                                           Increment="1" FormatString="G4"
-                                                           ToolTip.Tip="Level set start"/>
-                                            <TextBlock Grid.Column="1" Text=":" Classes="label"
-                                                       Margin="2,0" VerticalAlignment="Center"/>
-                                            <NumericUpDown Grid.Column="2"
-                                                           Value="{Binding ContourLevelStep, Mode=TwoWay}"
-                                                           Increment="0.25" Minimum="0.01" Maximum="9999"
-                                                           FormatString="G4"
-                                                           ToolTip.Tip="Level step (must be > 0)"/>
-                                            <TextBlock Grid.Column="3" Text=":" Classes="label"
-                                                       Margin="2,0" VerticalAlignment="Center"/>
-                                            <NumericUpDown Grid.Column="4"
-                                                           Value="{Binding ContourLevelStop, Mode=TwoWay}"
-                                                           Minimum="-9999" Maximum="9999"
-                                                           Increment="1" FormatString="G4"
-                                                           ToolTip.Tip="Level set stop"/>
-                                        </Grid>
-
-                                        <!-- Count field -->
-                                        <Grid ColumnDefinitions="50,Auto"
-                                              IsVisible="{Binding IsCountLevelMode}">
-                                            <TextBlock Grid.Column="0" Text="N levels"
-                                                       Classes="label"/>
-                                            <NumericUpDown Grid.Column="1"
-                                                           Value="{Binding ContourLevelCount, Mode=TwoWay}"
-                                                           Minimum="2" Maximum="50" Increment="1"
-                                                           FormatString="0"
-                                                           Width="40"
-                                                           ToolTip.Tip="Number of iso-line levels"/>
+                                                       Classes="label" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                            <WrapPanel Grid.Column="1" Orientation="Horizontal">
+                                                <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,6,2">
+                                                    <Button Classes="seg-btn"
+                                                            Classes.active="{Binding IsRangeLevelMode}"
+                                                            Command="{Binding SetRangeLevelModeCommand}"
+                                                            Padding="5,2"
+                                                            ToolTip.Tip="Specify levels as start:step:stop">
+                                                        <TextBlock Text="Range" FontSize="10"/>
+                                                    </Button>
+                                                    <Button Classes="seg-btn"
+                                                            Classes.active="{Binding IsCountLevelMode}"
+                                                            Command="{Binding SetCountLevelModeCommand}"
+                                                            Padding="5,2"
+                                                            ToolTip.Tip="Specify number of evenly-spaced levels">
+                                                        <TextBlock Text="Count" FontSize="10"/>
+                                                    </Button>
+                                                </StackPanel>
+                                                <!-- Range fields: Start : Step : Stop -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,2"
+                                                            IsVisible="{Binding IsRangeLevelMode}">
+                                                    <NumericUpDown Value="{Binding ContourLevelStart, Mode=TwoWay}"
+                                                                   Minimum="-9999" Maximum="9999"
+                                                                   Increment="1" FormatString="G4" Width="40"
+                                                                   ToolTip.Tip="Level set start"/>
+                                                    <TextBlock Text=":" Classes="label"
+                                                               Margin="2,0" VerticalAlignment="Center"/>
+                                                    <NumericUpDown Value="{Binding ContourLevelStep, Mode=TwoWay}"
+                                                                   Increment="0.25" Minimum="0.01" Maximum="9999"
+                                                                   FormatString="G4" Width="40"
+                                                                   ToolTip.Tip="Level step (must be > 0)"/>
+                                                    <TextBlock Text=":" Classes="label"
+                                                               Margin="2,0" VerticalAlignment="Center"/>
+                                                    <NumericUpDown Value="{Binding ContourLevelStop, Mode=TwoWay}"
+                                                                   Minimum="-9999" Maximum="9999"
+                                                                   Increment="1" FormatString="G4" Width="40"
+                                                                   ToolTip.Tip="Level set stop"/>
+                                                </StackPanel>
+                                                <!-- Count field -->
+                                                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,0,2"
+                                                            IsVisible="{Binding IsCountLevelMode}">
+                                                    <TextBlock Text="N" Classes="label" VerticalAlignment="Center"/>
+                                                    <NumericUpDown Value="{Binding ContourLevelCount, Mode=TwoWay}"
+                                                                   Minimum="2" Maximum="50" Increment="1"
+                                                                   FormatString="0"
+                                                                   Width="40"
+                                                                   ToolTip.Tip="Number of iso-line levels"/>
+                                                </StackPanel>
+                                            </WrapPanel>
                                         </Grid>
 
                                         <!-- Options disclosure: chevron + label, bespoke (no TabControl) -->
@@ -1290,6 +1338,14 @@
                                             </Grid>
 
                                         </StackPanel>
+
+                                        <!-- Why nothing is drawn, only when nothing can be (brief LPW): too few loads reach the
+                                             level, and the level the data does reach. Last on the card, so its appearing
+                                             moves no control above it. -->
+                                        <TextBlock Text="{Binding ContourStatus}"
+                                                   IsVisible="{Binding HasContourStatus}"
+                                                   Classes="label" FontSize="10" TextWrapping="Wrap"
+                                                   Margin="0,2,0,0"/>
 
                                     </StackPanel>
                                     <!-- end contour trace body -->

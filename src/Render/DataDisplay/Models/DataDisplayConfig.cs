@@ -163,6 +163,12 @@ public sealed class PlotContainerConfig
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TableReadMode TableReadMode    { get; set; } = TableReadMode.Interp;
     public double        TableCompression { get; set; } = 3.0;
+    // Brief LPW (R-lpw-7) — the summary's compression reference, table-wide; omitted at the defaults (Gt, Gmax).
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string?       TableCompressionReference { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public CompressionType TableCompressionType { get; set; } = CompressionType.Gmax;
     public string?       SummaryLoadpullGroup { get; set; }
 
     // ---- The dB radial mode (ANT-7 §2) --------------------------------------
@@ -702,6 +708,15 @@ public sealed class ContourTraceConfig
 
     public string ConstraintMetricName { get; set; } = "";
     public double ConstraintValue      { get; set; } = 3.0;
+
+    // Brief LPW (R-lpw-7) — the gain a compression constraint is measured on and from where. Omitted when they are the
+    // defaults (Gt, from its running maximum), so a `.cdd` written before them reads back as it drew and re-saves as it was.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CompressionReference { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public CompressionType CompressionType { get; set; } = CompressionType.Gmax;
+
     public int    FreqIndex            { get; set; } = 0;
     public string? LoadpullGroup       { get; set; }
 

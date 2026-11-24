@@ -354,3 +354,30 @@ wiring-it-all-together step.
 - **7.4g COMPLETE** (2026-06-20): `KnownLoadpullProvider` + loadpull block in `RefreshAvailableDataSources` +
   `GetKnownLoadpullFiles` in `WorkspaceViewModel`. Simulated path confirmed already wired through `run.npy`.
   6 gate tests; 2057 total.
+
+## 7. Measured waves, `.cst`/`.satwave`, and a chosen compression reference (brief LPW)
+
+**One derivation.** `LoadpullWaves.Derive` turns the waves at the device's planes (a₁, b₁, a₂, b₂ per drive and
+harmonic), the wave convention (RMS: P = |x|²; peak: P = ½|x|²), Z0 at each port, ΓS at f0 and the bias into the
+canonical cubes: `PavlDbm` (P(a₁ − ΓS·b₁)/(1 − |ΓS|²)), `PinInc_dBm` (P(a₁)), `PinDel_dBm`, `Pout_dBm`/`Pout_W`, `Gt_dB`
+(against the available power), `Gp_dB` (against the delivered), `Pdc_W`, `Efficiency`, `PAE`, `Zin_*`, `IRL_dB`
+(20·log₁₀|Γin|, this repository's sign), `AMPM_deg` (∠(b₂/a₁) from the lowest drive) and the complex
+`GammaLoadMeas` = a₂/b₂ per drive. Each harmonic n ≥ 2 is its own rank-2 cubes (`Pout_<n>f0_dBm`, `PinDel_<n>f0_dBm`) and
+a per-load `GammaLoad_<n>f0`, weighted by P(b₂) — never a third axis, which `LoadpullSurface` and `LoadpullRecognition`
+would read as a leading sweep. Every output is presence-gated: a stated column wins, and a quantity without inputs is not
+produced. Every reader that carries waves calls it; none computes a wave metric of its own.
+
+**Formats.** `LoadpullFiles.Read` is the only call site of the four readers (`.spl`, `.lpcwave`, `.satwave`, `.cst`) —
+by extension, and by content for an unknown one; a source scan holds it. `.satwave` and `.lpcwave` share
+`LpcwaveReader.BuildBlock` (the column handling) and `Assemble` (the DataSet); `.cst` builds the same blocks from its
+own layout — a block per f0 load, `#GAMMALOAD` the load, rows interleaving the harmonics, ragged blocks NaN-padded,
+several fundamentals a leading `freq` axis, its peak waves. In the `.lpcwave` dialect `PinWaves[dBm]` is the power
+available at the device (`GainWavesTrd` = `PoutWaves` − `PinWaves`), so it, not `Psource[dBm]` (the generator's
+setting, on the instrument side of the drive path), is `PavlDbm` when a file has both.
+
+**Compression reference.** `ConstraintSpec` carries `CompressionReference` (`Gt_dB` default, or `Gp_dB`) and
+`CompressionType` (`Gmax` default, or `Gss`: from the first valid drive). `LoadpullSurface` computes the default curves
+once and any other on first use; both are in the fit key and the stack key. The contour card's compression row and the
+summary table offer the pair; `.cdd` writes the keys only when they differ from the default, so an older file reads and
+re-saves as it was. The constant-metric list includes the input powers and harmonic powers; `PinInc`/`PinDel`/`PavlDbm`
+form one alias group.

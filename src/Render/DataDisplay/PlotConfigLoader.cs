@@ -76,6 +76,8 @@ public static class PlotConfigLoader
         plot.TableOptimum                = pc.TableOptimum;
         plot.TableReadMode               = pc.TableReadMode;
         plot.TableCompression            = pc.TableCompression > 0 ? pc.TableCompression : 3.0;
+        plot.TableCompressionReference   = pc.TableCompressionReference;
+        plot.TableCompressionType        = pc.TableCompressionType;
         plot.SummaryLoadpullGroup        = pc.SummaryLoadpullGroup;
         plot.PolarRadial                 = pc.PolarRadial;
         plot.PolarDbFloor                = pc.PolarDbFloor;
@@ -251,6 +253,8 @@ public static class PlotConfigLoader
                 ContourConstraintKind = ct.ConstraintKind,
                 ConstraintMetricName  = ct.ConstraintMetricName,
                 ConstraintValue       = ct.ConstraintValue,
+                CompressionReference  = ct.CompressionReference,
+                CompressionType       = ct.CompressionType,
                 FreqIndex             = ct.FreqIndex,
                 LoadpullGroup         = ct.LoadpullGroup,
                 LevelMode             = ct.LevelMode,

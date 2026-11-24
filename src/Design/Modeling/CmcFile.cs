@@ -486,11 +486,15 @@ public static class CmcFile
         if (s.Conditions.LargeSignal is not { } ls)
             throw new CmcFormatException(f, "a LargeSignal data set states its measurement (PowerSweep, TwoTone or Loadpull) here.");
         bool file = ls.Measurement == LargeSignalMeasurement.Loadpull;
-        if (file != (s.Import.Format == ImportSettings.Loadpull))
+        bool fromLoadpullFile = s.Import.Format == ImportSettings.Loadpull;
+        // A PowerSweep may also be read from a loadpull file holding ONE load (a .satwave, a one-block .cst — brief LPW):
+        // its drive-up is the sweep, and its terminations, frequency and bias are the file's, so none is required here.
+        bool sweepFromFile = ls.Measurement == LargeSignalMeasurement.PowerSweep && fromLoadpullFile;
+        if (file != fromLoadpullFile && !sweepFromFile)
             throw new CmcFormatException($"{f}.Measurement",
                 file ? "a Loadpull set is read from a loadpull file; its import format is loadpull."
                      : $"a {ls.Measurement} set is read from a CSV/TSV file of its columns.");
-        if (!file)
+        if (!file && !sweepFromFile)
         {
             if (ls.FrequencyHz is null) throw new CmcFormatException($"{f}.FrequencyHz", "it is missing; a power sweep is at one frequency.");
             if (ls.Vgs is null || ls.Vds is null) throw new CmcFormatException(f, "the bias, Vgs and Vds, is missing.");

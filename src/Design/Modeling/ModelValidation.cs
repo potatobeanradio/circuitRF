@@ -61,12 +61,17 @@ public sealed record ValidationSettings
     public ValidationTolerances Tolerances { get; init; } = ValidationTolerances.Default;
     public IReadOnlyList<string> DataSets { get; init; } = [];
     public int MaxHarmonic { get; init; } = 5;
-    /// <summary>The Gt compression, dB, at which a loadpull's model and measurement are compared, load by load.</summary>
+    /// <summary>The gain compression, dB, at which a loadpull's model and measurement are compared, load by load.</summary>
     public double Compression { get; init; } = 3;
+    /// <summary>The gain <see cref="Compression"/> is measured on: <c>Gt_dB</c> (the default) or <c>Gp_dB</c> (brief LPW).</summary>
+    public string CompressionReference { get; init; } = CompressionGain.Gt;
+    /// <summary>Where <see cref="Compression"/> is measured from: the gain's running maximum (the default) or its
+    /// small-signal value at the lowest drive.</summary>
+    public CompressionType CompressionType { get; init; } = CompressionType.Gmax;
 
     public static ValidationSettings Default { get; } = new();
 
-    private static readonly string[] Keys = ["Tolerances", "DataSets", "MaxHarmonic", "Compression"];
+    private static readonly string[] Keys = ["Tolerances", "DataSets", "MaxHarmonic", "Compression", "CompressionReference", "CompressionType"];
     private static readonly string[] ToleranceKeys = ["SMedian", "S95", "IvRelative", "PowerDb", "EfficiencyPoints", "AmPmDegrees", "ImpedanceVswr"];
 
     public static ValidationSettings Parse(JsonNode node, string f)
@@ -95,12 +100,28 @@ public sealed record ValidationSettings
         if (harm < 1) throw new CmcFormatException($"{f}.MaxHarmonic", $"{harm} is not a harmonic count.");
         double compression = CmcExtrinsic.Num(o, "Compression", $"{f}.Compression") ?? 3;
         if (!(compression > 0)) throw new CmcFormatException($"{f}.Compression", $"{compression} is not a compression in dB.");
+        string reference = CompressionGain.Gt;
+        if (o["CompressionReference"] is { } rn)
+        {
+            string r = rn.GetValueKind() == System.Text.Json.JsonValueKind.String ? rn.GetValue<string>() : "";
+            reference = r is "Gt" or "Gt_dB" ? CompressionGain.Gt : r is "Gp" or "Gp_dB" ? CompressionGain.Gp
+                : throw new CmcFormatException($"{f}.CompressionReference", $"'{r}' is not Gt or Gp.");
+        }
+        var ctype = CompressionType.Gmax;
+        if (o["CompressionType"] is { } tn2)
+        {
+            string r = tn2.GetValueKind() == System.Text.Json.JsonValueKind.String ? tn2.GetValue<string>() : "";
+            ctype = r == "Gmax" ? CompressionType.Gmax : r == "Gss" ? CompressionType.Gss
+                : throw new CmcFormatException($"{f}.CompressionType", $"'{r}' is not Gmax or Gss.");
+        }
         return new ValidationSettings
         {
             Tolerances = t,
             DataSets = o["DataSets"] is { } d ? CurrentFitSettings.Names(d, $"{f}.DataSets") : [],
             MaxHarmonic = harm,
             Compression = compression,
+            CompressionReference = reference,
+            CompressionType = ctype,
         };
     }
 
@@ -118,6 +139,8 @@ public sealed record ValidationSettings
         if (DataSets.Count > 0) o["DataSets"] = new JsonArray([.. DataSets.Select(n => (JsonNode)n)]);
         if (MaxHarmonic != 5) o["MaxHarmonic"] = MaxHarmonic;
         if (Compression != 3) o["Compression"] = Compression;
+        if (CompressionReference != CompressionGain.Gt) o["CompressionReference"] = CompressionGain.Short(CompressionReference);
+        if (CompressionType != CompressionType.Gmax) o["CompressionType"] = CompressionType.ToString();
         return o;
     }
 }
@@ -565,10 +588,77 @@ public static class ModelValidation
         return c.ComplexValues[offset + named * nSpec + spectral];
     }
 
+    /// <summary>
+    /// A loadpull file read through RfCore's <c>LoadpullFiles</c> — the call the Data Display and <c>render</c> make, so
+    /// validation reads the same figures they draw — at one frequency, with the frequency it states.
+    /// </summary>
+    private static (DataSet Data, double? Hz) ReadLoadpull(string src, CmcDataSet set, double? hz)
+    {
+        DataSet meas;
+        try { meas = LoadpullFiles.Read(src); }
+        catch (Exception ex) when (ex is FormatException or IOException or InvalidDataException)
+        { throw new ModelingException(set.Sources[0], $"it is not a readable loadpull file ({ex.Message})."); }
+        if (!meas.Contains("GammaLoad") || !meas.Contains("PavlDbm"))
+            throw new ModelingException(set.Sources[0], "it carries no load grid or drive levels.");
+        return OneFrequency(meas, hz, set.Name);
+    }
+
+    /// <summary>
+    /// A PowerSweep set read from a loadpull file of ONE load (a <c>.satwave</c>, a one-block <c>.cst</c>): the sweep is
+    /// the load's drive-up — available power, Pout, Gt, PAE and drain efficiency as the file reads them — and the
+    /// conditions it does not state come from the file: frequency, bias, source and load terminations, and the load's
+    /// harmonic terminations where the waves measured them.
+    /// </summary>
+    private static (LargeSignalConditions C, double[] Pin, Dictionary<string, double[]> Columns) SweepFromLoadpull(Context ctx, CmcDataSet set)
+    {
+        var c = set.Conditions.LargeSignal!;
+        string src = DataImport.ResolveSource(ctx.Dir, set.Sources[0]);
+        if (!File.Exists(src)) throw new ModelingException(set.Sources[0], "the file does not exist.");
+        var (lp, fFile) = ReadLoadpull(src, set, c.FrequencyHz);
+        var gamma = lp["GammaLoad"].ComplexValues;
+        if (gamma.Length != 1)
+            throw new ModelingException(set.Name, $"the file holds {gamma.Length} loads; a power sweep is one load's drive-up " +
+                                                  "(make it a Loadpull set to compare every load).");
+        var pavl = lp["PavlDbm"].RealValues;
+        int[] rows = [.. Enumerable.Range(0, pavl.Length).Where(k => double.IsFinite(pavl[k])).OrderBy(k => pavl[k])];
+        if (rows.Length == 0) throw new ModelingException(set.Name, "no drive level is stated.");
+        var cols = new Dictionary<string, double[]>(StringComparer.Ordinal) { ["pin"] = [.. rows.Select(k => pavl[k])] };
+        foreach (var (cube, q) in new[] { ("Pout_dBm", "pout"), ("Gt_dB", "gain"), ("PAE", "pae"), ("Efficiency", "de") })
+            if (lp.Contains(cube)) { var v = lp[cube].RealValues; cols[q] = [.. rows.Select(k => v[k])]; }
+        if (lp.Contains("BiasILoad")) { var v = lp["BiasILoad"].RealValues; cols["id"] = [.. rows.Select(k => v[k])]; }
+        if (lp.Contains("BiasISrc")) { var v = lp["BiasISrc"].RealValues; cols["ig"] = [.. rows.Select(k => v[k])]; }
+
+        static Complex Z(Complex g) => 50 * (1 + g) / (1 - g);
+        var loadHarm = c.LoadHarmonics;
+        if (loadHarm.Count == 0)
+        {
+            var h = new List<Complex>();
+            for (int n = 2; lp.Contains(LoadpullWaves.HarmonicGammaName(n)); n++)
+            {
+                var g = lp[LoadpullWaves.HarmonicGammaName(n)].ComplexValues[0];
+                if (double.IsNaN(g.Real)) break;
+                h.Add(Z(g));
+            }
+            loadHarm = h;
+        }
+        var filled = c with
+        {
+            FrequencyHz = c.FrequencyHz ?? fFile ?? throw new ModelingException(set.Name, "the frequency is not stated and the file does not carry one."),
+            Vgs = c.Vgs ?? OperatingPoint(lp, "BiasVSrc") ?? throw new ModelingException(set.Name, "the gate bias is not stated."),
+            Vds = c.Vds ?? OperatingPoint(lp, "BiasVLoad") ?? throw new ModelingException(set.Name, "the drain bias is not stated."),
+            SourceZ = c.SourceZ ?? (lp.Contains("ZSource") ? lp["ZSource"].ComplexValues[0] : 50),
+            LoadZ = c.LoadZ ?? (lp.Contains("ZLoad") ? lp["ZLoad"].ComplexValues[0] : Z(gamma[0])),
+            LoadHarmonics = loadHarm,
+        };
+        return (filled, cols["pin"], cols);
+    }
+
     private static ValidationItem PowerSweep(Context ctx, CmcDataSet set)
     {
         var c = set.Conditions.LargeSignal!;
-        var (pin, cols) = Sweep(ctx, set);
+        double[] pin; Dictionary<string, double[]> cols;
+        if (set.Import.Format == ImportSettings.Loadpull) (c, pin, cols) = SweepFromLoadpull(ctx, set);
+        else (pin, cols) = Sweep(ctx, set);
         ctx.Rc?.BeginStage($"Validating power sweep {set.Name}", 1);
         double t = set.Conditions.AmbientC ?? 25;
         string cnl = ValidationBench.PowerSweep(set.Name, ctx.Device(false, "gx", "dx"), t, c, pin, ctx.Settings.MaxHarmonic);
@@ -675,18 +765,7 @@ public static class ModelValidation
         var c = set.Conditions.LargeSignal!;
         string src = DataImport.ResolveSource(ctx.Dir, set.Sources[0]);
         if (!File.Exists(src)) throw new ModelingException(set.Sources[0], "the file does not exist.");
-        DataSet meas;
-        try
-        {
-            meas = Path.GetExtension(src).Equals(".lpcwave", StringComparison.OrdinalIgnoreCase)
-                ? LpcwaveReader.ReadLpcwave(src) : SplReader.ReadSpl(src);
-        }
-        catch (Exception ex) when (ex is FormatException or IOException or InvalidDataException)
-        { throw new ModelingException(set.Sources[0], $"it is not a readable loadpull file ({ex.Message})."); }
-        if (!meas.Contains("GammaLoad") || !meas.Contains("PavlDbm"))
-            throw new ModelingException(set.Sources[0], "it carries no load grid or drive levels.");
-        var (one, fFile) = OneFrequency(meas, c.FrequencyHz, set.Name);
-        meas = one;
+        var (meas, fFile) = ReadLoadpull(src, set, c.FrequencyHz);
 
         double f0 = c.FrequencyHz ?? fFile ?? throw new ModelingException(set.Name, "the frequency is not stated and the file does not carry one.");
         var zSource = c.SourceZ ?? (meas.Contains("ZSource") ? meas["ZSource"].ComplexValues[0] : 50);
@@ -705,6 +784,12 @@ public static class ModelValidation
         double gap = levels.Length > 1 ? levels.Zip(levels.Skip(1), (a, b) => b - a).Min() : 1;
         double step = Math.Max(Math.Max(gap, 0.1), (hi - lo) / 199);
         double comp = ctx.Settings.Compression;
+        string compRef = ctx.Settings.CompressionReference;
+        var compType = ctx.Settings.CompressionType;
+        // The engine stops each load at `comp` dB below its gain's running maximum. Measured from the small-signal gain the
+        // same depth is reached at a higher drive when the gain expands first, so the model is driven further, by the
+        // largest expansion a device of this kind shows, to reach the comparison point.
+        double stopAt = compType == CompressionType.Gss ? comp + 3 : comp;
 
         // The model load-pulled over the file's own loads, through the loadpull engine `circuitrf lp` runs, each load driven
         // up to the compression the comparison is made at: the grid is a .gam beside the generated testbench, which names it
@@ -712,7 +797,8 @@ public static class ModelValidation
         string gam = Path.Combine(ctx.Work, $"{Safe(set.Name)}.gam");
         File.WriteAllLines(gam, ["# impedance Z0=50 re_im", .. zl.Select(z => $"{ValidationBench.R(z.Real)} {ValidationBench.R(z.Imaginary)}")]);
         string cnl = ValidationBench.Loadpull(set.Name, ctx.Device(false, "g", "d"), set.Conditions.AmbientC ?? 25, f0, vgs, vds,
-                                              zSource, c.SourceHarmonics, c.LoadHarmonics, gam, lo, step, hi, ctx.Settings.MaxHarmonic, comp);
+                                              zSource, c.SourceHarmonics, c.LoadHarmonics, gam, lo, step, hi, ctx.Settings.MaxHarmonic, stopAt,
+                                              CompressionGain.Short(compRef));
         ctx.Rc?.BeginStage($"Validating loadpull {set.Name}", 1);
         var model = Evaluate(ctx, cnl, "loadpull", "StopCode");
         ctx.Rc?.TickStage();
@@ -720,8 +806,11 @@ public static class ModelValidation
         // At compression, not drive by drive (owner, review 4): each load where BOTH reached P-comp dB on their own
         // drive-up, every figure the measurement carries — a file without efficiency or AM/PM simply compares fewer.
         var measLp = Canonical(meas);
-        var measAt = AtCompression(measLp, nGrid, comp);
-        var modelAt = AtCompression(model, nGrid, comp);
+        if (!measLp.Contains(compRef))
+            throw new ModelingException(set.Name, $"the measurement carries no {CompressionGain.Short(compRef)}, so it cannot be compared " +
+                                                  $"at {CompressionGain.Short(compRef)} compression.");
+        var measAt = AtCompression(measLp, nGrid, comp, compRef, compType);
+        var modelAt = AtCompression(model, nGrid, comp, compRef, compType);
         int reached = Enumerable.Range(0, nGrid).Count(g => double.IsFinite(measAt["Pout_dBm"][g]));
         if (reached == 0)
             throw new ModelingException(set.Name, $"the measurement reaches {G(comp)} dB compression at no load, so nothing is compared at " +
@@ -762,7 +851,7 @@ public static class ModelValidation
         // The optimum loads, each side's own at compression, wherever the measurement has one.
         var measSurf = new LoadpullSurface(measLp);
         var modelSurf = new LoadpullSurface(model);
-        var cc = ConstraintSpec.AtCompression(comp);
+        var cc = ConstraintSpec.AtCompression(comp, compRef, compType);
         void Optimum(string name, string metric, string label, double tol, string unit, bool max)
         {
             var m = (max ? measSurf.MaxPower(0, cc, SurfacePlane.Gamma) : measSurf.MaxEfficiency(0, cc, SurfacePlane.Gamma))?.Interpolated;
@@ -807,7 +896,9 @@ public static class ModelValidation
                 $"Source: {Terminations(zSource, c.SourceHarmonics, ctx.Settings.MaxHarmonic)}",
                 $"Load: the file's {nGrid} load(s), |Γ| {G(gammaAbs.Min())} – {G(gammaAbs.Max())} (50 Ω); " +
                 Terminations(null, c.LoadHarmonics, ctx.Settings.MaxHarmonic),
-                $"Compared at {G(comp)} dB compression of Gt, at each of the {reached} load(s) the measurement reaches it at; " +
+                $"Compared at {G(comp)} dB compression of {CompressionGain.Short(compRef)}" +
+                (compType == CompressionType.Gss ? " from its small-signal value" : "") +
+                $", at each of the {reached} load(s) the measurement reaches it at; " +
                 "impedances as the VSWR between measured and model",
                 $"Drive: the model from {G(lo)} dBm in {G(step)} dB steps to compression, or to {G(hi)} dBm",
                 Ambient(ctx, [ambientC]),
@@ -841,14 +932,17 @@ public static class ModelValidation
     /// Each load's figures at <paramref name="compression"/> dB below its running Gt maximum along its own drive-up — the
     /// gain rule the loadpull engine stops on — interpolated between the two drives either side; NaN for a load that never
     /// compresses that far, or a figure the DataSet does not carry. Tickle points and points that did not converge are
-    /// left out.
+    /// left out. <paramref name="reference"/> names the gain (<c>Gt_dB</c> or <c>Gp_dB</c>) and <paramref name="type"/>
+    /// whether the depth is from its running maximum or from its value at the lowest drive (brief LPW).
     /// </summary>
-    internal static Dictionary<string, double[]> AtCompression(DataSet lp, int nGrid, double compression)
+    internal static Dictionary<string, double[]> AtCompression(DataSet lp, int nGrid, double compression,
+                                                               string reference = CompressionGain.Gt,
+                                                               CompressionType type = CompressionType.Gmax)
     {
         string[] keys = ["Pout_dBm", "Gt_dB", "PAE", "Efficiency", "AMPM_deg", "Zin_real", "Zin_imag"];
         var at = keys.ToDictionary(k => k, _ => Enumerable.Repeat(double.NaN, nGrid).ToArray(), StringComparer.Ordinal);
         var pavl = lp["PavlDbm"].RealValues;
-        var gt = lp["Gt_dB"].RealValues;
+        var gt = lp[CompressionGain.Normalize(reference)].RealValues;
         var conv = lp.Contains("Converged") ? lp["Converged"].RealValues : null;
         var tickle = lp.Contains("IsTickle") ? lp["IsTickle"].RealValues : null;
         int nP = pavl.Length / nGrid;
@@ -860,7 +954,7 @@ public static class ModelValidation
             double gmax = double.NegativeInfinity, before = double.NaN;
             for (int k = 0; k < row.Length; k++)
             {
-                gmax = Math.Max(gmax, gt[row[k]]);
+                gmax = type == CompressionType.Gss ? gt[row[0]] : Math.Max(gmax, gt[row[k]]);
                 double depth = gmax - gt[row[k]];
                 if (depth >= compression && k > 0)
                 {
