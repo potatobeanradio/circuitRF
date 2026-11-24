@@ -178,6 +178,10 @@
                 </ToolTip.Tip>
                 <uictl:PaletteGlyphControl Kind="Snp" PortCount="2" Monochrome="True" Width="16" Height="16"/>
             </Button>
+            <Button Name="SendMaskButton" Padding="6,3" Click="OnSendMask"
+                    ToolTip.Tip="Send mask to Optimizer — the passband and stopband limits as goals on |S21| in dB, on the schematic Place filter goes into, read through its S-parameter analysis">
+                <mi:MaterialIcon Kind="TargetVariant" Width="16" Height="16"/>
+            </Button>
             <!-- Lit = Place filter replaces the Filter this window was opened on. A Button bound to
                  Classes.ToolActive, as the Match Designer's panel lamps are: the view model owns the
                  state and the class follows it. -->

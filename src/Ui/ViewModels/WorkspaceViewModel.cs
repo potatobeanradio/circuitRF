@@ -477,6 +477,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     public WorkspaceViewModel()
     {
+        RegisterLive(this);
         KernelRefusalDialog = ShowKernelRefusalAsync;
         HznRefusalDialog = ShowHznRefusalAsync;
         _factory = new CircuitRfDockFactory();

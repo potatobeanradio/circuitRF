@@ -56,39 +56,56 @@ public static class FilterMask
     private static readonly double[] ExtraStopDb = [0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 40];
 
     /// <summary>
-    /// The frequencies a response is checked at: each band sampled densely (log-spaced), with its
-    /// edges, out to a decade beyond the outermost edge. Pass and stop sets are kept apart.
+    /// The mask's bands, in order of frequency: each passband and stopband with its two ends, Hz, out to
+    /// a decade beyond the outermost edge (three decades below a lowpass's passband edge, and above a
+    /// highpass's). A bandpass stop edge left at zero has no band. This is the extent every check,
+    /// and every optimizer goal made from the mask, covers.
+    /// </summary>
+    public static IReadOnlyList<(bool Pass, double LoHz, double HiHz)> Bands(FilterMaskSpec m)
+    {
+        var bands = new List<(bool, double, double)>();
+        void Band(bool pass, double lo, double hi)
+        {
+            if (!(lo > 0) || !(hi > lo) || !double.IsFinite(hi)) return;
+            bands.Add((pass, lo, hi));
+        }
+        switch (m.Form)
+        {
+            case NetworkForm.Lowpass:
+                Band(true, m.AHz / 1000, m.AHz);
+                Band(false, m.BHz, m.BHz * 10);
+                break;
+            case NetworkForm.Highpass:
+                Band(false, m.AHz / 10, m.AHz);
+                Band(true, m.BHz, m.BHz * 1000);
+                break;
+            case NetworkForm.Bandstop:
+                Band(true, m.AHz / 10, m.AHz);
+                Band(false, m.BHz, m.CHz);
+                Band(true, m.DHz, m.DHz * 10);
+                break;
+            default:
+                if (m.AHz > 0) Band(false, m.AHz / 10, m.AHz);
+                Band(true, m.BHz, m.CHz);
+                if (m.DHz > 0) Band(false, m.DHz, m.DHz * 10);
+                break;
+        }
+        return bands;
+    }
+
+    /// <summary>
+    /// The frequencies a response is checked at: each of <see cref="Bands"/> sampled densely
+    /// (log-spaced), with its edges. Pass and stop sets are kept apart.
     /// </summary>
     public static (double[] Pass, double[] Stop) CheckFrequencies(FilterMaskSpec m, int perBand = 400)
     {
         var pass = new List<double>();
         var stop = new List<double>();
-        void Band(List<double> into, double lo, double hi)
+        foreach (var (isPass, lo, hi) in Bands(m))
         {
-            if (!(lo > 0) || !(hi > lo) || !double.IsFinite(hi)) return;
+            var into = isPass ? pass : stop;
             double r = Math.Log(hi / lo);
             for (int i = 0; i <= perBand; i++) into.Add(lo * Math.Exp(r * i / perBand));
-        }
-        switch (m.Form)
-        {
-            case NetworkForm.Lowpass:
-                Band(pass, m.AHz / 1000, m.AHz);
-                Band(stop, m.BHz, m.BHz * 10);
-                break;
-            case NetworkForm.Highpass:
-                Band(stop, m.AHz / 10, m.AHz);
-                Band(pass, m.BHz, m.BHz * 1000);
-                break;
-            case NetworkForm.Bandstop:
-                Band(pass, m.AHz / 10, m.AHz);
-                Band(stop, m.BHz, m.CHz);
-                Band(pass, m.DHz, m.DHz * 10);
-                break;
-            default:
-                if (m.AHz > 0) Band(stop, m.AHz / 10, m.AHz);
-                Band(pass, m.BHz, m.CHz);
-                if (m.DHz > 0) Band(stop, m.DHz, m.DHz * 10);
-                break;
         }
         return (pass.ToArray(), stop.ToArray());
     }

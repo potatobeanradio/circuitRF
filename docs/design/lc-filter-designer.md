@@ -274,3 +274,13 @@ optional per-element impedance in place of the ideal L or C. The candidate is ju
 band first and 400 only when that passes. Pairings of series past ten are shortlisted by how close
 each series' nearest parts are to the ideal impedance at the passband centre
 (`FilterValueSearch.Shortlist`).
+
+## The mask as optimizer goals (2026-11-23)
+
+`FilterMaskGoals.For` (`src/Design/Filters`) turns a `FilterMaskSpec` into `OptimizationGoal`s on
+`dB(SPn.S(out, in))`: `ge −Ap` over each passband and `le −As` over each stopband, over
+`FilterMask.Bands` — the extents `CheckFrequencies` samples, now its single source — cut to the first
+S-parameter analysis's sweep. The ports are the sheet's lowest two numbers (1 and 2 when stated). The
+Designer's toolbar button hands the mask to `WorkspaceViewModel.SendFilterMaskGoals`, which finds the
+workspace window holding the placement schematic, replaces the goals an earlier send made
+(`mask_pass…`, `mask_stop…`) in one `SetTuningSetupCommand`, and shows the Optimizer on that bench.

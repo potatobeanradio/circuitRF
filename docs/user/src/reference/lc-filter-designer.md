@@ -211,6 +211,26 @@ To get the ladder as a netlist, use `circuitrf filter lc … -o filter.cnl`: two
 inductors and capacitors between them. That file is what `sparam` simulates, and it is the same
 netlist the plot was drawn from.
 
+## Tuning it in the circuit {#optimizer}
+
+**Send mask to Optimizer** (the target button on the toolbar) turns the mask into optimizer goals on
+the schematic Place filter goes into, so a placed ladder can be tuned back inside it as built, its
+board and parts included. It adds one goal per band on |S21| in dB, read through the schematic's
+S-parameter analysis from its lowest-numbered port to the next (1 to 2 on a ladder placed with
+ports):
+
+| Goal | Holds |
+|---|---|
+| `mask_pass` | at least −Ap over the passband |
+| `mask_stop` (`mask_stop_lower`, `mask_stop_upper` for a bandpass) | at most −As over each stopband |
+
+Each band is the one the window checks, out to a decade past the outer edges, cut to the analysis's
+sweep; a band the sweep does not reach gets no goal, and Messages names it. The Optimizer opens on
+that schematic with the goals added as one undo step, and sending again replaces the goals an earlier
+send made. It works whether or not the design meets the mask, since tuning is the way back in. A
+schematic with no S-parameter analysis is told to add one first. Make the ladder's parts tunable
+(as for any part) to give the optimizer something to move.
+
 ## The same thing from the command line {#headless}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>

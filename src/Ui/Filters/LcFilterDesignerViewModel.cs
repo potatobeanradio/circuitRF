@@ -417,6 +417,34 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     }
 
     /// <summary>
+    /// The mask the last design was checked against, or null when the specification states none (a
+    /// Bessel or Gaussian response, or edges that do not parse).
+    /// </summary>
+    public FilterMaskSpec? CurrentMask => _lastSpec?.Mask;
+
+    /// <summary>
+    /// Where Send mask to Optimizer hands the mask: the workspace holding the schematic. A seam, so a
+    /// test can stand in for the workspace window.
+    /// </summary>
+    public Func<global::CircuitRF.Ui.ViewModels.SchematicViewModel, FilterMaskSpec, string> MaskGoalSink { get; set; } =
+        global::CircuitRF.Ui.ViewModels.WorkspaceViewModel.SendFilterMaskGoals;
+
+    /// <summary>
+    /// Send mask to Optimizer: the mask as goals on the schematic the Designer places into, read off
+    /// its S-parameter analysis between its first two ports (<see cref="FilterMaskGoals"/>). Offered
+    /// whether or not the design meets the mask, since tuning the placed ladder back inside it is
+    /// exactly what the goals are for.
+    /// </summary>
+    /// <returns>What happened, for the status line.</returns>
+    public string SendMaskToOptimizer()
+    {
+        if (CurrentMask is not { } mask) return "There is no mask to send: design a response with a passband and a stopband first.";
+        if (PlacementSchematic is not { } schematic)
+            return "There is no schematic to send the mask to. Open the schematic the filter is placed on and try again.";
+        return MaskGoalSink(schematic, mask);
+    }
+
+    /// <summary>
     /// Place component: one Filter block carrying this specification and every Designer setting —
     /// written by <see cref="AppliedParameters"/>, the function Apply uses, so the two cannot disagree.
     /// </summary>

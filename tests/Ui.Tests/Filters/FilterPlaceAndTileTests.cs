@@ -279,7 +279,9 @@ public class FilterPlaceAndTileTests
         Assert.Contains("Kind=\"Ladder\"", toolbar);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(toolbar, "<uictl:PaletteGlyphControl Kind=\"Snp\""));
         Assert.DoesNotContain("SaveNetlistButton", xaml);
-        Assert.Equal(3, System.Text.RegularExpressions.Regex.Matches(toolbar, "<mi:MaterialIcon ").Count);
+        // Send mask to Optimizer is the Optimizer's own TargetVariant glyph.
+        Assert.Contains("Kind=\"TargetVariant\"", toolbar);
+        Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(toolbar, "<mi:MaterialIcon ").Count);
         // A prefix picker shares its box's value column; a third side-panel column squeezed the
         // shared label column out of line with every other card.
         Assert.DoesNotContain("SharedSizeGroup=\"FltUnit\"", xaml);

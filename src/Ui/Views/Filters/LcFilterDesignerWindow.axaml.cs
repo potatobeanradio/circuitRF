@@ -199,4 +199,10 @@ public partial class LcFilterDesignerWindow : Window, ICrfMenuWindow
         if (Vm is null) return;
         Vm.Status = Vm.PlaceComponent();
     }
+
+    private void OnSendMask(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is null) return;
+        Vm.Status = Vm.SendMaskToOptimizer();
+    }
 }
