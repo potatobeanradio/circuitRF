@@ -1079,40 +1079,14 @@ namespace CircuitRF.Render.DataDisplay
 
             var boxRect = new SKRect(0, 0, (float)controlSize.W, (float)controlSize.H);
 
-            // Filled background so the box is legible over traces.
-            // Skipped when transparentBackground is true (user preference).
-            if (!transparentBackground)
-            {
-                using var bgPaint = new SKPaint
-                {
-                    Color       = RenderTheme.WithOpacity(theme.BackgroundColor, 0.90),
-                    Style       = SKPaintStyle.Fill,
-                    IsAntialias = false
-                };
-                canvas.DrawRect(boxRect, bgPaint);
-            }
-
-            // Border
-            using var borderPaint = new SKPaint
-            {
-                Color       = theme.BorderColor,
-                StrokeWidth = 1.1f,
-                Style       = SKPaintStyle.Stroke,
-                IsAntialias = false
-            };
-            canvas.DrawRect(boxRect, borderPaint);
+            // The display's card (brief-ddl-5): the rounded panel display controls are drawn on, so a marker box and a
+            // control read as one family. Opaque, so nothing under it — a trace, a carded plot's border — shows through
+            // the text; border only when the user asked for transparent boxes.
+            float radius = Math.Max(2.5f, ts * 0.4f);
+            CardStyle.Draw(canvas, theme, boxRect, radius, fill: !transparentBackground);
 
             if (isSelected)
-            {
-                using var hlPaint = new SKPaint
-                {
-                    Color       = selectionColor,
-                    StrokeWidth = 3.1f,
-                    Style       = SKPaintStyle.Stroke,
-                    IsAntialias = false
-                };
-                canvas.DrawRect(boxRect, hlPaint);
-            }
+                CardStyle.DrawSelection(canvas, boxRect, radius, selectionColor, 3.1f);
 
             // Text lines — use per-glyph DejaVu fallback so ∠ (U+2220) renders correctly.
             for (int i = 0; i < lines.Count; i++)

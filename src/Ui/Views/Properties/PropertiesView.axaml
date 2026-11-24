@@ -67,6 +67,7 @@
                 <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="0">
                         <ddv:AnnotationInspectorView DataContext="{Binding AnnotationInspectorVm}"/>
+                        <ddv:ControlInspectorView DataContext="{Binding ControlInspectorVm}"/>
                         <symInsp:DatasetsListView DataContext="{Binding DatasetsVm}"/>
                         <Panel IsVisible="{Binding HasSelectedPlot}">
                             <ddv:PlotInspectorView DataContext="{Binding PlotInspectorVm}"/>

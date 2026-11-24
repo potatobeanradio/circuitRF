@@ -204,7 +204,7 @@ public sealed partial class AxisRoleRowViewModel : ViewModelBase
     [ObservableProperty] private string _danglingText = "";
 
     /// <summary>The picker's prompt: "Link to…" on a dangling link, which is the chip's <b>Link to ▾</b>.</summary>
-    public string LinkPlaceholder => IsDangling ? "Link to…" : "Choose a marker";
+    public string LinkPlaceholder => IsDangling ? "Link to…" : "Choose a marker or control";
 
     partial void OnIsDanglingChanged(bool value) => OnPropertyChanged(nameof(LinkPlaceholder));
 

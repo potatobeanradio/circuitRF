@@ -101,6 +101,9 @@ public partial class DataDisplayView : UserControl
             {
                 doc.ViewModel.Window.DeleteSelectedCommand.Execute(null);
                 e.Handled = true;
+                // What had the keyboard (a plot, a control) may be what was deleted; the document takes it back, or the
+                // Cmd/Ctrl+Z that follows a Delete would reach nothing.
+                FocusDeferred();
             }
             return;
         }

@@ -1,0 +1,153 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.ControlInspectorView"
+             x:DataType="vm:ControlInspectorViewModel"
+             IsVisible="{Binding IsActive, FallbackValue=False}">
+    <!-- One label column, as the annotation inspector above it; the panel's own header names the kind. Nothing here
+         appears or disappears beside a field when another option changes: the Range and Bound blocks are the same
+         three rows, and the one problem line (a refused entry, or what is wrong with the domain) is reserved under
+         both, so neither a domain switch nor a refusal moves anything below it. -->
+    <UserControl.Styles>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- Three short boxes on one line in the panel's usual width. -->
+        <Style Selector="CheckBox.show">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Padding" Value="4,0,0,0"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style Selector="Grid.row">
+            <Setter Property="MinHeight" Value="30"/>
+        </Style>
+    </UserControl.Styles>
+    <StackPanel Margin="8,4,8,8" Spacing="4">
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <TextBlock Classes="lbl" Text="Name"/>
+            <TextBox x:Name="NameBox" Tag="NameText" Grid.Column="1" Text="{Binding NameText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                     KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" AutomationProperties.Name="Control name"
+                     ToolTip.Tip="What a link names it by: @name"/>
+        </Grid>
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <TextBlock Classes="lbl" Text="Label"/>
+            <TextBox x:Name="LabelBox" Tag="LabelText" Grid.Column="1" Text="{Binding LabelText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                     KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" PlaceholderText="{Binding NameText}" AutomationProperties.Name="Control label"/>
+        </Grid>
+
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <TextBlock Classes="lbl" Text="Domain"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Classes="seg-btn" Classes.active="{Binding IsRange}" Content="Range"
+                        Command="{Binding SetRangeCommand}" ToolTip.Tip="Stops of its own: a start, a stop and a step"/>
+                <Button Classes="seg-btn" Classes.active="{Binding IsBound}" Content="Bound"
+                        Command="{Binding SetBoundCommand}" ToolTip.Tip="The samples of one axis of a data source"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Range -->
+        <StackPanel Spacing="4" IsVisible="{Binding IsRange}">
+            <Grid Classes="row" ColumnDefinitions="75,*,52,*">
+                <TextBlock Classes="lbl" Text="Start"/>
+                <TextBox x:Name="StartBox" Tag="StartText" Grid.Column="1" Text="{Binding StartText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                         KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" MinWidth="0" AutomationProperties.Name="Range start"/>
+                <TextBlock Grid.Column="2" Classes="lbl" Text="Stop" Margin="8,0,0,0"/>
+                <TextBox x:Name="StopBox" Tag="StopText" Grid.Column="3" Text="{Binding StopText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                         KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" MinWidth="0" AutomationProperties.Name="Range stop"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*,52,*">
+                <TextBlock Classes="lbl" Text="Step"/>
+                <TextBox x:Name="StepBox" Tag="StepText" Grid.Column="1" Text="{Binding StepText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                         IsEnabled="{Binding StepEnabled}" PlaceholderText="{Binding StepPlaceholder}"
+                         KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" MinWidth="0" AutomationProperties.Name="Range step"
+                         ToolTip.Tip="The spacing; 0 is continuous. Greyed while a point count sets it."/>
+                <TextBlock Grid.Column="2" Classes="lbl" Text="Points" Margin="8,0,0,0"/>
+                <TextBox x:Name="PointsBox" Tag="PointsText" Grid.Column="3" Text="{Binding PointsText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                         KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" MinWidth="0" PlaceholderText="auto" AutomationProperties.Name="Range points"
+                         ToolTip.Tip="A point count, which sets the step; blank uses the step"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*,Auto">
+                <TextBlock Classes="lbl" Text="Unit"/>
+                <ComboBox x:Name="UnitBox" Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="0"
+                          IsEditable="True" ItemsSource="{Binding UnitChoices}" Text="{Binding UnitText, Mode=OneWay}"
+                          LostFocus="OnUnitCommit" KeyDown="OnUnitKeyDown" SelectionChanged="OnUnitSelectionChanged"
+                          AutomationProperties.Name="Range unit"/>
+                <CheckBox Grid.Column="2" Content="Log" IsChecked="{Binding Log, Mode=TwoWay}" Margin="8,0,0,0"
+                          ToolTip.Tip="Log spacing, over a point count"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- Bound: pickers only, each listing what the one before it offers. -->
+        <StackPanel Spacing="4" IsVisible="{Binding IsBound}">
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Source"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="0"
+                          ItemsSource="{Binding SourceItems}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                          AutomationProperties.Name="Bound source"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Quantity"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="0"
+                          ItemsSource="{Binding QuantityItems}" SelectedItem="{Binding SelectedQuantity, Mode=TwoWay}"
+                          AutomationProperties.Name="Bound quantity"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Axis"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="0"
+                          ItemsSource="{Binding AxisItems}" SelectedItem="{Binding SelectedAxis, Mode=TwoWay}"
+                          AutomationProperties.Name="Bound axis"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- Reserved under both blocks: one line, the full sentence in its tooltip. -->
+        <TextBlock Text="{Binding Problem}" Foreground="{DynamicResource CrfWarningBrush}" FontSize="11"
+                   MinHeight="15" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Problem}"/>
+
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <TextBlock Classes="lbl" Text="Orientation"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Classes="seg-btn" Classes.active="{Binding IsHorizontal}" Content="Horizontal"
+                        Command="{Binding SetHorizontalCommand}"/>
+                <Button Classes="seg-btn" Classes.active="{Binding IsVertical}" Content="Vertical"
+                        Command="{Binding SetVerticalCommand}"/>
+            </StackPanel>
+        </Grid>
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <TextBlock Classes="lbl" Text="Size"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Classes="seg-btn" Classes.active="{Binding IsSmall}" Content="S" MinWidth="26"
+                        HorizontalContentAlignment="Center" Command="{Binding SetSmallCommand}" ToolTip.Tip="Small"/>
+                <Button Classes="seg-btn" Classes.active="{Binding IsMedium}" Content="M" MinWidth="26"
+                        HorizontalContentAlignment="Center" Command="{Binding SetMediumCommand}" ToolTip.Tip="Medium"/>
+                <Button Classes="seg-btn" Classes.active="{Binding IsLarge}" Content="L" MinWidth="26"
+                        HorizontalContentAlignment="Center" Command="{Binding SetLargeCommand}" ToolTip.Tip="Large"/>
+                <TextBlock Text="Custom" IsVisible="{Binding IsCustom}" VerticalAlignment="Center" Margin="6,0,0,0"
+                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
+            </StackPanel>
+        </Grid>
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <TextBlock Classes="lbl" Text="Show"/>
+            <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+                <CheckBox Classes="show" Content="Ticks" IsChecked="{Binding ShowTicks, Mode=TwoWay}"/>
+                <CheckBox Classes="show" Content="Ends" IsChecked="{Binding ShowEnds, Mode=TwoWay}"
+                          ToolTip.Tip="The first and last values at the ends of the track"/>
+                <CheckBox Classes="show" Content="Value" IsChecked="{Binding ShowValue, Mode=TwoWay}"
+                          ToolTip.Tip="The value it is on, as a readout"/>
+            </WrapPanel>
+        </Grid>
+        <Grid Classes="row" ColumnDefinitions="75,Auto,*">
+            <TextBlock Classes="lbl" Text="Accent"/>
+            <Button Grid.Column="1" Click="PickAccent" ToolTip.Tip="Choose the accent colour"
+                    AutomationProperties.Name="Accent colour" VerticalAlignment="Center">
+                <Border Width="20" Height="14" BorderThickness="1" Background="{Binding AccentSwatch}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            </Button>
+            <Button Grid.Column="2" Click="ResetAccent" Content="Default" Margin="4,0,0,0" VerticalAlignment="Center"
+                    IsEnabled="{Binding !IsDefaultAccent}"/>
+        </Grid>
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <CheckBox Grid.Column="1" Content="Lock Position" IsChecked="{Binding Locked, Mode=TwoWay}"
+                      ToolTip.Tip="Neither moved nor resized; it still operates"/>
+        </Grid>
+    </StackPanel>
+</UserControl>

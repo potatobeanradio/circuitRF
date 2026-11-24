@@ -103,6 +103,11 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private AnnotationInspectorViewModel? _annotationInspectorVm;
 
+    /// <summary>The active tab's control inspector (brief-ddl-5 R-ddl5-7); it shows itself only while one control is
+    /// selected.</summary>
+    [ObservableProperty]
+    private ControlInspectorViewModel? _controlInspectorVm;
+
     partial void OnPlotInspectorVmChanged(PlotInspectorViewModel? value) =>
         OnPropertyChanged(nameof(HasSelectedPlot));
 
@@ -269,6 +274,7 @@ public partial class PropertiesTool : Tool
         CellEditorVm          = null;
         PlotInspectorVm       = vm;
         AnnotationInspectorVm = window?.DataDisplay?.AnnotationInspector;
+        ControlInspectorVm    = window?.DataDisplay?.ControlInspector;
         FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
@@ -278,7 +284,30 @@ public partial class PropertiesTool : Tool
         WireInspectorVm.SetContext(null);
         ClearC3d();
         DatasetsVm.SetWindow(window);
-        HeaderText = window is not null ? "Plot" : "Properties";
+        HeaderText = DataDisplayHeader(window);
+    }
+
+    /// <summary>"Slider" while a display control is selected (brief-ddl-5), else "Plot" — the panel says what it is
+    /// editing, not what the document is.</summary>
+    private string DataDisplayHeader(DisplayWindowViewModel? window)
+        => window is null ? "Properties"
+         : ControlInspectorVm is { IsActive: true } c ? HeadingOf(c)
+         : "Plot";
+
+    /// <summary>What the selected control is, as the panel header names it.</summary>
+    private static string HeadingOf(ControlInspectorViewModel c)
+        => c.Target?.Model is SliderControl ? "Slider" : "Control";
+
+    partial void OnControlInspectorVmChanged(ControlInspectorViewModel? oldValue, ControlInspectorViewModel? newValue)
+    {
+        if (oldValue is not null) oldValue.PropertyChanged -= OnControlInspectorChanged;
+        if (newValue is not null) newValue.PropertyChanged += OnControlInspectorChanged;
+    }
+
+    private void OnControlInspectorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ControlInspectorViewModel.IsActive) && IsDataDisplayActive)
+            HeaderText = ControlInspectorVm is { IsActive: true } c ? HeadingOf(c) : "Plot";
     }
 
     /// <summary>

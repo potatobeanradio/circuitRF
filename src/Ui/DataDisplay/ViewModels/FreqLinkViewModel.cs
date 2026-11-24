@@ -61,7 +61,7 @@ public sealed partial class FreqLinkViewModel : ObservableObject
     [ObservableProperty] private bool _canUseNewSource;
 
     public string UseNewSourceText => $"Use the new {LinkName}";
-    public string LinkPlaceholder  => IsDangling ? "Link to…" : "Choose a marker";
+    public string LinkPlaceholder  => IsDangling ? "Link to…" : "Choose a marker or control";
 
     partial void OnIsDanglingChanged(bool value) => OnPropertyChanged(nameof(LinkPlaceholder));
 

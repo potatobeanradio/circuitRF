@@ -208,7 +208,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public bool HasAnySelection =>
         SelectedAnnotation is not null || AllAnnotationsSelected && _annotations.Count > 0
-        || _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected);
+        || _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected)
+        || _controls.Any(c => c.IsSelected);
 
     /// <summary>True when at least one marker InfoBox is selected.</summary>
     public bool HasSelectedInfoBoxes => _markerInfoBoxes.Any(m => m.IsSelected);
@@ -242,6 +243,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         foreach (var p in _plots) p.NotifyViewProperties();
         foreach (var m in Boxes)  m.NotifyViewProperties();
+        foreach (var c in _controls) c.NotifyViewProperties();
     }
 
     /// <summary>
@@ -346,6 +348,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 if (resolved.Contains(vm.Trace)) vm.OnLinksFollowed();
             c.UpdateLabelStrips();
             RebuildLegendBoxForContainer(c);
+            // A followed trace's label changes ("Pout @ m1 (gridPoint 17)"), and a marker box sized for the old one
+            // would cut the new one off: each is measured again, in place, so a focused box keeps its focus.
+            foreach (var box in _markerInfoBoxes.Where(b => b.Container == c)) box.RefreshAfterMove();
             c.RequestPlotRedraw();
         }
         return touched;
@@ -639,7 +644,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// <summary>The document a link on this tab is resolved in — the window's, or this tab alone without one.</summary>
     internal LinkDocument CurrentLinkDocument()
         => LinkDocumentProvider?.Invoke()
-           ?? new LinkDocument([new LinkDocument.Tab("Tab 1", [.. _plots.Select(c => c.PlotVM.Plot)])]);
+           ?? new LinkDocument([new LinkDocument.Tab("Tab 1", [.. _plots.Select(c => c.PlotVM.Plot)],
+                                                     [.. _controls.Select(c => c.Model)])]);
 
     // ---- Shared state propagated to all containers ------------------
 
@@ -655,6 +661,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             {
                 foreach (var p in _plots)           p.Theme = value;
                 foreach (var m in _markerInfoBoxes) m.RequestRedraw();
+                foreach (var c in _controls)        c.NotifyViewProperties();
             }
         }
     }
@@ -732,6 +739,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                                    .Select(p => (p, p.Left, p.Top)).ToList();
         _moveStartInfoBoxes = MovingBoxes()
                                    .Select(m => (m, m.LogicalLeft, m.LogicalTop)).ToList();
+        BeginControlMove();
     }
 
     /// <summary>
@@ -741,7 +749,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     internal void EndMoveOperation()
     {
-        if (_moveStartPlots is null && _moveStartInfoBoxes is null) return;
+        if (_moveStartPlots is null && _moveStartInfoBoxes is null && _moveStartControls is null) return;
 
         var startPlots    = _moveStartPlots    ?? new List<(PlotContainerViewModel, double, double)>();
         var startInfoBoxes = _moveStartInfoBoxes ?? new List<(CanvasBoxViewModel, double, double)>();
@@ -752,11 +760,13 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         var ibSnaps = startInfoBoxes.Select(s => new InfoBoxMoveSnapshot(
             s.Vm, s.Left, s.Top, s.Vm.LogicalLeft, s.Vm.LogicalTop)).ToList();
 
+        var controlSnaps = EndControlMove();
         bool anyMoved = plotSnaps.Any(s => s.StartLeft != s.EndLeft || s.StartTop != s.EndTop)
-                     || ibSnaps.Any(s => s.StartLogLeft != s.EndLogLeft || s.StartLogTop != s.EndLogTop);
+                     || ibSnaps.Any(s => s.StartLogLeft != s.EndLogLeft || s.StartLogTop != s.EndLogTop)
+                     || controlSnaps.Count > 0;
 
         if (anyMoved)
-            UndoRedo.Push(new MovePlotsCommand(plotSnaps, ibSnaps));
+            UndoRedo.Push(new MovePlotsCommand(plotSnaps, ibSnaps, controlSnaps));
 
         _moveStartPlots     = null;
         _moveStartInfoBoxes = null;
@@ -1378,6 +1388,10 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             SetAnnotationSelection(-1);
         }
 
+        // Selected display controls, locked or not: deleting is not a move (brief-ddl-5 R-ddl5-9).
+        if (_controls.Any(c => c.IsSelected))
+            cmds.Add(new RemoveControlsCommand(this, _controls.Where(c => c.IsSelected).ToList()));
+
         if (cmds.Count == 0) return;
 
         // Execute all removals as one reversible compound command.
@@ -1439,6 +1453,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         SetAnnotationSelection(-1);
         foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
         foreach (var m in Boxes)  m.IsSelected = false;
+        DeselectControls();
         if (vm is not null)
         {
             vm.IsSelected = true;
@@ -1463,6 +1478,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         SetAnnotationSelection(-1);
         foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
         foreach (var m in Boxes)  m.IsSelected = false;
+        DeselectControls();
         RefreshSelection();
     }
 
@@ -1473,6 +1489,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         SetAnnotationSelection(-1);
         foreach (var p in _plots) p.IsSelected = true;
         foreach (var m in Boxes)  m.IsSelected = true;
+        foreach (var c in _controls) c.IsSelected = true;
         RefreshSelection();
         AllAnnotationsSelected = _annotations.Count > 0;
         OnPropertyChanged(nameof(SelectedAnnotation));
@@ -1502,6 +1519,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         SetAnnotationSelection(-1);
         foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
         foreach (var m in Boxes)  m.IsSelected = false;
+        DeselectControls();
         if (vm is not null) vm.IsSelected = true;
         RefreshSelection();
     }
@@ -1564,16 +1582,25 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 m.IsSelected = newSelected;
         }
 
+        foreach (var c in _controls)
+        {
+            bool shouldSelect = screenRect.Intersects(new Rect(c.ViewLeft, c.ViewTop, c.ViewWidth, c.ViewHeight));
+            bool newSelected  = addToSelection ? (c.IsSelected || shouldSelect) : shouldSelect;
+            if (c.IsSelected != newSelected) c.IsSelected = newSelected;
+        }
+
         RefreshSelection();
     }
 
     internal void RefreshSelection()
     {
-        if (_plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(box => box.IsSelected))
+        if (_plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(box => box.IsSelected)
+            || _controls.Any(c => c.IsSelected))
             SetAnnotationSelection(-1);
         var selected = _plots.Where(p => p.IsSelected).ToList();
         SingleSelectedPlot = selected.Count == 1 ? selected[0] : null;
         OnPropertyChanged(nameof(HasAnySelection));
+        OnPropertyChanged(nameof(SelectedControl));
     }
 
     // ---- Coordinated move -------------------------------------------
@@ -1592,6 +1619,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         }
         foreach (var m in MovingBoxes())
             m.TranslateLogical(dx, dy);
+        MoveControls(dx, dy);
     }
 
     /// <summary>
@@ -1907,6 +1935,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             ViewOffsetX = _viewOffsetX,
             ViewOffsetY = _viewOffsetY,
             Annotations = _annotations.Count > 0 ? _annotations.ToList() : null,
+            Controls    = ControlsForSave(),
         };
         foreach (var c in _plots)
             tc.Plots.Add(BuildPlotContainerConfig(c, configDir, Library));
@@ -1928,10 +1957,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         if (tabConfig.Annotations is { } annotations)
             foreach (var annotation in annotations)
                 _annotations.Add(annotation);
+        LoadControls(tabConfig.Controls);
         RefreshSelection();
 
         foreach (var pc in tabConfig.Plots)
             await LoadPlotContainerConfigAsync(pc, configDir);
+        await LoadControlSourcesAsync();
 
         _zoomLevel   = tabConfig.ZoomLevel   > 0 ? tabConfig.ZoomLevel : 1.0;
         _viewOffsetX = tabConfig.ViewOffsetX;
@@ -2052,6 +2083,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             FreqUnit = plot.FreqUnits,
             CustomTitle     = plot.CustomTitle,
             CustomTitleOn   = plot.CustomTitleOn,
+            Card            = plot.Card,
             CustomXLabel    = plot.CustomXLabel,
             CustomXLabelOn  = plot.CustomXLabelOn,
             CustomYLabel    = plot.CustomYLabel,

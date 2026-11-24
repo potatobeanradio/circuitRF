@@ -24,8 +24,9 @@ public sealed partial class LinkGraph
     /// <see cref="Error"/> says why when there is more to say than "gone" (an unbound name that resolves to nothing).
     /// </summary>
     /// <param name="IsSelection">The slot follows the trial selection (brief-ddl-4 R-ddl4-5), which has no site.</param>
+    /// <param name="Control">The display control the slot follows (brief-ddl-5); it sits on no trace.</param>
     public sealed record Slot(int SliceIndex, string? Id, string Name, LinkDocument.MarkerSite? Site, string? Error,
-                              bool IsSelection = false);
+                              bool IsSelection = false, DisplayControl? Control = null);
 
     /// <summary>The <see cref="Slot.SliceIndex"/> of an <c>@name</c> operand of a multi-cube expression.</summary>
     public const int ExpressionOperandSlot = -1;
@@ -153,9 +154,7 @@ public sealed partial class LinkGraph
                         slots.Add(new Slot(ExpressionOperandSlot, LinkDocument.SelectionId, name, null, null, IsSelection: true));
                         continue;
                     }
-                    bool found = doc.TryFindByName(name, tab, out var site, out var err);
-                    slots.Add(new Slot(ExpressionOperandSlot, found ? site.Marker.Id.ToString("D") : null, name,
-                                       found ? site : null, found ? null : err));
+                    slots.Add(MarkerSlot(doc, tab, ExpressionOperandSlot, null, name));
                 }
             // An expression's frequency (R-ddl4-4).
             if (t.IsExpressionFreqLinked)
@@ -172,9 +171,12 @@ public sealed partial class LinkGraph
     {
         if (id is not null)
         {
+            if (doc.FindControl(id) is { } control) return new Slot(sliceIndex, id, control.Name, null, null, Control: control);
             var site = doc.FindMarker(id);
             return new Slot(sliceIndex, id, site?.Marker.Name ?? name, site, null);
         }
+        // A control by name (brief-ddl-5 R-ddl5-8) — controls and markers share one name space.
+        if (doc.FindControlByName(name, tab) is { } named) return new Slot(sliceIndex, named.Id, named.Name, null, null, Control: named);
         bool found = doc.TryFindByName(name, tab, out var byName, out var err);
         return new Slot(sliceIndex, found ? byName.Marker.Id.ToString("D") : null, name,
                         found ? byName : null, found ? null : err);

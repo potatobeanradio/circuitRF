@@ -171,6 +171,23 @@ internal sealed class CddSources : IPlotDataSources
             s._refToPath[sref] = found;
         }
 
+        // A bound slider's source (brief-ddl-5) is read when it is there and never refused when it is not: a slider
+        // whose source is gone keeps the range it last read, as it does in the window.
+        foreach (var tab in tabs)
+        foreach (var slider in (tab.Controls ?? []).OfType<SliderControl>())
+        {
+            if (slider.Domain != SliderDomain.Bound || slider.SourcePath is not { Length: > 0 } sref
+                || sref == DataSourceRef.Selected || s._refToPath.ContainsKey(sref)) continue;
+            if (LocateOnDisk(sref, cddDir, resultsDir) is not { } found) continue;
+            if (!s._byPath.TryGetValue(found, out var entry))
+            {
+                entry = new Loaded { Path = found, Reference = sref, FromDataFlag = false };
+                if (Read(entry) is not null) continue;
+                s._byPath[found] = entry;
+            }
+            s._refToPath[sref] = found;
+        }
+
         s._selected ??= s._refToPath.Count > 0 ? s._refToPath.Values.First() : null;
 
         // R-rnd4-4's last clause: a --data that binds nothing is a refusal, not a shrug. A caller

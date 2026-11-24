@@ -31,6 +31,11 @@ public sealed class TabConfig
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<CanvasAnnotation>? Annotations { get; set; }
+
+    /// <summary>The tab's display controls (brief-ddl-5); omitted when it has none, so a file from before reads and
+    /// writes as it was.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<DisplayControl>? Controls { get; set; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "Kind")]
@@ -122,6 +127,9 @@ public sealed class DataDisplayConfig
     public double ZoomLevel   { get; set; } = 1.0;
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<CanvasAnnotation>? Annotations { get; set; }
+    /// <summary>Display controls on the clipboard (brief-ddl-5), as a v1 fragment carries its plots.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<DisplayControl>? Controls { get; set; }
     public double ViewOffsetX { get; set; } = 0.0;
     public double ViewOffsetY { get; set; } = 0.0;
 }
@@ -144,6 +152,10 @@ public sealed class PlotContainerConfig
     // round-tripping an uncustomised plot produces no visible change.
     public string CustomTitle     { get; set; } = "";
     public bool   CustomTitleOn   { get; set; }
+
+    /// <summary>The plot sits on a rounded card (Plot.Card); omitted when off, so earlier files are unchanged.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool   Card            { get; set; }
     public string CustomXLabel    { get; set; } = "";
     public bool   CustomXLabelOn  { get; set; }
     public string CustomYLabel    { get; set; } = "";

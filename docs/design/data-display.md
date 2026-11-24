@@ -431,6 +431,44 @@ hands the selection in through `LinkDocument.SelectedTrials` and follows on ever
 `trial` axis only. A marker on a scatter over trials still works through DDL-1; this covers a histogram, whose bars
 are not samples.
 
+**Display controls (DDL-5).** A control is an input placed on the canvas, and a link source of its own kind
+(overview D6): `DisplayControl` in `src/Render/DataDisplay/Controls/`, persisted as `TabConfig.Controls` with a
+`Kind` discriminator so later kinds are additive. It has an id (links name it), a name unique across the
+document (`slider1`; markers and controls share one name space), a label, a frame in display logical units, a
+size preset (S, M, L, or Custom once the gripper has been used), an optional accent and `Locked`. The
+**slider** is either BOUND — a source, a cube and one of its axes, whose samples are its stops, so it supplies
+exactly the coordinate a marker on that axis would (rule 1 for the same run) — or a RANGE of its own (start,
+stop, step or a point count, a unit, linear or log), whose value it supplies as a scalar in base SI: a range in
+MHz supplies Hz, and a consumer on a GHz axis takes the nearest sample (rule 3). Its value is always one of its
+stops and is saved. A bound slider keeps the axis it last read (`BoundValues`, `BoundUnit`), so a source that
+has gone keeps its range and value, and the inspector says so.
+
+*Drawing.* `ControlRenderer` draws every control, for the canvas, Copy/Export and `render` alike, with no blur or
+image filter (D7). Everything scales with the frame's short side, capped by the long side so a frame made tall
+for its width does not grow text its track has no room for. The window's chrome — the selection outline, the
+gripper, and a lock glyph on a locked selected control — is drawn by `DrawChrome` and never exported.
+
+*Operate and arrange.* The face (track and thumb) operates: a press jumps the thumb there and a drag slides it;
+the frame (label strip and border) selects on a click and moves on a drag, with the rest of the selection;
+Alt-drag moves from anywhere; the bottom-right gripper resizes and makes the size Custom. A selected control
+steps with the arrow keys. Each gesture is one undo step recorded when it ends; links follow live while the
+value is dragged, and slow consumers on release. **Lock Position** (the control's context menu, the plot
+menu's checkbox style) keeps it from every move and resize — a group drag moves the others — while it still
+operates (a locked frame drag slides the value). Several selected: ticked only when all are locked, and
+choosing it then unlocks them all. It is saved, undoable and pasted with the control. A pasted control takes a
+new id and, when its name is taken, the next free name.
+
+*Editing a range in place.* A double-click on a range slider's start or end label opens a text box over it, in
+the application's inline-edit manner: the end in the slider's own unit with only the number selected, Return or
+leaving the box commits as one undo step, Escape reverts. A value in another unit of the same quantity is
+converted (`0.8 GHz` into a MHz slider); another quantity, or an end equal to the other end, is dropped. A bound
+slider's ends are its axis's samples and are not edited there. The editor sits on the label's own box
+(`ControlRenderer.EndLabels`, which the drawing uses too).
+
+*The card.* Controls, marker info boxes and — when **Card** is ticked in the plot inspector's Labels section, off
+by default and saved as `PlotContainerConfig.Card` — whole plots sit on one panel style (`CardStyle`): a shade off
+the background, a hairline border, rounded corners. One style in one place, so the three never drift apart.
+
 **HB drive.** In the shipped power amplifier example's HB sweep, the node voltages, currents and every measurement
 carry the same sweep axis (name, length, values, unitless), so a marker on Pout against Pin drives
 `V[@m1, node, :]` by index (rule 1). Recorded in `src/Render/DataDisplay/RESOLVED.md`.

@@ -142,7 +142,7 @@ public static class LinkResolve
             var axis  = cube?.Axes.FirstOrDefault(a => a.Name == entry.AxisName);
             // The pin keeps following the source it names, by id; its name is refreshed to the source's own, so a
             // renamed marker is written back as its new name (overview D1).
-            entry = entry with { Link = slot.Id ?? entry.Link, LinkName = slot.Site?.Marker.Name ?? entry.LinkName };
+            entry = entry with { Link = slot.Id ?? entry.Link, LinkName = slot.Site?.Marker.Name ?? slot.Control?.Name ?? entry.LinkName };
             if (inCycle) t.FrozenLinks.Add(entry.Link ?? entry.LinkName ?? "");
             if (axis is not null && !inCycle && slot.IsSelection)
             {
@@ -202,6 +202,8 @@ public static class LinkResolve
                 notes.AddRange(local);
                 r = new LinkMatchResult(i, LinkMatchKind.SameAxis, null);
             }
+            else if (doc.FindControlByName(name, tab) is { } control)
+                r = LinkMatch.Match(ControlLinkSource.Resolve(control, sources), axis, 0, data);
             else if (!doc.TryFindByName(name, tab, out var site, out var err))
                 r = new LinkMatchResult(0, LinkMatchKind.Frozen, err);
             else
@@ -253,7 +255,7 @@ public static class LinkResolve
         if (slots.FirstOrDefault(s => s.SliceIndex == LinkGraph.ContourFreqSlot) is { } slot)
         {
             var axis = new Axis(surface.LeadingAxisName, [.. surface.Frequencies], surface.LeadingAxisUnit);
-            cd.FreqLinkName = slot.Site?.Marker.Name ?? cd.FreqLinkName;
+            cd.FreqLinkName = slot.Site?.Marker.Name ?? slot.Control?.Name ?? cd.FreqLinkName;
             cd.FreqLink   ??= slot.Id;
             if (inCycle) t.FrozenLinks.Add(cd.FreqLink ?? cd.FreqLinkName ?? "");
             else
@@ -272,7 +274,7 @@ public static class LinkResolve
     private static bool ApplyExpressionFreq(Trace t, LinkGraph.Slot slot, bool inCycle, IPlotDataSources sources,
                                             List<string> notes)
     {
-        t.ExpressionFreqLinkName = slot.Site?.Marker.Name ?? t.ExpressionFreqLinkName;
+        t.ExpressionFreqLinkName = slot.Site?.Marker.Name ?? slot.Control?.Name ?? t.ExpressionFreqLinkName;
         t.ExpressionFreqLink   ??= slot.Id;
         if (inCycle) { t.FrozenLinks.Add(t.ExpressionFreqLink ?? t.ExpressionFreqLinkName ?? ""); return false; }
         if (t.ExpressionFreqPin?.Freq is not { } axis) return false;
@@ -286,7 +288,7 @@ public static class LinkResolve
     }
 
     private static LinkValue ValueOf(LinkGraph.Slot slot, IPlotDataSources sources)
-        => slot.Site is { } site
-            ? MarkerLinkSource.Resolve(site, sources)
-            : new LinkValue(slot.Id ?? "", slot.Name, [], Frozen: true);
+        => slot.Control is { } control ? ControlLinkSource.Resolve(control, sources)
+         : slot.Site is { } site ? MarkerLinkSource.Resolve(site, sources)
+         : new LinkValue(slot.Id ?? "", slot.Name, [], Frozen: true);
 }

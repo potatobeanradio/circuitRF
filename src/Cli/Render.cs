@@ -118,6 +118,8 @@ internal static class Render
         public bool         AllTabs;
         /// <summary><c>--marker m1=2.4GHz</c> / <c>m1=#17</c>, in the order given (brief-ddl-1 R-ddl1-10).</summary>
         public List<string> Markers = new();
+        /// <summary><c>--control slider1=2.4GHz</c> / <c>slider1=#5</c>, in the order given (brief-ddl-5 R-ddl5-10).</summary>
+        public List<string> Controls = new();
         /// <summary>Whether <c>--size</c> was TYPED. A `.cdd` defaults to the 792x612 pt page the
         /// application's own Export writes (R-rnd4-6) rather than this verb's 1600x1200, and without
         /// this flag those two defaults cannot be told apart.</summary>
@@ -382,6 +384,7 @@ internal static class Render
                     continue;
                 case "--all-tabs": o.AllTabs = true; continue;
                 case "--marker" when i + 1 < args.Length: o.Markers.Add(args[++i]); continue;
+                case "--control" when i + 1 < args.Length: o.Controls.Add(args[++i]); continue;
 
                 // ── a 3D EM setup only (brief-em3d-5) ─────────────────────────
                 case "--section" when i + 1 < args.Length: o.Sections.Add(args[++i]); continue;
@@ -627,7 +630,7 @@ internal static class Render
                 o.SizeStated ? o.Width  : null,
                 o.SizeStated ? o.Height : null,
                 o.Scale, o.BackgroundStated ? o.Transparent : null, o.Variant == ColorVariant.Dark,
-                o.OutlineText) { Markers = o.Markers });
+                o.OutlineText) { Markers = o.Markers, Controls = o.Controls });
         }
 
         var (target, refusal) = ResolveTarget(o);
@@ -664,6 +667,7 @@ internal static class Render
             : o.PlotIndex is not null  ? "--plot"
             : o.AllTabs                ? "--all-tabs"
             : o.Markers.Count > 0      ? "--marker"
+            : o.Controls.Count > 0     ? "--control"
             : null);
 
         return new RenderEm3d.Request(

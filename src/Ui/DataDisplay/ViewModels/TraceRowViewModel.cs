@@ -3464,6 +3464,7 @@ public partial class TraceRowViewModel : ViewModelBase
     {
         if (name is null || _parent.LinkDocumentProvider?.Invoke() is not { } doc) return null;
         if (LinkDocument.IsSelection(name)) return LinkDocument.SelectionId;
+        if (doc.FindControlByName(name, doc.TabOf(_trace)) is { } control) return control.Id;
         return doc.TryFindByName(name, doc.TabOf(_trace), out var site, out _) ? site.Marker.Id.ToString("D") : null;
     }
 
@@ -3488,6 +3489,8 @@ public partial class TraceRowViewModel : ViewModelBase
             if (LinkDocument.IsSelection(id))
                 text = $"@{LinkDocument.SelectionId} → {entry.Index}"
                      + (CubeAxis(r.AxisName) is { } ta && entry.Index < ta.Length ? $" (trial {ta.Values[entry.Index]:0.##})" : "");
+            else if (doc.FindControl(id) is { } control)
+                text = $"@{control.Name} → {entry.Index}" + Reading(ControlLinkSource.Resolve(control, sources), r.AxisName);
             else if (doc.FindMarker(id) is { } site)
                 // A drive-up synthesised at a free load has no index to report: it is not any measured load (brief-ddl-3).
                 text = $"@{site.Marker.Name} → {(_trace.IsSynthesized && r.AxisName == "gridPoint" ? "interpolated" : entry.Index.ToString())}"

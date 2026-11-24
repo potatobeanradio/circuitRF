@@ -2692,3 +2692,19 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   landed on the plot-type row's Help button. As a flyout the rows keep at least the Traces section's width and never
   shrink while it is open (`PlotInspectorView.UpdateCloseRoom`/`OnRowsSizeChanged`); a new view is made per open, so the
   latch resets. Checked with UiSnapshot on all three sections.
+
+## Display controls on the canvas (brief-ddl-5, 2026-11-24)
+
+- **Take the gesture before letting go of the pointer.** `ControlContainerView` captures on press and releases on
+  release; releasing capture raises `PointerCaptureLost` at once, and that handler ends a cut-short gesture and resets it
+  to none. Releasing first made a plain click on the frame select nothing (a drag still worked, because CaptureLost ends
+  a drag too). The release handler now copies the gesture, clears it, then lets go.
+- **A control's Panel cannot draw.** Avalonia 12 seals `Panel.Render`, so a view that both draws itself and hosts a child
+  (the in-place end editor) draws through a child `Surface` that fills it, with a `Canvas` over it for the editor.
+  Events from the editor bubble to the control, so the pointer and key handlers ignore anything that started in it — or
+  typing an arrow into the box would step the slider.
+- **A followed trace's marker box was sized for its old label.** A link makes a trace's label longer
+  ("Pout @ slider1 (gridPoint 4)"), and the box measured when the display opened cut the new text off. A follow now
+  re-measures the boxes of every plot it touched, in place (`MarkerInfoBoxViewModel.RefreshAfterMove`).
+- **Controls stack by selection, as plots do**: each has a `ZIndex` the selection bumps, so a selected control overlapping
+  another comes to the front. Checked in UiSnapshot with scripted thumb, frame, gripper and lock gestures.

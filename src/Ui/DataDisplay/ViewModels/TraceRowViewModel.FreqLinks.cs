@@ -91,7 +91,8 @@ public partial class TraceRowViewModel
         bool dangling = false, canNew = false;
         if (vm.LinkId is { } id)
         {
-            if (doc.FindMarker(id) is { } site) text = $"@{site.Marker.Name} → {at}";
+            if (doc.FindControl(id) is { } control) text = $"@{control.Name} → {at}";
+            else if (doc.FindMarker(id) is { } site) text = $"@{site.Marker.Name} → {at}";
             else
             {
                 dangling = true;

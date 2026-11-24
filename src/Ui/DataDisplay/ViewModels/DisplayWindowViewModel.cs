@@ -525,6 +525,8 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         tab.DataDisplay.LinkFollowRequested         = RequestLinkFollow;
         tab.DataDisplay.LinkFollowNow               = editing => FollowLinks(released: true, editing);
         tab.DataDisplay.DocumentDisplaysProvider    = () => [.. Tabs.Select(t => t.DataDisplay)];
+        // Control names are the document's, as marker names are (brief-ddl-5 R-ddl5-1).
+        tab.DataDisplay.DocumentControlsProvider    = () => Tabs.SelectMany(t => t.DataDisplay.Controls).Select(c => c.Model);
         return tab;
     }
 
@@ -623,7 +625,8 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
     /// <summary>Every tab and plot of this display, as the links see them.</summary>
     internal LinkDocument BuildLinkDocument()
-        => new([.. Tabs.Select(t => new LinkDocument.Tab(t.Name, [.. t.DataDisplay.Plots.Select(c => c.PlotVM.Plot)]))])
+        => new([.. Tabs.Select(t => new LinkDocument.Tab(t.Name, [.. t.DataDisplay.Plots.Select(c => c.PlotVM.Plot)],
+                                                        [.. t.DataDisplay.Controls.Select(c => c.Model)]))])
         {
             // A pin following `@selected` reads the shared selection (brief-ddl-4 R-ddl4-5).
             SelectedTrials = TrialSelection.Shared.For,
@@ -733,6 +736,9 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     [RelayCommand] private void AddSmithPlot() => DataDisplay?.AddPlot(PlotType.Smith);
     [RelayCommand] private void AddPolarPlot() => DataDisplay?.AddPlot(PlotType.Polar);
     [RelayCommand] private void AddTablePlot() => DataDisplay?.AddPlot(PlotType.Table);
+
+    /// <summary><b>Controls ▸ Slider</b> (brief-ddl-5 R-ddl5-7).</summary>
+    [RelayCommand] private void AddSlider() => DataDisplay?.AddSlider();
 
     /// <summary>The statistics table of the selected Monte Carlo result (brief-yield-8 R-ya8-5). Disabled, rather than
     /// pressed to no effect, while the selected source carries no statistics — its tooltip says what it needs.</summary>
@@ -975,10 +981,14 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             ? display.AllAnnotationsSelected ? display.Annotations.ToArray()
                 : display.SelectedAnnotation is { } selected ? new[] { selected } : Array.Empty<CanvasAnnotation>()
             : display.Annotations.ToArray();
-        if (containers.Count == 0 && annotations.Length == 0) return;
+        // Display controls go with the plots (brief-ddl-5 R-ddl5-4), lock state and all.
+        var controls = (selectedOnly ? display.Controls.Where(c => c.IsSelected) : display.Controls)
+                       .Select(c => c.Model.Clone()).ToArray();
+        if (containers.Count == 0 && annotations.Length == 0 && controls.Length == 0) return;
 
         if (_annotationCopyAction is { } copy)
-            await copy(containers, CurrentTheme, new AnnotationPage(annotations, display.ZoomLevel, display.ViewOffsetX, display.ViewOffsetY));
+            await copy(containers, CurrentTheme, new AnnotationPage(annotations, display.ZoomLevel, display.ViewOffsetX, display.ViewOffsetY,
+                                                                    controls));
         else if (_richCopyAction is { } legacy) await legacy(containers, CurrentTheme);
     }
 
@@ -1008,7 +1018,35 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
                 command.Execute();
                 commands.Add(command);
             }
+        // Pasted controls are new controls: a fresh id each, a name of their own where theirs is taken, and the lock
+        // they were copied with (brief-ddl-5 R-ddl5-9).
+        var pastedControls = new List<ControlContainerViewModel>();
+        if (config.Controls is { } controls)
+        {
+            var taken = Tabs.SelectMany(t => t.DataDisplay.Controls).Select(c => c.Model).ToList();
+            foreach (var model in controls)
+            {
+                var copy = model.Clone();
+                copy.Id = Guid.NewGuid().ToString("D");
+                if (taken.Any(c => c.Name == copy.Name)) copy.Name = DisplayControl.NextName(copy.KindName, taken);
+                copy.Left += 20; copy.Top += 20;
+                taken.Add(copy);
+                var vm = new ControlContainerViewModel(copy, display);
+                var command = new AddControlCommand(display, display.Controls.Count, vm);
+                command.Execute();
+                commands.Add(command);
+                pastedControls.Add(vm);
+            }
+        }
         if (commands.Count > 0) display.UndoRedo.Push(new CompositeCommand(commands));
+        // What was pasted is what is selected, on top — as a pasted plot is — so the next drag moves the copy, not the
+        // original under it.
+        if (pastedControls.Count > 0)
+        {
+            if (added.Count == 0) display.SelectOnly(pastedControls[0]);
+            else                  display.ToggleSelect(pastedControls[0]);
+            foreach (var vm in pastedControls.Skip(1)) display.ToggleSelect(vm);
+        }
     }
     private bool CanPaste() => _getClipboardTextAction is not null;
 
@@ -1035,7 +1073,8 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         try
         {
             config = JsonSerializer.Deserialize<DataDisplayConfig>(text, DataDisplayViewModel.JsonOpts);
-            return config is not null && (config.Plots.Count > 0 || config.Annotations is { Count: > 0 });
+            return config is not null && (config.Plots.Count > 0 || config.Annotations is { Count: > 0 }
+                                          || config.Controls is { Count: > 0 });
         }
         catch { return false; }
     }

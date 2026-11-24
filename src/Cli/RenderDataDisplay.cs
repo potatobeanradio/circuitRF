@@ -49,7 +49,10 @@ internal static class RenderDataDisplay
         /// <summary>Which verb asked, for the warning a family left as text produces.</summary>
         string       Verb = "render",
         /// <summary><c>--marker</c>: markers moved for this render only, before links resolve (brief-ddl-1 R-ddl1-10).</summary>
-        IReadOnlyList<string>? Markers = null);
+        IReadOnlyList<string>? Markers = null,
+        /// <summary><c>--control</c>: display controls set for this render only, before links resolve (brief-ddl-5
+        /// R-ddl5-10).</summary>
+        IReadOnlyList<string>? Controls = null);
 
     public static int Draw(string path, Request req)
     {
@@ -99,14 +102,15 @@ internal static class RenderDataDisplay
         // format is the contract, and a caller that has a `.cdd` did not choose its version.
         var tabs = config.Tabs.Count > 0
             ? config.Tabs
-            : config.Plots.Count > 0 || config.Annotations is { Count: > 0 }
+            : config.Plots.Count > 0 || config.Annotations is { Count: > 0 } || config.Controls is { Count: > 0 }
                 ? [new TabConfig { Name = "Tab 1", Plots = config.Plots,
-                                   Annotations = config.Annotations,
+                                   Annotations = config.Annotations, Controls = config.Controls,
                                    ZoomLevel = config.ZoomLevel,
                                    ViewOffsetX = config.ViewOffsetX, ViewOffsetY = config.ViewOffsetY }]
                 : (IReadOnlyList<TabConfig>)Array.Empty<TabConfig>();
 
-        if (tabs.Count == 0 || tabs.All(t => t.Plots.Count == 0 && t.Annotations is not { Count: > 0 }))
+        if (tabs.Count == 0 || tabs.All(t => t.Plots.Count == 0 && t.Annotations is not { Count: > 0 }
+                                             && t.Controls is not { Count: > 0 }))
             return JsonRun.Fail(CliDiagnostics.RenderCddEmpty(path));
 
         // ── R-rnd4-5: which tabs, and whether the format can hold them ────────
@@ -146,6 +150,14 @@ internal static class RenderDataDisplay
             moves.Add(mv);
         }
 
+        // A malformed --control is refused before anything is read, as a malformed --marker is.
+        var controlSets = new List<MarkerMove>();
+        foreach (string raw in req.Controls ?? [])
+        {
+            if (MarkerMove.Parse(raw) is not { } cv) return JsonRun.Fail(CliDiagnostics.RenderControlMalformed(raw));
+            controlSets.Add(cv);
+        }
+
         // A link crosses plots and tabs, so a linked display loads every tab that holds a marker or a link, not only
         // the pages drawn — the source of a pin on page 1 may be a marker on tab 3. A display with no link loads
         // exactly what it always did.
@@ -158,6 +170,24 @@ internal static class RenderDataDisplay
 
         var (sources, refusal) = CddSources.Bind(path, config, tabs, loadTabs, req.Data);
         if (refusal is { } sr) return sr;
+
+        // A bound slider reads its stops from its source; then a --control sets a value for this render only
+        // (brief-ddl-5 R-ddl5-10), on the document in memory.
+        foreach (var slider in tabs.SelectMany(t => t.Controls ?? []).OfType<SliderControl>())
+            if (slider.Domain == SliderDomain.Bound) ControlLinkSource.Refresh(slider, sources);
+        foreach (var cv in controlSets)
+        {
+            var named = tabs.SelectMany(t => t.Controls ?? []).Where(c => c.Name == cv.Name).ToList();
+            if (named.Count != 1)
+            {
+                var all = tabs.SelectMany(t => t.Controls ?? []).Select(c => c.Name).OrderBy(n => n, StringComparer.Ordinal).ToList();
+                return JsonRun.Fail(CliDiagnostics.RenderControlUnresolved(cv.Raw, named.Count > 1
+                    ? $"'{cv.Name}' names {named.Count} controls; rename one."
+                    : all.Count == 0 ? "this display has no controls." : $"no control '{cv.Name}'. Controls: {string.Join(", ", all)}."));
+            }
+            if (ControlLinkSource.SetFromText(named[0], cv.Index, cv.Value, cv.Unit) is { } why)
+                return JsonRun.Fail(CliDiagnostics.RenderControlUnresolved(cv.Raw, why));
+        }
 
         RunHost.Cancellation.ThrowIfCancellationRequested();
         RunHost.Control?.BeginStage("resolve");
@@ -187,7 +217,7 @@ internal static class RenderDataDisplay
                     loaded[(ti, pi)] = plot;
                     tabPlots.Add(plot);
                 }
-            docTabs.Add(new LinkDocument.Tab(tabs[ti].Name, tabPlots));
+            docTabs.Add(new LinkDocument.Tab(tabs[ti].Name, tabPlots, tabs[ti].Controls));
         }
 
         if (linking)
@@ -225,7 +255,7 @@ internal static class RenderDataDisplay
             }
             placedPages.Add(placed);
             annotationPages.Add(new AnnotationPage(req.PlotIndex is null
-                ? tabs[ti].Annotations ?? [] : []));
+                ? tabs[ti].Annotations ?? [] : [], Controls: req.PlotIndex is null ? tabs[ti].Controls : null));
         }
 
         return Emit(path, reportKind ?? DocumentKinds.Name(DocumentKind.DataDisplay), req, placedPages,
@@ -362,7 +392,7 @@ internal static class RenderDataDisplay
                 for (int index = 0; index < pages.Count; index++)
                     if (ReferenceEquals(pages[index], plots)) { annotations = annotationPages[index]; break; }
             return canvas => PlotComposer.Render(canvas, plots, theme, settings, page, annotations?.Items,
-                annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0);
+                annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0, annotations?.Controls);
         }
 
         return req.Format switch

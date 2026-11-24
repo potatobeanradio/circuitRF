@@ -20,6 +20,7 @@ public partial class AxesLabelsViewModel : ViewModelBase
     [ObservableProperty] private string _yLabel   = "";
     [ObservableProperty] private bool   _y2LabelOn;
     [ObservableProperty] private string _y2Label  = "";
+    [ObservableProperty] private bool   _card;
 
     public AxesLabelsViewModel(Plot plot, Action closeAction)
     {
@@ -34,6 +35,7 @@ public partial class AxesLabelsViewModel : ViewModelBase
         _yLabel    = plot.CustomYLabel;
         _y2LabelOn = plot.CustomY2LabelOn;
         _y2Label   = plot.CustomY2Label;
+        _card      = plot.Card;
     }
 
     partial void OnTitleOnChanged(bool value)    => Sync();
@@ -44,6 +46,7 @@ public partial class AxesLabelsViewModel : ViewModelBase
     partial void OnYLabelChanged(string value)   => Sync();
     partial void OnY2LabelOnChanged(bool value)  => Sync();
     partial void OnY2LabelChanged(string value)  => Sync();
+    partial void OnCardChanged(bool value)        => Sync();
 
     private void Sync()
     {
@@ -55,6 +58,7 @@ public partial class AxesLabelsViewModel : ViewModelBase
         _plot.CustomYLabel    = YLabel;
         _plot.CustomY2LabelOn = Y2LabelOn;
         _plot.CustomY2Label   = Y2Label;
+        _plot.Card            = Card;
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
     }
 

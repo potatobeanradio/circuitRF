@@ -25,6 +25,7 @@ dotnet run --project tools/UiSnapshot --no-build -- <file.cdd> -o out.png [--vie
 | `--view canvas` | The active tab's plot canvas (`PlotCanvasView`): plots, legends, label strips, marker info boxes. The default. |
 | `--view inspector` | Plot *n*'s Plot Inspector (`PlotInspectorView`): the trace cards. |
 | `--view display` | The whole Data Display document view (`DataDisplayView`): toolbar, canvas and tab strip, and its **key bindings** — the view to use for `--key`. |
+| `--view control-inspector` | The Properties panel (`PropertiesView`) on the active tab's first display control, selected: the control inspector. After opening and after every edit it prints the control's name, size, frame, domain, stops, value and problem line, and for a bound slider what its Source, Quantity and Axis pickers list. Type into a field with `--type NameBox=text --key Enter` (`LabelBox`, `StartBox`, `StopBox`, `StepBox`, `PointsBox`). |
 | `--plot n` | Which plot, 1-based, for `--view inspector`. Default 1. |
 | `--size WxH` | The headless window, in DIPs. Default 1000x700. The inspector scrolls inside its own region, so a taller window does not show more cards. |
 | `--results <dir>` | Where a relative trace source resolves — a workspace's `results/` folder in the application. Default: the `.cdd`'s own folder, which is where `circuitrf plot --write-cdd` puts a document beside its result. |
@@ -289,7 +290,7 @@ capture. Coordinates are window DIPs — take them from a first capture.
 | Step | Does |
 |---|---|
 | `--click x,y` | Left press and release. |
-| `--drag x0,y0:x1,y1` | Left press, ten moves (so it crosses a click threshold), release. |
+| `--drag x0,y0:x1,y1` | Left press, ten moves (so it crosses a click threshold), release. A leading modifier holds it throughout: `--drag Alt+x0,y0:x1,y1`. |
 | `--drag-hold x0,y0:x1,y1` | The same, not released, so a capture shows the gesture's live chrome. |
 | `--key K` | Press and release a key: `Back`, `Delete`, `Escape`, or with modifiers, `Meta+Z`, `Ctrl+Shift+A`. |
 | `--shot out.png` | Capture an intermediate frame. |

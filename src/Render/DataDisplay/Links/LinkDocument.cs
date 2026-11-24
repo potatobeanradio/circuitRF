@@ -15,8 +15,9 @@ namespace CircuitRF.Render.DataDisplay;
 
 public sealed class LinkDocument
 {
-    /// <summary>One tab: its name and its plots, in canvas order.</summary>
-    public sealed record Tab(string Name, IReadOnlyList<Plot> Plots);
+    /// <summary>One tab: its name, its plots in canvas order, and its display controls (brief-ddl-5), which are link
+    /// sources of their own.</summary>
+    public sealed record Tab(string Name, IReadOnlyList<Plot> Plots, IReadOnlyList<DisplayControl>? Controls = null);
 
     /// <summary>Where one marker lives.</summary>
     public readonly record struct MarkerSite(int TabIndex, Plot Plot, Trace Trace, Marker Marker);
@@ -62,6 +63,32 @@ public sealed class LinkDocument
                     yield return (ti, p, t);
     }
 
+    /// <summary>Every display control, with its tab.</summary>
+    public IEnumerable<(int TabIndex, DisplayControl Control)> Controls()
+    {
+        for (int ti = 0; ti < Tabs.Count; ti++)
+            foreach (var c in Tabs[ti].Controls ?? [])
+                yield return (ti, c);
+    }
+
+    /// <summary>The control with this id, or null (brief-ddl-5).</summary>
+    public DisplayControl? FindControl(string id)
+    {
+        foreach (var (_, c) in Controls())
+            if (string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase)) return c;
+        return null;
+    }
+
+    /// <summary>The control named <paramref name="name"/>: the consumer's tab first, then the document; null when
+    /// there is none or the name is ambiguous across other tabs.</summary>
+    public DisplayControl? FindControlByName(string name, int consumerTab)
+    {
+        var all = Controls().Where(x => string.Equals(x.Control.Name, name, StringComparison.Ordinal)).ToList();
+        var own = all.Where(x => x.TabIndex == consumerTab).ToList();
+        if (own.Count == 1) return own[0].Control;
+        return own.Count == 0 && all.Count == 1 ? all[0].Control : null;
+    }
+
     /// <summary>The marker with this id, or null when it is not in the document (R-ddl1-7: the link freezes).</summary>
     public MarkerSite? FindMarker(string id)
     {
@@ -95,7 +122,8 @@ public sealed class LinkDocument
         var all = Markers().Where(s => string.Equals(s.Marker.Name, name, StringComparison.Ordinal)).ToList();
         if (all.Count == 0)
         {
-            var names = Markers().Select(s => s.Marker.Name).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal).ToList();
+            var names = Markers().Select(s => s.Marker.Name).Concat(Controls().Select(c => c.Control.Name))
+                                 .Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal).ToList();
             error = names.Count == 0
                 ? $"No marker '{name}': this display has no markers."
                 : $"No marker '{name}'. Markers: {string.Join(", ", names)}.";

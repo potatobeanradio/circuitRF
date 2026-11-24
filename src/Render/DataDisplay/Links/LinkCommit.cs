@@ -41,6 +41,12 @@ public static class LinkCommit
                     bound[i] = e with { Link = LinkDocument.SelectionId };
                     continue;
                 }
+                // A display control by name (brief-ddl-5 R-ddl5-8).
+                if (doc.FindControlByName(e.LinkName!, tab) is { } control)
+                {
+                    bound[i] = e with { Link = control.Id, LinkName = control.Name };
+                    continue;
+                }
                 if (!doc.TryFindByName(e.LinkName!, tab, out var site, out error)) return false;
                 bound[i] = e with { Link = site.Marker.Id.ToString("D"), LinkName = site.Marker.Name };
             }
@@ -49,7 +55,7 @@ public static class LinkCommit
         else if (consumer.Expression is { } expr && expr.Contains('@'))
         {
             foreach (var name in LinkGraph.OperandNames(expr))
-                if (!LinkDocument.IsSelection(name) && !doc.TryFindByName(name, tab, out _, out error)) return false;
+                if (!LinkDocument.IsSelection(name) && doc.FindControlByName(name, tab) is null && !doc.TryFindByName(name, tab, out _, out error)) return false;
         }
         else return true;
 

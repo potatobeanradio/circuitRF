@@ -783,7 +783,7 @@ if (netsPanel is not null && output is not null)
     return ShowSeededNetsPanel(netsPanel, output, sizeGiven ? width : 320, sizeGiven ? height : 460);
 }
 bool vendorMode = placeInstance3d is not null || projectTree is not null || palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || exportToLibrary is not null || importSchematic is not null || gdsfactory is not null || csym is not null || repointQuestion is not null;
-if ((cdd is null && c3dSetups is null && hznOpen is null && c3dSetupPanel is null && signal.Count == 0 && chainFile is null && snp is null && filterForm is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display" or "display-properties"))
+if ((cdd is null && c3dSetups is null && hznOpen is null && c3dSetupPanel is null && signal.Count == 0 && chainFile is null && snp is null && filterForm is null && !standalone && tuning is null && optimizer is null && yieldCsch is null && clay is null && cem is null && ctech is null && cmc is null && image is null && exportData is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display" or "display-properties" or "control-inspector"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display|display-properties] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -1574,6 +1574,36 @@ else if (view is "display" or "display-properties")
         content = new DockPanel { Children = { panel, content } };
     }
 }
+else if (view == "control-inspector")
+{
+    // The Properties panel's control inspector on the tab's first control, selected as a click on it selects it.
+    if (tab.DataDisplay.Controls.Count == 0)
+    {
+        Console.Error.WriteLine("--view control-inspector: the active tab has no control");
+        return 2;
+    }
+    tab.DataDisplay.SelectOnly(tab.DataDisplay.Controls[0]);
+    var inspector = tab.DataDisplay.ControlInspector;
+    void PrintControl()
+    {
+        var m = tab.DataDisplay.Controls[0].Model;
+        string detail = m is CircuitRF.Render.DataDisplay.SliderControl sl
+            ? $"{sl.Domain} {sl.Orientation} stops={sl.Stops.Count} value={sl.CurrentValue:G6} {sl.DisplayUnit}"
+              + (sl.Domain == CircuitRF.Render.DataDisplay.SliderDomain.Bound ? $" src={sl.SourcePath} cube={sl.CubeName} axis={sl.AxisName}" : "")
+            : m.KindName;
+        Console.WriteLine($"control {m.Name} label='{m.Label}' {m.Size} {m.Width:0}x{m.Height:0} accent={m.Accent ?? "default"} "
+                        + $"locked={m.Locked} {detail} problem='{inspector.Problem}' nameError='{inspector.NameError}'");
+        if (inspector.IsBound)
+            Console.WriteLine($"  sources [{string.Join(" | ", inspector.SourceItems)}]  quantities [{string.Join(" | ", inspector.QuantityItems)}]"
+                            + $"  axes [{string.Join(" | ", inspector.AxisItems)}]");
+    }
+    PrintControl();
+    tab.DataDisplay.ControlChanged += _ => PrintControl();
+    // Hosted in the real Properties panel, wired as the workspace wires it, so the panel's own routing is what is seen.
+    var properties = new CircuitRF.Ui.ViewModels.Dock.PropertiesTool();
+    properties.SetActiveDataDisplay(window.ActiveInspector, window);
+    content = new CircuitRF.Ui.Views.Properties.PropertiesView { DataContext = properties };
+}
 else
 {
     var plots = tab.DataDisplay.Plots;
@@ -1611,15 +1641,24 @@ foreach (var (kind, arg) in steps)
         case "--drag":
         {
             // Pressed, moved in steps — a gesture crosses a click threshold before it becomes a drag — and released.
-            var ends = arg.Split(':');
+            // A modifier may lead: "Alt+x0,y0:x1,y1" holds Alt through the whole gesture.
+            var mods = RawInputModifiers.None;
+            var spec = arg;
+            while (spec.IndexOf('+') is var plus and > 0 && !char.IsDigit(spec[0]) && spec[0] != '-')
+            {
+                string m = spec[..plus];
+                mods |= Enum.Parse<RawInputModifiers>(m.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ? "Control" : m, ignoreCase: true);
+                spec = spec[(plus + 1)..];
+            }
+            var ends = spec.Split(':');
             Point a = PointOf(ends[0]), b = PointOf(ends[1]);
-            host.MouseDown(a, MouseButton.Left, RawInputModifiers.None);
+            host.MouseDown(a, MouseButton.Left, mods);
             for (int k = 1; k <= 10; k++)
             {
-                host.MouseMove(a + (b - a) * (k / 10.0), RawInputModifiers.LeftMouseButton);
+                host.MouseMove(a + (b - a) * (k / 10.0), RawInputModifiers.LeftMouseButton | mods);
                 Pump();
             }
-            host.MouseUp(b, MouseButton.Left, RawInputModifiers.None);
+            host.MouseUp(b, MouseButton.Left, mods);
             break;
         }
         case "--drag-hold":

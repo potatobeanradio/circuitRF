@@ -293,6 +293,23 @@
                     <mi:MaterialIcon Kind="CircleOutline" Width="16" Height="16"/>
                 </Button>
 
+                <!-- brief-ddl-5 R-ddl5-7: inputs placed on the canvas. A menu, so the knob, the button and the
+                     readout (DDL-6) join it without another toolbar button each. -->
+                <Button AutomationProperties.Name="Add Control" ToolTip.Tip="Add a control: an input that plots can follow"
+                        Padding="6,3">
+                    <StackPanel Orientation="Horizontal" Spacing="1">
+                        <mi:MaterialIcon Kind="TuneVariant" Width="16" Height="16"/>
+                        <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="16"/>
+                    </StackPanel>
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuItem Header="Slider" Command="{Binding ViewModel.Window.AddSliderCommand}">
+                                <MenuItem.Icon><mi:MaterialIcon Kind="RayStartEnd" Width="16" Height="16"/></MenuItem.Icon>
+                            </MenuItem>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+
                 <Button Command="{Binding ViewModel.Window.ZoomBoxCommand}"
                         Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.ZoomBoxArmed, FallbackValue=False}"
                         ToolTip.Tip="Zoom Box  (Z) — drag a box to zoom to it  (Esc cancels; Ctrl++ steps)"

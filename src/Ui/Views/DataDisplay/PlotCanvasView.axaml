@@ -87,6 +87,31 @@
             size — the inner Canvas therefore has real non-zero Bounds, which is
             required for Avalonia to composite the MarkerInfoBoxView children.
         -->
+        <!-- Display controls (brief-ddl-5): a layer above the plots, arranged the way the info boxes below are.
+             Background="{x:Null}" so a press on empty canvas still reaches PlotCanvas (pan, rubber band). -->
+        <ItemsControl ItemsSource="{Binding DataDisplay.Controls}"
+                      Background="{x:Null}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas Background="{x:Null}"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                    <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                    <Setter Property="Width"       Value="{ReflectionBinding ViewWidth}"/>
+                    <Setter Property="Height"      Value="{ReflectionBinding ViewHeight}"/>
+                    <Setter Property="ZIndex"      Value="{ReflectionBinding ZIndex}"/>
+                </ControlTheme>
+            </ItemsControl.ItemContainerTheme>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ControlContainerViewModel">
+                    <v:ControlContainerView/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <!-- Floating legends: the same overlay arrangement as the info boxes below, and listed before them so an
              info box draws over a legend, as a marker draws over a docked one. -->
         <ItemsControl ItemsSource="{Binding DataDisplay.LegendBoxes}"

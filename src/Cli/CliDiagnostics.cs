@@ -2977,6 +2977,17 @@ internal static class CliDiagnostics
         "render.marker.not-placed", DiagnosticSeverity.Error,
         "render: --marker {text} — {reason}", ("text", text), ("reason", reason));
 
+    /// <summary>brief-ddl-5 R-ddl5-10: a <c>--control</c> that is not <c>name=value</c> or <c>name=#stop</c>.</summary>
+    public static Diagnostic RenderControlMalformed(string text) => Diagnostic.Create(
+        "render.control.malformed", DiagnosticSeverity.Error,
+        "render: --control '{text}' — write name=value with its unit (slider1=2.4GHz) or name=#stop (slider1=#5).",
+        ("text", text));
+
+    /// <summary>brief-ddl-5 R-ddl5-10: a <c>--control</c> naming no control, or a value it cannot take.</summary>
+    public static Diagnostic RenderControlUnresolved(string text, string reason) => Diagnostic.Create(
+        "render.control.not-set", DiagnosticSeverity.Error,
+        "render: --control {text} — {reason}", ("text", text), ("reason", reason));
+
     public static Diagnostic RenderNoSuchPlot(int asked, int count) => Diagnostic.Create(
         "render.plot.not-found", DiagnosticSeverity.Error,
         "render: --plot {asked} — this tab has {count} plot(s).", ("asked", asked), ("count", count));

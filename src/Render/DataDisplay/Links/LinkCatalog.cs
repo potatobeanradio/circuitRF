@@ -53,6 +53,14 @@ public static class LinkCatalog
             items.Add(new LinkSourceItem(id, site.Marker.Name, Where(doc, site, tab), matches,
                                          LinkMatch.Supplies(value), WouldCycle(doc, consumer, sliceIndex, id)));
         }
+        // Display controls (brief-ddl-5 R-ddl5-8) sit beside the markers; they sit on no trace, so they close no cycle.
+        foreach (var (ti, control) in doc.Controls())
+        {
+            var value = ControlLinkSource.Resolve(control, sources);
+            bool matches = axis is not null && LinkMatch.Match(value, axis, 0, data).IsLive;
+            string where = ti == tab ? "control" : $"{doc.Tabs[ti].Name} ▸ control";
+            items.Add(new LinkSourceItem(control.Id, control.Name, where, matches, LinkMatch.Supplies(value), null));
+        }
         return [.. items.OrderBy(i => i.IsEnabled ? (i.Matches ? 0 : 1) : 2)
                         .ThenBy(i => i.Name, StringComparer.Ordinal)];
     }

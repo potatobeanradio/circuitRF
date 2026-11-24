@@ -353,6 +353,12 @@ namespace CircuitRF.Render.DataDisplay
             Action<SKCanvas, TransformSet>? overlay = null,
             TrialLayerCache?      trialCache      = null)
         {
+            // The card (Plot.Card): the plot sits on the panel display controls and marker boxes are drawn on, under
+            // everything else, for every plot kind.
+            if (plot.Card && canvasSize.W > 2 && canvasSize.H > 2)
+                CardStyle.Draw(canvas, theme, new SKRect(0, 0, (float)canvasSize.W, (float)canvasSize.H),
+                               (float)Math.Clamp(Math.Min(canvasSize.W, canvasSize.H) * 0.03, 4, 12));
+
             // ANT-10: the 3D pattern surface has no world window, so it leaves BEFORE
             // BuildTransforms — the same seam, and for the same reason, as the Table above it
             // (brief-antenna-10-pattern-3d.md §2: every plot-kind seam here is an early return or an

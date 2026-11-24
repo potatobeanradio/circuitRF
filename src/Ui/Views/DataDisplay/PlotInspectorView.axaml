@@ -1150,7 +1150,7 @@
                                                               IsChecked="{Binding IsLinked, Mode=TwoWay}"
                                                               VerticalAlignment="Top"
                                                               Width="26" Padding="3,2" Margin="3,0,0,0"
-                                                              ToolTip.Tip="Follow a marker instead of a fixed frequency">
+                                                              ToolTip.Tip="Follow a marker or a control instead of a fixed frequency">
                                                     <mi:MaterialIcon Kind="LinkVariant" Width="14" Height="14"/>
                                                 </ToggleButton>
                                             </Panel>
@@ -1630,7 +1630,7 @@
                                                                           IsVisible="{Binding ShowPinPicker}"
                                                                           VerticalAlignment="Top"
                                                                           Width="26" Padding="3,2" Margin="3,0,0,0"
-                                                                          ToolTip.Tip="Follow a marker instead of a fixed index">
+                                                                          ToolTip.Tip="Follow a marker or a control instead of a fixed index">
                                                                 <mi:MaterialIcon Kind="LinkVariant" Width="14" Height="14"/>
                                                             </ToggleButton>
                                                         </Panel>
@@ -2062,7 +2062,7 @@
                                                               IsChecked="{Binding IsLinked, Mode=TwoWay}"
                                                               VerticalAlignment="Top"
                                                               Width="26" Padding="3,2" Margin="3,0,0,0"
-                                                              ToolTip.Tip="Follow a marker instead of a fixed frequency">
+                                                              ToolTip.Tip="Follow a marker or a control instead of a fixed frequency">
                                                     <mi:MaterialIcon Kind="LinkVariant" Width="14" Height="14"/>
                                                 </ToggleButton>
                                             </Panel>
@@ -2465,7 +2465,7 @@
                  A label that is off shows the generated one; on, it shows what is typed. -->
             <Panel IsVisible="{Binding IsLabelsSection}">
                 <Grid DataContext="{Binding Labels}" x:DataType="vm:AxesLabelsViewModel"
-                      ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                      ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
                       Margin="0,4,0,2">
                     <CheckBox Grid.Row="0" Grid.Column="0" Classes="sec" Content="Title" Width="64"
                               IsChecked="{Binding TitleOn, Mode=TwoWay}"/>
@@ -2492,6 +2492,12 @@
                               IsVisible="{Binding ShowY2}"
                               Text="{Binding Y2Label, Mode=TwoWay}" IsEnabled="{Binding Y2LabelOn}"
                               PlaceholderText="Right Y-axis label"/>
+
+                    <!-- brief-ddl-5: the plot on the rounded card display controls and marker boxes sit on. -->
+                    <CheckBox Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Classes="sec" Content="Card"
+                              Margin="0,6,0,0"
+                              IsChecked="{Binding Card, Mode=TwoWay}"
+                              ToolTip.Tip="Draw this plot on a rounded card, like the display's controls"/>
                 </Grid>
             </Panel>
 

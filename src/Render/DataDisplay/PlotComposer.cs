@@ -151,7 +151,8 @@ public static class PlotComposer
         AppSettings               settings,
         PagePlacement             page,
         IReadOnlyList<CanvasAnnotation>? annotations = null,
-        double annotationZoom = 1, double annotationOffsetX = 0, double annotationOffsetY = 0)
+        double annotationZoom = 1, double annotationOffsetX = 0, double annotationOffsetY = 0,
+        IReadOnlyList<DisplayControl>? controls = null)
     {
         float usableW = page.UsableWidth;
         float usableH = page.UsableHeight;
@@ -162,7 +163,7 @@ public static class PlotComposer
         canvas.Clear(settings.ExportTransparentBackground
             ? SKColors.Transparent
             : theme.BackgroundColor);
-        if (plots.Count == 0 && annotations is not { Count: > 0 }) return;
+        if (plots.Count == 0 && annotations is not { Count: > 0 } && controls is not { Count: > 0 }) return;
 
         // ---- Bounding box in DataDisplay screen-pixel space --------
 
@@ -219,6 +220,16 @@ public static class PlotComposer
                 bndT = Math.Min(bndT, bounds.Top * annotationZoom + annotationOffsetY);
                 bndR = Math.Max(bndR, bounds.Right * annotationZoom + annotationOffsetX);
                 bndB = Math.Max(bndB, bounds.Bottom * annotationZoom + annotationOffsetY);
+            }
+
+        // Display controls (brief-ddl-5 R-ddl5-6) are in the annotations' logical space, under the same zoom and pan.
+        if (controls is not null)
+            foreach (var control in controls)
+            {
+                bndL = Math.Min(bndL, control.Left * annotationZoom + annotationOffsetX);
+                bndT = Math.Min(bndT, control.Top * annotationZoom + annotationOffsetY);
+                bndR = Math.Max(bndR, (control.Left + control.Width) * annotationZoom + annotationOffsetX);
+                bndB = Math.Max(bndB, (control.Top + control.Height) * annotationZoom + annotationOffsetY);
             }
 
         if (double.IsInfinity(bndL)) return;
@@ -326,6 +337,17 @@ public static class PlotComposer
                     plotTraces: box.PlotTraces);
                 canvas.Restore();
             }
+        }
+        if (controls is { Count: > 0 })
+        {
+            canvas.Save();
+            canvas.Translate(margin + padX + (float)(annotationOffsetX - bndL) * S,
+                             margin + padY + (float)(annotationOffsetY - bndT) * S);
+            canvas.Scale((float)annotationZoom * S);
+            foreach (var control in controls)
+                ControlRenderer.Draw(canvas, control, theme,
+                    SKRect.Create((float)control.Left, (float)control.Top, (float)control.Width, (float)control.Height));
+            canvas.Restore();
         }
         if (annotations is not null)
         {

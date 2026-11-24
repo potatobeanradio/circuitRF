@@ -5,8 +5,11 @@ using SkiaSharp;
 
 namespace CircuitRF.Render.DataDisplay;
 
+/// <summary>A page's canvas items that are not plots — annotations and display controls (brief-ddl-5) — in display
+/// logical coordinates, with the canvas zoom and pan that put them on screen.</summary>
 public sealed record AnnotationPage(IReadOnlyList<CanvasAnnotation> Items, double Zoom = 1,
-                                    double OffsetX = 0, double OffsetY = 0);
+                                    double OffsetX = 0, double OffsetY = 0,
+                                    IReadOnlyList<DisplayControl>? Controls = null);
 
 public static class AnnotationRenderer
 {

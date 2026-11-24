@@ -206,6 +206,12 @@ internal readonly record struct PlotMoveSnapshot(
 /// <summary>
 /// Snapshot of a single marker info-box position before and after a drag.
 /// </summary>
+/// <summary>A display control's position before and after a drag (brief-ddl-5 R-ddl5-5).</summary>
+internal readonly record struct ControlMoveSnapshot(
+    ControlContainerViewModel Vm,
+    double StartLeft, double StartTop,
+    double EndLeft,   double EndTop);
+
 internal readonly record struct InfoBoxMoveSnapshot(
     CanvasBoxViewModel Vm,
     double StartLogLeft, double StartLogTop,
@@ -221,17 +227,21 @@ internal sealed class MovePlotsCommand : IUndoableCommand
 {
     private readonly IReadOnlyList<PlotMoveSnapshot>    _plots;
     private readonly IReadOnlyList<InfoBoxMoveSnapshot> _infoBoxes;
+    private readonly IReadOnlyList<ControlMoveSnapshot> _controls;
 
     public MovePlotsCommand(
         IReadOnlyList<PlotMoveSnapshot>    plots,
-        IReadOnlyList<InfoBoxMoveSnapshot> infoBoxes)
+        IReadOnlyList<InfoBoxMoveSnapshot> infoBoxes,
+        IReadOnlyList<ControlMoveSnapshot>? controls = null)
     {
         _plots     = plots;
         _infoBoxes = infoBoxes;
+        _controls  = controls ?? [];
     }
 
     public void Execute()
     {
+        foreach (var s in _controls) { s.Vm.Left = s.EndLeft; s.Vm.Top = s.EndTop; }
         foreach (var s in _plots)
         {
             s.Vm.Left = s.EndLeft;
@@ -243,6 +253,7 @@ internal sealed class MovePlotsCommand : IUndoableCommand
 
     public void Undo()
     {
+        foreach (var s in _controls) { s.Vm.Left = s.StartLeft; s.Vm.Top = s.StartTop; }
         foreach (var s in _plots)
         {
             s.Vm.Left = s.StartLeft;
@@ -251,6 +262,48 @@ internal sealed class MovePlotsCommand : IUndoableCommand
         foreach (var s in _infoBoxes)
             s.Vm.SetLogicalPosition(s.StartLogLeft, s.StartLogTop);
     }
+}
+
+// ---- Display controls (brief-ddl-5 R-ddl5-5) ---------------------------
+
+/// <summary>Adds a display control at <paramref name="index"/> (the end, for a new one).</summary>
+internal sealed class AddControlCommand(DataDisplayViewModel display, int index, ControlContainerViewModel vm)
+    : IUndoableCommand
+{
+    public void Execute() => display.InsertControl(index, vm);
+    public void Undo()    => display.RemoveControl(vm);
+}
+
+/// <summary>Removes display controls; undo puts each back at its index, the same object and id, so a link to it is
+/// live again.</summary>
+internal sealed class RemoveControlsCommand : IUndoableCommand
+{
+    private readonly DataDisplayViewModel _display;
+    private readonly List<(int Index, ControlContainerViewModel Vm)> _removed;
+
+    public RemoveControlsCommand(DataDisplayViewModel display, IEnumerable<ControlContainerViewModel> controls)
+    {
+        _display = display;
+        _removed = controls.Select(c => (display.Controls.IndexOf(c), c)).OrderBy(x => x.Item1).ToList();
+    }
+
+    public void Execute()
+    {
+        foreach (var (_, vm) in _removed) _display.RemoveControl(vm);
+    }
+
+    public void Undo()
+    {
+        foreach (var (index, vm) in _removed) _display.InsertControl(index, vm);
+    }
+}
+
+/// <summary>Any change to one control — its value, size, look, domain or lock — as the two snapshots either side.</summary>
+internal sealed class EditControlCommand(ControlContainerViewModel vm, DisplayControl before, DisplayControl after)
+    : IUndoableCommand
+{
+    public void Execute() { vm.Model.CopyFrom(after);  vm.Changed(); }
+    public void Undo()    { vm.Model.CopyFrom(before); vm.Changed(); }
 }
 
 // ---- Resize plot -------------------------------------------------------

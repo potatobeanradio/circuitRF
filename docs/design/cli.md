@@ -2312,7 +2312,7 @@ the one that is not a drawing:
 
 ```
 circuitrf render <path.cdd> -o <out.svg|.pdf|.png> [--data file]... [--tab name|n] [--plot n] [--all-tabs]
-                 [--marker name=value|name=#index]...
+                 [--marker name=value|name=#index]... [--control name=value|name=#stop]...
 ```
 
 **It holds no data.** Its traces name a source — a path, or the sentinel `run.npy` meaning "whatever
@@ -2374,6 +2374,16 @@ refusal naming both); `--marker m1=#17` puts it on sample 17. It may be repeated
 only, and writes nothing back. A name that is no marker is a refusal LISTING the markers; a name on two
 tabs is a refusal naming them; a marker placed freely on a chart, or an index off the trace, is a refusal
 too. This is how an agent or a build draws "the detail at this load" with no window.
+
+**Display controls are drawn, and `--control` sets one first** (brief-ddl-5 R-ddl5-10). A tab's controls
+(`TabConfig.Controls`, `data-display.md` §2.10) are drawn by `ControlRenderer`, the window's own renderer, in
+the canvas space annotations are in, and they are link sources in the same `LinkDocument`. A bound slider
+reads its stops from its source, which is bound when it is there and never refused when it is not (the
+slider keeps the range the file last saved, as it does in the window). `--control slider1=2.4GHz` takes
+the stop nearest that value (a unit is compared in base SI against the slider's own, and a different one
+is a refusal naming both; a bare number is in the slider's unit); `--control slider1=#5` takes stop 5. It
+is parsed by the `--marker` grammar, applies before links resolve, may be repeated and writes nothing
+back. A name that is no control is a refusal listing the controls.
 
 The gate is `tests/Ui.Tests/Render/RenderDataDisplayCliTests.cs`, which authors a display through the
 application's own view models, saves it, and compares the verb's output as a PROCESS against

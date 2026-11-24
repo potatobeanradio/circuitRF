@@ -63,6 +63,7 @@ public static class PlotConfigLoader
     {
         plot.CustomTitle     = pc.CustomTitle;
         plot.CustomTitleOn   = pc.CustomTitleOn;
+        plot.Card            = pc.Card;
         plot.CustomXLabel    = pc.CustomXLabel;
         plot.CustomXLabelOn  = pc.CustomXLabelOn;
         plot.CustomYLabel    = pc.CustomYLabel;

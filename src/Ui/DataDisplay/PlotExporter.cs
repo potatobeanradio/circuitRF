@@ -172,7 +172,7 @@ namespace CircuitRF.Ui.DataDisplay
         {
             byte[]  pdf    = BuildPdfBytesForContainers(containers, theme, annotations);
             string  svg    = BuildSvgStringForContainers(containers, theme, annotations);
-            string  json   = BuildContainersJson(containers, annotations?.Items);
+            string  json   = BuildContainersJson(containers, annotations?.Items, annotations?.Controls);
             Bitmap? bitmap = BuildBitmapForContainers(containers, theme, annotations);
             await SetClipboardDataAsync(anchor, pdf, svg, json, bitmap);
         }
@@ -253,10 +253,11 @@ namespace CircuitRF.Ui.DataDisplay
         /// (<see cref="DataDisplayViewModel.PasteFromConfigAsync"/>).
         /// </remarks>
         internal static string BuildContainersJson(IReadOnlyList<PlotContainerViewModel> containers,
-            IReadOnlyList<CanvasAnnotation>? annotations = null)
+            IReadOnlyList<CanvasAnnotation>? annotations = null, IReadOnlyList<DisplayControl>? controls = null)
         {
             var config = new DataDisplayConfig { ZoomLevel = 1.0,
-                Annotations = annotations is { Count: > 0 } ? annotations.ToList() : null };
+                Annotations = annotations is { Count: > 0 } ? annotations.ToList() : null,
+                Controls    = controls is { Count: > 0 } ? controls.Select(c => c.Clone()).ToList() : null };
             foreach (var c in containers)
             {
                 var pc = DataDisplayViewModel.BuildPlotContainerConfig(c, "", c.Library);
@@ -292,7 +293,8 @@ namespace CircuitRF.Ui.DataDisplay
             RenderTheme                           theme, AnnotationPage? annotations = null)
             => PlotComposer.Render(canvas, containers.Select(Place).ToList(),
                                    theme, AppSettings.Current, PagePlacement.Letter, annotations?.Items,
-                                   annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0);
+                                   annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0,
+                                   annotations?.Controls);
 
         internal static async Task ExportDocumentAsync(Control anchor, DisplayWindowViewModel window, string name)
         {
@@ -302,7 +304,8 @@ namespace CircuitRF.Ui.DataDisplay
             var pages = window.Tabs.Select(tab => (
                 Plots: tab.DataDisplay.Plots.Select(Place).ToList(),
                 Annotations: new AnnotationPage(tab.DataDisplay.Annotations.ToArray(), tab.DataDisplay.ZoomLevel,
-                    tab.DataDisplay.ViewOffsetX, tab.DataDisplay.ViewOffsetY))).ToList();
+                    tab.DataDisplay.ViewOffsetX, tab.DataDisplay.ViewOffsetY,
+                    tab.DataDisplay.Controls.Select(c => c.Model.Clone()).ToArray()))).ToList();
             var activePage = Math.Max(0, window.Tabs.IndexOf(window.ActiveTab!));
             var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
@@ -316,7 +319,7 @@ namespace CircuitRF.Ui.DataDisplay
             Action<SKCanvas> DrawPage(int index) => canvas => PlotComposer.Render(canvas,
                 pages[index].Plots, display.Theme, AppSettings.Current, PagePlacement.Letter,
                 pages[index].Annotations.Items, pages[index].Annotations.Zoom,
-                pages[index].Annotations.OffsetX, pages[index].Annotations.OffsetY);
+                pages[index].Annotations.OffsetX, pages[index].Annotations.OffsetY, pages[index].Annotations.Controls);
             var draw = DrawPage(activePage);
             var extension = Path.GetExtension(path).ToLowerInvariant();
             byte[] bytes = extension switch
