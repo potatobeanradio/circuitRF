@@ -71,6 +71,7 @@ public sealed class AutoCreateDataDisplaySinglePlotTests : IDisposable
                 {
                     container.Inspector.AddTraceCommand.Execute(null);
                     populated = container.Inspector.Traces.Count > 0;
+                    if (populated) container.Inspector.AddSeedTransmissionTrace();
                 }
             }
         }
@@ -151,6 +152,31 @@ public sealed class AutoCreateDataDisplaySinglePlotTests : IDisposable
         Assert.Single(newVm.Window.DataDisplay!.Plots);   // never two plots
         Assert.Equal(PlotType.Rect, newVm.Window.DataDisplay!.Plots[0].Inspector.PlotType);
         Assert.NotEmpty(newVm.Window.DataDisplay!.Plots[0].Inspector.Traces);
+    }
+
+    // A two-port run opens on S(1,1) AND S(2,1), on the one plot: the transmission is what a filter's
+    // (or any two-port's) bench is run to see.
+    [Fact]
+    public void SParamRun_AutoCreate_ShowsS11AndS21()
+    {
+        var dir  = MakeTempDir();
+        var path = WriteSParamNpy(dir, "SParamTest.npy");
+
+        var newVm = new DataDisplayDocumentViewModel();
+        newVm.Window.DataSourceLibrary.ResultsRootProvider = () => dir;
+        Assert.True(SeedDefaultPlot(newVm, path));
+
+        var plot = Assert.Single(newVm.Window.DataDisplay!.Plots);
+        var traces = plot.Inspector.Traces.Select(t => t.Trace).ToList();
+        Assert.Equal(2, traces.Count);
+        (int I, int J) Pins(CircuitRF.Render.DataDisplay.Trace t) => (t.Slice!.Single(a => a.AxisName == "i").Index, t.Slice!.Single(a => a.AxisName == "j").Index);
+        Assert.Equal((0, 0), Pins(traces[0]));
+        Assert.Equal((1, 0), Pins(traces[1]));
+        Assert.Equal(traces[0].Transform, traces[1].Transform);
+        Assert.Equal("SP1.S", traces[1].CubeName);
+        Assert.True(traces[1].Points.Count > 0);
+        // A second call adds nothing: only a lone seeded S(1,1) takes it.
+        Assert.False(plot.Inspector.AddSeedTransmissionTrace());
     }
 
     // Regression: the toolbar source-picker combo (bound TwoWay to SelectedDataSourceItem, which

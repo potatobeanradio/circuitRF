@@ -1294,6 +1294,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
         }
         else return;
 
+        FinishAddedTrace(trace);
+    }
+
+    /// <summary>Builds, resolves and adds <paramref name="trace"/> with its own card, as Add Trace finishes one.</summary>
+    private void FinishAddedTrace(Trace trace)
+    {
         trace.BuildPath(_plot.PlotType, _plot.FreqUnits);
         if (trace.IsCubeBound)
             TraceResolve.ResolveCubeTrace(trace, Sources, _plot.PlotType, _plot.FreqUnits);
@@ -1387,6 +1393,50 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
         trace.Expression = trace.BuildPickerExpression();
         return trace;
+    }
+
+    /// <summary>
+    /// Beside a seeded S(1,1) on a Rect plot, S(2,1) in the same format: the transmission a two-port bench is
+    /// usually run to see (a filter, an amplifier, a line). Only when the plot holds exactly that one seeded trace and
+    /// its source has a second port; otherwise nothing is added.
+    /// </summary>
+    /// <returns>True when the trace was added.</returns>
+    internal bool AddSeedTransmissionTrace()
+    {
+        if (_plot.PlotType != PlotType.Rect || _plot.Traces.Count != 1) return false;
+        var first = _plot.Traces[0];
+        Trace s21;
+        if (first.IsCubeBound)
+        {
+            if (first.CubeName is not { } name || first.Slice is not { } slice
+                || _library?.SelectedEntry?.Data is not { } ds || !ds.Contains(name)
+                || !RfCore.Data.NetworkMetrics.IsNetworkParamCubeSpec(ds, name))
+                return false;
+            int iDim = Array.FindIndex(slice, a => a.AxisName == "i");
+            int jDim = Array.FindIndex(slice, a => a.AxisName == "j");
+            var cube = ds[name];
+            if (iDim < 0 || jDim < 0 || iDim >= cube.Rank || cube.Axes[iDim].Length < 2
+                || slice[iDim] is not { Role: AxisRole.PinToIndex, Index: 0 }
+                || slice[jDim] is not { Role: AxisRole.PinToIndex, Index: 0 })
+                return false;
+            s21 = new Trace(first, incrementColorBy: 1, includeMarkers: false);
+            var pinned = (AxisSlice[])slice.Clone();
+            pinned[iDim] = pinned[iDim] with { Index = 1, Label = "" };
+            pinned[jDim] = pinned[jDim] with { Index = 0, Label = "" };
+            s21.Slice = pinned;
+            s21.Expression = s21.BuildPickerExpression();
+        }
+        else
+        {
+            if (first.Data is not { IsEmpty: false } snp || snp.Ports < 2
+                || first.Row != 0 || first.Col != 0)
+                return false;
+            s21 = new Trace(snp, MatrixType.S, 1, 0, first.YAxis);
+            s21.SourceRef = first.SourceRef;
+            s21.SourcePath = first.SourcePath;
+        }
+        FinishAddedTrace(s21);
+        return true;
     }
 
     /// <summary>

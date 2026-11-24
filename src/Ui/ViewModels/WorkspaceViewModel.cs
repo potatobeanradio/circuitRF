@@ -17164,6 +17164,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     {
                         container.Inspector.AddTraceCommand.Execute(null);
                         populated = container.Inspector.Traces.Count > 0;
+                        // A two-port S-parameter run: S(2,1) beside the seeded S(1,1), the transmission the
+                        // bench is usually run to see. Still one plot, untitled.
+                        if (populated) container.Inspector.AddSeedTransmissionTrace();
                         // An EM result with component ports: the board with the parts' pads open, as the 3D view draws it.
                         if (populated) PointAtPartsOpen(container.Inspector, entry.Data);
                     }

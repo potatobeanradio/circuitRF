@@ -43007,3 +43007,11 @@ count, in the plot's unit, when the sheet has no S-parameter analysis. It is car
 `Analyses` through `ArmFragmentPlacement` and added with `AddAnalysesCommand` inside the click's ONE undo
 step, so Escape drops it with the ghost. A sheet with its own S-parameter analysis keeps it. The first
 Simulate then auto-creates the display over that sweep as for any other bench.
+
+The display that the first Simulate auto-creates for an S-parameter run with two or more ports now shows
+S(2,1) beside the seeded S(1,1), on the same untitled plot, in the same format. This is
+`PlotInspectorViewModel.AddSeedTransmissionTrace`, called from `AutoOpenOrCreateDataDisplayAsync` after the
+ordinary seed. It runs only when the plot is Rect and holds exactly the one seeded S(1,1) of a
+network-parameter cube (or a Touchstone network), so a loadpull, HB or transient display, and any display
+the user has already authored, are untouched. `AutoCreateDataDisplaySinglePlotTests`' harness mirrors the
+call.
