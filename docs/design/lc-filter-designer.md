@@ -97,7 +97,8 @@ side of it joined by bars. The pane and its Copy wire from one routine,
 none, 2 when an argument does not parse.
 
 Apply to Filter writes the specification onto a placed Filter through one `SetParametersCommand`.
-The snap stays in the netlist, not on the block.
+The snap is not written onto the block; with Values other than Exact the block simulates as the
+snapped ladder (see Vendor library below).
 
 ## Placing, Synthesise…, and the Designer's settings on the block (FD-P, 2026-11-21)
 
@@ -112,7 +113,10 @@ existed) is added with the registry's own unit and dimension.
 and `Parts` (`element=library: series|part; …`). `ComponentTypeRegistry.IsLcFilterDesignerParameter`
 names them and `NetExtractor` drops them, so the netlist line is identical with or without them and a
 blank edge never reaches the `.cnl` as `Fs=` — the empty-value trap. The edges are written in the
-window's frequency unit and the unit rides on the parameter, so Seed reopens in that unit.
+window's frequency unit and the unit rides on the parameter, so Seed reopens in that unit. The one
+exception (2026-11-23): a locked block whose `Values` is not Exact is emitted as its ladder, read from
+`Values`, `First`, `LSeries`, `CSeries` and `Parts` (see Vendor library below); the `Filter` line itself,
+for Exact, is unchanged.
 `SeedFrom` puts the stored edges in their boxes first, then the block's own cutoff over the edge it
 names, so an edit to `F1` in Properties still wins; each missing setting falls back to what Seed
 derived before (Ap from Ripple, edges from the cutoff, Specify for the order). A library series is
@@ -172,11 +176,34 @@ Match. The Filter entries in `components.md`, `system-components.md` and `dynami
 bandstop and point at the designer. The parameter descriptions live on the registry, which is what
 the parameter editor and `{{table: components/Filter}}` both read.
 
-## Known limitation: library series are not carried onto the schematic
+## Vendor library, placed and simulated (2026-11-23)
 
-When a library series is loaded (`LSeries`, `CSeries`, `Parts`), the realisation table snaps each
-element to the nearest stated value and names the part, and `Apply to Filter` stores the choice on the
-block so the window reopens on it. **Place filter** and **Replace this Filter** do not use it:
-`FilterPlacement.LadderFragment` builds the ladder from `MatchSchematicCopy`'s generic inductor and
-capacitor symbols at the snapped value, with no reference to the library part. Placing the
-library parts themselves is future work.
+**Vendor library is a Values entry** (`FilterSeriesKind.VendorLibrary`, appended so a stored `Values`
+keeps its meaning). Choosing it indexes the workspace's libraries (`LoadLibraries`, once per window);
+the Inductors and Capacitors pickers show only while it is chosen (`ShowLibraryPickers`), and the table
+offers per-element parts only then. There is no Load button. An IEC series ignores the library picks,
+and Apply writes `LSeries`/`CSeries`/`Parts` blank unless Values is Vendor library. A block applied
+before the entry existed (an IEC `Values` beside library names) reopens on Vendor library, which is
+what its library picks meant.
+
+**One value rule.** `FilterValues.Choose` is what the table, a placed ladder and a simulated block
+build each element with: the hand-picked part, else the nearest part of the element's series, else the
+exact value. `FilterPart.Vendor` carries the `VendorPartRef` so the part can be placed and simulated.
+
+**Place filter / Replace this Filter place the parts.** `FilterPlacement.LadderFragment` takes the
+element-to-part map and turns each generic L or C into a SpiceModel carrying the part's `File`, `Name`
+and `Glyph` (`VendorPartPlacement.Parameters`) and its case-size footprint — what a palette drop of
+the part builds. The glyph is the built-in L or C, so the pins land where the generic symbol's did.
+
+**A designed block simulates as its ladder when Values is not Exact** (`FilterBlockLadder`, in
+`src/Design/Filters`). `NetExtractor` emits, for a locked Filter (`Synthesis` not `Off`), one cell
+`LcFilter_<instance>` holding the ladder — a vendor part through `EmitSpiceModel`, the path a placed
+library part takes, any other element as an ideal L or C — and one instance of it on the block's two
+nets. Exact keeps the ideal `Filter` line, which is the exact ladder's response. A ladder that cannot
+be built (a non-numeric field, a library part the workspace no longer holds) is a Messages line and
+the ideal block. The parts inside the cell are removed from `PlacedVendorParts`, so they offer no
+`.Part` tunable of their own. `IL` is not modelled by the ladder.
+
+**Two window fixes.** The mask overlay is set on `MagnitudeContainer.Overlay` as well as on the
+control, so Export and Copy (which compose from containers) draw it. `MatchSchematicCanvas.FitOnResize`
+(off by default, on in this window) re-fits the ladder whenever the pane changes size.

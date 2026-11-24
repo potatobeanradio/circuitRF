@@ -42860,7 +42860,7 @@ disabled, and a Filter that carries a design edited only through Synthesise….
   designer; Place component carries the SnP part's library glyph (the S-Parameter Viewer's). Save
   netlist is gone with its handler and the view model's `NetlistText()` — `circuitrf filter lc -o`
   writes the netlist. The toolbar test asserts the word and both glyphs.
-- **Limitation, deliberately left for a later release: a placed ladder does not use the library
+- **Limitation (lifted 2026-11-23, see the next entry): a placed ladder did not use the library
   parts.** With a library series loaded the table snaps each element to a stated value and names the
   part, and Apply to Filter stores `LSeries`/`CSeries`/`Parts` on the block so the window reopens on
   them. Place filter and Replace this Filter build the ladder in `FilterPlacement.LadderFragment`
@@ -42870,3 +42870,23 @@ disabled, and a Filter that carries a design edited only through Synthesise….
   EM, Touchstone extraction); this one is the lumped LC ladder with standard part values. Names, icons
   and the CLI noun (`filter lc`) are kept apart on purpose.
 
+## LC Filter Designer — Vendor library as a Values entry, placed and simulated (2026-11-23)
+
+- **Vendor library moved into the Values dropdown** and the Load button went. Choosing the entry is
+  the load; the Inductors/Capacitors pickers bind `ShowLibraryPickers` (Vendor library AND a series
+  found). The dropdown binds `SeriesChoices`/`SeriesChoice` (a label record), because the enum's own
+  name would read "VendorLibrary". `FilterSeriesKind.VendorLibrary` is APPENDED, and
+  `FilterValues.Snap` had to learn it: its switch fell through to E12 for an unknown kind.
+- **Place filter / Replace this Filter place the vendor parts.** The ladder's L/C components are
+  matched to the design by instance name (the drawing keeps the element name) and rebuilt as SpiceModel
+  parts, as `CommitVendorPlacement` builds one. Only a part whose glyph is the same L or C is swapped,
+  so the pin geometry the wires were drawn to is unchanged.
+- **A designed Filter with Values other than Exact simulates as its ladder** (`FilterBlockLadder` +
+  `NetExtractor.EmitFilterLadderInstance`): the properties named library parts the run never used. The
+  library parts go through `EmitSpiceModel`, the placed-part path, and are then removed from
+  `PlacedVendorParts` so they offer no tunable keyed to an instance that is not on the sheet.
+- **Exported plots had no mask.** `PlotExporter.Place` composes from the CONTAINER's `Overlay`; only
+  the control's was set. The Smith Chart had already hit this (R-smith7-5).
+- **The ladder pane re-fits on resize** through `MatchSchematicCanvas.FitOnResize` (opt-in: the Match
+  Designer keeps the user's zoom across a resize). The fit happens in the next render, via `Fit()`,
+  which never invalidates from the render pass.

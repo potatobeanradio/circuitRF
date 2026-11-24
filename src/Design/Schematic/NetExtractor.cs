@@ -697,6 +697,17 @@ public static class NetExtractor
                 continue;
             }
 
+            // A designed Filter whose Values are not Exact simulates as the ladder its Properties
+            // describe — the E-series values or the vendor library parts — not as the ideal transfer
+            // function. One that cannot be built says why and keeps the ideal block.
+            if (comp.Symbol == SymbolKind.Filter && comp.Disable == DisableState.None
+                && Filters.FilterBlockLadder.UsesLadder(comp.Parameters))
+            {
+                var fl = EmitFilterLadderInstance(comp, model, uf, QK, netNames, detachedKeys,
+                                                  cellRefResolutions, lib, imports, conflicts);
+                if (fl is not null) { instances.Add(fl); continue; }
+            }
+
             var inst = EmitInstance(comp, model, cellRefResolutions, uf, QK, netNames, detachedKeys,
                 microstripTech, conflicts);
             if (inst is not null && comp.Symbol == SymbolKind.PhasedArray)
@@ -1724,6 +1735,94 @@ public static class NetExtractor
             }
             return nets;
         });
+
+    /// <summary>
+    /// A designed Filter block as its ladder (<see cref="Filters.FilterBlockLadder"/>): one cell holding
+    /// the elements — a vendor part through <see cref="EmitSpiceModel"/>, the path a placed library part
+    /// takes, and any other element as an ideal L or C — and one instance of it on the block's two nets.
+    /// Null, with the reason in <paramref name="conflicts"/>, when the ladder cannot be built; the caller
+    /// then emits the ideal block.
+    /// </summary>
+    private static Instance? EmitFilterLadderInstance(
+        EditableComponent comp,
+        SchematicEditModel model,
+        UnionFind uf,
+        Func<double, double, (long, long)> QK,
+        Dictionary<(long, long), string> netNames,
+        Dictionary<(string CompId, int PortIndex), (long, long)> detachedKeys,
+        Dictionary<string, CellSymbolResolution>? cellRefResolutions,
+        Library lib,
+        NetlistImports imports,
+        List<string> conflicts)
+    {
+        var defs = GetEffectivePortDefs(model, comp, cellRefResolutions).OrderBy(d => d.PortIndex).ToList();
+        if (defs.Count < 2) return null;
+
+        string? workspace = WorkspaceOf(model);
+        if (Filters.FilterBlockLadder.Build(comp.Parameters, workspace, out string? refusal) is not { } ladder)
+        {
+            conflicts.Add($"Filter '{comp.InstanceName}' cannot be simulated as its designed ladder: {refusal}. " +
+                          "It is simulated as the ideal filter instead.");
+            return null;
+        }
+
+        string baseName = "LcFilter_" + comp.InstanceName;
+        string cellName = baseName;
+        for (int k = 2; lib.Find(cellName) is not null; k++)
+            cellName = baseName + "_" + k.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        var cell = new Cell(cellName);
+        cell.Ports.Add("p1");
+        cell.Ports.Add(ladder.OutputNode);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var part in ladder.Parts)
+        {
+            var e = part.Element;
+            string name = e.Name;
+            for (int k = 2; !names.Add(name); k++)
+                name = e.Name + "_" + k.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+            if (part.Vendor is { } vendor)
+            {
+                var parameters = VendorLibraries.VendorPartPlacement.Parameters(vendor)
+                    .Select(kv => new EditableParameter { Name = kv.Key, Expression = kv.Value })
+                    .ToList();
+                int placed = imports.PlacedVendorParts.Count;
+                var inst = EmitSpiceModel($"{comp.InstanceName}.{name}", parameters, model, lib, imports, conflicts,
+                    (definition, ports) =>
+                    {
+                        if (ports == 2) return [e.NodeA, e.NodeB];
+                        conflicts.Add($"Filter '{comp.InstanceName}': '{definition}' has {ports} ports, not two.");
+                        return null;
+                    });
+                // A part inside the ladder is not a part on the sheet: it offers no tunable of its own.
+                if (imports.PlacedVendorParts.Count > placed)
+                    imports.PlacedVendorParts.RemoveRange(placed, imports.PlacedVendorParts.Count - placed);
+                if (inst is null)
+                {
+                    conflicts.Add($"Filter '{comp.InstanceName}' is simulated as the ideal filter instead.");
+                    return null;
+                }
+                cell.Instances.Add(new Instance(name, inst.Reference, inst.NetBindings, inst.Overrides));
+            }
+            else
+            {
+                cell.Instances.Add(new Instance(name, e.Component, [e.NodeA, e.NodeB],
+                    [new ParameterAssignment(e.Component,
+                        e.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture))]));
+            }
+        }
+        lib.Cells.Add(cell);
+
+        var nets = defs.Take(2)
+            .Select(def =>
+            {
+                var (px, py) = model.PortWorldOf(comp, def);
+                return NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys);
+            })
+            .ToList();
+        return new Instance(comp.InstanceName, cellName, nets);
+    }
 
     /// <summary>
     /// The SpiceModel emission itself — file or vendor part, the definition, its cells, its overrides — for one

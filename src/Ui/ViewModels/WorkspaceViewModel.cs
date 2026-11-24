@@ -10880,7 +10880,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>
     /// Tools ▸ LC Filter Designer. No schematic is required: the assistant synthesises from the
-    /// specification. A workspace, when one is open, is where Load library series looks.
+    /// specification. A workspace, when one is open, is where the Vendor library values look.
     /// Place filter / Place component go into the schematic last made active, read when the
     /// button is pressed rather than when the window opened.
     /// </summary>

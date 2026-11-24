@@ -336,23 +336,20 @@
                     <Border Classes="card">
                         <StackPanel Spacing="3">
                             <TextBlock Classes="cardhdr" Text="Values"/>
-                            <ComboBox ItemsSource="{Binding SeriesKinds}" SelectedItem="{Binding Series}"
-                                      ToolTip.Tip="Exact theoretical values, or the nearest IEC preferred number."/>
-                            <Button Content="Load library series" Command="{Binding LoadLibrariesCommand}"
-                                    HorizontalAlignment="Left" Margin="0,2,0,0"
-                                    ToolTip.Tip="Index the workspace's vendor libraries and offer one inductor series and one capacitor series."/>
-                            <TextBlock Classes="lbl" Text="Inductors" IsVisible="{Binding LibraryAvailable}"/>
+                            <ComboBox ItemsSource="{Binding SeriesChoices}" SelectedItem="{Binding SeriesChoice}"
+                                      ToolTip.Tip="Exact theoretical values, the nearest IEC preferred number, or real parts from the workspace's vendor libraries."/>
+                            <TextBlock Classes="lbl" Text="Inductors" IsVisible="{Binding ShowLibraryPickers}"/>
                             <ComboBox ItemsSource="{Binding InductorSeries}" SelectedItem="{Binding InductorChoice}"
-                                      IsVisible="{Binding LibraryAvailable}">
+                                      IsVisible="{Binding ShowLibraryPickers}">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="df:FilterLibrarySeries">
                                         <TextBlock Text="{Binding Label}"/>
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
-                            <TextBlock Classes="lbl" Text="Capacitors" IsVisible="{Binding LibraryAvailable}"/>
+                            <TextBlock Classes="lbl" Text="Capacitors" IsVisible="{Binding ShowLibraryPickers}"/>
                             <ComboBox ItemsSource="{Binding CapacitorSeries}" SelectedItem="{Binding CapacitorChoice}"
-                                      IsVisible="{Binding LibraryAvailable}">
+                                      IsVisible="{Binding ShowLibraryPickers}">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="df:FilterLibrarySeries">
                                         <TextBlock Text="{Binding Label}"/>
@@ -421,7 +418,7 @@
                 <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" ClipToBounds="True"
                         BorderBrush="{DynamicResource CrfTileBorderBrush}">
                     <Panel>
-                        <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}"/>
+                        <mv:MatchSchematicCanvas Name="NetworkSchematic" Layout="{Binding Ladder}" FitOnResize="True"/>
                         <Button HorizontalAlignment="Left" VerticalAlignment="Top"
                                 Margin="4" Padding="6,3" Click="OnZoomFit"
                                 ToolTip.Tip="Zoom to Fit  (F)">

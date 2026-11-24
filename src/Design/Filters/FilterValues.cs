@@ -23,6 +23,12 @@ public enum FilterSeriesKind
     E24,
     /// <summary>IEC 60063, ninety-six values a decade.</summary>
     E96,
+    /// <summary>
+    /// Real parts from the workspace's vendor libraries: one inductor series and one capacitor series,
+    /// each element the nearest stated value (or a hand-picked part). An element whose kind has no
+    /// series chosen keeps its exact value. Appended, so a stored <c>Values</c> keeps its meaning.
+    /// </summary>
+    VendorLibrary,
 }
 
 /// <summary>
@@ -40,7 +46,9 @@ public enum FilterOrderMode
 }
 
 /// <summary>One part a library series offers, in base SI, with its stated tolerance when known.</summary>
-public sealed record FilterPart(string Name, double Value, string Tolerance = "")
+/// <param name="Vendor">The library part itself, which is what a placed ladder and a simulated Filter use;
+/// null for a part built by hand (a test).</param>
+public sealed record FilterPart(string Name, double Value, string Tolerance = "", VendorPartRef? Vendor = null)
 {
     /// <inheritdoc/>
     public override string ToString() => Name;
@@ -77,7 +85,7 @@ public static class FilterValues
     /// <summary>The value <paramref name="exact"/> snaps to, or itself for <see cref="FilterSeriesKind.Exact"/>.</summary>
     public static double Snap(bool inductor, double exact, FilterSeriesKind kind)
     {
-        if (kind == FilterSeriesKind.Exact) return exact;
+        if (kind is FilterSeriesKind.Exact or FilterSeriesKind.VendorLibrary) return exact;
         var mantissas = kind switch
         {
             FilterSeriesKind.E6  => PreferredValues.E6,
@@ -111,6 +119,28 @@ public static class FilterValues
             }
         }
         return chosen;
+    }
+
+    /// <summary>
+    /// The value one element is built with, and the library part behind it when there is one: the
+    /// exact value, the IEC series' nearest preferred value, or for <see cref="FilterSeriesKind.VendorLibrary"/>
+    /// the hand-picked part in <paramref name="overrides"/>, else the nearest part of the element's own
+    /// series, else the exact value. The one rule the Designer's table, a placed ladder and a simulated
+    /// Filter block all build with.
+    /// </summary>
+    public static (double Value, FilterLibrarySeries? Series, FilterPart? Part) Choose(
+        FilterElement element, FilterSeriesKind kind,
+        FilterLibrarySeries? inductors, FilterLibrarySeries? capacitors,
+        IReadOnlyDictionary<string, (FilterLibrarySeries Series, FilterPart Part)>? overrides)
+    {
+        if (kind != FilterSeriesKind.VendorLibrary)
+            return (Snap(element.Inductor, element.Value, kind), null, null);
+        if (overrides is not null && overrides.TryGetValue(element.Name, out var ov) && ov.Series.Inductors == element.Inductor)
+            return (ov.Part.Value, ov.Series, ov.Part);
+        var series = element.Inductor ? inductors : capacitors;
+        if (series is not null && Nearest(element.Value, series.Parts) is { } near)
+            return (near.Value, series, near);
+        return (element.Value, series, null);
     }
 
     /// <summary>
@@ -165,7 +195,7 @@ public static class FilterValues
                 var parts = entries
                     .Where(e => e.Header.Quantity == quantity && e.Header.Value is > 0)
                     .Select(e => new FilterPart(e.Part, e.Header.Value!.Value,
-                                                ToleranceOf(e.Header, e.Part)))
+                                                ToleranceOf(e.Header, e.Part), VendorPartRef.For(library, e)))
                     .OrderBy(p => p.Value)
                     .ToList();
                 if (parts.Count == 0) return;

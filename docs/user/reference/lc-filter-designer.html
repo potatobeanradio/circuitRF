@@ -164,7 +164,9 @@ LC in the through path is its capacitor on the line with the inductor on a short
 bandpass or bandstop series arm with a transmission zero is a box of three parallel branches — the
 series resonator on top, its inductor on the line, its capacitor below; and a parallel resonator to
 ground is two adjacent legs. Every label sits beside its own symbol. <strong>Copy</strong> puts the same drawing
-on the clipboard, and pasted into a schematic it extracts to exactly the ladder in the table.</p>
+on the clipboard, and pasted into a schematic it extracts to exactly the ladder in the table.
+Resizing the window re-fits the ladder, so it stays centred and whole in its pane. Exporting or
+copying the magnitude plot keeps the mask lines and their labels, as drawn on screen.</p>
 <p><strong>Design</strong> on the toolbar rebuilds the ladder and the curves. Every edit redesigns after a
 short pause, off the window's thread, so typing an order of 25 does not freeze the window; the
 status line says <em>Designing…</em> until the new ladder is drawn. A design whose specification has not
@@ -191,19 +193,17 @@ transmission after a snap.</p>
 <td>The nearest IEC 60063 preferred number, nearest by ratio — the same snap the Smith chart and the optimizer use.</td>
 </tr>
 <tr>
-<td>A library series</td>
-<td><strong>Load library series</strong> indexes the workspace's vendor libraries. Pick one inductor series and one capacitor series. Each element becomes the nearest stated value in that series, and the row names the part.</td>
+<td>Vendor library</td>
+<td>Real parts from the workspace's vendor libraries. Choosing it indexes the libraries and shows an <strong>Inductors</strong> and a <strong>Capacitors</strong> series list, which are hidden for every other choice. Each element becomes the nearest stated value in its series, and the row names the part; the table's Series and Part lists pick a different part for one element.</td>
 </tr>
 </tbody>
 </table>
-<p>A workspace with no vendor library leaves the series lists empty and says so. It does not fall
-back to an E-series. The power-integrity part library is a different drawer and is not read here.</p>
-<p><strong>Known limitation: a placed ladder does not use the library parts.</strong> With a library series loaded,
-the table names each part and the ladder is drawn at that part's value, but <strong>Place filter</strong> and
-<strong>Replace this Filter</strong> put ordinary inductors and capacitors on the schematic, at those values.
-They are not the vendor parts, and nothing on the placed ladder refers back to the library part.
-The block written by <strong>Apply to Filter</strong> or <strong>Place component</strong> remembers the series and parts, so
-the window reopens on them. Placing the library parts themselves is planned for a later release.</p>
+<p>A workspace with no vendor library shows no series lists and says so, and every value stays exact.
+It does not fall back to an E-series. An element whose kind has no series chosen keeps its exact
+value. The power-integrity part library is a different drawer and is not read here.</p>
+<p>With Vendor library chosen, <strong>Place filter</strong> and <strong>Replace this Filter</strong> place the library parts
+themselves: each element is the vendor part the table names, exactly as if it had been placed from
+the palette, with its case size's footprint on a board technology.</p>
 <h2 id="place">Where the result goes</h2>
 <p><strong>Apply to Filter</strong>, when the window was opened on a placed Filter, writes the whole specification
 onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
@@ -211,8 +211,13 @@ impedances, so the ideal block and the ladder are the same response. It also wri
 own settings, which the block keeps for the Designer and does not simulate: Ap, every mask edge
 (<code>Fp</code>, <code>Fs</code> or <code>Fp1</code>, <code>Fs1</code>, <code>Fs2</code>, <code>Fp2</code>), Minimum or Specify for the order, the first element, the
 value series and the library series and parts. <strong>Synthesise…</strong> on that Filter later reopens the
-window exactly as it was applied, with nothing derived again. The snap is not applied to the block,
-because the block has no elements.</p>
+window exactly as it was applied, with nothing derived again.</p>
+<p><strong>What the block simulates follows Values.</strong> With Exact, the Filter is the ideal transfer function,
+which is the exact ladder's own response. With an E-series or Vendor library, a Filter that carries a
+design simulates as its ladder: the snapped values, or the vendor library parts its properties name,
+so the run uses what the properties say. A part the workspace's libraries no longer hold is reported
+in Messages, and the block then simulates as the ideal filter. With <strong>Use Synthesis</strong> unticked the
+block is always the ideal transfer function, since its fields may no longer match the design.</p>
 <p><strong>A Filter that carries a design is locked.</strong> Its properties and its parameter dialog show the same
 fields the window does, in the window's order, but greyed, and its values cannot be edited on the
 schematic either: every change goes through <strong>Synthesise…</strong> and Apply, so the block never drifts from

@@ -9,6 +9,7 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Engine;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
@@ -44,6 +45,13 @@ public sealed record FilterAssignment(string Name, string Expression, string? Un
 /// <summary>One row of the Elliptic type picker.</summary>
 public sealed record EllipticTypeChoice(EllipticType Value, string Label)
 {
+    public override string ToString() => Label;
+}
+
+/// <summary>One entry of the Values dropdown: an IEC series, Exact, or the workspace's vendor library.</summary>
+public sealed record FilterSeriesChoice(FilterSeriesKind Value, string Label)
+{
+    /// <inheritdoc/>
     public override string ToString() => Label;
 }
 
@@ -99,8 +107,14 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         new(EllipticType.C, "c — even, equal terminations"),
     ];
 
-    /// <summary>Exact, or an IEC series.</summary>
+    /// <summary>Exact, an IEC series, or the workspace's vendor library.</summary>
     public IReadOnlyList<FilterSeriesKind> SeriesKinds { get; } = Enum.GetValues<FilterSeriesKind>();
+
+    /// <summary>The Values dropdown's entries, one per <see cref="SeriesKinds"/> member.</summary>
+    public IReadOnlyList<FilterSeriesChoice> SeriesChoices { get; } =
+        Enum.GetValues<FilterSeriesKind>()
+            .Select(k => new FilterSeriesChoice(k, k == FilterSeriesKind.VendorLibrary ? "Vendor library" : k.ToString()))
+            .ToList();
 
     /// <summary>Compute the smallest order that meets the mask, or type one.</summary>
     public IReadOnlyList<FilterOrderMode> OrderModes { get; } =
@@ -159,7 +173,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>The schematic that owns <see cref="Target"/>.</summary>
     public global::CircuitRF.Ui.ViewModels.SchematicViewModel? Schematic { get; set; }
 
-    /// <summary>A workspace root, so Load library series has somewhere to look.</summary>
+    /// <summary>A workspace root, so the Vendor library values have somewhere to look.</summary>
     public string? WorkspaceRoot { get; set; }
 
     [ObservableProperty] private FilterResponse _response = FilterResponse.Butterworth;
@@ -175,6 +189,33 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private bool _rippleRelevant;
     [ObservableProperty] private FilterSeriesKind _series = FilterSeriesKind.Exact;
+
+    /// <summary>The Values dropdown's selection, kept in step with <see cref="Series"/>.</summary>
+    [ObservableProperty] private FilterSeriesChoice? _seriesChoice;
+
+    /// <summary>
+    /// True when Values is Vendor library: only then are the Inductors and Capacitors series pickers
+    /// shown, and only then does the table offer a part per element.
+    /// </summary>
+    [ObservableProperty] private bool _isVendorLibrary;
+
+    /// <summary>The inductor and capacitor series pickers are shown: Vendor library, with a series found.</summary>
+    [ObservableProperty] private bool _showLibraryPickers;
+
+    /// <summary>
+    /// The vendor library part each element of the ladder last designed is built from, by element
+    /// name: what Place filter and Replace this Filter place in place of a generic L or C.
+    /// </summary>
+    private Dictionary<string, VendorPartRef> _ladderParts = new(StringComparer.Ordinal);
+
+    /// <summary>The vendor parts the current ladder uses, by element name (read by tests).</summary>
+    internal IReadOnlyDictionary<string, VendorPartRef> LadderParts => _ladderParts;
+
+    /// <summary>True once the workspace's libraries have been indexed for this window.</summary>
+    private bool _librariesLoaded;
+
+    /// <summary>Why Vendor library has nothing to offer, said beside every design while it is chosen.</summary>
+    private string _libraryNote = "";
     [ObservableProperty] private FilterOrderMode _orderMode = FilterOrderMode.Minimum;
     /// <summary>The prefix each edge box is typed in (owner, 2026-11-21: one per box, not one for all).</summary>
     [ObservableProperty] private string _unitA = "GHz";
@@ -360,7 +401,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         if (!CanPlace || PlacementSchematic is not { } schematic) return PlaceTip;
         if (ReplaceTarget && CanReplaceTarget) return ReplaceFilter();
         var (inName, outName) = FilterPlacement.EndNames(schematic.EditModel);
-        var fragment = FilterPlacement.LadderFragment(Ladder, inName, outName);
+        var fragment = FilterPlacement.LadderFragment(Ladder, inName, outName, _ladderParts,
+                                                      SchematicTechnology.Of(schematic.EditModel));
         return schematic.ArmFragmentPlacement(fragment)
             ? $"Click on the schematic to place the ladder. Its ends are the nets {inName} and {outName}."
             : "There is no ladder to place.";
@@ -393,7 +435,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         if (!schematic.EditModel.Components.Contains(target))
             return "The Filter this window was opened on is no longer on the schematic.";
         if (Ladder.Elements.Count == 0) return "There is no ladder to place.";
-        var fragment = FilterPlacement.ReplacementFragment(schematic.EditModel, target, Ladder);
+        var fragment = FilterPlacement.ReplacementFragment(schematic.EditModel, target, Ladder, _ladderParts,
+                                                           SchematicTechnology.Of(schematic.EditModel));
         schematic.Execute(new global::CircuitRF.Ui.Commands.Schematic.FilterReplaceCommand(
             schematic.EditModel, target, fragment, ids => schematic.Selection.SetAll(ids)));
         Target = null;
@@ -409,6 +452,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     public LcFilterDesignerViewModel()
     {
         ResponseChoice = ResponseChoices[0];
+        SeriesChoice = SeriesChoices[0];
         EllipticTypeChoice = EllipticTypeChoices[0];
         PlotRangeChoice = PlotRangeChoices[0];
         OrderEditable = false;
@@ -418,6 +462,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         MagnitudePlot.Axes.LockedPanning = true;
         PhasePlot.Axes.LockedPanning = true;
         MagnitudeMask = new FilterSpecMaskOverlay(MagnitudePlot);
+        // On the container too, not only on the control: Copy and Export compose from containers, and
+        // a mask known only to the control was drawn on screen and missing from every exported plot.
+        MagnitudeContainer.Overlay = MagnitudeMask;
         PlotHost.SelectOnly((PlotContainerViewModel?)null);
         ApplyLabels();
     }
@@ -442,7 +489,22 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     }
 
     partial void OnFirstChanged(FilterFirstElement value) => Design();
-    partial void OnSeriesChanged(FilterSeriesKind value) => Design();
+    partial void OnSeriesChanged(FilterSeriesKind value)
+    {
+        SeriesChoice = SeriesChoices.FirstOrDefault(c => c.Value == value);
+        IsVendorLibrary = value == FilterSeriesKind.VendorLibrary;
+        // Choosing the entry IS the load: the libraries are indexed the first time it is chosen.
+        if (IsVendorLibrary && !_librariesLoaded) LoadLibraries();
+        ShowLibraryPickers = IsVendorLibrary && LibraryAvailable;
+        Design();
+    }
+
+    partial void OnSeriesChoiceChanged(FilterSeriesChoice? value)
+    {
+        if (value is not null && value.Value != Series) Series = value.Value;
+    }
+
+    partial void OnLibraryAvailableChanged(bool value) => ShowLibraryPickers = IsVendorLibrary && value;
     // A prefix change rescales its own box, so the frequency it states is unchanged, and redraws.
     partial void OnUnitAChanged(string? oldValue, string newValue) { FaText = ConvertEdge(FaText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
     partial void OnUnitBChanged(string? oldValue, string newValue) { FbText = ConvertEdge(FbText, ScaleOf(oldValue ?? newValue), ScaleOf(newValue)); Design(); }
@@ -656,6 +718,10 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         Elements.Clear();
         Cnl = r.Cnl;
         Ladder = MatchLadderLayout.Empty;
+        _ladderParts = r.Rows
+            .Where(row => row.Chosen?.Vendor is not null)
+            .GroupBy(row => row.Exact.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Chosen!.Vendor!, StringComparer.Ordinal);
         _lastSpec = null;
         _lastIdeal = null;
         if (r.Failed)
@@ -686,7 +752,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                          ? $"\nElliptic type: {EllipticTypes.Letter(spec.EllipticType)}" : "") +
                      $"\nMinimum insertion loss: {minIl:0.0000} dB" +
                      (r.Real is { } rr ? $"\nLoad: {rr.LoadOhms:0.###} Ω" : "");
-        Status = r.Status;
+        Status = IsVendorLibrary && !LibraryAvailable && _libraryNote.Length > 0
+            ? (_libraryNote + " " + r.Status).Trim()
+            : r.Status;
         BuildPlots(r.IdealSnp, r.LadderSnp, spec);
         RefreshPlacement();
     }
@@ -695,6 +763,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     [RelayCommand]
     public void LoadLibraries()
     {
+        _librariesLoaded = true;
         InductorSeries.Clear();
         CapacitorSeries.Clear();
         var notes = new List<string>();
@@ -704,11 +773,14 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             else CapacitorSeries.Add(s);
         }
         LibraryAvailable = InductorSeries.Count > 0 || CapacitorSeries.Count > 0;
+        _libraryNote = LibraryAvailable
+            ? ""
+            : notes.FirstOrDefault()
+              ?? "This workspace has no vendor library with inductor or capacitor series; every value is exact.";
         Status = LibraryAvailable
             ? $"{InductorSeries.Count} inductor series, {CapacitorSeries.Count} capacitor series."
-            : notes.FirstOrDefault()
-              ?? "This workspace has no vendor library with inductor or capacitor series.";
-        if (LibraryAvailable) Design();
+            : _libraryNote;
+        if (LibraryAvailable && IsVendorLibrary) Design();
     }
 
     /// <summary>
@@ -731,7 +803,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             OrderText = ((int)order).ToString(CultureInfo.InvariantCulture);
         OrderMode = Enum.TryParse<FilterOrderMode>(Expr("OrderMode"), true, out var mode) ? mode : FilterOrderMode.Specify;
         if (Enum.TryParse<FilterFirstElement>(Expr("First"), true, out var first)) First = first;
-        if (Enum.TryParse<FilterSeriesKind>(Expr("Values"), true, out var values)) Series = values;
+        if (Enum.TryParse<FilterSeriesKind>(Expr("Values"), true, out var values) && Enum.IsDefined(values))
+            Series = values;
+        // A block applied before Vendor library was a Values entry names its series beside an IEC
+        // series, and the library won wherever it had a part: that is Vendor library now.
+        if (Expr("LSeries").Length > 0 || Expr("CSeries").Length > 0 || Expr("Parts").Length > 0)
+            Series = FilterSeriesKind.VendorLibrary;
 
         // The boxes are filled in GHz, then each is shown in the unit its edge was applied in.
         Unit = "GHz";
@@ -823,16 +900,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     }
 
     /// <summary>The Parts value as written: <c>element=library: series|part</c>, separated by ';'.</summary>
-    internal static IEnumerable<(string Element, string SeriesKey, string Part)> ParseParts(string text)
-    {
-        foreach (string item in text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            int eq = item.IndexOf('=');
-            int bar = item.LastIndexOf('|');
-            if (eq <= 0 || bar <= eq + 1 || bar == item.Length - 1) continue;
-            yield return (item[..eq].Trim(), item[(eq + 1)..bar].Trim(), item[(bar + 1)..].Trim());
-        }
-    }
+    internal static IEnumerable<(string Element, string SeriesKey, string Part)> ParseParts(string text) =>
+        FilterBlockLadder.ParseParts(text);
 
     /// <summary>The hand-picked parts, written the way <see cref="ParseParts"/> reads them.</summary>
     private string PartsText() =>
@@ -946,9 +1015,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             new("OrderMode", OrderMode.ToString()),
             new("First", spec.First.ToString()),
             new("Values", Series.ToString()),
-            new("LSeries", InductorChoice?.Key ?? ""),
-            new("CSeries", CapacitorChoice?.Key ?? ""),
-            new("Parts", PartsText()),
+            new("LSeries", IsVendorLibrary ? InductorChoice?.Key ?? "" : ""),
+            new("CSeries", IsVendorLibrary ? CapacitorChoice?.Key ?? "" : ""),
+            new("Parts", IsVendorLibrary ? PartsText() : ""),
             new("Synthesis", "On"),
         };
         bool edge = spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass;
@@ -1216,33 +1285,14 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         var used = new List<FilterElement>(real.Elements.Count);
         foreach (var e in real.Elements)
         {
-            double value = FilterValues.Snap(e.Inductor, e.Value, snap.Series);
-            string partName = "";
-            string seriesName = snap.Series == FilterSeriesKind.Exact ? "" : snap.Series.ToString();
-            string tolerance = FilterValues.ToleranceOf(snap.Series);
-            FilterLibrarySeries? series = e.Inductor ? snap.Inductors : snap.Capacitors;
-            FilterPart? chosen = null;
-
-            if (snap.Overrides.TryGetValue(e.Name, out var ov) && ov.Series.Inductors == e.Inductor)
-            {
-                series = ov.Series;
-                chosen = ov.Part;
-                value = chosen.Value;
-                partName = chosen.Name;
-                seriesName = series.Label;
-                tolerance = chosen.Tolerance;
-            }
-            else if (series is not null && FilterValues.Nearest(e.Value, series.Parts) is { } near)
-            {
-                chosen = near;
-                value = near.Value;
-                partName = near.Name;
-                seriesName = series.Label;
-                tolerance = near.Tolerance;
-            }
-
+            // The one rule a simulated Filter block builds with too (FilterBlockLadder).
+            var (value, series, chosen) = FilterValues.Choose(e, snap.Series, snap.Inductors, snap.Capacitors,
+                                                              snap.Overrides);
+            string seriesName = series?.Label
+                ?? (snap.Series is FilterSeriesKind.Exact or FilterSeriesKind.VendorLibrary ? "" : snap.Series.ToString());
+            string tolerance = chosen?.Tolerance ?? FilterValues.ToleranceOf(snap.Series);
             used.Add(e with { Value = value });
-            rows.Add(new SnapRow(e, value, seriesName, partName, tolerance, series, chosen));
+            rows.Add(new SnapRow(e, value, seriesName, chosen?.Name ?? "", tolerance, series, chosen));
         }
         return used;
     }
@@ -1250,7 +1300,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>Fills the element table from a design's rows. UI thread.</summary>
     private void FillRows(List<SnapRow> rows)
     {
-        bool library = LibraryAvailable && (InductorSeries.Count > 0 || CapacitorSeries.Count > 0);
+        bool library = IsVendorLibrary && LibraryAvailable && (InductorSeries.Count > 0 || CapacitorSeries.Count > 0);
         int row = 0;
         _fillingRows = true;
         try

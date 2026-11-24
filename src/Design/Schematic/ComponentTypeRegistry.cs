@@ -2743,9 +2743,10 @@ public static class ComponentTypeRegistry
             "LC Filter Designer: whether the LC ladder starts with a Series arm or a Parallel (shunt) "
           + "arm. The block's response is the same either way.",
         (SymbolKind.Filter, "Values") =>
-            "LC Filter Designer: the values the ladder is built with: Exact, or the nearest IEC "
-          + "preferred number (E6, E12, E24, E96). A library series in LSeries or CSeries takes "
-          + "precedence for its kind.",
+            "LC Filter Designer: the values the ladder is built with: Exact, the nearest IEC "
+          + "preferred number (E6, E12, E24, E96), or VendorLibrary (the parts of the series in "
+          + "LSeries and CSeries). With anything but Exact, a block that carries a design simulates "
+          + "as that ladder rather than as the ideal response.",
         (SymbolKind.Filter, "LSeries" or "CSeries") =>
             "LC Filter Designer: the vendor-library series the inductors (LSeries) or capacitors "
           + "(CSeries) were snapped to, as library: series. Blank means none. The Designer loads "
@@ -3501,6 +3502,8 @@ public static class ComponentTypeRegistry
                         // response reads none of them and NetExtractor drops them
                         // (IsLcFilterDesignerParameter), so a Filter extracts the same netlist with or
                         // without them, and a blank one is never written as `Name=`.
+                        // The exception: a locked block whose Values is not Exact is emitted as its
+                        // ladder instead of this line (FilterBlockLadder), built from these settings.
                         new("Ap",        "",        "dB",  false, UnitDimension.None),
                         new("Fp",        "",        "GHz", false, UnitDimension.Frequency),
                         new("Fs",        "",        "GHz", false, UnitDimension.Frequency),
@@ -5423,7 +5426,7 @@ public static class ComponentTypeRegistry
 
     private static readonly string[] FilterValuesOptions =
         [nameof(FilterSeriesKind.Exact), nameof(FilterSeriesKind.E6), nameof(FilterSeriesKind.E12),
-         nameof(FilterSeriesKind.E24), nameof(FilterSeriesKind.E96)];
+         nameof(FilterSeriesKind.E24), nameof(FilterSeriesKind.E96), nameof(FilterSeriesKind.VendorLibrary)];
 
     /// <summary>
     /// The Filter parameters only the LC Filter Designer reads: its mask, its order mode and how it

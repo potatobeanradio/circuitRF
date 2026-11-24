@@ -55,7 +55,8 @@ public static class LcFilterVerb
                         return Fail("--elliptic-type is auto, a, b or c.");
                     break;
                 case "--series":
-                    if (!Enum.TryParse<FilterSeriesKind>(Next(), true, out spec.Series))
+                    if (!Enum.TryParse<FilterSeriesKind>(Next(), true, out spec.Series)
+                        || !Enum.IsDefined(spec.Series) || spec.Series == FilterSeriesKind.VendorLibrary)
                         return Fail("--series is exact, e6, e12, e24 or e96.");
                     break;
                 case "-o":

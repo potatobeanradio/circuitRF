@@ -95,10 +95,35 @@ public sealed class MatchSchematicCanvas : Control
         InvalidateVisual();
     }
 
+    /// <summary>
+    /// When true, a change of the pane's size re-fits the drawing, so it stays centred and framed as
+    /// the window is resized (the LC Filter Designer). Off by default: the Match Designer keeps the
+    /// user's own zoom and pan across a resize.
+    /// </summary>
+    public static readonly StyledProperty<bool> FitOnResizeProperty =
+        AvaloniaProperty.Register<MatchSchematicCanvas, bool>(nameof(FitOnResize));
+
+    /// <inheritdoc cref="FitOnResizeProperty"/>
+    public bool FitOnResize
+    {
+        get => GetValue(FitOnResizeProperty);
+        set => SetValue(FitOnResizeProperty, value);
+    }
+
     /// <inheritdoc/>
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+        if (change.Property == BoundsProperty)
+        {
+            // The next frame fits (Render calls Fit, which never invalidates from the render pass).
+            if (FitOnResize && change.GetOldValue<Rect>().Size != change.GetNewValue<Rect>().Size)
+            {
+                _fitted = false;
+                InvalidateVisual();
+            }
+            return;
+        }
         if (change.Property != LayoutProperty) return;
 
         var next = Layout;
