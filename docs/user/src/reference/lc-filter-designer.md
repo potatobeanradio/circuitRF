@@ -51,6 +51,21 @@ vendor library it checks the ladder at its snapped values too, so a value a few 
 push an edge out. A design that still misses, at an order you typed, is drawn with the miss said in
 the status line, and cannot be applied or placed.
 
+**When an E-series or a library is what misses, the window offers a search.** Under the reason in
+Design information it asks whether to look for other values, with a **Search** button. The search
+tries the designs the mask allows (the orders from the one that missed, deeper floors and re-centred
+edges), and for each it moves the elements one at a time, then in neighbouring pairs, to the values
+around their nearest one in the series: up to three either side, the nearest not always being the
+best. With Vendor library it does the same over every pairing of an inductor series with a capacitor
+series in the workspace's libraries, the chosen pair first. It stops at the first ladder that meets
+the mask, checked on the same grid as every design, and the window then shows that design: Order
+switches to Specify at the order found, the library series become the pair it used, and each
+element's part is the one it picked. **Cancel** stops it. Changing anything in the specification
+drops what it found and designs afresh. When nothing works, the status line says how close it came.
+
+Apply writes the picked values to the block's `Parts` (for an E-series, as values of that series),
+so the block simulates, and the Designer reopens on, exactly that ladder.
+
 ## The specification {#spec}
 
 | Control | What it sets |

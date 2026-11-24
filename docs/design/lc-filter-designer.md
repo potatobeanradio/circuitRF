@@ -235,3 +235,25 @@ A Minimum that finds nothing shows the mask alone and the reason. A Specify desi
 drawn with the miss in the status line, and `MaskMet` false blocks Apply, Place filter, Place
 component and Replace this Filter. Reopening a block whose mask edges are all stored shows the mask,
 not the shifted cutoff.
+
+## The search for a passing design (2026-11-23)
+
+`FilterValueSearch.Run` (`src/Design/Filters`) is what Search under a snapped miss runs. It walks
+`FilterMask.Candidates` (the same enumeration `Find` takes its first from: orders, floors, and the
+given then balanced edges, lazily) for `OrderWindow` (6) orders past the first, fitting values to at
+most `CandidatesPerOrder` (4) designs an order, for each `(inductor series, capacitor series)` pair
+it is handed. An IEC series is handed as a `FilterLibrarySeries` too (`FilterValues.IecSeries`,
+library name `IEC 60063`, the span `Snap` uses), so both cases are one search.
+
+The fit is coordinate descent over each element's nearest value and `Neighbours` (3) either side:
+single elements first, then adjacent pairs when single moves stall. The score is the worst miss
+plus a quarter of the mean excess over the grid, because the worst miss alone is flat wherever one
+frequency dominates. Responses come from `FilterLadder.InsertionLossDb`, a small nodal solve of the
+same circuit `ToCnl` writes, matched to the engine to 1e-6 dB by test, which is what makes thousands
+of evaluations affordable. A coarse pass (24 points a band) is confirmed on the full 400-point grid.
+
+The view model pins the result (`Spec.Pinned`): `Compute` builds that exact design instead of
+searching, while `SpecSignature()` is unchanged, and the picks are `_partOverrides` for every
+element. `FilterValues.Choose` honours an IEC pick when it is from the chosen series, so the block's
+`Parts` (`element=IEC 60063: E12 inductors|10nH`) is what `FilterBlockLadder.Build` and `SeedFrom`
+read back. A pick from a series other than the chosen Values is never written.

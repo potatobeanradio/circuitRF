@@ -404,6 +404,16 @@
                             <TextBlock Classes="cardhdr" Text="Design information"/>                            <TextBlock Classes="note" Text="{Binding DesignInfo}"/>
                             <TextBlock Classes="warn" Text="{Binding Status}"
                                        IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <!-- A miss with snapped values: offer the search for values that meet the mask. -->
+                            <StackPanel Spacing="4" Margin="0,4,0,0" IsVisible="{Binding CanSearchValues}">
+                                <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding SearchQuestion}"/>
+                                <Button Content="Search" Command="{Binding SearchValuesCommand}" HorizontalAlignment="Left"
+                                        ToolTip.Tip="Tries other orders the mask allows, each element's neighbouring values and, for Vendor library, every pairing of series. What it finds replaces the design until the specification changes."/>
+                            </StackPanel>
+                            <StackPanel Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsSearching}">
+                                <TextBlock Classes="note" TextWrapping="Wrap" Text="{Binding SearchProgress}"/>
+                                <Button Content="Cancel" Command="{Binding CancelSearchCommand}" HorizontalAlignment="Left"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

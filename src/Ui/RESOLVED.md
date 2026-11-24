@@ -42914,3 +42914,23 @@ Two reported cases, one narrow 2.4 GHz bandpass (10 MHz transitions, Ap 3, Rippl
 - **Trap:** a placed block's cutoff is no longer one of the mask edges, so `SeedFrom` reopens on the
   stored mask edges whenever all of them are present; and the cutoff is written to 14 decimals,
   because 9 moved a placed block's response by 1e-9 against the Designer's.
+
+## LC Filter Designer — searching for values that meet the mask (2026-11-23)
+
+When a snapped ladder (E-series or Vendor library) misses the mask, the Designer now asks under the
+reason whether to search, and the search (`FilterValueSearch`) picks each element's value from its
+neighbours in the series, over the designs the mask allows and, for a library, every pairing of
+series. Measured on this container: a Chebyshev lowpass 1000/1300 MHz, 0.5 dB, 30 dB at E12 missed
+at every order to 13 with nearest values and passes at order 10 with picks, in about 0.6 s; library
+cases took 0.02 to 8 s.
+
+- **Trap:** an E-series had no way to name a value other than the nearest, so a found design could
+  not be kept on the block. IEC series are now also `FilterLibrarySeries` (`FilterValues.IecSeries`),
+  and `Parts` names picks from them; `SeedFrom` must not read those as a Vendor library block, which
+  it did by the old rule that any `Parts` meant Vendor library.
+- **Trap:** the found design is pinned rather than searched for again. A Specify redesign at the
+  found order would take the first candidate whose snapped ladder passes, and a zero family's
+  element names can differ between candidates, so the picks could land on the wrong elements.
+- **Trap:** a value set judged by the worst miss alone stalls: moving one element rarely changes the
+  worst frequency. The score adds the mean excess, and adjacent pairs move together when single
+  moves stall; that took one library case from 0.063 to 0.015 dB short of the mask.

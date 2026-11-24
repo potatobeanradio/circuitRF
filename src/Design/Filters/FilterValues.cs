@@ -133,14 +133,64 @@ public static class FilterValues
         FilterLibrarySeries? inductors, FilterLibrarySeries? capacitors,
         IReadOnlyDictionary<string, (FilterLibrarySeries Series, FilterPart Part)>? overrides)
     {
+        if (kind == FilterSeriesKind.Exact)
+            return (element.Value, null, null);
         if (kind != FilterSeriesKind.VendorLibrary)
+        {
+            // A value the search for a passing design picked: another value of the same series.
+            if (overrides is not null && overrides.TryGetValue(element.Name, out var pick)
+                && pick.Series.Library == IecLibrary && pick.Series.Inductors == element.Inductor
+                && pick.Series.Key == IecSeries(kind, element.Inductor).Key)
+                return (pick.Part.Value, null, null);
             return (Snap(element.Inductor, element.Value, kind), null, null);
+        }
         if (overrides is not null && overrides.TryGetValue(element.Name, out var ov) && ov.Series.Inductors == element.Inductor)
             return (ov.Part.Value, ov.Series, ov.Part);
         var series = element.Inductor ? inductors : capacitors;
         if (series is not null && Nearest(element.Value, series.Parts) is { } near)
             return (near.Value, series, near);
         return (element.Value, series, null);
+    }
+
+    /// <summary>The library name an IEC series goes by when its values are handled as parts.</summary>
+    public const string IecLibrary = "IEC 60063";
+
+    private static readonly Dictionary<(FilterSeriesKind, bool), FilterLibrarySeries> IecCache = [];
+
+    /// <summary>
+    /// An IEC series as a list of parts, over the span <see cref="Snap"/> uses: what the search for a
+    /// passing design picks other values from, and what a block's <c>Parts</c> names them by.
+    /// </summary>
+    public static FilterLibrarySeries IecSeries(FilterSeriesKind kind, bool inductors)
+    {
+        lock (IecCache)
+        {
+            if (IecCache.TryGetValue((kind, inductors), out var cached)) return cached;
+            var mantissas = kind switch
+            {
+                FilterSeriesKind.E6  => PreferredValues.E6,
+                FilterSeriesKind.E24 => PreferredValues.E24,
+                FilterSeriesKind.E96 => PreferredValues.E96,
+                _ => PreferredValues.E12,
+            };
+            var values = PreferredValues.Series(mantissas, inductors ? -10 : -13, inductors ? -5 : -8);
+            var parts = values.Select(v => new FilterPart(ValueName(v, inductors ? "H" : "F"), v, ToleranceOf(kind)))
+                              .ToList();
+            var series = new FilterLibrarySeries(IecLibrary, "", $"{kind} {(inductors ? "inductors" : "capacitors")}",
+                                                 inductors, parts);
+            IecCache[(kind, inductors)] = series;
+            return series;
+        }
+    }
+
+    /// <summary>A value as a part name: three significant figures and an SI prefix, e.g. <c>4.7nH</c>.</summary>
+    private static string ValueName(double v, string unit)
+    {
+        string[] prefixes = ["f", "p", "n", "u", "m", ""];
+        int i = 0;
+        double scaled = v * 1e15;
+        while (i < prefixes.Length - 1 && Math.Abs(scaled) >= 1000) { scaled /= 1000; i++; }
+        return scaled.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + prefixes[i] + unit;
     }
 
     /// <summary>

@@ -252,6 +252,8 @@ bool standalone = false;
 var signal = new List<string>();
 string? snp = null;
 string? filterForm = null;
+string? filterSpec = null;
+bool filterSearch = false;
 int plotIndex = 1, previewTab = 0;
 bool sizeGiven = false;
 bool scrollEnd = false;
@@ -273,6 +275,8 @@ for (int i = 0; i < args.Length; i++)
         case "--chain-scroll" when i + 1 < args.Length: chainScroll = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
         case "--snp" when i + 1 < args.Length: snp = Path.GetFullPath(args[++i]); break;
         case "--filter" when i + 1 < args.Length: filterForm = args[++i]; break;
+        case "--filter-spec" when i + 1 < args.Length: filterSpec = args[++i]; break;
+        case "--filter-search": filterSearch = true; break;
         case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
         case "--standalone": standalone = true; break;
         case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
@@ -1435,11 +1439,36 @@ else if (filterForm is not null)
     var designer = new CircuitRF.Ui.Filters.LcFilterDesignerViewModel { Schematic = new SchematicViewModel(model, messageSink: null), Target = filter };
     designer.SeedFrom(filter);
     designer.Form = Enum.Parse<CircuitRF.Core.Matching.NetworkForm>(filterForm, ignoreCase: true);
+    // --filter-spec "Response=Chebyshev;Order=Minimum;A=1000;B=1300;Ap=0.5;Ripple=0.5;As=30;Values=E12"
+    foreach (var item in (filterSpec ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        var kv = item.Split('=', 2);
+        if (kv.Length != 2) continue;
+        switch (kv[0])
+        {
+            case "Response": designer.Response = Enum.Parse<CircuitRF.Core.Systems.FilterResponse>(kv[1], true); break;
+            case "Order": designer.OrderMode = Enum.Parse<CircuitRF.Design.Filters.FilterOrderMode>(kv[1], true); break;
+            case "N": designer.OrderText = kv[1]; break;
+            case "A": designer.FaText = kv[1]; break;
+            case "B": designer.FbText = kv[1]; break;
+            case "C": designer.FcText = kv[1]; break;
+            case "D": designer.FdText = kv[1]; break;
+            case "Ap": designer.ApText = kv[1]; break;
+            case "Ripple": designer.RippleText = kv[1]; break;
+            case "As": designer.AsText = kv[1]; break;
+            case "Values": designer.Series = Enum.Parse<CircuitRF.Design.Filters.FilterSeriesKind>(kv[1], true); break;
+        }
+    }
     host = new CircuitRF.Ui.Views.Filters.LcFilterDesignerWindow { DataContext = designer };
     if (sizeGiven) { host.Width = width; host.Height = height; }
     host.Show();
     Pump();
     Await(designer.DesignAsync(0));
+    if (filterSearch && designer.CanSearchValues)
+    {
+        Console.WriteLine(designer.Status);
+        Await(designer.SearchValuesAsync());
+    }
     designer.RefreshPlacement();
     Console.WriteLine(designer.Status);
 }

@@ -176,6 +176,25 @@ public static class FilterBlockLadder
             }
         }
 
+        if (kind is not (FilterSeriesKind.Exact or FilterSeriesKind.VendorLibrary))
+        {
+            // Values the search for a passing design picked, named as parts of the IEC series.
+            var missing = new List<string>();
+            foreach (var (element, key, partName) in ParseParts(Expr("Parts")))
+            {
+                var s = new[] { FilterValues.IecSeries(kind, true), FilterValues.IecSeries(kind, false) }
+                    .FirstOrDefault(x => x.Key == key);
+                var p = s?.Parts.FirstOrDefault(x => x.Name == partName);
+                if (s is null || p is null) { missing.Add($"{key}|{partName}"); continue; }
+                overrides[element] = (s, p);
+            }
+            if (missing.Count > 0)
+            {
+                refusal = $"the {kind} values it names are not {kind} values ({string.Join(", ", missing.Distinct())})";
+                return null;
+            }
+        }
+
         var list = new List<Part>(real.Elements.Count);
         foreach (var e in real.Elements)
         {

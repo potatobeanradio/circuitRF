@@ -16,7 +16,11 @@ public sealed record FilterMaskSpec(NetworkForm Form, double ApDb, double AsDb,
 /// </summary>
 public sealed record FilterMaskChoice(int Order, double AstopDb, EllipticType EllipticType,
                                       double FcHz, double F1Hz, double F2Hz,
-                                      FilterNetwork Ideal, FilterLadderResult Ladder, double MissDb);
+                                      FilterNetwork Ideal, FilterLadderResult Ladder, double MissDb)
+{
+    /// <summary>True when the edges were moved off the given ones to balance the mask's two bands.</summary>
+    public bool Balanced { get; init; }
+}
 
 /// <summary>
 /// Whether a response stays inside a mask, and the smallest design that does. The closed-form order
@@ -181,8 +185,7 @@ public static class FilterMask
     /// response meets <paramref name="mask"/> AND has an LC ladder (that <paramref name="accept"/>, when
     /// given, also takes: the caller's check of the ladder as it will be BUILT, its values snapped to a
     /// series); for a family with finite zeros, built at the shallowest floor from As down that does
-    /// all of it. Null, with
-    /// <paramref name="why"/>, when nothing in the range does.
+    /// all of it. Null, with <paramref name="why"/>, when nothing in the range does.
     /// </summary>
     public static FilterMaskChoice? Find(
         FilterResponse response, NetworkForm form, int startOrder, int maxOrder,
@@ -191,94 +194,23 @@ public static class FilterMask
         Func<FilterMaskChoice, bool>? accept, CancellationToken ct, out string? why)
     {
         why = null;
-        bool zeros = response is FilterResponse.InvChebyshev or FilterResponse.Elliptic;
-        double[] extras = zeros ? ExtraStopDb : [0];
-        string? lastRefusal = null;
-        double bestMiss = double.PositiveInfinity;
+        var state = new SearchState();
         int firstBuilt = 0;
-        for (int n = Math.Max(1, startOrder); n <= maxOrder; n++)
+        foreach (var choice in Enumerate(response, form, startOrder, maxOrder, fcHz, f1Hz, f2Hz, rippleDb,
+                                         sourceOhms, first, requestedType, mask, state, ct))
         {
             // A ladder that meets the mask exactly but not once snapped is a series too coarse for
             // the mask; a few orders' more margin settles it either way, and the rest would only cost.
-            if (firstBuilt > 0 && n > firstBuilt + SnapOrderWindow) break;
-            bool rejected = false;
-            var type = response == FilterResponse.Elliptic ? EllipticTypes.Resolve(requestedType, n) : EllipticType.A;
-            // No LC ladder exists at these orders: an even inverse Chebyshev, an even type-a elliptic.
-            if (response == FilterResponse.InvChebyshev && (n & 1) == 0) continue;
-            if (response == FilterResponse.Elliptic && type == EllipticType.A && (n & 1) == 0) continue;
-            foreach (double extra in extras)
-            {
-                if (rejected) break;
-                double astop = mask.AsDb + extra;
-                // The edges as given first; then, when that misses or has no ladder, the edges moved
-                // so the response sits as far inside the mask as it can (Ap above the Ripple, or a
-                // deeper floor than As, leaves room to widen or narrow the passband).
-                for (int attempt = 0; attempt < 2; attempt++)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    double fc = fcHz, f1 = f1Hz, f2 = f2Hz;
-                    FilterNetwork? ideal;
-                    double miss;
-                    if (attempt == 0)
-                    {
-                        try
-                        {
-                            ideal = FilterNetwork.Create(response, form, n, fc, f1, f2, rippleDb, astop, 0, type);
-                        }
-                        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
-                        {
-                            lastRefusal = e.Message;
-                            continue;
-                        }
-                        var net0 = ideal;
-                        miss = WorstMissDb(mask, f => IdealLossDb(net0, f));
-                    }
-                    else
-                    {
-                        var (s, balanced, bMiss) = Balance(sc =>
-                        {
-                            var (c, a, b) = ScaleEdges(form, fcHz, f1Hz, f2Hz, sc);
-                            try { return FilterNetwork.Create(response, form, n, c, a, b, rippleDb, astop, 0, type); }
-                            catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return null; }
-                        }, mask, ct);
-                        if (balanced is null) continue;
-                        (fc, f1, f2) = ScaleEdges(form, fcHz, f1Hz, f2Hz, s);
-                        ideal = balanced;
-                        miss = bMiss;
-                    }
-                    bestMiss = Math.Min(bestMiss, miss);
-                    if (miss > ToleranceDb) continue;
-                    FilterLadderResult ladder;
-                    try
-                    {
-                        ladder = FilterLadder.Synthesize(response, form, n, fc, f1, f2, rippleDb, sourceOhms,
-                                                         first, astop, type);
-                    }
-                    catch (Exception e) when (e is ArgumentException or InvalidOperationException)
-                    {
-                        lastRefusal = e.Message;
-                        continue;
-                    }
-                    if (!ladder.Ok)
-                    {
-                        lastRefusal = ladder.Refusal?.Message;
-                        continue;
-                    }
-                    var choice = new FilterMaskChoice(n, astop, type, fc, f1, f2, ideal, ladder, miss);
-                    if (accept is not null && !accept(choice))
-                    {
-                        // The re-centred edges are the snapped values' best chance at this order; a
-                        // deeper floor only spends the margin they need, so then the next order.
-                        lastRefusal = "Its values, snapped to the chosen series, leave the mask.";
-                        if (firstBuilt == 0) firstBuilt = n;
-                        if (attempt == 0) continue;
-                        rejected = true;
-                        break;
-                    }
-                    return choice;
-                }
-            }
+            if (firstBuilt > 0 && choice.Order > firstBuilt + SnapOrderWindow) break;
+            if (accept is null || accept(choice)) return choice;
+            state.LastRefusal = "Its values, snapped to the chosen series, leave the mask.";
+            if (firstBuilt == 0) firstBuilt = choice.Order;
+            // The re-centred edges are the snapped values' best chance at this order; a deeper floor
+            // only spends the margin they need, so then the next order.
+            if (choice.Balanced) state.SkipOrder = choice.Order;
         }
+        double bestMiss = state.BestMiss;
+        string? lastRefusal = state.LastRefusal;
         why = startOrder == maxOrder
             ? $"At order {startOrder} no {response} filter meets the mask with an LC ladder"
               + (double.IsFinite(bestMiss) && bestMiss > ToleranceDb ? $" (it misses by {bestMiss:0.###} dB)." : ".")
@@ -291,5 +223,106 @@ public static class FilterMask
             : $"No {response} filter up to order {maxOrder} meets the mask with an LC ladder. "
               + "A wider transition or a looser mask does.";
         return null;
+    }
+
+    /// <summary>
+    /// Every design from <paramref name="startOrder"/> to <paramref name="maxOrder"/> whose ideal
+    /// response meets the mask and whose ladder exists, lowest order first: at each order and floor,
+    /// the edges as given, then the balanced edges (<see cref="FilterMaskChoice.Balanced"/>). Lazy,
+    /// so a caller that stops early pays for nothing past it.
+    /// </summary>
+    public static IEnumerable<FilterMaskChoice> Candidates(
+        FilterResponse response, NetworkForm form, int startOrder, int maxOrder,
+        double fcHz, double f1Hz, double f2Hz, double rippleDb, double sourceOhms,
+        FilterFirstElement first, EllipticType requestedType, FilterMaskSpec mask, CancellationToken ct) =>
+        Enumerate(response, form, startOrder, maxOrder, fcHz, f1Hz, f2Hz, rippleDb, sourceOhms, first,
+                  requestedType, mask, new SearchState(), ct);
+
+    /// <summary>What a search learned on the way, and the order its caller wants it to leave.</summary>
+    private sealed class SearchState
+    {
+        public string? LastRefusal;
+        public double BestMiss = double.PositiveInfinity;
+        public int SkipOrder;
+    }
+
+    private static IEnumerable<FilterMaskChoice> Enumerate(
+        FilterResponse response, NetworkForm form, int startOrder, int maxOrder,
+        double fcHz, double f1Hz, double f2Hz, double rippleDb, double sourceOhms,
+        FilterFirstElement first, EllipticType requestedType, FilterMaskSpec mask,
+        SearchState state, CancellationToken ct)
+    {
+        bool zeros = response is FilterResponse.InvChebyshev or FilterResponse.Elliptic;
+        double[] extras = zeros ? ExtraStopDb : [0];
+        for (int n = Math.Max(1, startOrder); n <= maxOrder; n++)
+        {
+            var type = response == FilterResponse.Elliptic ? EllipticTypes.Resolve(requestedType, n) : EllipticType.A;
+            // No LC ladder exists at these orders: an even inverse Chebyshev, an even type-a elliptic.
+            if (response == FilterResponse.InvChebyshev && (n & 1) == 0) continue;
+            if (response == FilterResponse.Elliptic && type == EllipticType.A && (n & 1) == 0) continue;
+            foreach (double extra in extras)
+            {
+                if (state.SkipOrder == n) break;
+                double astop = mask.AsDb + extra;
+                // The edges as given first; then the edges moved so the response sits as far inside
+                // the mask as it can (Ap above the Ripple, or a deeper floor than As, leaves room to
+                // widen or narrow the passband).
+                for (int attempt = 0; attempt < 2; attempt++)
+                {
+                    if (state.SkipOrder == n) break;
+                    ct.ThrowIfCancellationRequested();
+                    double fc = fcHz, f1 = f1Hz, f2 = f2Hz;
+                    FilterNetwork? ideal;
+                    double miss;
+                    if (attempt == 0)
+                    {
+                        try
+                        {
+                            ideal = FilterNetwork.Create(response, form, n, fc, f1, f2, rippleDb, astop, 0, type);
+                        }
+                        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+                        {
+                            state.LastRefusal = e.Message;
+                            continue;
+                        }
+                        var net0 = ideal;
+                        miss = WorstMissDb(mask, f => IdealLossDb(net0, f));
+                    }
+                    else
+                    {
+                        var (sc, balanced, bMiss) = Balance(k =>
+                        {
+                            var (c, a, b) = ScaleEdges(form, fcHz, f1Hz, f2Hz, k);
+                            try { return FilterNetwork.Create(response, form, n, c, a, b, rippleDb, astop, 0, type); }
+                            catch (Exception e) when (e is ArgumentException or InvalidOperationException) { return null; }
+                        }, mask, ct);
+                        if (balanced is null) continue;
+                        (fc, f1, f2) = ScaleEdges(form, fcHz, f1Hz, f2Hz, sc);
+                        ideal = balanced;
+                        miss = bMiss;
+                    }
+                    state.BestMiss = Math.Min(state.BestMiss, miss);
+                    if (miss > ToleranceDb) continue;
+                    FilterLadderResult ladder;
+                    try
+                    {
+                        ladder = FilterLadder.Synthesize(response, form, n, fc, f1, f2, rippleDb, sourceOhms,
+                                                         first, astop, type);
+                    }
+                    catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+                    {
+                        state.LastRefusal = e.Message;
+                        continue;
+                    }
+                    if (!ladder.Ok)
+                    {
+                        state.LastRefusal = ladder.Refusal?.Message;
+                        continue;
+                    }
+                    yield return new FilterMaskChoice(n, astop, type, fc, f1, f2, ideal, ladder, miss)
+                        { Balanced = attempt == 1 };
+                }
+            }
+        }
     }
 }

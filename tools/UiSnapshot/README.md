@@ -91,7 +91,9 @@ Default size 700x260.
 dotnet run --project tools/UiSnapshot --no-build -- --filter <Lowpass|Highpass|Bandpass|Bandstop> -o out.png [--size WxH] [steps]
 ```
 
-The status line prints after the design has run.
+The status line prints after the design has run. `--filter-spec "Response=Chebyshev;Order=Minimum;A=1000;B=1300;Ap=0.5;Ripple=0.5;As=30;Values=E12"`
+sets the specification first (A to D are the edge boxes, in their default MHz; `N` the typed order), and
+`--filter-search` then runs the search for a passing design when the window offers it.
 
 **The Tuning window** opens on a schematic's ticked Tune rows, the way the shell hosts it:
 

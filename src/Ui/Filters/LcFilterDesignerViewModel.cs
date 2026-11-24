@@ -504,6 +504,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         // Choosing the entry IS the load: the libraries are indexed the first time it is chosen.
         if (IsVendorLibrary && !_librariesLoaded) LoadLibraries();
         ShowLibraryPickers = IsVendorLibrary && LibraryAvailable;
+        OnPropertyChanged(nameof(SearchQuestion));
+        OnPropertyChanged(nameof(CanSearchValues));
         Design();
     }
 
@@ -610,7 +612,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         }
         if (generation != _designGeneration) return;
 
-        if (!TrySpec(out var spec, out string? error))
+        bool valid = TrySpec(out var spec, out string? error);
+        if (_pinned is not null && SpecSignature() != _pinnedSignature) DropPin();
+        _searchable = valid && spec.Mask is not null
+                      && spec.Response is not (FilterResponse.Bessel or FilterResponse.Gaussian);
+        if (valid && _pinned is not null) spec = spec with { Pinned = _pinned };
+        if (!valid)
         {
             Elements.Clear();
             Cnl = "";
@@ -622,6 +629,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             ClearPlots();
             ShowMaskAlone();
             RefreshPlacement();
+            OnPropertyChanged(nameof(CanSearchValues));
             return;
         }
 
@@ -671,7 +679,13 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         // finds none produces nothing — never a filter outside its own mask.
         FilterMaskChoice? choice = null;
         string? searchWhy = null;
-        if (spec.Mask is { } mask && spec.Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
+        if (spec.Pinned is { } pinned)
+        {
+            choice = pinned;
+            spec = spec with { Order = choice.Order, DesignAsDb = choice.AstopDb, EllipticType = choice.EllipticType,
+                               FcHz = choice.FcHz, F1Hz = choice.F1Hz, F2Hz = choice.F2Hz };
+        }
+        else if (spec.Mask is { } mask && spec.Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
         {
             int max = spec.OrderFromMinimum ? Math.Max(spec.Order, FilterMask.MaxOrder) : spec.Order;
             // The ladder as it will be built (snapped to the chosen series) has to meet the mask too:
@@ -823,6 +837,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             ClearPlots();
             ShowMaskAlone();
             RefreshPlacement();
+            OnPropertyChanged(nameof(CanSearchValues));
             return;
         }
         if (spec.OrderFromMinimum) OrderText = spec.Order.ToString(CultureInfo.InvariantCulture);
@@ -855,8 +870,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                      + (Series != FilterSeriesKind.Exact ? "Finer values, a higher order or a looser mask meets it. "
                                                          : "A higher order (or Minimum) or a looser mask meets it. ")
                      + Status).Trim();
+        if (MaskMet && spec.Pinned is not null)
+            Status = ("Values found by the search: each element is the series value the table shows, "
+                      + "picked so the ladder meets the mask. " + Status).Trim();
         BuildPlots(r.IdealSnp, r.LadderSnp, spec);
         RefreshPlacement();
+        OnPropertyChanged(nameof(CanSearchValues));
     }
 
     /// <summary>Indexes the workspace's vendor libraries into inductor and capacitor series.</summary>
@@ -907,7 +926,8 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             Series = values;
         // A block applied before Vendor library was a Values entry names its series beside an IEC
         // series, and the library won wherever it had a part: that is Vendor library now.
-        if (Expr("LSeries").Length > 0 || Expr("CSeries").Length > 0 || Expr("Parts").Length > 0)
+        if (Expr("LSeries").Length > 0 || Expr("CSeries").Length > 0
+            || ParseParts(Expr("Parts")).Any(x => !x.SeriesKey.StartsWith(FilterValues.IecLibrary + ":", StringComparison.Ordinal)))
             Series = FilterSeriesKind.VendorLibrary;
 
         // The boxes are filled in GHz, then each is shown in the unit its edge was applied in.
@@ -984,7 +1004,22 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     private void SeedLibrary(string lSeries, string cSeries, string parts)
     {
         _partOverrides.Clear();
+        DropPin();
         if (lSeries.Length == 0 && cSeries.Length == 0 && parts.Length == 0) return;
+        var iec = ParseParts(parts).Where(x => x.SeriesKey.StartsWith(FilterValues.IecLibrary + ":", StringComparison.Ordinal)).ToList();
+        if (Series is not (FilterSeriesKind.Exact or FilterSeriesKind.VendorLibrary))
+            foreach (var (element, key, partName) in iec)
+            {
+                var series = new[] { FilterValues.IecSeries(Series, true), FilterValues.IecSeries(Series, false) }
+                    .FirstOrDefault(x => x.Key == key);
+                if (series?.Parts.FirstOrDefault(x => x.Name == partName) is { } part)
+                    _partOverrides[element] = (series, part);
+            }
+        if (lSeries.Length == 0 && cSeries.Length == 0 && iec.Count == ParseParts(parts).Count())
+        {
+            Design();
+            return;
+        }
         LoadLibraries();
         var missing = new List<string>();
         FilterLibrarySeries? Find(IEnumerable<FilterLibrarySeries> list, string key)
@@ -996,7 +1031,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         }
         InductorChoice = Find(InductorSeries, lSeries);
         CapacitorChoice = Find(CapacitorSeries, cSeries);
-        foreach (var (element, key, partName) in ParseParts(parts))
+        foreach (var (element, key, partName) in ParseParts(parts).Where(x => !iec.Contains(x)))
         {
             var series = InductorSeries.Concat(CapacitorSeries).FirstOrDefault(x => x.Key == key);
             var part = series?.Parts.FirstOrDefault(x => x.Name == partName);
@@ -1014,8 +1049,17 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
 
     /// <summary>The hand-picked parts, written the way <see cref="ParseParts"/> reads them.</summary>
     private string PartsText() =>
-        string.Join("; ", _partOverrides.OrderBy(o => o.Key, StringComparer.Ordinal)
+        string.Join("; ", _partOverrides.Where(o => AppliesToSeries(o.Value.Series))
+                                        .OrderBy(o => o.Key, StringComparer.Ordinal)
                                         .Select(o => $"{o.Key}={o.Value.Series.Key}|{o.Value.Part.Name}"));
+
+    /// <summary>True when a picked part's series is one the chosen Values builds with.</summary>
+    private bool AppliesToSeries(FilterLibrarySeries series) => Series switch
+    {
+        FilterSeriesKind.Exact         => false,
+        FilterSeriesKind.VendorLibrary => series.Library != FilterValues.IecLibrary,
+        _                              => series.Key == FilterValues.IecSeries(Series, series.Inductors).Key,
+    };
 
     /// <summary>
     /// Puts a Filter's own cutoff (GHz) into the boxes that edge belongs to — the passband edges,
@@ -1131,7 +1175,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             new("Values", Series.ToString()),
             new("LSeries", IsVendorLibrary ? InductorChoice?.Key ?? "" : ""),
             new("CSeries", IsVendorLibrary ? CapacitorChoice?.Key ?? "" : ""),
-            new("Parts", IsVendorLibrary ? PartsText() : ""),
+            new("Parts", Series != FilterSeriesKind.Exact ? PartsText() : ""),
             new("Synthesis", "On"),
         };
         bool edge = spec.Form is NetworkForm.Lowpass or NetworkForm.Highpass;
@@ -1213,6 +1257,144 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>Formats an L/C value the way the Exact / Used columns do.</summary>
     public string FormatElementValue(bool inductor, double v) => Eng(inductor, v);
 
+    // ── The search for a passing design ───────────────────────────────────────────────────────
+
+    /// <summary>The design the value search settled on, held while the specification stays as it was.</summary>
+    private FilterMaskChoice? _pinned;
+    private string? _pinnedSignature;
+
+    /// <summary>True when the part overrides were set by the search (and go when the pin does).</summary>
+    private bool _picksFromSearch;
+
+    /// <summary>True when the last specification could be searched: valid, with a mask to meet.</summary>
+    private bool _searchable;
+
+    private CancellationTokenSource? _searchCts;
+
+    /// <summary>True while the value search runs.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSearchValues))]
+    private bool _isSearching;
+
+    /// <summary>What the value search is trying now.</summary>
+    [ObservableProperty] private string _searchProgress = "";
+
+    /// <summary>
+    /// True when the design misses the mask with snapped values and a search could find other
+    /// values (or, for a library, other series) that meet it.
+    /// </summary>
+    public bool CanSearchValues => !MaskMet && Series != FilterSeriesKind.Exact && _searchable && !IsSearching;
+
+    /// <summary>The question beside the miss.</summary>
+    public string SearchQuestion => IsVendorLibrary
+        ? "Search other parts, element by element, across every pairing of an inductor series with a "
+          + "capacitor series, for a design that meets the mask?"
+        : $"Search other {Series} values, element by element, for a design that meets the mask?";
+
+    /// <summary>Everything a design is built from, as text: a change to any of it ends a pinned search result.</summary>
+    private string SpecSignature() => string.Join("|",
+        Response, Form, OrderMode, OrderText, ApText, RippleText, AsText, FaText, FbText, FcText, FdText,
+        UnitA, UnitB, UnitC, UnitD, SourceText, LoadText, First, EllipticTypeChoice?.Value, Series,
+        InductorChoice?.Key, CapacitorChoice?.Key);
+
+    private void DropPin()
+    {
+        _pinned = null;
+        _pinnedSignature = null;
+        if (_picksFromSearch) _partOverrides.Clear();
+        _picksFromSearch = false;
+    }
+
+    /// <summary>
+    /// Looks for a design whose ladder meets the mask with values from the chosen series: other
+    /// orders and floors the mask allows, each element's neighbouring values, and for Vendor library
+    /// every pairing of an inductor series with a capacitor series. What it finds is held (Order
+    /// becomes Specify at its order) until the specification changes.
+    /// </summary>
+    [RelayCommand]
+    public async Task SearchValuesAsync()
+    {
+        if (IsSearching) return;
+        if (!TrySpec(out var spec, out string? error))
+        {
+            Status = error ?? "";
+            return;
+        }
+        if (spec.Mask is not { } mask) return;
+        var pairs = new List<(FilterLibrarySeries?, FilterLibrarySeries?)>();
+        if (IsVendorLibrary)
+        {
+            if (!_librariesLoaded) LoadLibraries();
+            var ls = InductorSeries.Count > 0 ? InductorSeries.Select(x => (FilterLibrarySeries?)x).ToList() : [null];
+            var cs = CapacitorSeries.Count > 0 ? CapacitorSeries.Select(x => (FilterLibrarySeries?)x).ToList() : [null];
+            // The chosen pair first, then every other pairing.
+            pairs.AddRange(from l in ls from c in cs select (l, c));
+            pairs = pairs.OrderBy(p => p.Item1 == InductorChoice && p.Item2 == CapacitorChoice ? 0 : 1).ToList();
+            if (InductorSeries.Count == 0 && CapacitorSeries.Count == 0)
+            {
+                Status = (_libraryNote.Length > 0 ? _libraryNote : "This workspace's vendor libraries hold no inductor or capacitor series.")
+                         + " There is nothing to search.";
+                return;
+            }
+        }
+        else
+        {
+            pairs.Add((FilterValues.IecSeries(Series, true), FilterValues.IecSeries(Series, false)));
+        }
+
+        _searchCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        IsSearching = true;
+        SearchProgress = "Searching…";
+        var progress = new Progress<string>(t => { if (IsSearching) SearchProgress = "Searching: " + t + "…"; });
+        FilterValueSearchResult? found;
+        string why = "";
+        try
+        {
+            found = await Task.Run(() => FilterValueSearch.Run(
+                spec.Response, spec.Form, spec.Order, FilterMask.MaxOrder, spec.FcHz, spec.F1Hz, spec.F2Hz,
+                spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask, pairs,
+                progress, cts.Token, out why, out _), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            Status = "The search was cancelled. " + Status;
+            return;
+        }
+        finally
+        {
+            IsSearching = false;
+            SearchProgress = "";
+            if (_searchCts == cts) _searchCts = null;
+        }
+        if (found is null)
+        {
+            Status = why;
+            return;
+        }
+
+        // Hold what was found: its series, its values, its order. Each assignment below would redesign
+        // on its own; the pin is set before any of them runs, so every one builds the found design.
+        _pinned = found.Choice;
+        _partOverrides.Clear();
+        foreach (var (element, pick) in found.Picks) _partOverrides[element] = pick;
+        _picksFromSearch = true;
+        if (IsVendorLibrary)
+        {
+            InductorChoice = found.Inductors;
+            CapacitorChoice = found.Capacitors;
+        }
+        OrderMode = FilterOrderMode.Specify;
+        OrderText = found.Choice.Order.ToString(CultureInfo.InvariantCulture);
+        _pinnedSignature = SpecSignature();
+        await DesignAsync(0);
+    }
+
+    /// <summary>Stops the value search.</summary>
+    [RelayCommand]
+    public void CancelSearch() => _searchCts?.Cancel();
+
     /// <summary>A Series / Part dropdown changed — keep the override and redesign.</summary>
     internal void OnRowPartChanged(FilterElementRow row)
     {
@@ -1289,6 +1471,9 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
 
         /// <summary>The floor the ladder and the ideal block are built at.</summary>
         public double BuildAsDb => double.IsNaN(DesignAsDb) ? AsDb : DesignAsDb;
+
+        /// <summary>A design the value search settled on, built as it is rather than searched for again.</summary>
+        public FilterMaskChoice? Pinned { get; init; }
     }
 
     private bool TrySpec(out Spec spec, out string? error)
