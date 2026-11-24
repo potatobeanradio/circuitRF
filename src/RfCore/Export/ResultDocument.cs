@@ -212,7 +212,11 @@ namespace RfCore.Export
         System.Text.Json.Nodes.JsonObject? Plugin = null,
         // HZN-8: `em --solver hertzon` — Hertzon's version and schema and its own summary fields (converged, passes, tetrahedra, seconds).
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        System.Text.Json.Nodes.JsonObject? Hertzon = null);
+        System.Text.Json.Nodes.JsonObject? Hertzon = null,
+        // `filter lc`: the LC Filter Designer's ladder — the specification, the terminations and each element at
+        // its exact and its series-snapped value.
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        System.Text.Json.Nodes.JsonObject? LcFilter = null);
 
     /// <summary>
     /// Where an <c>em</c> run put its temporary files — so a caller can tell which disk a run filled, or why it was refused.

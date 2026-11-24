@@ -94,10 +94,11 @@ internal static partial class Yield
         });
         if (run.Refusal is { } refused) return JsonRun.Fail(refused);
         foreach (var note in run.Notes) Report(note);
+        int reported = run.Notes.Count;   // before Run(): result.Notes is the same list, so a later count skips all
         if (run.Estimate() is { } estimate) Console.Error.WriteLine($"[circuitRF] centering: {run.Algorithm}, {estimate.Variables} designable " +
                                                                     $"value(s), {run.Entries.Count} toleranced, {run.Goals.Count} yield goal(s) — {estimate.Estimate}");
         var result = run.Run();
-        foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
+        foreach (var note in result.Notes.Skip(reported)) Report(note);
 
         if (result.Outcome == CenteringOutcome.Cancelled || ct.IsCancellationRequested)
         {

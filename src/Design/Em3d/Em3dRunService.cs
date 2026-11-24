@@ -286,6 +286,9 @@ public static partial class Em3dRunService
         }
         var legs = Em3dSolvers.Of(choice).Select(d => LegStandIn?.Invoke(resultsRoot, d) ?? d.NewLeg()).ToList();
         if (legs.Count == 0) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(choice.ToString()));
+        // Solves already running here, in this process or any other (an agent's serve, the application, a CLI run): the size
+        // check below counts the whole machine for this run alone.
+        if (!standIn && ActiveSolves.RunningWarning(MachineMemory.PhysicalBytes) is { } busy) log.Warnings.Add(busy);
         // brief-dfr35-1 R-dfr35-1-5 — the mesh Gmsh makes for Palace, whichever else a comparison runs: the other solvers mesh
         // inside their own drivers, or not at all.
         bool meshOnly = control?.MeshOnly == true;

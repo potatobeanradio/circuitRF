@@ -86,10 +86,11 @@ internal static partial class Yield
         });
         if (run.Refusal is { } refused) return JsonRun.Fail(refused);
         foreach (var note in run.Notes) Report(note);
+        int reported = run.Notes.Count;   // before Run(): result.Notes is the same list, so a later count skips all
         Console.Error.WriteLine($"[circuitRF] sensitivity: {run.Describe()}");
 
         var result = run.Run();
-        foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
+        foreach (var note in result.Notes.Skip(reported)) Report(note);
         if (result.Outcome == SensitivityOutcome.Cancelled || ct.IsCancellationRequested)
         {
             if (result.WrittenPath is { } partial && File.Exists(partial)) File.Delete(partial);

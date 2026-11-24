@@ -218,13 +218,16 @@ internal static class Optimize
         });
         if (run.Refusal is { } refusal) return JsonRun.Fail(refusal);
         foreach (var note in run.Notes) Report(note);
+        // Counted NOW: run.Notes and result.Notes are one list, so counting it after Run() skipped every note the run
+        // itself added (the EM step floor, the 3D budget, each variable's connected range) and the caller saw none.
+        int reported = run.Notes.Count;
 
         Console.Error.WriteLine($"[circuitRF] optimizing {run.Variables!.Coordinates.Count} variable(s) against " +
                                 $"{enabledGoals} goal(s) with {run.AlgorithmId}" +
                                 (run.EvaluationsPerPoint > 1
                                     ? $" at {string.Join(", ", run.CornerNames)} ({run.EvaluationsPerPoint} evaluations per point)" : ""));
         var result = run.Run();
-        foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
+        foreach (var note in result.Notes.Skip(reported)) Report(note);
 
         if (result.Outcome == OptimizationOutcome.Cancelled)
         {

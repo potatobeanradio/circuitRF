@@ -331,7 +331,13 @@ public static class EmApply
     {
         var saved = LayoutPersistence.LoadFromFile(target.ClayPath);
         var (tech, _) = TechnologyResolver.ResolveForDocument(saved.TechRef, target.ClayPath, target.CwsPath, new TechnologyCache());
-        return KeyOfLayout(target, saved, tech.Tech);
+        string savedKey = KeyOfLayout(target, saved, tech.Tech);
+        if (!target.Is3D) return savedKey;
+        // A cell solved through its 3D view is keyed on the whole 3D problem (EmCellCache.KeyOf3D), which a layout key can
+        // never equal: every apply read as "NOT the geometry EM verified". The saved copper is checked against the copper the
+        // evaluation plans from the saved schematic, and when they agree the answer is that evaluation's 3D key.
+        if (EmEvaluation.Geometry(target, new Dictionary<string, Value>(), out _) is not { } planned) return savedKey;
+        return KeyOfLayout(target, planned.Source.View, tech.Tech) == savedKey ? planned.Key : savedKey;
     }
 
     /// <summary>The EM cache key of <paramref name="layout"/> (an open layout, saved or not) as <paramref name="target"/>'s

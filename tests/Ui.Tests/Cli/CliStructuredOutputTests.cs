@@ -338,7 +338,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
     // its VALUE as the input path (docs/design/cli.md §3.3). Both spellings are covered: the loop
     // form, and dc's own scan.
     [InlineData("cli.args.unknown-option",              "lp|testdata/Hero3/hero3.cnl|--maxmix|3")]
-    [InlineData("cli.args.unknown-option",              "sparam|testdata/Hero1/hero1.cnl|-a|AC1")]
+    [InlineData("cli.args.unknown-option",              "sparam|testdata/Hero1/hero1.cnl|--maxmix|3")]
+    [InlineData("cli.analysis.not-selected",            "sparam|testdata/Hero1/hero1.cnl|-a|AC1")]
     [InlineData("cli.args.unknown-option",              "dc|testdata/Hero1/hero1.cnl|--tol|1e-9")]
     [InlineData("cli.args.multiple-inputs",             "dc|testdata/Hero1/hero1.cnl|second.cnl")]
     [InlineData("cli.analysis.not-selected",            "hb|testdata/Hero1/hero1.cnl")]
@@ -758,6 +759,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "em.setup.on-cem",
         "em.setup.warning",
         "em.solve-count",         // brief-sdl-6 D5
+        "em.solves-running",     // dryRun: EM solves already running on this machine (ActiveSolves)
         "em.variable-unreached",  // brief-sdl-6 D4
         "examples.not-installed",
         "explain.analysis.none",
@@ -983,6 +985,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "new.args.cell-extra-argument",
         "new.args.directory-required",
         "new.args.example-args-required",
+        // `new layout <cell> --from-schematic`: Update Layout from Schematic, headless.
+        "new.args.layout",
         "new.args.multiple-directories",
         "new.args.noun-required",
         "new.args.unknown-noun",
@@ -993,6 +997,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // brief-dfr22-1: `new workspace --length-unit` — an unknown unit, and a unit with no technology to carry it.
         "new.example.not-copied",
         "new.example.unknown",
+        "new.layout.note",
+        "new.layout.warning",
         "new.length-unit.no-technology",
         "new.length-unit.unknown",
         "new.name.invalid",

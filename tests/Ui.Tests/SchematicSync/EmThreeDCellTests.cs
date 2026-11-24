@@ -152,6 +152,24 @@ public sealed class EmThreeDCellTests : IDisposable
         Assert.Equal(before, (fx.UserFileBytes(), File.ReadAllText(path)));
     }
 
+    /// <summary>Apply on a cell solved through its 3D view: the saved layout is the geometry EM verified. Its check compared
+    /// a planar layout key with the 3D problem's key, so every 3D apply read as "NOT the geometry EM verified".</summary>
+    [Fact]
+    public void Apply_OnA3DView_TheSavedLayoutIsTheVerifiedGeometry()
+    {
+        var fx = Fixture("apply");
+        ThreeDView(fx);
+        var three = EmCapability.Resolve(fx.P.CellDir, "#Driven1", null, out var why);
+        Assert.True(three is not null, why);
+        string verified = Geometry(three!, At(("Lx", 8e-3))).Key;
+
+        var applied = CircuitRF.Design.Optimization.EmApply.Apply(fx.Csch, new Dictionary<string, string> { ["Lx"] = "8 mm" },
+                                                                  verified, "#Driven1");
+        Assert.Null(applied.Refusal);
+        Assert.Equal(["Lx"], applied.Written);
+        Assert.True(applied.KeyMatches, applied.LayoutKey);
+    }
+
     /// <summary>
     /// D2 / D3 (§3 second bullet): a flattened layout is reported as a copy; a VAR linked to the schematic drives a 3D-only
     /// body's dimension; the names that reach nothing are said; a VAR the schematic does not define is listed as not

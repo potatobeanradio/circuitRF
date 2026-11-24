@@ -48,6 +48,11 @@ internal static class EmDryRun
             Console.WriteLine("Estimate:  " + line);
             JsonRun.Note(CliDiagnostics.EmDryRunEstimate(line));
         }
+        if (CircuitRF.Design.Em3d.ActiveSolves.RunningWarning(CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes) is { } busy)
+        {
+            Console.Error.WriteLine("warning: " + busy);
+            JsonRun.Note(CliDiagnostics.EmSolvesRunning(busy));
+        }
         return checkExit != 0 || explainExit != 0 ? 1 : 0;
     }
 

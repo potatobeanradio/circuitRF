@@ -104,6 +104,15 @@ namespace RfCore.Export
             "'{text}' is not a value on axis '{axis}' — {how}.",
             ("text", text), ("axis", axis), ("how", how));
 
+        /// <summary>Two <c>--at</c> picks on one axis. A pick reduces its axis to one point, so a second pick on it could
+        /// only ever return the first point again — answered as if it were the one asked for. Refused instead.</summary>
+        public static Diagnostic AxisPickedTwice(string axis, string first, string second) => Diagnostic.Create(
+            "narrow.axis.picked-twice",
+            DiagnosticSeverity.Error,
+            "--at picks one point per axis, and '{axis}' was picked twice ({first}, then {second}). Ask for each point in a "
+          + "call of its own, or keep a band with --range {axis}=lo:hi.",
+            ("axis", axis), ("first", first), ("second", second));
+
         /// <summary>An axis named with no value after it.</summary>
         public static Diagnostic ValueMissing(string axis) => Diagnostic.Create(
             "narrow.value.missing",
@@ -193,6 +202,11 @@ namespace RfCore.Export
                 if (!known.Contains(axis))
                     throw new NarrowingException(NarrowingDiagnostics.UnknownAxis(
                         axis, known.Count == 0 ? "no axes at all" : string.Join(", ", known)));
+
+            var pickedAxes = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var pick in picks)
+                if (!pickedAxes.TryAdd(pick.Axis, pick.Text))
+                    throw new NarrowingException(NarrowingDiagnostics.AxisPickedTwice(pick.Axis, pickedAxes[pick.Axis], pick.Text));
 
             var applied = new List<NarrowingJson>();
             var outp    = new DataSet();

@@ -288,7 +288,11 @@ internal sealed class McpServer
                 "view's VARs the schematic does not drive. 'reference analyses' holds the model and emSetup keys, " +
                 "'reference optimizers' the optimize line's em=correct|direct.\n" +
                 "Before an EM run, run analysis=em dryRun=true: its unknowns, memory and time, and every refusal, " +
-                "with nothing solved. A long run or check takes async=true and returns a job id at once; " +
+                "with nothing solved. Run ONE EM solve at a time on a machine: each uses every core and most of the memory, and this " +
+                "server queues only its own runs, not another session's, the application's or a second server's. dryRun and every EM " +
+                "run warn when solves are already running here, and a solve started beside them is stopped before together they " +
+                "pass the machine's memory; do not start a build or a test suite beside one either. " +
+                "A long run or check takes async=true and returns a job id at once; " +
                 "job action=status|cancel|result id=<id> follows it. Reading tools (find, check, explain, read, " +
                 "reference, render, plot, solver) are answered while a run is going.\n" +
                 "\n" +

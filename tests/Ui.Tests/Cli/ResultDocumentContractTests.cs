@@ -535,6 +535,22 @@ public sealed class ResultDocumentContractTests(ITestOutputHelper output) : IDis
         Assert.False(result.TryGetProperty("groups", out _));
     }
 
+    /// <summary>
+    /// A second pick on one axis is refused. A pick leaves its axis one point long, so the second could only return the
+    /// first point again, reported as though it answered the second question.
+    /// </summary>
+    [Fact]
+    public void TwoPicksOnOneAxis_AreRefused_NotAnsweredWithTheFirst()
+    {
+        Directory.CreateDirectory(_tmp);
+        var (exit, stdout, _) = RunCli(
+            "sparam", "testdata/Hero1/hero1.cnl", "-o", Path.Combine(_tmp, "hero1.s4p"),
+            "--json", "--at", "freq=1GHz", "--at", "freq=2GHz");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("narrow.axis.picked-twice", Ids(JsonDocument.Parse(stdout).RootElement));
+    }
+
     /// <summary>A malformed spelling is refused BEFORE the run — the file is never opened.</summary>
     [Fact]
     public void AMalformedNarrowing_IsRefusedBeforeTheRun()
