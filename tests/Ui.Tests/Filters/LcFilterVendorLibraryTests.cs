@@ -49,7 +49,7 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
     {
         var vm = new LcFilterDesignerViewModel
         {
-            WorkspaceRoot = _ws, Response = FilterResponse.Butterworth, Form = NetworkForm.Lowpass,
+            WorkspaceRoot = _ws, Response = FilterResponse.Butterworth, Form = NetworkForm.Lowpass, Unit = "GHz",
         };
         vm.OrderMode = FilterOrderMode.Specify;
         vm.OrderText = "3";

@@ -42,8 +42,14 @@ that: its load is the ratio the family produces (1 for Butterworth, a particular
 even-order Chebyshev). When the two disagree, the window says what the ladder's load is and Apply
 keeps the impedances you typed on the block.
 
-It is direct synthesis. There is no optimiser in the window. A mask the snapped ladder misses is
-the existing optimizer's problem, on an E-series or on a part.
+It is direct synthesis, and **the window never hands back a filter outside its own mask.** The
+order formula only says where to start: the window checks each candidate's response against the
+mask, band by band out to a decade past the outer edges, and takes the first that stays inside it.
+When the edges as typed miss (a Chebyshev built at a 0.1 dB ripple against an Ap of 3 dB, say), it
+moves the cutoff into the slack Ap leaves before trying the next order. With an E-series or a
+vendor library it checks the ladder at its snapped values too, so a value a few percent off cannot
+push an edge out. A design that still misses, at an order you typed, is drawn with the miss said in
+the status line, and cannot be applied or placed.
 
 ## The specification {#spec}
 
@@ -55,15 +61,17 @@ the existing optimizer's problem, on an E-series or on a part.
 | Response | In Shape. Maximally Flat, Chebyshev, Inverse Chebyshev, Elliptic, Bessel-Thomson, Gaussian. |
 | Type | In Shape, for Elliptic only. **Auto** (a at odd order, c at even order), **a** (classical), **b** (even order, unequal terminations), **c** (even order, equal terminations). |
 | Form | Lowpass, highpass, bandpass, bandstop. |
-| Order | **Minimum** is the smallest prototype order that meets Ap, As and the mask edges. **Specify** types N. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder). |
-| Ap, Ripple, As | Passband attenuation, synthesis ripple and stopband attenuation, in dB. Ripple is enabled only for Chebyshev and elliptic, the two families that have one; the others build at a fixed ripple. Chebyshev and elliptic read Ap as the ripple. Inverse Chebyshev and elliptic read As as the stopband floor. Hover the labels for the same wording. |
-| Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. Each edge has its own prefix (Hz, kHz, MHz, GHz) beside it; changing one rescales that box only, so the frequency it states is unchanged. The plot's axis reads in the passband edge's prefix. |
+| Order | **Minimum** is the smallest prototype order whose ladder meets the mask (Ap, As and the edges), checked rather than taken from the order formula. **Specify** types N, and a design that misses the mask at that order cannot be applied or placed. Bessel and Gaussian have no magnitude order formula, so they stay on Specify. For an elliptic the minimum is for the type actually built: an even order is type c (or b), whose stopband edge sits a little above type a's, so the window checks it against Fs and steps up when it misses. An even-order inverse Chebyshev, or an elliptic of type a, steps to the next odd (those even orders have no LC ladder). |
+| Ap, Ripple, As | Passband attenuation, synthesis ripple and stopband attenuation, in dB. Ripple is enabled only for Chebyshev and elliptic, the two families that have one; the others build at a fixed ripple. Ripple may not exceed Ap. Inverse Chebyshev and elliptic read As as the stopband floor; at a shallow As their ladder can need a negative element, so the window then builds them deeper than As (and says so) at edges that still meet the mask's As. Hover the labels for the same wording. |
+| Edges | Two for lowpass and highpass (Fp and Fs), four for bandpass (Fs1, Fp1, Fp2, Fs2) and bandstop (Fp1, Fs1, Fs2, Fp2). Hover a label for what that edge is. Each edge has its own prefix (Hz, kHz, MHz, GHz) beside it; changing one rescales that box only, so the frequency it states is unchanged. The edges start in MHz. The plot's axis reads in the passband edge's prefix. |
 
 The cutoff the ladder is built at is Fp for a lowpass or highpass, the passband edges for a
 bandpass, and Fp1 and Fp2 for a bandstop — the passband edges either side of the rejected band.
 Inverse Chebyshev is the one exception: its edge is where As is first met, so it is built at Fs
 (Fs1 and Fs2 on a band form). The other edges are the mask: where you want the stopband floor, not
-a second cutoff.
+a second cutoff. Those are the edges as typed; when the mask leaves room (Ap above the Ripple, a
+Butterworth asked for less than 3.01 dB at Fp, or a stopband built deeper than As), the cutoff
+moves off them so the response sits inside the mask.
 
 The plot draws that mask by role. Passband edges and the −Ap limit are blue, stopband edges and
 the −As limit are red, and each limit spans only its own band, with the side a trace must not
@@ -132,7 +140,8 @@ the palette, with its case size's footprint on a board technology.
 
 **Apply to Filter**, when the window was opened on a placed Filter, writes the whole specification
 onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
-impedances, so the ideal block and the ladder are the same response. It also writes the window's
+impedances, so the ideal block and the ladder are the same response. Astop is the floor the design
+was built at; when that is deeper than the mask's As, `AsMask` keeps the mask's. It also writes the window's
 own settings, which the block keeps for the Designer and does not simulate: Ap, every mask edge
 (`Fp`, `Fs` or `Fp1`, `Fs1`, `Fs2`, `Fp2`), Minimum or Specify for the order, the first element, the
 value series and the library series and parts. **Synthesise…** on that Filter later reopens the

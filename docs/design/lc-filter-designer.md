@@ -84,8 +84,8 @@ elaborates the `.cnl` and runs `SParameterEngine` on the thread pool, and applie
 the UI thread — only the latest request's, a superseded one is cancelled or dropped. Both curves go on
 one magnitude plot; phase and group delay go on the second. `FilterOrder.Minimum` is the closed-form
 order for Butterworth, Chebyshev, inverse Chebyshev and elliptic against the mask (for elliptic
-Auto/b/c, the smallest order whose type as built meets the stop edge); the window can
-take that or a typed override. `FilterLadderDrawing` places by ARM — `FilterRealization.Arms` names the elements each arm became —
+Auto/b/c, the smallest order whose type as built meets the stop edge). It is only where the
+search starts (see "The mask guarantee" below); the window can take that or a typed override. `FilterLadderDrawing` places by ARM — `FilterRealization.Arms` names the elements each arm became —
 and reads the arm's own topology: a spine element or chain, a through-path L∥C (C on the spine, L
 on a rail above), the three-branch bandpass/bandstop box ((series L–C) ∥ L ∥ C: pair above, L on
 the spine, C below), adjacent shunt legs, or a stub column whose parallel sections are legs either
@@ -207,3 +207,31 @@ the ideal block. The parts inside the cell are removed from `PlacedVendorParts`,
 **Two window fixes.** The mask overlay is set on `MagnitudeContainer.Overlay` as well as on the
 control, so Export and Copy (which compose from containers) draw it. `MatchSchematicCanvas.FitOnResize`
 (off by default, on in this window) re-fits the ladder whenever the pane changes size.
+
+## The mask guarantee (2026-11-23)
+
+The Designer never returns a filter outside its own mask. `FilterMask` (`src/Core/Systems`) holds the
+mask (`FilterMaskSpec`, the four edge boxes in Hz with Ap and As), the check
+(`WorstMissDb`: each band sampled log-spaced out to a decade past its outer edge; loss above Ap in a
+passband or below As in a stopband is a miss, 1e-6 dB tolerance for the ideal, 1e-3 dB for a ladder
+netlist whose values are written to finite digits) and the search, `FilterMask.Find`:
+
+- Orders from the closed-form minimum (computed at Ap, which bounds every ripple at or under it) up
+  to 31 in Minimum, or the typed order alone in Specify. Even inverse Chebyshev and even type-a
+  elliptic are skipped.
+- For inverse Chebyshev and elliptic, design floors As + {0, 1, 2, 3, 5, 7, 10, 15, 20, 30, 40} dB.
+  At a shallow floor those ladders can need a negative element (no zero order is positive); a
+  deeper floor fixes it. `Astop` on the block is the floor built at, `AsMask` the mask's.
+- At each order and floor, the edges as typed first, then `Balance`: the edges widened or narrowed
+  about the centre (`ScaleEdges`) by a bisection that equalises the passband's miss with the
+  stopband's. That spends the slack Ap leaves over the Ripple (the reported Chebyshev case: built at
+  0.1 dB against Ap 3 dB, the formula's order 5 missed) and the slack a deeper floor leaves.
+- The ladder must synthesise, and with an E-series or a vendor library the snapped ladder must meet
+  the mask as well (`accept`, coarse sample first). A snapped rejection moves to the next order, for
+  `SnapOrderWindow` (6) orders past the first exact success, then gives up and says the series is
+  too coarse.
+
+A Minimum that finds nothing shows the mask alone and the reason. A Specify design that misses is
+drawn with the miss in the status line, and `MaskMet` false blocks Apply, Place filter, Place
+component and Replace this Filter. Reopening a block whose mask edges are all stored shows the mask,
+not the shifted cutoff.

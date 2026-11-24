@@ -43,7 +43,7 @@ public class FilterPlaceAndTileTests
     private static async Task<LcFilterDesignerViewModel> Designed(
         FilterResponse response, NetworkForm form, Action<LcFilterDesignerViewModel>? edit = null)
     {
-        var vm = new LcFilterDesignerViewModel { Response = response, Form = form };
+        var vm = new LcFilterDesignerViewModel { Response = response, Form = form, Unit = "GHz" };
         edit?.Invoke(vm);
         await vm.DesignAsync(0);
         Assert.True(vm.Elements.Count > 0, vm.Status);
@@ -600,6 +600,7 @@ public class FilterPlaceAndTileTests
         designer.SeedFrom(filter);
         await designer.DesignAsync(0);
         Assert.True(designer.CanReplaceTarget);
+        Assert.True(designer.MaskMet, designer.Status);
         designer.ReplaceTarget = true;
         int undoBefore = sheet.UndoRedo.Entries.Count();
         designer.PlaceFilter();

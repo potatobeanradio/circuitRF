@@ -218,14 +218,14 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     private string _libraryNote = "";
     [ObservableProperty] private FilterOrderMode _orderMode = FilterOrderMode.Minimum;
     /// <summary>The prefix each edge box is typed in (owner, 2026-11-21: one per box, not one for all).</summary>
-    [ObservableProperty] private string _unitA = "GHz";
-    [ObservableProperty] private string _unitB = "GHz";
-    [ObservableProperty] private string _unitC = "GHz";
-    [ObservableProperty] private string _unitD = "GHz";
+    [ObservableProperty] private string _unitA = "MHz";
+    [ObservableProperty] private string _unitB = "MHz";
+    [ObservableProperty] private string _unitC = "MHz";
+    [ObservableProperty] private string _unitD = "MHz";
 
     /// <summary>The prefixes of the manual plot range's Fmin and Fmax boxes.</summary>
-    [ObservableProperty] private string _unitFmin = "GHz";
-    [ObservableProperty] private string _unitFmax = "GHz";
+    [ObservableProperty] private string _unitFmin = "MHz";
+    [ObservableProperty] private string _unitFmax = "MHz";
 
     /// <summary>
     /// The unit the plot's frequency axis is drawn in: the passband edge's own box (Fp, or Fp1 on a
@@ -251,10 +251,10 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     [ObservableProperty] private string _asText = "20";
     [ObservableProperty] private string _sourceText = "50";
     [ObservableProperty] private string _loadText = "50";
-    [ObservableProperty] private string _faText = "0.5";
-    [ObservableProperty] private string _fbText = "1";
-    [ObservableProperty] private string _fcText = "2";
-    [ObservableProperty] private string _fdText = "2.5";
+    [ObservableProperty] private string _faText = "500";
+    [ObservableProperty] private string _fbText = "1000";
+    [ObservableProperty] private string _fcText = "2000";
+    [ObservableProperty] private string _fdText = "2500";
     [ObservableProperty] private bool _showC;
     [ObservableProperty] private bool _showD;
     [ObservableProperty] private bool _orderEditable;
@@ -295,10 +295,10 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// <summary>True when the Fmin / Fmax boxes are the plot span.</summary>
     [ObservableProperty] private bool _plotRangeIsManual;
     /// <summary>Manual plot start, in the current frequency unit.</summary>
-    [ObservableProperty] private string _plotFminText = "0.4";
+    [ObservableProperty] private string _plotFminText = "400";
 
     /// <summary>Manual plot stop, in the current frequency unit.</summary>
-    [ObservableProperty] private string _plotFmaxText = "2.8";
+    [ObservableProperty] private string _plotFmaxText = "2800";
 
 
     /// <summary>True while Design rebuilds rows — suppresses per-row redesign loops.</summary>
@@ -335,7 +335,15 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     internal FilterSpecMaskOverlay MagnitudeMask { get; private set; } = null!;
 
     /// <summary>True when a placed Filter can take Apply.</summary>
-    public bool CanApply => Target is { Symbol: SymbolKind.Filter } && Schematic is not null;
+    public bool CanApply => Target is { Symbol: SymbolKind.Filter } && Schematic is not null && MaskMet;
+
+    /// <summary>
+    /// True when the last design — the ladder as it would be placed, snapped values included — meets
+    /// the mask. Nothing that misses it is placed or applied.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanApply))]
+    private bool _maskMet;
 
     /// <summary>
     /// The schematic Place filter / Place component go into when the window was opened standalone
@@ -370,7 +378,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// </summary>
     public void RefreshPlacement()
     {
-        if (_lastSpec is null)
+        if (_lastSpec is null || !MaskMet)
         {
             CanPlace = false;
             PlaceTip = Status.Length > 0 ? Status : "There is no design to place.";
@@ -631,13 +639,20 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             return;
         }
         if (generation != _designGeneration) return;
-        Apply(spec, outcome);
+        Apply(outcome.UsedSpec ?? spec, outcome);
     }
 
     /// <summary>What one design produced, ready to be shown.</summary>
     private sealed record DesignOutcome(
         FilterNetwork? Ideal, FilterRealization? Real, List<FilterElement>? Used, List<SnapRow> Rows,
-        string Cnl, SNP? IdealSnp, SNP? LadderSnp, double Rs, double Rl, string Status, bool Failed);
+        string Cnl, SNP? IdealSnp, SNP? LadderSnp, double Rs, double Rl, string Status, bool Failed)
+    {
+        /// <summary>The specification as built: the order and floor the mask search settled on.</summary>
+        public Spec? UsedSpec { get; init; }
+
+        /// <summary>How far what would be placed leaves the mask, dB; zero or less meets it.</summary>
+        public double MissDb { get; init; }
+    }
 
     /// <summary>The window state the snap reads, copied so the pool thread never touches the view model.</summary>
     private sealed record SnapInputs(
@@ -651,29 +666,68 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
 
     private static DesignOutcome Compute(Spec spec, double[] freqs, SnapInputs snap, CancellationToken ct)
     {
-        // The ideal transfer can fail at an order the ladder still reaches; prefer the ladder over a
-        // blank window.
-        FilterNetwork? ideal = null;
-        string idealNote = "";
-        try
+        // The design that meets the mask: from the closed-form order up (Minimum) or at the typed
+        // order (Specify), at the shallowest floor from As down whose ladder exists. A Minimum that
+        // finds none produces nothing — never a filter outside its own mask.
+        FilterMaskChoice? choice = null;
+        string? searchWhy = null;
+        if (spec.Mask is { } mask && spec.Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
         {
-            ideal = FilterNetwork.Create(spec.Response, spec.Form, spec.Order,
-                                          spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb, spec.AsDb, 0,
-                                          spec.EllipticType);
-        }
-        catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException)
-        {
-            idealNote = e.Message;
+            int max = spec.OrderFromMinimum ? Math.Max(spec.Order, FilterMask.MaxOrder) : spec.Order;
+            // The ladder as it will be built (snapped to the chosen series) has to meet the mask too:
+            // an E-series value a few percent off pushes an edge sized with no margin out of it, and
+            // re-centred edges or the next order up have the margin. A typed order that still misses
+            // is shown, and the miss blocks it below.
+            Func<FilterMaskChoice, bool>? accept = null;
+            if (snap.Series != FilterSeriesKind.Exact)
+                accept = c =>
+                {
+                    if (c.Ladder.Realization is not { } r) return true;
+                    string cnl = FilterLadder.ToCnl(Snap(r, snap, []), r.SourceOhms, r.LoadOhms);
+                    // A coarse look turns most candidates away at a fraction of the cost; a miss
+                    // anywhere is a miss.
+                    return LadderMissDb(cnl, mask, r.SourceOhms, 24) <= FilterMask.LadderToleranceDb
+                        && LadderMissDb(cnl, mask, r.SourceOhms) <= FilterMask.LadderToleranceDb;
+                };
+            choice = FilterMask.Find(spec.Response, spec.Form, spec.Order, max, spec.FcHz, spec.F1Hz, spec.F2Hz,
+                                     spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask,
+                                     accept, ct, out searchWhy);
+            if (choice is null && spec.OrderFromMinimum)
+                return new DesignOutcome(null, null, null, [], "", null, null, 0, 0, searchWhy ?? "", Failed: true)
+                    { UsedSpec = spec };
+            if (choice is not null)
+                spec = spec with { Order = choice.Order, DesignAsDb = choice.AstopDb, EllipticType = choice.EllipticType,
+                                  FcHz = choice.FcHz, F1Hz = choice.F1Hz, F2Hz = choice.F2Hz };
         }
         ct.ThrowIfCancellationRequested();
 
-        var built = FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
-                                             spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
-                                             spec.SourceOhms, spec.First, spec.AsDb, spec.EllipticType);
+        // The ideal transfer can fail at an order the ladder still reaches; prefer the ladder over a
+        // blank window.
+        FilterNetwork? ideal = choice?.Ideal;
+        string idealNote = "";
+        if (ideal is null)
+        {
+            try
+            {
+                ideal = FilterNetwork.Create(spec.Response, spec.Form, spec.Order,
+                                              spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb, spec.BuildAsDb, 0,
+                                              spec.EllipticType);
+            }
+            catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException)
+            {
+                idealNote = e.Message;
+            }
+        }
+        ct.ThrowIfCancellationRequested();
+
+        var built = choice?.Ladder
+                    ?? FilterLadder.Synthesize(spec.Response, spec.Form, spec.Order,
+                                               spec.FcHz, spec.F1Hz, spec.F2Hz, spec.RippleDb,
+                                               spec.SourceOhms, spec.First, spec.BuildAsDb, spec.EllipticType);
         if (ideal is null && !built.Ok)
             return new DesignOutcome(null, null, null, [], "", null, null, 0, 0,
                                      idealNote.Length > 0 ? idealNote : (built.Refusal?.Message ?? "No ladder."),
-                                     Failed: true);
+                                     Failed: true) { UsedSpec = spec };
         ct.ThrowIfCancellationRequested();
 
         double rs = spec.SourceOhms;
@@ -708,8 +762,45 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         {
             note = built.Refusal?.Message ?? "";
         }
+
+        // What is placed is checked, not what was designed: the snapped ladder when there is one
+        // (an E-series or a library part can push it out of the mask), else the ideal block.
+        double miss = 0;
+        if (spec.Mask is { } m2)
+        {
+            miss = cnl.Length > 0 ? LadderMissDb(cnl, m2, rs)
+                 : ideal is not null ? FilterMask.WorstMissDb(m2, f => FilterMask.IdealLossDb(ideal, f))
+                 : double.PositiveInfinity;
+            if (miss > FilterMask.ToleranceDb && choice is null && searchWhy is not null)
+                note = (searchWhy + " " + note).Trim();
+        }
+        if (choice is not null && spec.BuildAsDb > spec.AsDb + 1e-9)
+            note = ($"Built for {spec.BuildAsDb:0.###} dB of stopband, deeper than As: at {spec.AsDb:0.###} dB "
+                    + $"this {spec.Response} has no ladder with every element positive. " + note).Trim();
         return new DesignOutcome(ideal, built.Realization, used, rows, cnl, idealSnp, ladderSnp, rs, rl,
-                                 note.Length > 0 ? note.Trim() : idealNote, Failed: false);
+                                 note.Length > 0 ? note.Trim() : idealNote, Failed: false)
+            { UsedSpec = spec, MissDb = miss };
+    }
+
+    /// <summary>How far the ladder netlist <paramref name="cnl"/> leaves the mask, dB (zero or less meets it).</summary>
+    private static double LadderMissDb(string cnl, FilterMaskSpec mask, double z0, int perBand = 400)
+    {
+        var (pass, stop) = FilterMask.CheckFrequencies(mask, perBand);
+        double[] all = [.. pass, .. stop];
+        if (all.Length == 0) return 0;
+        SNP snp;
+        try { snp = Run(cnl, all, z0); }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or FormatException)
+        {
+            return double.PositiveInfinity;
+        }
+        var loss = new Dictionary<double, double>(all.Length);
+        for (int i = 0; i < all.Length && i < snp.Frequencies.Length; i++)
+        {
+            double mag = snp.Matrices[i][1, 0].Magnitude;
+            loss[all[i]] = mag > 0 ? -20 * Math.Log10(mag) : double.PositiveInfinity;
+        }
+        return FilterMask.WorstMissDb(mask, f => loss.TryGetValue(f, out double v) ? v : double.PositiveInfinity, perBand);
     }
 
     /// <summary>Shows one design. Runs on the UI thread.</summary>
@@ -724,14 +815,17 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             .ToDictionary(g => g.Key, g => g.First().Chosen!.Vendor!, StringComparer.Ordinal);
         _lastSpec = null;
         _lastIdeal = null;
+        MaskMet = !r.Failed && !(r.MissDb > (r.Cnl.Length > 0 ? FilterMask.LadderToleranceDb : FilterMask.ToleranceDb));
         if (r.Failed)
         {
             Status = r.Status;
             DesignInfo = "";
             ClearPlots();
+            ShowMaskAlone();
             RefreshPlacement();
             return;
         }
+        if (spec.OrderFromMinimum) OrderText = spec.Order.ToString(CultureInfo.InvariantCulture);
 
         if (r.Real is { } real && r.Used is { } used)
         {
@@ -755,6 +849,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         Status = IsVendorLibrary && !LibraryAvailable && _libraryNote.Length > 0
             ? (_libraryNote + " " + r.Status).Trim()
             : r.Status;
+        if (!MaskMet)
+            Status = ($"This design misses the mask by {(double.IsFinite(r.MissDb) ? r.MissDb.ToString("0.###", CultureInfo.InvariantCulture) + " dB" : "an unknown amount")}, "
+                     + "so it cannot be placed or applied. "
+                     + (Series != FilterSeriesKind.Exact ? "Finer values, a higher order or a looser mask meets it. "
+                                                         : "A higher order (or Minimum) or a looser mask meets it. ")
+                     + Status).Trim();
         BuildPlots(r.IdealSnp, r.LadderSnp, spec);
         RefreshPlacement();
     }
@@ -836,29 +936,38 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         FcText = Stored(boxes[2]) ?? FcText;
         FdText = Stored(boxes[3]) ?? FdText;
         SeedEdges(Ghz("Fc") ?? 1, Ghz("F1") ?? 0.9, Ghz("F2") ?? 1.1);
+        // A mask stored whole is what reopens: the cutoff was derived from it, and can sit inside
+        // the slack Ap or a deeper floor leaves rather than on an edge.
+        var stored = boxes.Where(b => b.Length > 0).Select(Stored).ToList();
+        if (stored.All(t => t is not null))
+        {
+            FaText = stored[0]!;
+            FbText = stored[1]!;
+            if (stored.Count > 2) { FcText = stored[2]!; FdText = stored[3]!; }
+        }
 
         if (Num(Expr("Ripple"), out double ripple))
             RippleText = ripple.ToString("0.####", CultureInfo.InvariantCulture);
         ApText = Num(Expr("Ap"), out double ap) ? ap.ToString("0.####", CultureInfo.InvariantCulture) : RippleText;
         if (EllipticTypes.TryParse(Expr("EllipticType"), out var et))
             EllipticTypeChoice = EllipticTypeChoices.First(c => c.Value == et);
-        if (Num(Expr("Astop"), out double ast))
-            AsText = ast.ToString("0.####", CultureInfo.InvariantCulture);
+        if (Num(Expr("AsMask"), out double asMask) || Num(Expr("Astop"), out asMask))
+            AsText = asMask.ToString("0.####", CultureInfo.InvariantCulture);
         SourceText = Ohms("Zin", 50).ToString("0.####", CultureInfo.InvariantCulture);
         LoadText = Ohms("Zout", 50).ToString("0.####", CultureInfo.InvariantCulture);
-        // Each box's prefix: its own mask edge's unit, else the cutoff it holds, else GHz. Setting
-        // it converts the box out of GHz.
-        string BoxUnit(int i, string cutoff)
+        // Each box's prefix: its own mask edge's unit, else MHz (the edges' default). Setting it
+        // converts the box out of GHz.
+        string BoxUnit(int i)
         {
             var p = boxes[i].Length > 0 ? Param(boxes[i]) : null;
             if (p is not null && !string.IsNullOrWhiteSpace(p.Expression)) return UnitOf(p.Unit);
-            return UnitOf(Param(cutoff)?.Unit);
+            // No mask edge stored yet: the edges default to MHz, like a fresh window.
+            return "MHz";
         }
-        bool edgeForm = Form is NetworkForm.Lowpass or NetworkForm.Highpass;
-        UnitA = BoxUnit(0, edgeForm ? "Fc" : "F1");
-        UnitB = BoxUnit(1, edgeForm ? "Fc" : "F1");
-        UnitC = BoxUnit(2, "F2");
-        UnitD = BoxUnit(3, "F2");
+        UnitA = BoxUnit(0);
+        UnitB = BoxUnit(1);
+        UnitC = BoxUnit(2);
+        UnitD = BoxUnit(3);
         UnitFmin = UnitFmax = Unit;
         SeedLibrary(Expr("LSeries"), Expr("CSeries"), Expr("Parts"));
         ApplyLabels();
@@ -989,12 +1098,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     /// </remarks>
     public IReadOnlyList<FilterAssignment>? FilterAssignments()
     {
-        if (_lastSpec is not { } spec) return null;
+        if (_lastSpec is not { } spec || !MaskMet) return null;
         // Each edge is written in the prefix of the box it was typed in.
         string[] units = [UnitA, UnitB, UnitC, UnitD];
         double[] boxHz = [spec.EdgeAHz, spec.EdgeBHz, spec.EdgeCHz, spec.EdgeDHz];
         string In(double hz, int box) =>
-            (hz / ScaleOf(units[box])).ToString("0.#########", CultureInfo.InvariantCulture);
+            (hz / ScaleOf(units[box])).ToString("0.##############", CultureInfo.InvariantCulture);
         // A cutoff is one of the boxes (which one depends on form and family): the box it equals.
         int BoxOf(double hz, int fallback)
         {
@@ -1007,7 +1116,12 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             new("Form", spec.Form.ToString()),
             new("Order", spec.Order.ToString(CultureInfo.InvariantCulture)),
             new("Ripple", RippleText.Trim()),
-            new("Astop", AsText.Trim()),
+            // The floor the ladder was built at (As, or deeper when the ladder needed it); the mask's own
+            // As rides beside it so the Designer reopens on the mask as typed.
+            new("Astop", Math.Abs(spec.BuildAsDb - spec.AsDb) < 1e-9
+                ? AsText.Trim()
+                : spec.BuildAsDb.ToString("0.######", CultureInfo.InvariantCulture)),
+            new("AsMask", AsText.Trim(), "dB"),
             new("Zin", SourceText.Trim()),
             new("Zout", LoadText.Trim()),
             new("EllipticType", (EllipticTypeChoice?.Value ?? EllipticType.Auto).ToString()),
@@ -1162,7 +1276,20 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         double FcHz, double F1Hz, double F2Hz, double RippleDb, double AsDb,
         double SourceOhms, double LoadOhms,
         double PassLoHz, double PassHiHz, bool PassIsOutside,
-        double ApDb, double EdgeAHz, double EdgeBHz, double EdgeCHz, double EdgeDHz);
+        double ApDb, double EdgeAHz, double EdgeBHz, double EdgeCHz, double EdgeDHz)
+    {
+        /// <summary>The stopband floor the design is built at: As, or deeper when a ladder needs it (FilterMask.Find).</summary>
+        public double DesignAsDb { get; init; } = double.NaN;
+
+        /// <summary>The elliptic type as chosen (Auto, a, b, c), resolved per order by the mask search.</summary>
+        public EllipticType RequestedEllipticType { get; init; } = EllipticType.Auto;
+
+        /// <summary>The mask every design is checked against; null for a family with none to meet.</summary>
+        public FilterMaskSpec? Mask { get; init; }
+
+        /// <summary>The floor the ladder and the ideal block are built at.</summary>
+        public double BuildAsDb => double.IsNaN(DesignAsDb) ? AsDb : DesignAsDb;
+    }
 
     private bool TrySpec(out Spec spec, out string? error)
     {
@@ -1223,13 +1350,44 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                 break;
         }
 
+        // Synthesis ripple is its own box. The order is sized against the
+        // ripple the ladder is BUILT at — sizing it against Ap, as it once was, gave an order whose
+        // stopband was shallower than As whenever Ripple sat below Ap.
+        if (!double.TryParse(RippleText, NumberStyles.Float, CultureInfo.InvariantCulture, out double rippleIn)
+            || rippleIn < 0)
+        { error = "Ripple is a number of dB, zero or more."; return false; }
+        double ripple = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic
+            ? (rippleIn > 0 ? rippleIn : 0.1)
+            : 0.1;
+        bool rippled = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic;
+        // Ap left at 0 means the −3.01 dB edge, as the order formula reads it.
+        double apMask = ap > 0 ? ap : 3.0102999566;
+        if (rippled && ripple > apMask + FilterMask.ToleranceDb)
+        {
+            error = $"Ripple ({ripple:0.###} dB) is more than Ap ({apMask:0.###} dB), so the passband misses the mask "
+                  + "at every order. Lower the ripple or raise Ap.";
+            return false;
+        }
+
+        // A Butterworth's −3.01 dB point is its cutoff. With Ap tighter than that, the cutoff moves
+        // out so the passband edge sits at exactly −Ap and the mask's passband is met.
+        if (Response == FilterResponse.Butterworth && apMask < 3.0102999566)
+        {
+            double n0 = FilterOrder.Minimum(Response, Form, apMask, astop, fp, fs, fp1, fp2, fs1, fs2) ?? 1;
+            if (OrderMode != FilterOrderMode.Minimum
+                && int.TryParse(OrderText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int typed) && typed >= 1)
+                n0 = typed;
+            double omegaP = Math.Pow(Math.Sqrt(Math.Pow(10, apMask / 10) - 1), 1.0 / n0);   // < 1
+            (fc, f1, f2) = ButterworthEdges(Form, fc, f1, f2, omegaP);
+        }
+
         bool fromMin = false;
         int order;
         if (OrderMode == FilterOrderMode.Minimum
             && Response is not (FilterResponse.Bessel or FilterResponse.Gaussian))
         {
-            var n = FilterOrder.Minimum(Response, Form, ap, astop, fp, fs, fp1, fp2, fs1, fs2,
-                                        SelectedEllipticType);
+            var n = FilterOrder.Minimum(Response, Form, apMask, astop,
+                                        fp, fs, fp1, fp2, fs1, fs2, SelectedEllipticType);
             if (n is null)
             {
                 error = "The mask edges do not form a transition (Fs must sit outside the passband).";
@@ -1251,19 +1409,39 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
             { error = "Order is a whole number, 1 or more."; return false; }
         }
 
-        // Synthesis ripple is its own box. Order still uses Ap with As and the edges.
-        if (!double.TryParse(RippleText, NumberStyles.Float, CultureInfo.InvariantCulture, out double rippleIn)
-            || rippleIn < 0)
-        { error = "Ripple is a number of dB, zero or more."; return false; }
-        double ripple = Response is FilterResponse.Chebyshev or FilterResponse.Elliptic
-            ? (rippleIn > 0 ? rippleIn : 0.1)
-            : 0.1;
         var type = Response == FilterResponse.Elliptic
             ? EllipticTypes.Resolve(SelectedEllipticType, order)
             : EllipticType.A;
         spec = new Spec(Response, Form, order, fromMin, First, type, fc, f1, f2, ripple, astop, rs, rl,
-                        passLo, passHi, outside, ap, a, b, c, d);
+                        passLo, passHi, outside, ap, a, b, c, d)
+        {
+            DesignAsDb = astop,
+            RequestedEllipticType = SelectedEllipticType,
+            Mask = new FilterMaskSpec(Form, apMask, astop, a, b, c, d),
+        };
         return true;
+    }
+
+    /// <summary>
+    /// The Butterworth cutoff that puts the passband edge at prototype frequency
+    /// <paramref name="omegaP"/> (below 1): the edge is where the loss is Ap, not 3.01 dB.
+    /// </summary>
+    private static (double Fc, double F1, double F2) ButterworthEdges(NetworkForm form, double fc, double f1, double f2,
+                                                                      double omegaP)
+    {
+        switch (form)
+        {
+            case NetworkForm.Lowpass:  return (fc / omegaP, f1, f2);
+            case NetworkForm.Highpass: return (fc * omegaP, f1, f2);
+            default:
+            {
+                // Same centre; the bandwidth scaled so the old edges map to ±omegaP.
+                double f0 = Math.Sqrt(f1 * f2);
+                double bw = form == NetworkForm.Bandstop ? (f2 - f1) * omegaP : (f2 - f1) / omegaP;
+                double lo = (-bw + Math.Sqrt(bw * bw + 4 * f0 * f0)) / 2;
+                return (fc, lo, lo + bw);
+            }
+        }
     }
 
     private static bool Hz(string text, double scale, out double hz)

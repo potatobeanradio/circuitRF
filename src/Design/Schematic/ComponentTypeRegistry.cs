@@ -2754,6 +2754,10 @@ public static class ComponentTypeRegistry
         (SymbolKind.Filter, "Parts") =>
             "LC Filter Designer: elements given a library part by hand, as element=library: "
           + "series|part, separated by ';'. Blank means every element takes the nearest part.",
+        (SymbolKind.Filter, "AsMask") =>
+            "LC Filter Designer: the mask's stopband floor, in dB. Astop is the floor the design was "
+          + "built at, which can be deeper when the shallower floor has no ladder with every element "
+          + "positive; the design still meets this one.",
         (SymbolKind.Filter, "Synthesis") =>
             "LC Filter Designer: On holds the block to its design, so its values change through "
           + "Synthesise… only; Off is a plain Filter that keeps the design. Set by the Use Synthesis box "
@@ -3521,7 +3525,11 @@ public static class ComponentTypeRegistry
                         // plain Filter that keeps the design for Synthesise… to reopen on. Blank on a
                         // block with a design means On, which is what a block applied before the
                         // setting existed meant.
-                        new("Synthesis", "",        "",    false, UnitDimension.None)];
+                        new("Synthesis", "",        "",    false, UnitDimension.None),
+                        // The mask's own stopband floor. Astop is the floor the design was BUILT at,
+                        // which the Designer may set deeper than the mask when the shallow floor has
+                        // no ladder with every element positive; AsMask keeps what the user asked.
+                        new("AsMask",    "",        "dB",  false, UnitDimension.None)];
 
             // The duplexer is two complete filter specifications plus one shared antenna impedance,
             // and deliberately NO Isolation: the isolation a duplexer achieves is what its two
@@ -5440,7 +5448,7 @@ public static class ComponentTypeRegistry
     private static readonly HashSet<string> LcFilterDesignerParameters = new(StringComparer.Ordinal)
     {
         "Ap", "Fp", "Fs", "Fp1", "Fs1", "Fs2", "Fp2", "OrderMode", "First", "Values",
-        "LSeries", "CSeries", "Parts", "Synthesis",
+        "LSeries", "CSeries", "Parts", "Synthesis", "AsMask",
     };
 
     // brief-paa-3 R-paa3-8 — the Phased Antenna Array's words. Level's auto is "follow the record" (a blank means the same).

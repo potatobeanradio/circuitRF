@@ -42890,3 +42890,27 @@ disabled, and a Filter that carries a design edited only through Synthesise….
 - **The ladder pane re-fits on resize** through `MatchSchematicCanvas.FitOnResize` (opt-in: the Match
   Designer keeps the user's zoom across a resize). The fit happens in the next render, via `Fit()`,
   which never invalidates from the render pass.
+
+## LC Filter Designer — Minimum returned filters outside the mask (2026-11-23)
+
+Two reported cases, one narrow 2.4 GHz bandpass (10 MHz transitions, Ap 3, Ripple 0.1, As 20):
+
+- **Chebyshev, Minimum gave order 5 and missed the stopband.** `FilterOrder.Minimum` was fed Ap
+  while the ladder is built at Ripple; at 0.1 dB ripple order 5 is far short. Now the formula's
+  order is only a start, and `FilterMask.Find` checks every candidate against the mask. It also
+  moves the cutoff into the slack Ap leaves over the Ripple, so this case gets order 7.
+- **Inverse Chebyshev had no ladder at all** ("no order of its transmission zeros gives a ladder
+  with every element positive"). Measured: at As 20 no odd order from 5 to 11 has a positive
+  ladder; order 5 needs about 24.25 dB and order 7 about 42 dB, and then the passband misses at
+  the typed edges. The search now builds deeper than As and re-centres the edges, and this case
+  gets order 9 built at 60 dB that meets the 20 dB mask. Applied, `Astop` is the built floor and the
+  new `AsMask` parameter keeps the mask's, which the Designer reopens on.
+- Also closed: Butterworth with Ap under 3.01 dB now moves its cutoff so Fp meets Ap; an E-series or
+  library ladder is checked at its snapped values (Minimum searches on, Specify blocks); any design
+  that misses cannot be applied or placed; Ripple above Ap is refused.
+- **Trap:** with snapping, a mask nothing can meet would search every order and floor to 31 (44 s
+  measured for an E12 elliptic). A snapped rejection now skips to the next order and stops six
+  orders past the first exact success.
+- **Trap:** a placed block's cutoff is no longer one of the mask edges, so `SeedFrom` reopens on the
+  stored mask edges whenever all of them are present; and the cutoff is written to 14 decimals,
+  because 9 moved a placed block's response by 1e-9 against the Designer's.
