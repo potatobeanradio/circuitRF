@@ -26,6 +26,8 @@ public partial class LcFilterDesignerWindow : Window, ICrfMenuWindow
     {
         InitializeComponent();
         DataContextChanged += (_, _) => WirePlots();
+        RealOnly("SourceBox");
+        RealOnly("LoadBox");
         // A schematic may have been opened or closed while this window was behind.
         Activated += (_, _) => Vm?.RefreshPlacement();
     }
@@ -204,5 +206,28 @@ public partial class LcFilterDesignerWindow : Window, ICrfMenuWindow
     {
         if (Vm is null) return;
         Vm.Status = Vm.SendMaskToOptimizer();
+    }
+
+    /// <summary>
+    /// The Source and Load boxes take a real number only: a keystroke that cannot be part of one is not
+    /// typed, and a paste or edit that leaves the box holding anything else is undone. The view model refuses
+    /// the same text, but a TextBox does not read back a value its own binding was just refused.
+    /// </summary>
+    private void RealOnly(string name)
+    {
+        if (this.FindControl<TextBox>(name) is not { } box) return;
+        string good = box.Text ?? "";
+        box.AddHandler(TextInputEvent, (_, e) =>
+        {
+            if (!LcFilterDesignerViewModel.IsRealNumberText(e.Text)) e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+        box.TextChanged += (_, _) =>
+        {
+            string now = box.Text ?? "";
+            if (LcFilterDesignerViewModel.IsRealNumberText(now)) { good = now; return; }
+            int caret = box.CaretIndex;
+            box.Text = good;
+            box.CaretIndex = Math.Min(Math.Max(0, caret - (now.Length - good.Length)), good.Length);
+        };
     }
 }

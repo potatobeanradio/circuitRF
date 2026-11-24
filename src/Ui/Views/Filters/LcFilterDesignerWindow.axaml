@@ -212,9 +212,11 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Classes="lblrow"><TextBlock Classes="lbl" Text="Source"/></StackPanel>
-                                <TextBox Grid.Column="1" Classes="num" Text="{Binding SourceText}"/>
+                                <TextBox Name="SourceBox" Grid.Column="1" Classes="num" Text="{Binding SourceText}"
+                                         ToolTip.Tip="The source resistance, ohms: a real number. A complex value is refused as it is typed."/>
                                 <StackPanel Grid.Row="1" Classes="lblrow"><TextBlock Classes="lbl" Text="Load"/></StackPanel>
-                                <TextBox Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding LoadText}"/>
+                                <TextBox Name="LoadBox" Grid.Row="1" Grid.Column="1" Classes="num" Text="{Binding LoadText}"
+                                         ToolTip.Tip="The load resistance, ohms: a real number. A complex value is refused as it is typed."/>
                             </Grid>
                         </StackPanel>
                     </Border>

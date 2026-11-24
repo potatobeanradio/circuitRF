@@ -540,6 +540,23 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
     partial void OnAsTextChanged(string value) => Design();
     partial void OnSourceTextChanged(string value) => Design();
     partial void OnLoadTextChanged(string value) => Design();
+    // A ladder is built between two resistances: an edit that is not a real number (50+j10, 50 ohm, j25) is
+    // refused as it is typed, and the box keeps what it held.
+    partial void OnSourceTextChanged(string? oldValue, string newValue)
+    {
+        if (!IsRealNumberText(newValue)) SourceText = oldValue ?? "";
+    }
+    partial void OnLoadTextChanged(string? oldValue, string newValue)
+    {
+        if (!IsRealNumberText(newValue)) LoadText = oldValue ?? "";
+    }
+
+    /// <summary>
+    /// True when <paramref name="text"/> holds only what a real number is written with: digits, a decimal point,
+    /// an exponent and its sign. A complex value, a unit or a name is not.
+    /// </summary>
+    internal static bool IsRealNumberText(string? text) =>
+        text is null || text.All(c => c is >= '0' and <= '9' or '.' or 'e' or 'E' or '+' or '-' or ' ');
     // A minimum-order design writes the order it found back into the box; that is a result, not an edit.
     partial void OnOrderTextChanged(string value) { if (!_writingOrder) Design(); }
     private bool _writingOrder;

@@ -70,7 +70,7 @@ so the block simulates, and the Designer reopens on, exactly that ladder.
 
 | Control | What it sets |
 |---|---|
-| Source, Load | The two resistances, in ohms. |
+| Source, Load | The two resistances, in ohms: a real number each. A complex value, a unit or a name is refused as you type it, and the box keeps what it held. |
 | First element | Series or parallel. Parallel starts the ladder on a shunt arm. |
 | Order | The **prototype** order. A bandpass or bandstop replaces each element by a resonator, so an all-pole order 3 is six elements and a tank becomes four. |
 | Response | In Shape. Maximally Flat, Chebyshev, Inverse Chebyshev, Elliptic, Bessel-Thomson, Gaussian. |
