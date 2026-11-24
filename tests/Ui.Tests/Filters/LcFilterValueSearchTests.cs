@@ -73,7 +73,9 @@ public sealed class LcFilterValueSearchTests : IDisposable
     [Fact]
     public async Task ASnappedMissOffersTheSearch_AndTheSearchFindsE12ValuesThatMeetTheMask()
     {
-        var vm = await Lowpass(FilterResponse.Chebyshev, "1000", "1300", "0.5", "0.5", "30", FilterSeriesKind.E12);
+        // Fs 1250 MHz: between equal terminations Minimum takes only odd orders, which end in 50 ohm,
+        // and at 1300 MHz no odd order's E12 values meet a 0.5 dB Ap built at a 0.5 dB ripple.
+        var vm = await Lowpass(FilterResponse.Chebyshev, "1000", "1250", "0.5", "0.5", "30", FilterSeriesKind.E12);
         Assert.False(vm.MaskMet);
         Assert.True(vm.CanSearchValues, vm.Status);
         Assert.Contains("E12", vm.SearchQuestion);
@@ -86,7 +88,7 @@ public sealed class LcFilterValueSearchTests : IDisposable
         // The ladder as built, through the engine: inside the mask at both edges and beyond.
         foreach (double mhz in new[] { 100.0, 500, 900, 1000 })
             Assert.True(LossDb(vm.Cnl, mhz * 1e6) <= 0.5 + 1e-3, $"{LossDb(vm.Cnl, mhz * 1e6):F3} dB at {mhz} MHz");
-        foreach (double mhz in new[] { 1300.0, 2000, 5000 })
+        foreach (double mhz in new[] { 1250.0, 2000, 5000 })
             Assert.True(LossDb(vm.Cnl, mhz * 1e6) >= 30 - 1e-3, $"{LossDb(vm.Cnl, mhz * 1e6):F3} dB at {mhz} MHz");
         // The block names each element's pick, from the E12 series.
         var applied = Applied(vm);
@@ -99,7 +101,7 @@ public sealed class LcFilterValueSearchTests : IDisposable
     [Fact]
     public async Task TheBlockSimulatesTheFoundValues_AndReopensOnThem()
     {
-        var vm = await Lowpass(FilterResponse.Chebyshev, "1000", "1300", "0.5", "0.5", "30", FilterSeriesKind.E12);
+        var vm = await Lowpass(FilterResponse.Chebyshev, "1000", "1250", "0.5", "0.5", "30", FilterSeriesKind.E12);
         await vm.SearchValuesAsync();
         Assert.True(vm.MaskMet, vm.Status);
 
@@ -107,7 +109,7 @@ public sealed class LcFilterValueSearchTests : IDisposable
         filter.Parameters.AddRange(vm.AppliedParameters(FilterPlacement.DefaultParameters())!);
         var ladder = FilterBlockLadder.Build(filter.Parameters, null, out string? refusal);
         Assert.True(ladder is not null, refusal);
-        // Between the same terminations as the Designer's netlist (an even-order Chebyshev's load is not 50 ohm).
+        // Between the same terminations as the Designer's netlist.
         double rl = double.Parse(System.Text.RegularExpressions.Regex.Match(vm.Cnl, @"Num=2 Z=(\S+)").Groups[1].Value,
                                  System.Globalization.CultureInfo.InvariantCulture);
         string blockCnl = FilterLadder.ToCnl(ladder!.Parts.Select(p => p.Element).ToList(), 50, rl);
@@ -122,9 +124,10 @@ public sealed class LcFilterValueSearchTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Benchmark")]   // ~5.5 s measured: it runs whole value searches
     public async Task ChangingTheSpecificationDropsTheFoundValues()
     {
-        var vm = await Lowpass(FilterResponse.Chebyshev, "1000", "1300", "0.5", "0.5", "30", FilterSeriesKind.E12);
+        var vm = await Lowpass(FilterResponse.Chebyshev, "1000", "1250", "0.5", "0.5", "30", FilterSeriesKind.E12);
         await vm.SearchValuesAsync();
         Assert.True(vm.MaskMet, vm.Status);
         vm.AsText = "25";
@@ -133,6 +136,7 @@ public sealed class LcFilterValueSearchTests : IDisposable
     }
 
     [Fact]
+    [Trait("Category", "Benchmark")]   // ~13 s measured: it runs whole value searches
     public async Task AMaskNoValuesCanMeetSaysSo()
     {
         var vm = new LcFilterDesignerViewModel { Response = FilterResponse.Chebyshev, Form = NetworkForm.Bandpass };

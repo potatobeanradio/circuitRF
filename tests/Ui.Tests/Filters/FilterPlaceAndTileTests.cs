@@ -606,6 +606,49 @@ public class FilterPlaceAndTileTests
     }
 
     /// <summary>
+    /// A ladder placed with its own ports brings the S-parameter sweep the window plots over, in the
+    /// same undo step as the click; Escape drops it with the ghost, and a sheet that already has an
+    /// S-parameter analysis keeps its own.
+    /// </summary>
+    [Fact]
+    public async Task APortedLadderBringsTheWindowsSweep()
+    {
+        var designer = await Designed(FilterResponse.Chebyshev, NetworkForm.Lowpass, v => { v.FaText = "1"; v.FbText = "1.6"; });
+        var sheet = EmptySheet(out var model);
+        designer.SchematicProvider = () => sheet;
+        sheet.PointerWorldProvider = () => (0, 0);
+
+        designer.PlaceFilter();
+        Assert.True(sheet.IsPasteArmed);
+        sheet.OnKeyDown(Key.Escape, KeyModifiers.None);
+        Assert.False(sheet.IsPasteArmed);
+        Assert.Empty(model.Analyses);
+
+        int undoBefore = sheet.UndoRedo.Entries.Count();
+        Assert.Contains("SP1", designer.PlaceFilter());
+        sheet.OnPointerPressed(0, 0, KeyModifiers.None);
+        Assert.Equal(undoBefore + 1, sheet.UndoRedo.Entries.Count());
+        var sp = Assert.IsType<CircuitRF.Core.Design.SParameterAnalysis>(Assert.Single(model.Analyses));
+        var sweep = Assert.Single(sp.Sweeps);
+        double[] plotted = designer.PlotFrequencies();
+        Assert.Equal(("GHz", "GHz", plotted.Length), (sweep.StartUnit, sweep.StopUnit, sweep.NumPoints));
+        Assert.Equal(plotted[0] / 1e9, double.Parse(sweep.StartExpr, CultureInfo.InvariantCulture), 5);
+        Assert.Equal(plotted[^1] / 1e9, double.Parse(sweep.StopExpr, CultureInfo.InvariantCulture), 5);
+
+        sheet.UndoRedo.Undo();
+        Assert.Empty(model.Analyses);
+        Assert.Empty(model.Components);
+
+        // A sheet with an S-parameter analysis of its own keeps it, and gets no second one.
+        var own = new CircuitRF.Core.Design.SParameterAnalysis("SPown",
+            new CircuitRF.Core.Design.FrequencySpec("1", "2", 11, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"));
+        model.Analyses.Add(own);
+        designer.PlaceFilter();
+        sheet.OnPointerPressed(0, 0, KeyModifiers.None);
+        Assert.Same(own, Assert.Single(model.Analyses));
+    }
+
+    /// <summary>
     /// Replace this Filter: the ladder takes the block's nets by name as ONE undo step, and undo
     /// puts the sheet back byte for byte.
     /// </summary>

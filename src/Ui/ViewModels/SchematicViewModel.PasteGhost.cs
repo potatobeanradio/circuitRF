@@ -25,7 +25,8 @@ public sealed partial class SchematicViewModel
         double SourceGridSize,
         IReadOnlyList<EditableNetLabel>? NetLabels,
         (double X, double Y) Anchor,
-        List<PlacementGhost> Ghosts);
+        List<PlacementGhost> Ghosts,
+        IReadOnlyList<Core.Design.Analysis>? Analyses = null);
 
     private PendingPaste? _pendingPaste;
     private (double Dx, double Dy) _pasteGhostDelta;
@@ -41,7 +42,8 @@ public sealed partial class SchematicViewModel
     /// (<paramref name="wx"/>, <paramref name="wy"/>).</summary>
     private void ArmPasteGhost(
         List<EditableComponent> comps, List<EditableWire> wires, List<EditableCanvasObject> cobjs,
-        double sourceGridSize, IReadOnlyList<EditableNetLabel>? netLabels, double wx, double wy)
+        double sourceGridSize, IReadOnlyList<EditableNetLabel>? netLabels, double wx, double wy,
+        IReadOnlyList<Core.Design.Analysis>? analyses = null)
     {
         if (SchematicPasteGeometry.BoundingBox(comps, wires, cobjs) is not { } bb) return;
         SetSelectTool();   // whatever was in progress ends; the ghost is the only thing in flight
@@ -59,7 +61,8 @@ public sealed partial class SchematicViewModel
                                       rc.InstanceSymbol?.Primitives ?? rc.CellRefPrimitives, rc.InstanceSymbol?.Pins);
         }).ToList();
 
-        _pendingPaste = new PendingPaste(comps, wires, cobjs, sourceGridSize, netLabels, anchor, ghosts);
+        _pendingPaste = new PendingPaste(comps, wires, cobjs, sourceGridSize, netLabels, anchor, ghosts,
+                                         analyses is { Count: > 0 } ? analyses : null);
         MovePasteGhost(wx, wy);
     }
 
@@ -74,7 +77,10 @@ public sealed partial class SchematicViewModel
     /// Arms <paramref name="fragment"/> as a paste ghost — the one placement path, shared with
     /// Ctrl+V: it follows the pointer on the connection grid, a click places it as one undoable
     /// paste (instances renamed to be unique, the overlap nudge, the selection), and Escape drops it.
-    /// The fragment's objects are taken over; pass a model built for the purpose.
+    /// The fragment's objects are taken over; pass a model built for the purpose. The fragment's
+    /// analyses, when it has any, are added to this sheet in the same undo step as the click that
+    /// places it (the LC Filter Designer's ported ladder brings the S-parameter sweep it was designed
+    /// over); Escape drops them with the ghost.
     /// </summary>
     /// <remarks>
     /// Armed at the pointer when it is over the canvas, otherwise at the centre of the view, where
@@ -97,7 +103,7 @@ public sealed partial class SchematicViewModel
         else at = (0, 0);
 
         ArmPasteGhost(comps, wires, cobjs, fragment.GridSize > 0 ? fragment.GridSize : EditModel.GridSize,
-                      labels.Count > 0 ? labels : null, at.X, at.Y);
+                      labels.Count > 0 ? labels : null, at.X, at.Y, fragment.Analyses.ToList());
         if (!IsPasteArmed) return false;
         PlacementActivationRequested?.Invoke();
         return true;
@@ -149,7 +155,7 @@ public sealed partial class SchematicViewModel
         var (dx, dy) = SchematicPasteGeometry.Nudge(pp.Comps, _pasteGhostDelta.Dx, _pasteGhostDelta.Dy, PasteGrid,
                                                     OccupiedByComponent);
         ClearPasteGhost();
-        CommitPaste(pp.Comps, pp.Wires, pp.Cobjs, pp.SourceGridSize, pp.NetLabels, dx, dy);
+        CommitPaste(pp.Comps, pp.Wires, pp.Cobjs, pp.SourceGridSize, pp.NetLabels, dx, dy, pp.Analyses);
     }
 
     /// <summary>Drops the armed paste, if any, leaving the sheet exactly as it was.</summary>
@@ -166,14 +172,19 @@ public sealed partial class SchematicViewModel
 
     private void CommitPaste(
         List<EditableComponent> comps, List<EditableWire> wires, List<EditableCanvasObject> cobjs,
-        double sourceGridSize, IReadOnlyList<EditableNetLabel>? netLabels, double dx, double dy)
+        double sourceGridSize, IReadOnlyList<EditableNetLabel>? netLabels, double dx, double dy,
+        IReadOnlyList<Core.Design.Analysis>? analyses = null)
     {
         SchematicPasteGeometry.Translate(comps, wires, cobjs, dx, dy, netLabels);
-        Execute(WithSeriesWireCutsForOne(new SchematicPasteCommand(
+        var paste = WithSeriesWireCutsForOne(new SchematicPasteCommand(
             EditModel, comps, wires, cobjs,
             ids => Selection.SetAll(ids),
             sourceGridSize: sourceGridSize,
             messageSink: _messageSink,
-            netLabels: netLabels), comps, wires, cobjs));
+            netLabels: netLabels), comps, wires, cobjs);
+        // The analyses first, so the one undo step is named for the paste.
+        Execute(analyses is { Count: > 0 }
+            ? new Commands.CompositeCommand(new Commands.Analysis.AddAnalysesCommand(EditModel, analyses), paste)
+            : paste);
     }
 }

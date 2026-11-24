@@ -46,7 +46,10 @@ It is direct synthesis, and **the window never hands back a filter outside its o
 order formula only says where to start: the window checks each candidate's response against the
 mask, band by band out to a decade past the outer edges, and takes the first that stays inside it.
 When the edges as typed miss (a Chebyshev built at a 0.1 dB ripple against an Ap of 3 dB, say), it
-moves the cutoff into the slack Ap leaves before trying the next order. With an E-series or a
+moves the cutoff into the slack Ap leaves before trying the next order. With Order on Minimum and
+equal Source and Load, it also takes only a ladder that ends in that load: an even-order Chebyshev
+ends in about twice its source, so Minimum steps to the next odd order instead. An order you type is
+built as typed. With an E-series or a
 vendor library it checks the ladder at its snapped values too, so a value a few percent off cannot
 push an edge out. A design that still misses, at an order you typed, is drawn with the miss said in
 the status line, and cannot be applied or placed as a Filter. **Place filter still puts its ladder
@@ -194,7 +197,10 @@ the window, and **Apply to Filter** holds the block to the design again.
 
 **Place filter** puts the realised ladder, at the values the table shows, on the schematic. On a
 schematic with no ports or pins of its own, such as a new cell, it ends in port 1 at the source
-resistance and port 2 at the load, so an S-parameter analysis runs on it as placed. On any other
+resistance and port 2 at the load, so an S-parameter analysis runs on it as placed. When that
+schematic has no S-parameter analysis, the ladder brings one, `SP1`, sweeping the span and points
+this window's plots use, so Simulate shows the response you designed. It is added in the same undo
+step as the click. On any other
 schematic it has no terminations: each end is a short wire with a net label, `IN` on port 1 and `OUT`
 on port 2 (`IN2` and `OUT2` onward when the schematic already has those names), ready to be wired into
 the design. The

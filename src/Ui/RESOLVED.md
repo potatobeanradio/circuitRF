@@ -42987,3 +42987,23 @@ caller reading the order meanwhile could see the closed-form start value of that
 in-flight run (Apply then reopen read 3 where the design was 7). That write is a result too and is now
 guarded. Place filter's new ported form on a sheet with no ports also carries the vendor library
 parts, as the labelled form does.
+
+## LC Filter Designer — Minimum keeps the requested load; a ported ladder brings its sweep (2026-11-24)
+
+Field report from an experienced designer: with Order on Minimum, the designer could pick values that
+were not for a 50 Ω load and that did not appear to meet the requirements. Cause: `FilterLadder.Synthesize`
+takes only the SOURCE resistance, and the load is whatever the family gives. An even-order Chebyshev ends
+in about twice its source (Ap 0.5 dB: 1000/1300 MHz, As 20 has a closed-form order of 6). Minimum took that
+order, the status line said the load differed, and between two 50 Ω terminations the passband no longer met
+the mask. `FilterMask.Find`/`Candidates` (and `FilterValueSearch.Run`) now take an optional `loadOhms`.
+With it, a ladder that does not end in that load (within `FilterMask.LoadTolerance`, 1 %) skips its whole
+order, because the load follows the order and the family, not the floor or the edges. The Designer passes
+it only for Minimum with equal Source and Load (`MinimumLoad`). A typed order is built as typed. Unequal
+terminations are what no family here ends in by design, and filtering on them would leave Minimum nothing.
+
+The same report asked for the schematic to carry the S-parameter run the filter was designed over. Place
+filter on a sheet with no ports (the ported form) now adds `SP1` over the window's own plot span and point
+count, in the plot's unit, when the sheet has no S-parameter analysis. It is carried as the fragment's
+`Analyses` through `ArmFragmentPlacement` and added with `AddAnalysesCommand` inside the click's ONE undo
+step, so Escape drops it with the ghost. A sheet with its own S-parameter analysis keeps it. The first
+Simulate then auto-creates the display over that sweep as for any other bench.

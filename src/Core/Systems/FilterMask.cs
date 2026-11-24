@@ -204,14 +204,17 @@ public static class FilterMask
     /// series); for a family with finite zeros, built at the shallowest floor from As down that does
     /// all of it. Null, with <paramref name="why"/>, when nothing in the range does.
     /// </summary>
+    /// <param name="loadOhms">When given, a ladder must also END in this load (within
+    /// <see cref="LoadTolerance"/>): an even-order Chebyshev or a type-b elliptic ends in another
+    /// resistance, so it is passed over for the next order that does.</param>
     public static FilterMaskChoice? Find(
         FilterResponse response, NetworkForm form, int startOrder, int maxOrder,
         double fcHz, double f1Hz, double f2Hz, double rippleDb, double sourceOhms,
         FilterFirstElement first, EllipticType requestedType, FilterMaskSpec mask,
-        Func<FilterMaskChoice, bool>? accept, CancellationToken ct, out string? why)
+        Func<FilterMaskChoice, bool>? accept, CancellationToken ct, out string? why, double? loadOhms = null)
     {
         why = null;
-        var state = new SearchState();
+        var state = new SearchState { LoadOhms = loadOhms };
         int firstBuilt = 0;
         foreach (var choice in Enumerate(response, form, startOrder, maxOrder, fcHz, f1Hz, f2Hz, rippleDb,
                                          sourceOhms, first, requestedType, mask, state, ct))
@@ -237,7 +240,8 @@ public static class FilterMask
               ? $"From order {firstBuilt} to {Math.Min(maxOrder, firstBuilt + SnapOrderWindow)}, {response} ladders meet "
                 + "the mask with exact values, but none does once its values are snapped to the chosen series. "
                 + "Exact values, a finer series, a wider transition or a looser mask does."
-            : $"No {response} filter up to order {maxOrder} meets the mask with an LC ladder. "
+            : $"No {response} filter up to order {maxOrder} meets the mask with an LC ladder"
+              + (loadOhms is { } rl ? $" ending in {rl:0.###} Ω" : "") + ". "
               + "A wider transition or a looser mask does.";
         return null;
     }
@@ -251,9 +255,17 @@ public static class FilterMask
     public static IEnumerable<FilterMaskChoice> Candidates(
         FilterResponse response, NetworkForm form, int startOrder, int maxOrder,
         double fcHz, double f1Hz, double f2Hz, double rippleDb, double sourceOhms,
-        FilterFirstElement first, EllipticType requestedType, FilterMaskSpec mask, CancellationToken ct) =>
+        FilterFirstElement first, EllipticType requestedType, FilterMaskSpec mask, CancellationToken ct,
+        double? loadOhms = null) =>
         Enumerate(response, form, startOrder, maxOrder, fcHz, f1Hz, f2Hz, rippleDb, sourceOhms, first,
-                  requestedType, mask, new SearchState(), ct);
+                  requestedType, mask, new SearchState { LoadOhms = loadOhms }, ct);
+
+    /// <summary>How far, as a fraction, a ladder's load may sit from the one asked for and still end in it.</summary>
+    public const double LoadTolerance = 0.01;
+
+    /// <summary>True when a ladder ending in <paramref name="ladderOhms"/> ends in <paramref name="wantedOhms"/>.</summary>
+    public static bool EndsIn(double ladderOhms, double wantedOhms) =>
+        Math.Abs(ladderOhms - wantedOhms) <= LoadTolerance * wantedOhms;
 
     /// <summary>What a search learned on the way, and the order its caller wants it to leave.</summary>
     private sealed class SearchState
@@ -261,6 +273,8 @@ public static class FilterMask
         public string? LastRefusal;
         public double BestMiss = double.PositiveInfinity;
         public int SkipOrder;
+        /// <summary>The load every ladder must end in, or null for any.</summary>
+        public double? LoadOhms;
     }
 
     private static IEnumerable<FilterMaskChoice> Enumerate(
@@ -335,6 +349,16 @@ public static class FilterMask
                     {
                         state.LastRefusal = ladder.Refusal?.Message;
                         continue;
+                    }
+                    // A ladder whose load is not the one asked for is a different filter once it sits
+                    // between equal terminations: its passband no longer meets the mask there.
+                    if (state.LoadOhms is { } want && ladder.Realization is { } real && !EndsIn(real.LoadOhms, want))
+                    {
+                        state.LastRefusal = $"At order {n} the ladder ends in {real.LoadOhms:0.###} Ω, not {want:0.###} Ω.";
+                        // The load follows the order and the family, not the floor or the edges: the
+                        // rest of this order ends in it too.
+                        state.SkipOrder = n;
+                        break;
                     }
                     yield return new FilterMaskChoice(n, astop, type, fc, f1, f2, ideal, ladder, miss)
                         { Balanced = attempt == 1 };

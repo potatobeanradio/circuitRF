@@ -105,6 +105,32 @@ public class LcFilterMaskGuaranteeTests
         Assert.True(choice.MissDb <= FilterMask.ToleranceDb);
     }
 
+    /// <summary>
+    /// Chebyshev lowpass 1000/1300 MHz, Ap 0.5, Ripple 0.5, As 20: the order formula gives 6, and an
+    /// even-order Chebyshev ladder ends in about twice its source. Minimum between 50 Ω and 50 Ω
+    /// moves to the next order whose ladder ends in 50 Ω.
+    /// </summary>
+    [Fact]
+    public async Task MinimumKeepsTheLoadAskedFor()
+    {
+        var vm = new LcFilterDesignerViewModel { Response = FilterResponse.Chebyshev, Form = NetworkForm.Lowpass };
+        vm.OrderMode = FilterOrderMode.Minimum;
+        vm.FaText = "1000"; vm.FbText = "1300";
+        vm.ApText = "0.5"; vm.RippleText = "0.5"; vm.AsText = "20";
+        await vm.DesignAsync(0);
+        Assert.True(vm.MaskMet, vm.Status);
+        var load = System.Text.RegularExpressions.Regex.Match(vm.Cnl, @"Term:T2\s+\S+\s+0\s+Num=2\s+Z=(\S+)");
+        Assert.True(load.Success, vm.Cnl);
+        Assert.Equal(50, double.Parse(load.Groups[1].Value, CultureInfo.InvariantCulture), 6);
+        Assert.Equal(1, int.Parse(vm.OrderText, CultureInfo.InvariantCulture) % 2);
+
+        // A typed even order is built as typed, at the load its family gives.
+        vm.OrderMode = FilterOrderMode.Specify;
+        vm.OrderText = "6";
+        await vm.DesignAsync(0);
+        Assert.Contains("The ladder's load is", vm.Status);
+    }
+
     [Fact]
     public void TheEdgesDefaultToMHz()
     {

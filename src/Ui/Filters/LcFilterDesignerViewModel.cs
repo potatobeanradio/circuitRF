@@ -439,8 +439,15 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         {
             var ported = FilterPlacement.PortedLadderFragment(Ladder, _ladderParts, SchematicTechnology.Of(schematic.EditModel));
             Remember(schematic, ported);
+            // A sheet with no ports of its own becomes the ladder's test bench: it brings the sweep the
+            // window plots over, so Simulate shows the same response and Send mask to Optimizer has
+            // an analysis to read.
+            var sweep = PlacementSweep(schematic.EditModel);
+            if (sweep is not null) ported.Analyses.Add(sweep);
             return schematic.ArmFragmentPlacement(ported)
-                ? "Click on the schematic to place the ladder. It ends in ports 1 and 2, ready for an S-parameter analysis." + miss
+                ? "Click on the schematic to place the ladder. It ends in ports 1 and 2"
+                  + (sweep is not null ? $", with {sweep.Name} sweeping {SweepText(sweep)} as this window's plot does." : ", ready for an S-parameter analysis.")
+                  + miss
                 : "There is no ladder to place.";
         }
         var (inName, outName) = FilterPlacement.EndNames(schematic.EditModel);
@@ -450,6 +457,35 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
         return schematic.ArmFragmentPlacement(fragment)
             ? $"Click on the schematic to place the ladder. Its ends are the nets {inName} and {outName}." + miss
             : "There is no ladder to place.";
+    }
+
+    /// <summary>
+    /// The S-parameter analysis a ladder placed with its own ports brings to <paramref name="sheet"/>: the
+    /// span and point count the window's plots use, in the plot's unit. Null when the sheet already has an
+    /// S-parameter analysis (its own sweep is kept) or there is no design.
+    /// </summary>
+    internal CircuitRF.Core.Design.SParameterAnalysis? PlacementSweep(SchematicEditModel sheet)
+    {
+        if (_lastSpec is not { } spec || sheet.Analyses.OfType<CircuitRF.Core.Design.SParameterAnalysis>().Any()) return null;
+        var f = Frequencies(spec);
+        if (f.Length < 2 || !(f[^1] > f[0])) return null;
+        string unit = Unit;
+        double scale = ScaleOf(unit);
+        string Num(double hz) => (hz / scale).ToString("G6", CultureInfo.InvariantCulture);
+        var taken = sheet.Analyses.Select(a => a.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        string name = "SP1";
+        for (int k = 2; taken.Contains(name); k++) name = "SP" + k.ToString(CultureInfo.InvariantCulture);
+        return new CircuitRF.Core.Design.SParameterAnalysis(name, new CircuitRF.Core.Design.FrequencySpec(
+            Num(f[0]), Num(f[^1]), f.Length, CircuitRF.Core.Design.SweepKind.Linear, unit, unit));
+    }
+
+    /// <summary>The frequencies the window's plots are drawn at for the last design (read by tests).</summary>
+    internal double[] PlotFrequencies() => _lastSpec is { } spec ? Frequencies(spec) : [];
+
+    private static string SweepText(CircuitRF.Core.Design.SParameterAnalysis sp)
+    {
+        var s = sp.Sweeps[0];
+        return $"{s.StartExpr} to {s.StopExpr} {s.StopUnit} in {s.NumPoints} points";
     }
 
     /// <summary>
@@ -821,7 +857,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                 };
             choice = FilterMask.Find(spec.Response, spec.Form, spec.Order, max, spec.FcHz, spec.F1Hz, spec.F2Hz,
                                      spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask,
-                                     accept, ct, out searchWhy);
+                                     accept, ct, out searchWhy, MinimumLoad(spec));
             if (choice is null && spec.OrderFromMinimum)
                 return new DesignOutcome(null, null, null, [], "", null, null, 0, 0, searchWhy ?? "", Failed: true)
                     { UsedSpec = spec };
@@ -924,6 +960,16 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                                  note.Length > 0 ? note.Trim() : idealNote, Failed: false)
             { UsedSpec = spec, MissDb = miss };
     }
+
+    /// <summary>
+    /// The load a Minimum design must end in: the requested one when Source and Load are equal, so
+    /// Minimum never settles on an order whose ladder ends in another resistance (an even-order
+    /// Chebyshev, a type-b elliptic) and then misses the mask between the terminations it is placed
+    /// in. Null for a typed order, which is built as typed, and for unequal Source and Load, which no
+    /// family here ends in by design.
+    /// </summary>
+    private static double? MinimumLoad(Spec spec) =>
+        spec.OrderFromMinimum && FilterMask.EndsIn(spec.SourceOhms, spec.LoadOhms) ? spec.LoadOhms : null;
 
     /// <summary>The library part behind each element that has one, by element name.</summary>
     private static Dictionary<string, VendorPartRef> PartsOf(List<SnapRow> rows) =>
@@ -1524,7 +1570,7 @@ public sealed partial class LcFilterDesignerViewModel : ObservableObject
                 spec.RippleDb, spec.SourceOhms, spec.First, spec.RequestedEllipticType, mask, pairs,
                 // A library part is judged as its own model, so what is found passes as placed.
                 IsVendorLibrary ? (part, hz) => part.Vendor is { } v ? FilterLadderCircuit.PartImpedance(v, hz, workspace) : null : null,
-                progress, cts.Token, out why, out _), cts.Token);
+                progress, cts.Token, out why, out _, MinimumLoad(spec)), cts.Token);
         }
         catch (OperationCanceledException)
         {

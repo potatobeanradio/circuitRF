@@ -44,13 +44,15 @@ public static class FilterValueSearch
     /// <paramref name="pairs"/> meets <paramref name="mask"/>. Null with <paramref name="why"/> when
     /// none does; <paramref name="closestMissDb"/> then says how near the best one came.
     /// </summary>
+    /// <param name="loadOhms">When given, only designs whose ladder ends in this load (<see cref="FilterMask.Find"/>).</param>
     public static FilterValueSearchResult? Run(
         FilterResponse response, NetworkForm form, int startOrder, int maxOrder,
         double fcHz, double f1Hz, double f2Hz, double rippleDb, double sourceOhms,
         FilterFirstElement first, EllipticType requestedType, FilterMaskSpec mask,
         IReadOnlyList<(FilterLibrarySeries? Inductors, FilterLibrarySeries? Capacitors)> pairs,
         Func<FilterPart, IReadOnlyList<double>, Complex[]?>? partImpedance,
-        IProgress<string>? progress, CancellationToken ct, out string why, out double closestMissDb)
+        IProgress<string>? progress, CancellationToken ct, out string why, out double closestMissDb,
+        double? loadOhms = null)
     {
         why = "";
         closestMissDb = double.PositiveInfinity;
@@ -65,7 +67,7 @@ public static class FilterValueSearch
         int lastOrder = 0, perOrder = 0;
         string shortlistNote = "";
         foreach (var choice in FilterMask.Candidates(response, form, startOrder, maxOrder, fcHz, f1Hz, f2Hz,
-                                                     rippleDb, sourceOhms, first, requestedType, mask, ct))
+                                                     rippleDb, sourceOhms, first, requestedType, mask, ct, loadOhms))
         {
             if (firstOrder == 0)
             {
