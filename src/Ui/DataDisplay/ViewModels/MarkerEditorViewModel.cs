@@ -73,28 +73,13 @@ public partial class MarkerEditorViewModel : ViewModelBase
         if (!NumericText.TryParseDouble(FreqDisplayText, out double val))
             return;
 
-        double freqHz  = val / _marker.FreqUnits.Scale();
-        double snapped = SnapToNearestFreq(freqHz);
-        _marker.Freq   = snapped;
+        double freqHz = val / _marker.FreqUnits.Scale();
+        if (!_parent.TrySetFrequency(freqHz) ||
+            !_parent.Trace.TryGetMarkerFrequency(_marker, out double snapped)) return;
 
         // Reflect the snapped (possibly different) value back to the text field.
         FreqDisplayText = (snapped * _marker.FreqUnits.Scale()).ToString("G6");
         NotifyParent();
-    }
-
-    private double SnapToNearestFreq(double freqHz)
-    {
-        var freqs = _parent.Trace.Data?.Frequencies;
-        if (freqs is null || freqs.Length == 0) return freqHz;
-
-        double best     = freqs[0];
-        double bestDiff = Math.Abs(freqHz - freqs[0]);
-        for (int i = 1; i < freqs.Length; i++)
-        {
-            double d = Math.Abs(freqHz - freqs[i]);
-            if (d < bestDiff) { bestDiff = d; best = freqs[i]; }
-        }
-        return best;
     }
 
     // ---- Matrix format --------------------------------------------------

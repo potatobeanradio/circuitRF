@@ -127,6 +127,102 @@ public sealed class RenderDataDisplayCliTests(ITestOutputHelper output) : IDispo
     }
 
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public void TranslucentArrow_HasUniformOpacity_AndNoShaftPastTheHeadBase(bool dashed, bool doubleEnded)
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(240, 100, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Premul);
+        using var canvas = new SkiaSharp.SKCanvas(bitmap);
+        canvas.Clear(SkiaSharp.SKColors.Transparent);
+        var line = new CanvasLine(30, 50, 210, 50, dashed ? CanvasLineStyle.Dashed : CanvasLineStyle.Solid)
+            { Color = "#80804040", LineWidth = 16, StartArrow = true, EndArrow = doubleEnded };
+        AnnotationRenderer.Draw(canvas, line, SkiaSharp.SKColors.Black);
+        canvas.Flush();
+        Assert.All(bitmap.Pixels, pixel => Assert.InRange(pixel.Alpha, 0, 128));
+        Assert.InRange(bitmap.GetPixel(70, 50).Alpha, 126, 128);
+        Assert.Equal(0, bitmap.GetPixel(32, 55).Alpha);
+        Assert.Equal(0, bitmap.GetPixel(32, 45).Alpha);
+        if (doubleEnded)
+        {
+            Assert.Equal(0, bitmap.GetPixel(208, 55).Alpha);
+            Assert.InRange(bitmap.GetPixel(170, 50).Alpha, 126, 128);
+        }
+    }
+
+    [Theory]
+    [InlineData("svg")]
+    [InlineData("pdf")]
+    public async Task Annotations_AreIncludedInGuiAndCliPageExports(string format)
+    {
+        var fixture = await BuildFixtureAsync();
+        var display = fixture.Window.DataDisplay!;
+        display.AddAnnotation(new CanvasBox(-200, -100, 200, -30)
+            { FillColor = "#408080FF", LineWidth = 3 });
+        display.AddAnnotation(new CanvasOval(-100, 400, 200, 500)
+            { FillColor = "#8000CC80", Style = CanvasLineStyle.Dashed, LineWidth = 4 });
+        display.AddAnnotation(new CanvasLine(0, 300, 300, 380) { StartArrow = true, EndArrow = true, LineWidth = 5 });
+        display.AddAnnotation(new CanvasText(300, -100, "Wrapped annotation outside the plots")
+            { WrapWidth = 100, Rotation = CanvasTextRotation.R90 });
+        await fixture.Window.SaveAllAsync(fixture.Cdd);
+        var path = Path.Combine(_root, "annotations." + format);
+        var (exit, stdout, stderr) = RunCli("render", fixture.Cdd, "-o", path);
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+        if (format == "svg")
+        {
+            var expected = PlotExporter.BuildSvgStringForContainers(display.Plots.ToList(), display.Theme,
+                new AnnotationPage(display.Annotations.ToArray()));
+            Assert.Equal(StripSkiaIds(expected), StripSkiaIds(File.ReadAllText(path)));
+        }
+        else
+        {
+            var expected = PlotDocumentWriter.BuildPdfBytes(canvas => PlotComposer.Render(canvas,
+                display.Plots.Select(PlotExporter.Place).ToList(), display.Theme, AppSettings.Current,
+                PagePlacement.Letter, display.Annotations.ToArray()), PagePlacement.Letter, PlotDocumentWriter.PdfTitleFor(path));
+            Assert.Equal(expected, File.ReadAllBytes(path));
+        }
+    }
+
+    [Fact]
+    public async Task AllTabsPdf_IncludesAnnotationsOnEveryPage()
+    {
+        var fixture = await BuildFixtureAsync(tabs: 2);
+        for (int index = 0; index < fixture.Window.Tabs.Count; index++)
+            fixture.Window.Tabs[index].DataDisplay.AddAnnotation(new CanvasText(-100, -60, $"Page {index + 1}") { FontSize = 24 });
+        await fixture.Window.SaveAllAsync(fixture.Cdd);
+        var path = Path.Combine(_root, "all-annotations.pdf");
+        var result = RunCli("render", fixture.Cdd, "-o", path, "--all-tabs");
+        output.WriteLine(result.StdOut + result.StdErr);
+        Assert.Equal(0, result.ExitCode);
+        var draws = fixture.Window.Tabs.Select(tab => (Action<SkiaSharp.SKCanvas>)(canvas => PlotComposer.Render(canvas,
+            tab.DataDisplay.Plots.Select(PlotExporter.Place).ToList(), tab.DataDisplay.Theme, AppSettings.Current,
+            PagePlacement.Letter, tab.DataDisplay.Annotations.ToArray()))).ToList();
+        Assert.Equal(PlotDocumentWriter.BuildPdfBytes(draws, PagePlacement.Letter), File.ReadAllBytes(path));
+    }
+
+    [Fact]
+    public void AnnotationOnlyDisplay_RendersWithoutADataSource()
+    {
+        Directory.CreateDirectory(_root);
+        var config = new DataDisplayConfig { FormatVersion = 2, Tabs = [new TabConfig
+        {
+            Annotations = [new CanvasBox(0, 0, 200, 100) { FillColor = "#800080FF" },
+                           new CanvasText(10, 10, "Annotation-only page")],
+        }] };
+        var input = Path.Combine(_root, "notes.cdd");
+        File.WriteAllText(input, JsonSerializer.Serialize(config, DataDisplayJson.Options));
+        var path = Path.Combine(_root, "notes.png");
+        var result = RunCli("render", input, "-o", path);
+        output.WriteLine(result.StdOut + result.StdErr);
+        Assert.Equal(0, result.ExitCode);
+        using var bitmap = SkiaSharp.SKBitmap.Decode(path);
+        Assert.NotNull(bitmap);
+        Assert.Contains(bitmap.Pixels, pixel => pixel.Blue > pixel.Red + 20);
+    }
+
     // ── gate 2: a trace of every kind renders identically ─────────────────────
 
     /// <summary>

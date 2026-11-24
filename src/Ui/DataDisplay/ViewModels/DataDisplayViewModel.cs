@@ -22,7 +22,7 @@ using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
-public enum AnnotationTool { None, Text, Line, Box }
+public enum AnnotationTool { None, Text, Line, Box, Oval }
 
 public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 {
@@ -91,19 +91,21 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     internal int SelectedAnnotationIndex { get; private set; } = -1;
+    public bool AllAnnotationsSelected { get; private set; }
     public CanvasAnnotation? SelectedAnnotation => SelectedAnnotationIndex >= 0
         && SelectedAnnotationIndex < _annotations.Count ? _annotations[SelectedAnnotationIndex] : null;
 
     internal void SelectAnnotation(int index)
     {
-        if (index == SelectedAnnotationIndex) return;
+        if (index == SelectedAnnotationIndex && !AllAnnotationsSelected) return;
         if (index >= 0) DeselectAll();
         SetAnnotationSelection(index);
     }
 
     private void SetAnnotationSelection(int index)
     {
-        if (SelectedAnnotationIndex == index) return;
+        if (SelectedAnnotationIndex == index && !AllAnnotationsSelected) return;
+        AllAnnotationsSelected = false;
         SelectedAnnotationIndex = index;
         OnPropertyChanged(nameof(SelectedAnnotation));
         OnPropertyChanged(nameof(HasAnySelection));
@@ -122,22 +124,60 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(TextToolArmed), nameof(LineToolArmed), nameof(BoxToolArmed))]
+    [NotifyPropertyChangedFor(nameof(TextToolArmed), nameof(LineToolArmed), nameof(BoxToolArmed), nameof(OvalToolArmed))]
     private AnnotationTool _drawingTool;
+
+    [ObservableProperty]
+    private bool _markerToolArmed;
+
+    public MarkerFunction MarkerToolFunction { get; private set; }
+
+    public void ArmMarkerTool(MarkerFunction function = MarkerFunction.Normal)
+    {
+        DrawingTool = AnnotationTool.None;
+        DisarmZoomBox();
+        MarkerToolFunction = function;
+        MarkerToolArmed = true;
+    }
+
+    public bool DisarmMarkerTool()
+    {
+        if (!MarkerToolArmed) return false;
+        MarkerToolArmed = false;
+        return true;
+    }
+
+    /// <summary>
+    /// Escape's first press: every armed tool off at once — the marker tool, a drawing tool and the magnifier. True when
+    /// anything WAS armed, which is what makes the next Escape drop the selection instead.
+    /// </summary>
+    public bool DisarmAllTools()
+    {
+        bool any = DisarmMarkerTool();
+        if (DrawingTool != AnnotationTool.None) { DrawingTool = AnnotationTool.None; any = true; }
+        return DisarmZoomBox() | any;
+    }
+
+    /// <summary>True while any tool is armed — marker, drawing or magnifier: the canvas AND every plot on it show a
+    /// crosshair for as long as it is.</summary>
+    public bool AnyToolArmed => MarkerToolArmed || ZoomBoxArmed || DrawingTool != AnnotationTool.None;
 
     public bool TextToolArmed => DrawingTool == AnnotationTool.Text;
     public bool LineToolArmed => DrawingTool == AnnotationTool.Line;
     public bool BoxToolArmed => DrawingTool == AnnotationTool.Box;
+    public bool OvalToolArmed => DrawingTool == AnnotationTool.Oval;
 
     [RelayCommand] private void ToggleTextTool() => ToggleAnnotationTool(AnnotationTool.Text);
     [RelayCommand] private void ToggleLineTool() => ToggleAnnotationTool(AnnotationTool.Line);
     [RelayCommand] private void ToggleBoxTool() => ToggleAnnotationTool(AnnotationTool.Box);
+    [RelayCommand] private void ToggleOvalTool() => ToggleAnnotationTool(AnnotationTool.Oval);
 
     public AnnotationInspectorViewModel AnnotationInspector { get; }
 
     private void ToggleAnnotationTool(AnnotationTool tool)
     {
         DisarmZoomBox();
+        MarkerToolArmed = false;
         DrawingTool = DrawingTool == tool ? AnnotationTool.None : tool;
     }
 
@@ -167,7 +207,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// Used to gate the Delete command and similar multi-select operations.
     /// </summary>
     public bool HasAnySelection =>
-        SelectedAnnotation is not null || _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected);
+        SelectedAnnotation is not null || AllAnnotationsSelected && _annotations.Count > 0
+        || _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected);
 
     /// <summary>True when at least one marker InfoBox is selected.</summary>
     public bool HasSelectedInfoBoxes => _markerInfoBoxes.Any(m => m.IsSelected);
@@ -938,16 +979,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// R-rdh-1/2 — every preset the selected source's run has, transient first: what a new display of a run holds, and what
-    /// the run message's action adds. The measures table is added once, with the first preset. Empty when the source has
-    /// neither a transient nor a harmonic-balance result.
+    /// R-rdh-1/2 — the preset a run opens on: what a new display of a run holds, and what the run message's action adds.
+    /// Only a transient run has one. A harmonic-balance run deliberately does NOT: circuitRF is harmonic balance first, and
+    /// a display opened on an HB run shows the plain seeded trace (its spectrum) with no title of ours, because what a user
+    /// wants plotted from a schematic cannot be guessed. The HB preset stays one click away on the toolbar.
     /// </summary>
-    public async Task<IReadOnlyList<PlotContainerViewModel>> AddRunPresetsAsync()
-    {
-        var added = new List<PlotContainerViewModel>(await AddTransientAsync());
-        added.AddRange(await AddHbAsync(includeMeasures: added.Count == 0));
-        return added;
-    }
+    public async Task<IReadOnlyList<PlotContainerViewModel>> AddRunPresetsAsync() => await AddTransientAsync();
 
     /// <summary>
     /// R-rdh-1 — the plots of the selected source's run: its presets (<see cref="AddRunPresetsAsync"/>), or, for a run with
@@ -1239,6 +1276,13 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         if (toRemove.Count > 0)
             cmds.Add(new RemovePlotsCommand(toRemove, this));
 
+        if (AllAnnotationsSelected)
+        {
+            for (int index = _annotations.Count - 1; index >= 0; index--)
+                cmds.Add(new RemoveAnnotationCommand(this, index, _annotations[index]));
+            SetAnnotationSelection(-1);
+        }
+
         if (cmds.Count == 0) return;
 
         // Execute all removals as one reversible compound command.
@@ -1335,6 +1379,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         foreach (var p in _plots) p.IsSelected = true;
         foreach (var m in Boxes)  m.IsSelected = true;
         RefreshSelection();
+        AllAnnotationsSelected = _annotations.Count > 0;
+        OnPropertyChanged(nameof(SelectedAnnotation));
+        OnPropertyChanged(nameof(HasAnySelection));
     }
 
     /// <summary>
@@ -1646,6 +1693,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     public void ToggleZoomBox()
     {
         DrawingTool = AnnotationTool.None;
+        MarkerToolArmed = false;
         ZoomBoxArmed = !ZoomBoxArmed;
     }
 
@@ -2178,6 +2226,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 FreePosition          = m.FreePosition,
                 SnappedToCurve        = m.SnappedToCurve,
                 MarkerKind            = m.MarkerKind,
+                Function              = m.Function,
                 ShowInfoBox           = m.ShowInfoBox,
                 ContourSnapped        = m.ContourSnapped,
                 VswrEnabled           = m.VswrEnabled,

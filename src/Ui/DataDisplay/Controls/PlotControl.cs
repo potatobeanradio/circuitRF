@@ -286,6 +286,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         // Marker symbol drag state
         private Marker? _draggingMarker;
+        private Marker? _markerBeforeDrag;
         private Trace?  _draggingTrace;
 
         // VSWR locus drag state
@@ -377,6 +378,23 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         /// retrieve label strips, marker info-box positions, and screen-space layout.
         /// </summary>
         public Func<PlotContainerViewModel?>? ContainerProvider { get; set; }
+
+        /// <summary>
+        /// A tool is armed on the display (marker, drawing or magnifier): the plot shows the canvas's crosshair instead of
+        /// its own arrow, so the pointer does not say "no tool" the moment it crosses onto a plot. Set by
+        /// <c>PlotContainerView</c>, which follows the display.
+        /// </summary>
+        public bool ToolArmed
+        {
+            get => _toolArmed;
+            set
+            {
+                if (_toolArmed == value) return;
+                _toolArmed = value;
+                Cursor = value ? new Cursor(StandardCursorType.Cross) : new Cursor(StandardCursorType.Arrow);
+            }
+        }
+        private bool _toolArmed;
 
         /// <summary>
         /// Returns the set of markers that currently have selected InfoBoxes, filtered
@@ -1337,6 +1355,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var props = e.GetCurrentPoint(this).Properties;
             _dragStartScreen = e.GetPosition(this);
 
+            if (props.IsLeftButtonPressed && ContainerProvider?.Invoke() is { MarkerToolArmed: true } container)
+            {
+                if (TryAddMarkerNearPoint(_dragStartScreen, container.MarkerToolFunction)) container.DisarmMarkerTool();
+                e.Handled = true;
+                return;
+            }
+
             // ---- ANT-10: rotate the 3D pattern surface ----
             //
             //  ONLY over the pattern itself. Owner report, 2026-09-11: a Surface3D plot could not
@@ -1522,6 +1547,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 if (hit.HasValue)
                 {
                     (_draggingMarker, _draggingTrace) = hit.Value;
+                    _markerBeforeDrag = new Marker(hit.Value.Marker);
 
                     var infoVm = FindMarkerInfoBoxVmProvider?.Invoke(hit.Value.Marker);
                     if (infoVm is not null)
@@ -1758,7 +1784,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             }
 
             // ---- Table cursor: resize-handle hover feedback ----
-            if (_plot.PlotType == PlotType.Table)
+            if (_plot.PlotType == PlotType.Table && !_toolArmed)
             {
                 float tableZoom3 = (float)(ContainerProvider?.Invoke()?.ZoomLevel ?? 1.0);
                 var hover = TableRenderer.HitTest((float)current.X, (float)current.Y,
@@ -1811,6 +1837,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // ---- Marker symbol drag ----
             if (_draggingMarker is not null && _draggingTrace is not null)
             {
+                if (_draggingMarker.Function is MarkerFunction.Minimum or MarkerFunction.Maximum)
+                {
+                    var resolved = _plot.ResolveMarker(_draggingTrace, _draggingMarker);
+                    if (resolved.Unavailable) return;
+                    _draggingMarker.Freq = resolved.Freq;
+                    _draggingMarker.PositionStatic = resolved.PositionStatic;
+                    _draggingMarker.Function = MarkerFunction.Normal;
+                }
                 MoveMarkerToCanvasPoint(_draggingTrace, _draggingMarker, current, tf,
                                         _plot, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 InvalidateVisual();
@@ -1839,6 +1873,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             }
 
             InvalidateVisual();
+            ContainerProvider?.Invoke()?.RefreshMarkerReadouts();
         }
 
         // ============================================================
@@ -1938,6 +1973,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             if (_draggingMarker is not null)
             {
+                if (_markerBeforeDrag is { } before &&
+                    before.Function is MarkerFunction.Minimum or MarkerFunction.Maximum &&
+                    _draggingMarker.Function == MarkerFunction.Normal &&
+                    FindMarkerInfoBoxVmProvider?.Invoke(_draggingMarker) is { } box)
+                    ContainerProvider?.Invoke()?.PushUndoCommand(new MoveMarkerFrequencyCommand(box,
+                        before.Freq, before.PositionStatic, _draggingMarker.Freq, _draggingMarker.PositionStatic,
+                        before.Function, _draggingMarker.Function));
+                _markerBeforeDrag = null;
                 _draggingMarker = null;
                 _draggingTrace  = null;
                 _renderDetail   = PlotDetail.Full;
@@ -2210,7 +2253,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private static bool HitsRect(Point pos, SkiaSharp.SKRect r) =>
             !r.IsEmpty && r.Contains((float)pos.X, (float)pos.Y);
 
-        private bool TryAddMarkerNearPoint(Point canvasPt)
+        private bool TryAddMarkerNearPoint(Point canvasPt, MarkerFunction function = MarkerFunction.Normal)
         {
             if (_plot is null) return false;
 
@@ -2262,14 +2305,17 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 return false;
             }
 
+            if (function != MarkerFunction.Normal &&
+                (_plot.PlotType != PlotType.Rect || !bestTrace.XIsFrequency || bestTrace.IsContourTrace))
+                return false;
+
             if (bestTrace.IsHarmonicStem)
-                return TryAddStemMarker(bestTrace, canvasPt);
+                return TryAddStemMarker(bestTrace, canvasPt, function);
 
             if (bestTrace.IsCubeXMarker)
-                return TryAddCubeMarker(bestTrace, canvasPt);
+                return TryAddCubeMarker(bestTrace, canvasPt, function);
 
-            AddMarkerAtFreqIndex(bestTrace, bestFi, bestNearPt);
-            return true;
+            return AddMarkerAtFreqIndex(bestTrace, bestFi, bestNearPt, function);
         }
 
         // ============================================================
@@ -2335,7 +2381,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 for (int mi = trace.Markers.Count - 1; mi >= 0; mi--)
                 {
                     var marker   = trace.Markers[mi];
-                    var dl       = trace.GetMarkerDataLocation(marker);
+                    var resolved = _plot.ResolveMarker(trace, marker);
+                    if (resolved.Unavailable) continue;
+                    var dl       = trace.GetMarkerDataLocation(resolved);
                     var symbolPx = tf.ToCanvas(dl.X, dl.Y, trace.UseSecondaryAxis);
                     float radius = MarkerRenderer.SymbolHitRadius(marker, canvasSize);
 
@@ -2554,7 +2602,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             return ladder[^1];
         }
 
-        private bool TryAddStemMarker(Trace trace, Point canvasPt)
+        private bool TryAddStemMarker(Trace trace, Point canvasPt, MarkerFunction function = MarkerFunction.Normal)
         {
             if (_plot is null || !trace.IsHarmonicStem) return false;
             var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
@@ -2572,7 +2620,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
                 FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
                 PositionStatic        = new System.Numerics.Vector2(snap.Value.HarmonicX, 0f),
+                Function              = function,
+                IsMulti               = function == MarkerFunction.Vertical,
             };
+
+            if (function is MarkerFunction.Minimum or MarkerFunction.Maximum &&
+                !trace.TrySetVisibleExtremum(marker, _plot.Axes.Window, function == MarkerFunction.Maximum)) return false;
 
             trace.Markers.Add(marker);
             _renderDetail = PlotDetail.Full;
@@ -2582,7 +2635,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             return true;
         }
 
-        private bool TryAddCubeMarker(Trace trace, Point canvasPt)
+        private bool TryAddCubeMarker(Trace trace, Point canvasPt, MarkerFunction function = MarkerFunction.Normal)
         {
             if (_plot is null || !trace.IsCubeXMarker) return false;
 
@@ -2609,7 +2662,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits,
                 FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat,
                 PositionStatic        = posStatic,
+                Function              = function,
+                IsMulti               = function == MarkerFunction.Vertical,
             };
+
+            if (function is MarkerFunction.Minimum or MarkerFunction.Maximum &&
+                !trace.TrySetVisibleExtremum(marker, _plot.Axes.Window, function == MarkerFunction.Maximum)) return false;
 
             trace.Markers.Add(marker);
             _renderDetail = PlotDetail.Full;
@@ -2619,17 +2677,21 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             return true;
         }
 
-        private void AddMarkerAtFreqIndex(
+        private bool AddMarkerAtFreqIndex(
             Trace trace, int freqIndex,
-            System.Numerics.Vector2 nearestWorldPt)
+            System.Numerics.Vector2 nearestWorldPt, MarkerFunction function = MarkerFunction.Normal)
         {
-            if (_plot is null) return;
+            if (_plot is null || trace.Data.Frequencies.Length == 0) return false;
 
             int    idx    = NextMarkerIndexProvider?.Invoke() ?? (trace.Markers.Count + 1);
             int    fi     = Math.Clamp(freqIndex, 0, trace.Data.Frequencies.Length - 1);
             double freq   = trace.Data.Frequencies[fi];
 
             var marker = new Marker(trace, freq, false, false, idx, _plot.FreqUnits);
+            marker.Function = function;
+            marker.IsMulti = function == MarkerFunction.Vertical;
+            if (function is MarkerFunction.Minimum or MarkerFunction.Maximum &&
+                !trace.TrySetVisibleExtremum(marker, _plot.Axes.Window, function == MarkerFunction.Maximum)) return false;
 
             marker.MaximumFractionDigits = AppSettingsViewModel.Instance.MarkerMaxFractionDigits;
             marker.FormatString          = AppSettingsViewModel.Instance.MarkerPrecisionFormat;
@@ -2643,6 +2705,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             InvalidateVisual();
             PlotChanged?.Invoke(this, EventArgs.Empty);
             MarkerAdded?.Invoke(marker, trace);
+            return true;
         }
 
         private void ShowMarkerEditorFlyout(Marker marker, Trace trace)

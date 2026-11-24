@@ -225,6 +225,15 @@ value. The power-integrity part library is a different drawer and is not read he
 <p>With Vendor library chosen, <strong>Place filter</strong> and <strong>Replace this Filter</strong> place the library parts
 themselves: each element is the vendor part the table names, exactly as if it had been placed from
 the palette, with its case size's footprint on a board technology.</p>
+<p><strong>A library part is judged as its model, not as its stated value.</strong> A real inductor or capacitor has
+loss, a parasitic in parallel or in series and a self-resonance, and near a few gigahertz those move a
+filter a long way from the ideal ladder at the same values. So with Vendor library the curve, the
+mask check and the search all simulate each element as the part's own SPICE model, read through the
+workspace exactly as a placed part is: what the window draws is what the placed ladder or Filter
+block simulates. A design whose parts cannot meet the mask says so, with how far it misses, rather
+than showing an ideal curve the circuit will not follow. A part that is a model folder rather than a
+SPICE subcircuit keeps its stated value. With many series in the libraries the search tries the ten
+pairings whose parts sit closest to the values the design needs at the band's centre, and says so.</p>
 <h2 id="place">Where the result goes</h2>
 <p><strong>Apply to Filter</strong>, when the window was opened on a placed Filter, writes the whole specification
 onto that instance: Response, Form, Order, the cutoff, Ripple, As, the elliptic type and the two
@@ -249,9 +258,12 @@ the palette carries no design; it shows only the block's own fields and is edite
 the block. Untick it to make the block a plain Filter again: every field is editable, so a variable or
 a sweep can drive it, and the design is kept, so <strong>Synthesise…</strong> still reopens on it. Ticking it opens
 the window, and <strong>Apply to Filter</strong> holds the block to the design again.</p>
-<p><strong>Place filter</strong> puts the realised ladder, at the values the table shows, on the schematic. It has no
-terminations: each end is a short wire with a net label, <code>IN</code> on port 1 and <code>OUT</code> on port 2 (<code>IN2</code> and
-<code>OUT2</code> onward when the schematic already has those names), ready to be wired into the design. The
+<p><strong>Place filter</strong> puts the realised ladder, at the values the table shows, on the schematic. On a
+schematic with no ports or pins of its own, such as a new cell, it ends in port 1 at the source
+resistance and port 2 at the load, so an S-parameter analysis runs on it as placed. On any other
+schematic it has no terminations: each end is a short wire with a net label, <code>IN</code> on port 1 and <code>OUT</code>
+on port 2 (<code>IN2</code> and <code>OUT2</code> onward when the schematic already has those names), ready to be wired into
+the design. The
 ladder follows the pointer on the connection grid until you click, exactly as a paste does, and
 Escape drops it. <strong>Place component</strong> places one Filter block carrying the specification and the
 settings, written by the same function Apply uses.</p>
@@ -266,6 +278,36 @@ move it.</p>
 <p>To get the ladder as a netlist, use <code>circuitrf filter lc … -o filter.cnl</code>: two terminations and the
 inductors and capacitors between them. That file is what <code>sparam</code> simulates, and it is the same
 netlist the plot was drawn from.</p>
+<h2 id="optimizer">Tuning it in the circuit</h2>
+<p><strong>Send mask to Optimizer</strong> (the target button on the toolbar) turns the mask into optimizer goals on
+the schematic Place filter goes into, so a placed ladder can be tuned back inside it as built, its
+board and parts included. It adds one goal per band on |S21| in dB, read through the schematic's
+S-parameter analysis from its lowest-numbered port to the next (1 to 2 on a ladder placed with
+ports):</p>
+<table>
+<thead>
+<tr>
+<th>Goal</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mask_pass</code></td>
+<td>at least −Ap over the passband</td>
+</tr>
+<tr>
+<td><code>mask_stop</code> (<code>mask_stop_lower</code>, <code>mask_stop_upper</code> for a bandpass)</td>
+<td>at most −As over each stopband</td>
+</tr>
+</tbody>
+</table>
+<p>Each band is the one the window checks, out to a decade past the outer edges, cut to the analysis's
+sweep; a band the sweep does not reach gets no goal, and Messages names it. The Optimizer opens on
+that schematic with the goals added as one undo step, and sending again replaces the goals an earlier
+send made. It works whether or not the design meets the mask, since tuning is the way back in. A
+schematic with no S-parameter analysis is told to add one first. Make the ladder's parts tunable
+(as for any part) to give the optimizer something to move.</p>
 <h2 id="headless">The same thing from the command line</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter lc --form bandstop --response Butterworth --order 3 --f1 1GHz --f2 2GHz --series e24 -o filter.cnl</code></pre>
 <p>The verb calls the same synthesis the window calls. The options are in <a href="cli.html#filter-lc">CLI › filter lc</a>.</p>

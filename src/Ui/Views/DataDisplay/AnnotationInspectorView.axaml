@@ -29,6 +29,30 @@
                 <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding LineStyles}"
                           SelectedItem="{Binding LineStyle, Mode=TwoWay}" AutomationProperties.Name="Outline style"/>
             </Grid>
+            <Grid ColumnDefinitions="75,*">
+                <TextBlock Text="Thickness" VerticalAlignment="Center"/>
+                <NumericUpDown Grid.Column="1" Value="{Binding LineWidth, Mode=TwoWay}" Minimum="0.25"
+                               Maximum="40" Increment="0.5" FormatString="0.##" AutomationProperties.Name="Outline thickness"/>
+            </Grid>
+            <StackPanel IsVisible="{Binding IsLine}" Orientation="Horizontal" Spacing="8">
+                <CheckBox Content="Start arrow" IsChecked="{Binding StartArrow, Mode=TwoWay}"/>
+                <CheckBox Content="End arrow" IsChecked="{Binding EndArrow, Mode=TwoWay}"/>
+            </StackPanel>
+            <StackPanel IsVisible="{Binding CanFill}" Spacing="4">
+                <CheckBox Content="Fill" IsChecked="{Binding HasFill, Mode=TwoWay}"/>
+                <Grid IsVisible="{Binding HasFill}" ColumnDefinitions="75,Auto,*">
+                    <TextBlock Text="Fill color" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Click="PickFillColor" ToolTip.Tip="Choose fill color" AutomationProperties.Name="Fill color">
+                        <Border Width="20" Height="14" Background="{Binding FillSwatch}" BorderThickness="1"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                    </Button>
+                </Grid>
+                <Grid IsVisible="{Binding HasFill}" ColumnDefinitions="75,*">
+                    <TextBlock Text="Opacity (%)" VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding FillOpacity, Mode=TwoWay}"
+                            AutomationProperties.Name="Fill opacity"/>
+                </Grid>
+            </StackPanel>
         </StackPanel>
         <Grid ColumnDefinitions="75,Auto,*">
             <TextBlock Text="Color" VerticalAlignment="Center"/>

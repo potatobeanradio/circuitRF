@@ -209,6 +209,7 @@ public static class PlotConfigLoader
                     FreePosition           = mc.FreePosition,
                     SnappedToCurve         = mc.SnappedToCurve,
                     MarkerKind             = mc.MarkerKind,
+                    Function               = mc.Function,
                     ShowInfoBox            = mc.ShowInfoBox,
                     ContourSnapped         = mc.ContourSnapped,
                     VswrEnabled            = mc.VswrEnabled,

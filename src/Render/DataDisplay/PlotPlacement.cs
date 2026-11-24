@@ -58,7 +58,7 @@ public static class PlotPlacement
                 : m.InfoBoxPos;
             double bx = pos.X;
             double by = pos.Y;
-            var (w, h) = MarkerRenderer.MeasureInfoBox(m, t, freqUnit,
+            var (w, h) = MarkerRenderer.MeasureInfoBox(plot.ResolveMarker(t, m), t, freqUnit,
                                                        hasMultipleSources, plot.Traces);
             boxes.Add(new PlacedMarkerBox(m, t, freqUnit, bx, by, w, h, plot.Traces));
         }

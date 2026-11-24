@@ -160,7 +160,7 @@
                     ToolTip.ShowOnDisabled="True">
                 <ToolTip.Tip>
                     <TextBlock MaxWidth="360" TextWrapping="Wrap">
-                        <Run FontWeight="SemiBold" Text="Place filter — the LC ladder, ends labelled IN and OUT"/>
+                        <Run FontWeight="SemiBold" Text="Place filter — the LC ladder: on a schematic with no ports, ending in ports 1 and 2; otherwise ends labelled IN and OUT"/>
                         <LineBreak/>
                         <Run Text="{Binding PlaceTip}"/>
                     </TextBlock>

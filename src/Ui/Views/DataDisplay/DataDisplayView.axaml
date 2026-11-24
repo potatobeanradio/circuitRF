@@ -13,47 +13,24 @@
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Ctrl+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
         <KeyBinding Gesture="Meta+Shift+A"  Command="{Binding ViewModel.Window.AddPlotCommand}"/>
-        <!-- Escape drops every selection — markers, plots, whatever is selected (owner, 2026-08-18).
-             Bound here beside Ctrl+A so the pair is visibly a pair. The tab-header rename box handles
-             its own Escape and marks it handled, so renaming still cancels rather than deselecting. -->
-        <KeyBinding Gesture="Escape"        Command="{Binding ViewModel.Window.DeselectAllCommand}"/>
-        <KeyBinding Gesture="Ctrl+A"        Command="{Binding ViewModel.Window.SelectAllCommand}"/>
-        <KeyBinding Gesture="Meta+A"        Command="{Binding ViewModel.Window.SelectAllCommand}"/>
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Meta+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
-        <KeyBinding Gesture="Delete"        Command="{Binding ViewModel.Window.DeleteSelectedCommand}"/>
-        <!-- The key a Mac keyboard labels "delete" sends Back; the schematic editor takes both, and so does this. A
-             focused text box handles Back itself, so typing in the inspector deletes characters, not plots. -->
-        <KeyBinding Gesture="Back"          Command="{Binding ViewModel.Window.DeleteSelectedCommand}"/>
         <!-- Page Up/Down scroll the SELECTED table by a whole page (owner, 2026-08-21). Bound at the
              document level like Delete, so the keystroke works wherever focus sits in the display. -->
         <KeyBinding Gesture="PageUp"        Command="{Binding ViewModel.Window.ScrollTablePageUpCommand}"/>
         <KeyBinding Gesture="PageDown"      Command="{Binding ViewModel.Window.ScrollTablePageDownCommand}"/>
         <KeyBinding Gesture="Home"          Command="{Binding ViewModel.Window.ScrollTableToTopCommand}"/>
         <KeyBinding Gesture="End"           Command="{Binding ViewModel.Window.ScrollTableToBottomCommand}"/>
-        <KeyBinding Gesture="Ctrl+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
-        <KeyBinding Gesture="Meta+Shift+D"  Command="{Binding ViewModel.Window.RemovePlotCommand}"/>
         <KeyBinding Gesture="Ctrl+OemPlus"  Command="{Binding ViewModel.Window.ZoomInCommand}"/>
         <KeyBinding Gesture="Meta+OemPlus"  Command="{Binding ViewModel.Window.ZoomInCommand}"/>
         <KeyBinding Gesture="Ctrl+OemMinus" Command="{Binding ViewModel.Window.ZoomOutCommand}"/>
         <KeyBinding Gesture="Meta+OemMinus" Command="{Binding ViewModel.Window.ZoomOutCommand}"/>
         <KeyBinding Gesture="Ctrl+D0"       Command="{Binding ViewModel.Window.FitAllCommand}"/>
         <KeyBinding Gesture="Meta+D0"       Command="{Binding ViewModel.Window.FitAllCommand}"/>
-        <KeyBinding Gesture="Ctrl+Z"        Command="{Binding ViewModel.Window.UndoCommand}"/>
-        <KeyBinding Gesture="Meta+Z"        Command="{Binding ViewModel.Window.UndoCommand}"/>
-        <KeyBinding Gesture="Ctrl+Shift+Z"  Command="{Binding ViewModel.Window.RedoCommand}"/>
-        <KeyBinding Gesture="Meta+Shift+Z"  Command="{Binding ViewModel.Window.RedoCommand}"/>
-        <KeyBinding Gesture="Ctrl+Y"        Command="{Binding ViewModel.Window.RedoCommand}"/>
         <KeyBinding Gesture="Ctrl+L"        Command="{Binding ViewModel.Window.OpenFileCommand}"/>
         <KeyBinding Gesture="Meta+L"        Command="{Binding ViewModel.Window.OpenFileCommand}"/>
         <KeyBinding Gesture="Ctrl+S"        Command="{Binding ViewModel.Window.SaveDataDisplayCommand}"/>
         <KeyBinding Gesture="Meta+S"        Command="{Binding ViewModel.Window.SaveDataDisplayCommand}"/>
-        <KeyBinding Gesture="Ctrl+C"        Command="{Binding ViewModel.Window.CopyCommand}"/>
-        <KeyBinding Gesture="Meta+C"        Command="{Binding ViewModel.Window.CopyCommand}"/>
-        <KeyBinding Gesture="Ctrl+X"        Command="{Binding ViewModel.Window.CutCommand}"/>
-        <KeyBinding Gesture="Meta+X"        Command="{Binding ViewModel.Window.CutCommand}"/>
-        <KeyBinding Gesture="Ctrl+V"        Command="{Binding ViewModel.Window.PasteCommand}"/>
-        <KeyBinding Gesture="Meta+V"        Command="{Binding ViewModel.Window.PasteCommand}"/>
     </UserControl.KeyBindings>
 
     <UserControl.Styles>
@@ -112,9 +89,9 @@
                 BorderThickness="0,0,0,1"
                 Padding="4,2">
             <!-- x:Name="DocsToolbar" - see SchematicView.axaml for why the docs factory needs a
-                 stable handle on this panel. -->
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <StackPanel x:Name="DocsToolbar" Orientation="Horizontal" Spacing="2" Classes="Toolbar">
+                 stable handle on this panel. A WrapPanel, as the layout editor's: a narrow window wraps
+                 the buttons onto a second row rather than hiding them behind a scroll bar. -->
+            <WrapPanel x:Name="DocsToolbar" Orientation="Horizontal" ItemSpacing="2" LineSpacing="2" Classes="Toolbar">
 
                 <!-- Datasource combo: lists results/ schematics + workspace Touchstone files -->
                 <ComboBox Width="200"
@@ -212,10 +189,10 @@
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.AddHbCommand}"
-                        ToolTip.Tip="Add Harmonic Balance: the labelled nets' voltages over one period, the output's spectrum and the measures as a table. Needs a harmonic-balance result as the source"
+                        ToolTip.Tip="Add HB Spectrum: the output's spectrum as stems (power through the output current probe in dBm, else its voltage in dBV) and the measures as a table. Needs a harmonic-balance result as the source"
                         ToolTip.ShowOnDisabled="True"
                         Padding="6,3">
-                    <mi:MaterialIcon Kind="Waveform" Width="16" Height="16"/>
+                    <mi:MaterialIcon Kind="Equalizer" Width="16" Height="16"/>
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.AddStatisticsTableCommand}"
@@ -251,6 +228,47 @@
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <Button Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.MarkerToolArmed, FallbackValue=False}"
+                        AutomationProperties.Name="Add Marker" ToolTip.Tip="Add Marker" Padding="6,3">
+                    <StackPanel Orientation="Horizontal" Spacing="1">
+                        <Canvas Width="24" Height="18">
+                            <Path Data="M 1,13 C 5,13 5,4 9,4 C 13,4 12,15 17,15 C 20,15 20,7 23,7"
+                                  Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.3"/>
+                            <Path Data="M 7,1 L 13,1 L 10,5 Z" Fill="{Binding $parent[Button].Foreground}"/>
+                        </Canvas>
+                        <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="16"/>
+                    </StackPanel>
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuItem Header="Normal" Tag="Normal" Click="OnAddMarkerClick">
+                                <MenuItem.Icon><Canvas Width="24" Height="18">
+                                    <Path Data="M 1,13 C 5,13 5,4 9,4 C 13,4 12,15 17,15 C 20,15 20,7 23,7" Stroke="{Binding $parent[MenuItem].Foreground}" StrokeThickness="1.3"/>
+                                    <Path Data="M 7,1 L 13,1 L 10,5 Z" Fill="{Binding $parent[MenuItem].Foreground}"/>
+                                </Canvas></MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="Minimum" Tag="Minimum" Click="OnAddMarkerClick">
+                                <MenuItem.Icon><Canvas Width="24" Height="18">
+                                    <Path Data="M 1,4 C 5,4 5,14 11,14 C 17,14 17,4 23,4" Stroke="{Binding $parent[MenuItem].Foreground}" StrokeThickness="1.3"/>
+                                    <Path Data="M 8,8 L 14,8 L 11,12 Z" Fill="{Binding $parent[MenuItem].Foreground}"/>
+                                </Canvas></MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="Maximum" Tag="Maximum" Click="OnAddMarkerClick">
+                                <MenuItem.Icon><Canvas Width="24" Height="18">
+                                    <Path Data="M 1,14 C 5,14 5,5 11,5 C 17,5 17,14 23,14" Stroke="{Binding $parent[MenuItem].Foreground}" StrokeThickness="1.3"/>
+                                    <Path Data="M 8,0 L 14,0 L 11,4 Z" Fill="{Binding $parent[MenuItem].Foreground}"/>
+                                </Canvas></MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="Vertical line" Tag="Vertical" Click="OnAddMarkerClick">
+                                <MenuItem.Icon><Canvas Width="24" Height="18">
+                                    <Path Data="M 1,14 C 6,14 6,4 11,4 C 16,4 17,14 23,14" Stroke="{Binding $parent[MenuItem].Foreground}" StrokeThickness="1.3"/>
+                                    <Path Data="M 11,1 L 11,17" Stroke="{Binding $parent[MenuItem].Foreground}" StrokeThickness="1.3"/>
+                                    <Path Data="M 8,0 L 14,0 L 11,4 Z" Fill="{Binding $parent[MenuItem].Foreground}"/>
+                                </Canvas></MenuItem.Icon>
+                            </MenuItem>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+
                 <!-- The magnifier ARMS; it does not zoom (owner, 2026-09-11). Clicking it takes the
                      left button for one drag, and the box that drag draws on the canvas is what gets
                      framed. Ctrl/Cmd +/- above is where a single step lives. -->
@@ -268,6 +286,11 @@
                         Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.BoxToolArmed, FallbackValue=False}"
                         AutomationProperties.Name="Draw Box" ToolTip.Tip="Draw Box" Padding="6,3">
                     <mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/>
+                </Button>
+                <Button Command="{Binding ViewModel.Window.DataDisplay.ToggleOvalToolCommand}"
+                        Classes.ToolActive="{Binding ViewModel.Window.DataDisplay.OvalToolArmed, FallbackValue=False}"
+                        AutomationProperties.Name="Draw Oval" ToolTip.Tip="Draw Oval" Padding="6,3">
+                    <mi:MaterialIcon Kind="CircleOutline" Width="16" Height="16"/>
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.ZoomBoxCommand}"
@@ -334,14 +357,16 @@
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <Button Click="OnExportDocument" AutomationProperties.Name="Export Document" ToolTip.Tip="Export Document (PDF, SVG, PNG)" Padding="6,3">
+                    <mi:MaterialIcon Kind="FileExportOutline" Width="16" Height="16"/>
+                </Button>
                 <Button Command="{Binding ViewModel.Window.ExportDataCommand}"
                         ToolTip.Tip="Export Data"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="DatabaseExportOutline" Width="16" Height="16"/>
                 </Button>
 
-            </StackPanel>
-            </ScrollViewer>
+            </WrapPanel>
         </Border>
 
         <!-- ── Main content: tabs + inspector (library panel removed) ────────── -->

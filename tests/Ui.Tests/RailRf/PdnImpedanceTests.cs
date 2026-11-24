@@ -980,7 +980,7 @@ public class PdnImpedanceTests(ITestOutputHelper output)
 
         Assert.Contains("IsAnnotation", Body(code, "private void RefreshAddMarkerSubmenu()"),
                         StringComparison.Ordinal);
-        Assert.Contains("IsAnnotation", Body(code, "private bool TryAddMarkerNearPoint(Point canvasPt)"),
+        Assert.Contains("IsAnnotation", Body(code, "private bool TryAddMarkerNearPoint(Point canvasPt, MarkerFunction function"),
                         StringComparison.Ordinal);
     }
 

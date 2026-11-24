@@ -60,6 +60,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         // Unsubscribe from the previous active tab's property and undo events.
         if (_subscribedTab?.DataDisplay is { } old)
         {
+            old.MarkerToolArmed = false;
             old.PropertyChanged       -= OnActiveDisplayPropertyChanged;
             old.UndoRedo.StateChanged -= OnUndoRedoStateChanged;
             old.ContentChanged        -= OnActiveDisplayContentChanged;
@@ -381,6 +382,9 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     private Func<(double L, double T, double W, double H)>?    _getWindowGeometryAction;
     private Func<Task<string?>>?                               _getClipboardTextAction;
     private Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, Task>? _richCopyAction;
+    private Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, AnnotationPage, Task>? _annotationCopyAction;
+    public void SetAnnotationCopyAction(Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, AnnotationPage, Task> action)
+        => _annotationCopyAction = action;
     // Injected by WorkspaceViewModel: opens the given file as a new document tab.
     private Func<string, Stream, Task>?                        _openFileAsNewDisplayAction;
     // Injected by code-behind: opens folder picker scoped to workspace results/.
@@ -693,18 +697,12 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     /// <summary>Ctrl/Cmd+A in the data display — select everything (plots + markers) in the active tab.</summary>
     [RelayCommand] private void SelectAll() => DataDisplay?.SelectAll();
 
-    /// <summary>Escape — one thing at a time, most specific first. An ARMED magnifier is the most
-    /// recently turned-on state, so that is what Escape means while it is on; only once it is off
-    /// does Escape drop the selection. See <c>DataDisplayViewModel.DeselectAll</c>.</summary>
+    /// <summary>Escape — the first press disarms every armed tool (marker, drawing, magnifier); a press with none armed
+    /// drops the selection. See <c>DataDisplayViewModel.DisarmAllTools</c> and <c>DeselectAll</c>.</summary>
     [RelayCommand]
     private void DeselectAll()
     {
-        if (DataDisplay is { DrawingTool: not AnnotationTool.None } drawing)
-        {
-            drawing.DrawingTool = AnnotationTool.None;
-            return;
-        }
-        if (DataDisplay?.DisarmZoomBox() == true) return;
+        if (DataDisplay?.DisarmAllTools() == true) return;
         DataDisplay?.DeselectAll();
     }
 
@@ -824,9 +822,10 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     private async Task Cut()
     {
         await PerformCopy(selectedOnly: true);
-        DataDisplay?.RemoveSelected();
+        if (DataDisplay is { SelectedAnnotation: not null } or { AllAnnotationsSelected: true }) DataDisplay.DeleteSelected();
+        else DataDisplay?.RemoveSelected();
     }
-    private bool CanCut() => DataDisplay is { HasAnySelection: true, SelectedAnnotation: null };
+    private bool CanCut() => DataDisplay?.HasAnySelection ?? false;
 
     /// <summary>
     /// Copies selected plots (or all plots when none selected) to clipboard.
@@ -838,14 +837,20 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     private async Task PerformCopy(bool selectedOnly)
     {
         var display = DataDisplay;
-        if (display is null || _richCopyAction is null) return;
+        if (display is null || _richCopyAction is null && _annotationCopyAction is null) return;
 
         var containers = (selectedOnly
             ? display.Plots.Where(p => p.IsSelected)
             : display.Plots).ToList();
-        if (containers.Count == 0) return;
+        var annotations = selectedOnly
+            ? display.AllAnnotationsSelected ? display.Annotations.ToArray()
+                : display.SelectedAnnotation is { } selected ? new[] { selected } : Array.Empty<CanvasAnnotation>()
+            : display.Annotations.ToArray();
+        if (containers.Count == 0 && annotations.Length == 0) return;
 
-        await _richCopyAction(containers, CurrentTheme);
+        if (_annotationCopyAction is { } copy)
+            await copy(containers, CurrentTheme, new AnnotationPage(annotations, display.ZoomLevel, display.ViewOffsetX, display.ViewOffsetY));
+        else if (_richCopyAction is { } legacy) await legacy(containers, CurrentTheme);
     }
 
     /// <summary>
@@ -865,8 +870,16 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         if (!TryParseDataDisplayConfig(text, out var config) || config is null) return;
 
         var added = await display.PasteFromConfigAsync(config);
-        if (added.Count > 0)
-            display.UndoRedo.Push(new PasteCommand(added, display));
+        var commands = new List<IUndoableCommand>();
+        if (added.Count > 0) commands.Add(new PasteCommand(added, display));
+        if (config.Annotations is { } annotations)
+            foreach (var annotation in annotations)
+            {
+                var command = new AddAnnotationCommand(display, display.Annotations.Count, AnnotationRenderer.Translate(annotation, 20, 20));
+                command.Execute();
+                commands.Add(command);
+            }
+        if (commands.Count > 0) display.UndoRedo.Push(new CompositeCommand(commands));
     }
     private bool CanPaste() => _getClipboardTextAction is not null;
 
@@ -893,7 +906,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         try
         {
             config = JsonSerializer.Deserialize<DataDisplayConfig>(text, DataDisplayViewModel.JsonOpts);
-            return config?.Plots.Count > 0;
+            return config is not null && (config.Plots.Count > 0 || config.Annotations is { Count: > 0 });
         }
         catch { return false; }
     }

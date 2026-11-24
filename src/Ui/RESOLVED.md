@@ -1,5 +1,26 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## An HB run opens one plain plot; LC Filter Designer boxes design as typed; a placed ladder on a port-less sheet ends in ports (2026-11-23)
+
+**HB auto-display.** Since 02eb68144 (R-rdh-2) a new display of a harmonic-balance run was filled by `HbPreset`: the
+labelled nets over one period through `waveform()`, a titled spectrum and a measures table. Reported unwanted —
+circuitRF is harmonic balance first, the time domain is not what an HB run should open on, and a custom title presumes
+what the user will plot. `AddRunPresetsAsync` is the Transient preset only now, so both the auto-created display and
+"Add plots of this run" fall through to one untitled Rect plot with the Add Trace seed: the first swept measurement,
+else `HBn.V` over harmonic as stems. The seed pinned the node axis at index 0, which in an HB run is often a device's
+internal node that the card's own node list hides; `PinFirstLabelledNode` pins the first `__LabeledNodes` net instead.
+The HB preset is still the toolbar's waveform button and the result file's menu item.
+
+**LC Filter Designer boxes.** Fp/Fs, Ap/As, ripple, order and source/load were bound TwoWay but had no change hook, so a
+typed value redesigned nothing until a combo (Exact/E12, say) was touched — although `Design` already debounced "so a
+burst of edits designs once". Each box now calls `Design`. A minimum-order design writes the order it found back into
+the Order box; `_writingOrder` keeps that write from designing again.
+
+**Ports on Place filter.** The placed ladder had no terminations by design (it joins a design by its IN/OUT labels), so
+placed into a fresh cell it could not run S-parameters. `FilterPlacement.WantsPorts`: a sheet with no port and no pin
+gets the pane's own copy, ending in ports 1 and 2 at the source and load resistances. Placed parts carry the table's
+displayed values, so the sheet's S matches the Designer's netlist to |ΔS| ~1e-6, not bit for bit.
+
 ## Filter Designer: Place with no schematic open; LC Filter: Use Synthesis; tests that failed on Linux (2026-11-22, 1.9.4)
 
 **Place in a new workspace.** Tools ▸ Filter Designer… bound Place to the schematic active when the window OPENED and
@@ -42957,3 +42978,12 @@ the workspace exactly as a placed part is. The same bandpass now says it misses,
   It now draws the first candidate at that order, and a non-exact design with no ladder is a miss.
 - The test fixture's inductor used a 0.05 pF series capacitor, which blocks DC; filter tests use a
   physical variant (parallel capacitance, small series resistance) so a real-model judge can pass.
+
+## LC Filter Designer — merging typed-box redesign with the mask search (2026-11-23)
+
+Main made every typed box design again, guarding only the closed-form order write. The mask search's
+own write of the order it settled on was unguarded, so each Minimum design scheduled another, and a
+caller reading the order meanwhile could see the closed-form start value of that second design's
+in-flight run (Apply then reopen read 3 where the design was 7). That write is a result too and is now
+guarded. Place filter's new ported form on a sheet with no ports also carries the vendor library
+parts, as the labelled form does.

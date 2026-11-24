@@ -83,6 +83,38 @@ toolbar and follows it from then on. It is one undo step.
 There are four plot types, and which one will accept which data is the single most important rule in the
 Data Display. It has its own page: [Plot Types](plot-types.html).
 
+## Annotating and exporting a display {#annotations}
+
+The **Text**, **Line**, **Box**, and **Oval** tools place annotations on the current tab. Select an
+annotation to edit it in **Properties**. Boxes and ovals support solid or dashed outlines, adjustable
+thickness, and an optional fill color with opacity. Lines can have arrowheads at either end.
+
+Drag a shape's border to move it. Drag a box or oval corner to resize it, or a line endpoint to
+change its length and direction. Hold **Ctrl** while drawing an oval to constrain it to a perfect
+circle. Hold **Ctrl** while dragging an existing oval's corner to turn it into a circle; the
+opposite corner stays fixed. Without Ctrl, ovals draw and resize freely.
+
+Text supports quarter-turn rotation; resizing its width wraps
+the text without changing its font size. These edits are undoable and saved in the `.cdd`.
+
+**Export Document**, next to **Export Data**, exports all tabs as PDF pages. PNG and SVG export
+the active tab. Plots, legends, markers, and annotations are included, but selection handles are
+not. **Export Data** still exports numerical results; a graph's context-menu export still exports
+that graph alone. Export appearance follows the existing export background and theme settings.
+
+Ctrl/Cmd+A selects the whole page, including annotations. Ctrl/Cmd+C copies the selection as a
+picture and as editable display content; with nothing selected it copies the whole page.
+Ctrl/Cmd+V restores copied annotations alongside plots. Escape turns off whichever tool is armed (a marker,
+drawing or zoom tool); with no tool armed, it clears the selection. While a tool is armed the pointer is a
+crosshair over the plots as well as between them.
+
+Headless export uses the same page renderer:
+
+```sh
+circuitrf render results/design.cdd -o report.pdf --all-tabs
+circuitrf render results/design.cdd -o page.png
+```
+
 ## From a DataSet to a curve {#cubes-to-traces}
 
 A run produces one **DataSet**: an ordered map of **groups** to named **DataCubes**.
@@ -342,6 +374,13 @@ on a load-pull contour they read the interpolated **surface** rather than the ne
 is the point of fitting a surface at all. The maximum-power and maximum-efficiency locations are flagged
 on a contour plot automatically.
 
+The marker toolbar dropdown offers **Normal**, **Minimum**, **Maximum** and **Vertical line**. Choose a
+type, then click a trace. Minimum and maximum follow the visible frequency range of a rectangular plot;
+dragging, stepping or editing one turns it into a normal marker. A vertical line reads compatible traces
+at the same frequency, interpolating between samples when needed; values outside a trace's range are unavailable.
+Click the `freq=` row of a marker's box to enter a frequency in the displayed unit. The marker moves to
+the nearest available sample; Enter commits and Escape cancels.
+
 **The arrow keys step a selected marker** from one sample to the next — Right or Up to the next higher
 x, Left or Down to the next lower — on a rectangular, Smith or polar plot. On a Smith or polar plot the
 marker walks along the curve in frequency order. A marker you have just added from the plot's **Add
@@ -402,20 +441,17 @@ run had an `Equalizer`, the received points are its output, and the trace says w
 [Signal quality](simulations.html#envelope-evm).
 
 **Transient and harmonic balance.** The sine-wave toolbar button adds the selected transient result's waveforms, the
-output's spectrum over its last period and the measures ([Transient](transient.html)). The waveform button beside it adds
-the same three plots from a harmonic-balance result: the labelled nets' voltages over one period, rebuilt from the
-spectrum by [`waveform`](measurements.html#time-domain); the output's spectrum as stems (the power through the IProbe
-whose name says "out" in dBm, else that net's voltage in dBV); and the measures that are one number, as a table. A sweep
-around the analysis is drawn at its first point. Both pick the same output on the same
-bench. With two or more tones the waveform covers the tones' common period; tones that share none short enough to draw
-get the spectrum and the measures only. **Open Harmonic Balance Plots** on a result file's menu opens them in a new Data
-Display.
+output's spectrum over its last period and the measures ([Transient](transient.html)). The HB Spectrum button beside it
+adds a harmonic-balance result's output spectrum as stems (the power through the IProbe whose name says "out" in dBm,
+else that net's voltage in dBV) and the measures that are one number, as a table. A sweep around the analysis is drawn at
+its first point. Both pick the same output on the same bench. **Open Harmonic Balance Plots** on a result file's menu
+opens them in a new Data Display.
 
 A preset's traces read the display's selected source, as every trace does, so choosing another result in the source list
 redraws them from it.
 
-**After a run.** A schematic's first run opens its Data Display holding its run's plots: the Transient plots, the Harmonic
-Balance plots, or both. A later run reopens that display and shows the run just written. When nothing in it draws (the
+**After a run.** A schematic's first run opens its Data Display holding its run's plots: the Transient plots for a
+transient run, and one plain plot for a harmonic-balance run (a measurement, or the spectrum). A later run reopens that display and shows the run just written. When nothing in it draws (the
 bench's analysis changed, say from transient to harmonic balance, or a net its traces read was renamed), the Messages
 panel says so and offers **Add plots of this run**, which adds that run's plots beside the existing ones. The existing
 traces are left as they are: a trace that reads a renamed net says `<invalid>`, and re-pointing it is a choice to make.

@@ -38,10 +38,7 @@ public static class FilterPlacement
         var model = MatchSchematicCopy.Build(layout);
         if (layout is null || model.Components.Count == 0) return model;
         model.Components.RemoveAll(c => c.Symbol is SymbolKind.TermG or SymbolKind.Term);
-        if (parts is { Count: > 0 })
-            foreach (var c in model.Components)
-                if (parts.TryGetValue(c.InstanceName, out var part) && VendorPartPlacement.GlyphKind(part.Glyph) == c.Symbol)
-                    UseVendorPart(c, part, technology);
+        UseVendorParts(model, parts, technology);
 
         double y = MatchLadderLayout.SpineY;
         AddStub(model, layout.PortLeftX, layout.PortLeftX - StubLength, y, inName);
@@ -63,6 +60,39 @@ public static class FilterPlacement
         if (VendorPartPlacement.Footprint(part, technology) is { } footprint)
             c.Parameters.Add(new EditableParameter
                 { Name = CircuitRF.Core.Design.ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
+    }
+
+    /// <summary>
+    /// True when <paramref name="sheet"/> has no port and no pin of its own — an empty cell, or a sheet that is only
+    /// parts. A ladder placed there keeps its two terminations as ports 1 and 2 (<see cref="PortedLadderFragment"/>), so
+    /// the sheet runs an S-parameter analysis as it stands. A sheet with ports is a design or a bench already, and a
+    /// sheet with pins is a subcircuit: the ladder joins either by its labelled ends instead.
+    /// </summary>
+    public static bool WantsPorts(SchematicEditModel sheet) =>
+        !sheet.Components.Any(c => CircuitRF.Design.Layout.SchematicSync.PortPlacement.IsPort(c) || c.Symbol == SymbolKind.Pin);
+
+    /// <summary>
+    /// The ladder with its two terminations as ports — port 1 at the source resistance, port 2 at the load — exactly as
+    /// the pane draws it (<see cref="MatchSchematicCopy.Build"/>). An element named in <paramref name="parts"/> is that
+    /// vendor library part, as in <see cref="LadderFragment"/>.
+    /// </summary>
+    public static SchematicEditModel PortedLadderFragment(MatchLadderLayout? layout,
+                                                          IReadOnlyDictionary<string, VendorPartRef>? parts = null,
+                                                          Technology? technology = null)
+    {
+        var model = MatchSchematicCopy.Build(layout);
+        UseVendorParts(model, parts, technology);
+        return model;
+    }
+
+    /// <summary>Each generic L or C of a ladder fragment named in <paramref name="parts"/>, as that part.</summary>
+    private static void UseVendorParts(SchematicEditModel model, IReadOnlyDictionary<string, VendorPartRef>? parts,
+                                       Technology? technology)
+    {
+        if (parts is not { Count: > 0 }) return;
+        foreach (var c in model.Components)
+            if (parts.TryGetValue(c.InstanceName, out var part) && VendorPartPlacement.GlyphKind(part.Glyph) == c.Symbol)
+                UseVendorPart(c, part, technology);
     }
 
     private static void AddStub(SchematicEditModel model, double inner, double outer, double y, string name)

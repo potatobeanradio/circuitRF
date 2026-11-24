@@ -1,5 +1,53 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-23 — Escape never reached the display; crosshair over plots; toolbar wraps
+
+**Escape.** The workspace window binds Escape at Window level (`DisarmPlacement`), and a Window KeyBinding claims the
+key before it is routed. #84 moved the display's Escape from a XAML KeyBinding (which runs before the window's) into
+`OnKeyDown`, which returns on `e.Handled` — so in the application Escape disarmed nothing and deselected nothing, and the
+canvas's own Escape branches were dead too. Headless hosts have no such window binding, so it passed there; UiSnapshot's
+display host now binds Escape the same way. `DataDisplayView.OnEscapeTunnel` (tunnel, `handledEventsToo`) un-handles
+Escape when focus is inside the view, so it routes as if the window had not claimed it: the focused control first, then
+the view. The first press disarms every armed tool (`DisarmAllTools`: marker, drawing, magnifier); a press with none
+armed drops the selection.
+
+**Crosshair.** `PlotControl` sets `Cursor="Arrow"` locally, which beat the canvas's crosshair for an armed tool the
+moment the pointer crossed onto a plot. `PlotContainerView` follows the display and sets `PlotControl.ToolArmed`; the
+Table resize-cursor hover stands down while it is set.
+
+**HB preset button.** The toolbar's Harmonic Balance button (and Open Harmonic Balance Plots on a result file) added the
+labelled nets' voltages over one period through `waveform()` beside the spectrum and measures. Reported as plots nobody
+wants. `HbPreset.Build` now makes the output spectrum and the measures table only; the button is "HB Spectrum" with the
+Equalizer glyph (ChartBar is already the trace card's Statistics button). `waveform()` itself is unchanged.
+
+**Toolbar.** #83 put the toolbar in a horizontal ScrollViewer, so a narrow window showed a scroll bar. It is a WrapPanel
+now, as the layout editor's is; `WrapPanel.Toolbar` gets the same softened icon colour as `StackPanel.Toolbar`.
+
+## 2026-11-23 — marker frequency editing shortcuts
+
+Data Display key bindings for deletion, selection, clipboard and undo could run while a marker's
+frequency text box had focus, deleting or cutting the selected marker instead of editing text.
+Those commands now use the same text-focus guard as the canvas shortcuts. The frequency unit is
+shown as non-editable right-hand content in the text box, and the marker tool glyphs inherit their
+button or menu foreground rather than using fixed colours.
+
+## 2026-11-23 — shape appearance and document export
+
+Box and oval fills store ARGB colors, including opacity; stroke width and independent line
+arrowheads are saved with each annotation. Oval picking follows the ellipse rather than its
+bounding box; resize handles use the same corner gesture as rectangles.
+
+Ctrl constrains both oval placement and corner resizing to equal width and height after grid
+snapping. Resizing anchors the opposite corner, including for reverse-drawn ovals. Preview and
+release read the modifier independently; a completed resize is one undo step. Moving an oval by
+its body never changes its aspect ratio. DataDisplayGridSnapTests covers placement directions
+and every resize corner in both stored coordinate directions.
+
+Export Document is separate from numerical Export Data. PDF writes every tab as a page; PNG/SVG
+write the active tab. Rich copy carries annotations in PDF, SVG, bitmap and JSON, including
+annotation-only selections. Select All includes annotations; paste groups plots and annotations
+in one undo step. Single-plot export intentionally stays plot-only.
+
 ## 2026-11-20 — canvas annotation selection
 
 Data Display text and lines are tab-owned, not plot overlays. The canvas tunnels pointer presses

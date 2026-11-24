@@ -139,7 +139,9 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
         Assert.True(sheet.IsPasteArmed);
         sheet.OnPointerPressed(0, 0, Avalonia.Input.KeyModifiers.None);
 
-        var parts = model.Components.Where(c => c.Symbol != SymbolKind.Ground).ToList();
+        // A sheet with no ports gets the ladder ending in ports 1 and 2; the elements are the library parts.
+        Assert.Equal(2, model.Components.Count(c => c.Symbol is SymbolKind.TermG or SymbolKind.Term));
+        var parts = model.Components.Where(c => c.Symbol is not (SymbolKind.Ground or SymbolKind.TermG or SymbolKind.Term)).ToList();
         Assert.Equal(vm.Elements.Count, parts.Count);
         Assert.DoesNotContain(parts, c => c.Symbol is SymbolKind.Inductor or SymbolKind.Capacitor);
         foreach (var c in parts)
@@ -151,12 +153,11 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
             Assert.Contains(vm.Elements, r => r.Part == name);
         }
 
-        // It is a circuit: every part resolves to its library subcircuit and the ladder still joins IN to OUT.
+        // It is a circuit: every part resolves to its library subcircuit.
         var extracted = NetExtractor.Extract(model);
         Assert.Empty(extracted.PartRefusals);
-        Assert.All(extracted.TestBench.Instances, i => Assert.NotNull(extracted.Library.Find(i.Reference)));
-        Assert.Contains(extracted.TestBench.Instances, i => i.NetBindings.Contains("IN"));
-        Assert.Contains(extracted.TestBench.Instances, i => i.NetBindings.Contains("OUT"));
+        Assert.All(extracted.TestBench.Instances.Where(i => i.Reference is not ("Term" or "TermG" or "Port")),
+                   i => Assert.NotNull(extracted.Library.Find(i.Reference)));
     }
 
     // ── 4: a Filter block simulates as what its Properties say ────────────────────────────────
@@ -198,12 +199,9 @@ public sealed class LcFilterVendorLibraryTests : IDisposable
         sheet.PointerWorldProvider = () => (0, 0);
         vm.PlaceFilter();
         sheet.OnPointerPressed(0, 0, KeyModifiers.None);
+        // On a sheet with no ports the ladder arrives ending in ports 1 and 2, at 50 ohm for this odd-order Butterworth.
         var placed = NetExtractor.Extract(model);
-        var tb = new TestBench("tb");
-        tb.Instances.AddRange(placed.TestBench.Instances);
-        tb.Instances.Add(new Instance("T1", "Term", ["IN", "0"], [new ParameterAssignment("Num", "1"), new ParameterAssignment("Z", "50")]));
-        tb.Instances.Add(new Instance("T2", "Term", ["OUT", "0"], [new ParameterAssignment("Num", "2"), new ParameterAssignment("Z", "50")]));
-        using var placedNet = new Elaborator(placed.Library).Elaborate(tb);
+        using var placedNet = new Elaborator(placed.Library).Elaborate(placed.TestBench);
         foreach (double f in (double[])[0.5e9, 2e9, 3e9, 9e9])
             Assert.Equal(S21Db(placedNet, f), S21Db(blockNet, f), 9);
     }

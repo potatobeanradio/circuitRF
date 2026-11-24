@@ -137,11 +137,13 @@ public class ZoomToFitShortcutTests
         Assert.DoesNotContain("Gesture=\"F\"", xaml, StringComparison.Ordinal);
 
         var code = CodeOf("src", "Ui", "Views", "DataDisplay", "DataDisplayView.axaml.cs");
-        int key = code.IndexOf("Key.F", StringComparison.Ordinal);
-        Assert.True(key >= 0);
+        int handler = code.IndexOf("protected override void OnKeyDown(", StringComparison.Ordinal);
+        int key = code.IndexOf("Key.F", handler, StringComparison.Ordinal);
+        Assert.True(handler >= 0 && key > handler);
 
-        // The guard sits between claiming the key and running the command.
-        int guard = code.IndexOf("IsTypingInAField", key, StringComparison.Ordinal);
+        // The guard runs before Fit All does: at the top of the handler, so it stands down every shortcut there while
+        // someone types (#84 widened it from F and Z to Delete, Escape and the editing keys).
+        int guard = code.IndexOf("IsTypingInAField", handler, StringComparison.Ordinal);
         int run   = code.IndexOf("FitAllCommand", key, StringComparison.Ordinal);
         Assert.True(guard >= 0 && guard < run, "the typing guard runs before Fit All does");
 

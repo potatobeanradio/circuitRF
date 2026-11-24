@@ -1,6 +1,6 @@
 // brief-run-display-hb-preset-and-units gates 1, 2 and 4: a display whose traces read none of its source is told apart
-// from one that still draws, and the run's plots are added without touching it; the HB preset's three plots, its output
-// pick shared with the Transient preset's, and its waveform plot left out for tones with no common period; and a marker
+// from one that still draws, and the run's plots (for HB, one plain spectrum plot) are added without touching it; the HB preset's spectrum and measures (no
+// time-domain plot) on the Transient preset's output pick; and a marker
 // readout that names its unit when the unit is known, and only then.
 
 using System;
@@ -79,35 +79,25 @@ public sealed class RunDisplayHbPresetTests : IDisposable
     }
 
     [Fact]
-    public void HbPreset_OneTone_WaveformsSpectrumAndMeasures_OnTheTransientPresetsOutput()
+    public void HbPreset_OneTone_SpectrumAndMeasures_OnTheTransientPresetsOutput_AndNoTimeDomainPlot()
     {
         var plots = HbPreset.Build(Hb(), DataSourceRef.Selected);
-        Assert.Equal(["Waveforms", "Spectrum of V(Vout)", "Measures"], plots.Select(p => p.CustomTitle));
-        // the labelled nets only — not the diode's internal node
-        Assert.Equal(Nets, plots[0].Traces.Select(t => t.Label));
+        Assert.Equal(["Spectrum of V(Vout)", "Measures"], plots.Select(p => p.CustomTitle));
+        Assert.DoesNotContain(plots.SelectMany(p => p.Traces), t => (t.Expression ?? "").Contains("waveform", StringComparison.Ordinal));
         Assert.All(plots.SelectMany(p => p.Traces), t => Assert.Equal(DataSourceRef.Selected, t.SourcePath));
-        // the waveform expression evaluates, over one period of 50 Hz
-        Assert.True(TraceExpression.TryEvaluate(plots[0].Traces[0].Expression!, Hb(), PlotType.Rect,
-            out var x, out _, out _, out string axis, out _, out _, out string err), err);
-        Assert.Equal("time", axis);
-        Assert.Equal(0.02, x[^1], 12);
         // the same output the Transient preset reads on the same bench
         Assert.Equal("Spectrum of V(Vout), last period", TransientPreset.Build(Transient(), DataSourceRef.Selected)[1].CustomTitle);
         // an output probe makes it the power through the probe, as the Transient preset's does
-        Assert.Equal("P(Iout)", HbPreset.Build(Hb(withProbe: true), DataSourceRef.Selected)[1].Traces.Single().Label);
+        Assert.Equal("P(Iout)", HbPreset.Build(Hb(withProbe: true), DataSourceRef.Selected)[0].Traces.Single().Label);
     }
 
     [Fact]
-    public void HbPreset_TwoTone_DrawsAWaveformOnlyWhenTheTonesShareAPeriod()
+    public void HbPreset_TwoTone_IsTheSpectrumInTheUnitOfItsProducts()
     {
-        var common = HbPreset.Build(TwoTone([0, 50, 1000, 950, 1050]), DataSourceRef.Selected);
-        Assert.Equal(["Waveforms", "Spectrum of V(Vout)"], common.Select(p => p.CustomTitle));
-        Assert.Equal(FreqUnit.kHz, common[1].FreqUnit);   // a 1 kHz product reads in kHz, not as 1e-6 GHz
-
-        double f2 = Math.Sqrt(2) * 1e9;
-        var none = HbPreset.Build(TwoTone([0, 1e9, f2, f2 - 1e9, 2e9]), DataSourceRef.Selected);
-        Assert.Equal(["Spectrum of V(Vout)"], none.Select(p => p.CustomTitle));
-        Assert.Equal(0, none[0].Left);
+        var plots = HbPreset.Build(TwoTone([0, 50, 1000, 950, 1050]), DataSourceRef.Selected);
+        Assert.Equal(["Spectrum of V(Vout)"], plots.Select(p => p.CustomTitle));
+        Assert.Equal(FreqUnit.kHz, plots[0].FreqUnit);   // a 1 kHz product reads in kHz, not as 1e-6 GHz
+        Assert.Equal(0, plots[0].Left);
     }
 
     private void Write(string name, DataSet ds) => DataSetExporter.Export(ds, Path.Combine(_results, name), ExportFormat.Npy);
@@ -131,8 +121,15 @@ public sealed class RunDisplayHbPresetTests : IDisposable
         Assert.True(window.ShowsNothingOfItsSource());
         var before = display.Plots.SelectMany(p => p.PlotVM.Plot.Traces).Select(t => (t.CubeName, t.Expression, t.Label)).ToList();
 
+        // an HB run gets ONE plain plot of its spectrum — no waveforms, no title of ours; the HB preset is opt-in
         var added = await display.AddRunPlotsAsync();
-        Assert.Equal(["Waveforms", "Spectrum of V(Vout)", "Measures"], added.Select(p => p.PlotVM.Plot.CustomTitle));
+        var plain = Assert.Single(added).PlotVM.Plot;
+        Assert.True(string.IsNullOrEmpty(plain.CustomTitle));
+        var seeded = Assert.Single(plain.Traces);
+        Assert.Equal("HB1.V", seeded.CubeName);
+        Assert.True(seeded.IsHarmonicStem);
+        Assert.Equal("Vin", seeded.Slice.Single(a => a.AxisName == "node").Label);   // a labelled net, not __d1_int at index 0
+        Assert.DoesNotContain(plain.Traces, t => (t.Expression ?? "").Contains("waveform", StringComparison.Ordinal));
         // the existing traces are untouched, and the display draws again
         Assert.Equal(before, display.Plots.Except(added).SelectMany(p => p.PlotVM.Plot.Traces)
                                        .Select(t => (t.CubeName, t.Expression, t.Label)).ToList());

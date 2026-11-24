@@ -23,6 +23,7 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
 
     public Marker                  Marker    { get; }
     public Trace                   Trace     { get; }
+    public Marker DisplayMarker => Container.PlotVM.Plot.ResolveMarker(Trace, Marker);
 
     private readonly Func<FreqUnit>       _getFreqUnit;
     private readonly Func<RenderTheme>    _getTheme;
@@ -60,8 +61,41 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
         Container.RequestPlotRedraw();
     }
 
+    public bool TrySetFrequency(double frequencyHz)
+    {
+        if (!Trace.Markers.Contains(Marker)) return false;
+        double beforeFrequency = Marker.Freq;
+        var beforePosition = Marker.PositionStatic;
+        var beforeFunction = Marker.Function;
+        var resolved = DisplayMarker;
+        if (resolved.Unavailable) return false;
+        Marker.Freq = resolved.Freq;
+        Marker.PositionStatic = resolved.PositionStatic;
+        if (!Trace.TrySetMarkerFrequency(Marker, frequencyHz, out _))
+        {
+            Marker.Freq = beforeFrequency;
+            Marker.PositionStatic = beforePosition;
+            return false;
+        }
+        if (beforeFunction is MarkerFunction.Minimum or MarkerFunction.Maximum)
+            Marker.Function = MarkerFunction.Normal;
+        double afterFrequency = Marker.Freq;
+        var afterPosition = Marker.PositionStatic;
+        if (beforeFrequency != afterFrequency || beforePosition != afterPosition || beforeFunction != Marker.Function)
+            Container.PushUndoCommand(new MoveMarkerFrequencyCommand(this, beforeFrequency, beforePosition,
+                afterFrequency, afterPosition, beforeFunction, Marker.Function));
+        OnMarkerMoved();
+        return true;
+    }
+
     // Triggers a Skia repaint without a size refresh (e.g., theme change).
     public void RequestRedraw() => OnPropertyChanged(nameof(NeedsRedraw));
+
+    public void RefreshForViewport()
+    {
+        RefreshSize();
+        RequestRedraw();
+    }
 
     // Called by DataDisplayViewModel when the library entry count changes so that
     // ShowFilePrefix is re-evaluated and the box text/size updates accordingly.
@@ -107,6 +141,7 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
             FreePosition           = Marker.FreePosition,
             PositionStatic         = Marker.PositionStatic,
             SnappedToCurve         = false,
+            Function               = Marker.Function,
         };
         // Keep the marker's x-position as close as possible to where it was on the old trace,
         // so the user can track where it landed. For network (freq-swept) traces x == frequency,
@@ -158,7 +193,7 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
 
     private void RefreshSize()
     {
-        var (w, h) = MarkerRenderer.MeasureInfoBox(Marker, Trace, _getFreqUnit(), ShowFilePrefix, PlotTraces);
+        var (w, h) = MarkerRenderer.MeasureInfoBox(DisplayMarker, Trace, _getFreqUnit(), ShowFilePrefix, PlotTraces);
         SetLogicalSize(w, h);
     }
 

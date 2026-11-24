@@ -23,4 +23,14 @@ public partial class AnnotationInspectorView : UserControl
 
     private void ResetColor(object? sender, RoutedEventArgs e)
         => (DataContext as AnnotationInspectorViewModel)?.SetColor(null);
+
+    private async void PickFillColor(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not AnnotationInspectorViewModel vm || vm.Annotation is not { } target
+            || TopLevel.GetTopLevel(this) is not Window window) return;
+        var color = (vm.FillSwatch as ISolidColorBrush)?.Color ?? Colors.Transparent;
+        var picked = await new ColorPickerDialog(new Rgba(color.R, color.G, color.B, color.A)).ShowDialog<Rgba?>(window);
+        if (picked is { } value && ReferenceEquals(DataContext, vm) && ReferenceEquals(vm.Annotation, target))
+            vm.SetFillColor(new Color(value.A, value.R, value.G, value.B).ToString());
+    }
 }

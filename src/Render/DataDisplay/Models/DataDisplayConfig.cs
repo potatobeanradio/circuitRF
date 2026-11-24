@@ -37,10 +37,16 @@ public sealed class TabConfig
 [JsonDerivedType(typeof(CanvasText), "Text")]
 [JsonDerivedType(typeof(CanvasLine), "Line")]
 [JsonDerivedType(typeof(CanvasBox), "Box")]
+[JsonDerivedType(typeof(CanvasOval), "Oval")]
 public abstract record CanvasAnnotation
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Color { get; init; }
+
+    public double LineWidth { get; init; } = 1.5;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FillColor { get; init; }
 }
 
 public sealed record CanvasText(double X, double Y, string Text) : CanvasAnnotation
@@ -61,10 +67,17 @@ public enum CanvasTextRotation { R0 = 0, R90 = 90, R180 = 180, R270 = 270 }
 public enum CanvasLineStyle { Solid, Dashed }
 
 public sealed record CanvasLine(double X, double Y, double EndX, double EndY,
-                                CanvasLineStyle Style = CanvasLineStyle.Solid) : CanvasAnnotation;
+                                CanvasLineStyle Style = CanvasLineStyle.Solid) : CanvasAnnotation
+{
+    public bool StartArrow { get; init; }
+    public bool EndArrow { get; init; }
+}
 
 public sealed record CanvasBox(double X, double Y, double EndX, double EndY,
                                CanvasLineStyle Style = CanvasLineStyle.Solid) : CanvasAnnotation;
+
+public sealed record CanvasOval(double X, double Y, double EndX, double EndY,
+                                CanvasLineStyle Style = CanvasLineStyle.Solid) : CanvasAnnotation;
 
 public sealed class DataDisplayConfig
 {
@@ -107,6 +120,8 @@ public sealed class DataDisplayConfig
     // Populated by PlotExporter for clipboard copy/paste (format stays as v1 there).
     public List<PlotContainerConfig> Plots { get; set; } = new();
     public double ZoomLevel   { get; set; } = 1.0;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CanvasAnnotation>? Annotations { get; set; }
     public double ViewOffsetX { get; set; } = 0.0;
     public double ViewOffsetY { get; set; } = 0.0;
 }
@@ -666,6 +681,9 @@ public sealed class MarkerConfig
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MarkerKind MarkerKind { get; set; } = MarkerKind.Polyline;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MarkerFunction Function { get; set; } = MarkerFunction.Normal;
 
     public bool   ShowInfoBox    { get; set; } = true;
     public bool   ContourSnapped { get; set; }

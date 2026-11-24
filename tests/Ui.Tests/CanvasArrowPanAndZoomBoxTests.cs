@@ -192,6 +192,24 @@ public class CanvasArrowPanAndZoomBoxTests
         Assert.False(display.ZoomBoxArmed);
     }
 
+    [Fact]
+    public void MarkerToolAndOtherCanvasTools_AreMutuallyExclusive()
+    {
+        var display = new DataDisplayViewModel(new DataSourceLibraryViewModel(), addEmptyPlot: false);
+        display.ToggleZoomBox();
+        display.ArmMarkerTool();
+        Assert.True(display.MarkerToolArmed);
+        Assert.False(display.ZoomBoxArmed);
+
+        display.ToggleZoomBox();
+        Assert.False(display.MarkerToolArmed);
+        Assert.True(display.ZoomBoxArmed);
+        display.ArmMarkerTool();
+        display.ToggleTextToolCommand.Execute(null);
+        Assert.False(display.MarkerToolArmed);
+        Assert.True(display.TextToolArmed);
+    }
+
     /// <summary>
     /// <c>DisarmZoomBox</c> reports whether it DID anything, which is what lets Escape unwind one
     /// thing at a time: armed magnifier first, selection only once it is off.
@@ -356,7 +374,8 @@ public class CanvasArrowPanAndZoomBoxTests
         Assert.True(disarm < tool, "The magnifier unwinds before the tool does.");
     }
 
-    /// <summary>The Data Display's Escape command disarms before it deselects, for the same reason.</summary>
+    /// <summary>The Data Display's Escape command disarms before it deselects, for the same reason — every tool at once,
+    /// the magnifier among them (<c>DataDisplayViewModel.DisarmAllTools</c>; DataDisplayEscapeTests drives it).</summary>
     [Fact]
     public void TheDataDisplaysEscape_DisarmsTheMagnifierFirst()
     {
@@ -365,8 +384,8 @@ public class CanvasArrowPanAndZoomBoxTests
         int at = code.IndexOf("private void DeselectAll()", StringComparison.Ordinal);
         Assert.True(at >= 0);
 
-        var body = code[at..Math.Min(code.Length, at + 300)];
-        int disarm = body.IndexOf("DisarmZoomBox", StringComparison.Ordinal);
+        var body = code[at..Math.Min(code.Length, at + 500)];
+        int disarm = body.IndexOf("DisarmAllTools", StringComparison.Ordinal);
         int clear  = body.IndexOf("DeselectAll()", disarm < 0 ? 0 : disarm, StringComparison.Ordinal);
         Assert.True(disarm >= 0 && clear > disarm,
                     "Escape should disarm the magnifier before it drops the selection.");

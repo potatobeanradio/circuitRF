@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using CircuitRF.Render.DataDisplay;
+using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using RfCore.Data;
 using RfCore.Export;
@@ -60,6 +61,58 @@ public sealed class DataDisplayEditUndoTests : IDisposable
     }
 
     [Fact]
+    public async Task MarkerFrequencyEdit_SnapsAndUndoesCubePosition()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var trace = container.PlotVM.Plot.Traces[0];
+        var marker = new Marker(trace, 0, false, false, 1, FreqUnit.GHz);
+        trace.Markers.Add(marker);
+        Assert.True(trace.TrySetMarkerFrequency(marker, 1e9, out _));
+        marker.Function = MarkerFunction.Minimum;
+        var box = new MarkerInfoBoxViewModel(marker, trace, container,
+            () => FreqUnit.GHz, () => RenderTheme.Light, display, 0, 0);
+
+        Assert.True(box.TrySetFrequency(2.6e9));
+        Assert.Equal(MarkerFunction.Normal, marker.Function);
+        Assert.True(trace.TryGetMarkerFrequency(marker, out double frequency));
+        Assert.Equal(3e9, frequency);
+        display.UndoRedo.Undo();
+        Assert.Equal(MarkerFunction.Minimum, marker.Function);
+        Assert.True(trace.TryGetMarkerFrequency(marker, out frequency));
+        Assert.Equal(1e9, frequency);
+        display.UndoRedo.Redo();
+        Assert.Equal(MarkerFunction.Normal, marker.Function);
+        Assert.True(trace.TryGetMarkerFrequency(marker, out frequency));
+        Assert.Equal(3e9, frequency);
+    }
+
+    [Fact]
+    public async Task MarkerFunction_IsSavedInTraceConfiguration()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var trace = window.DataDisplay!.Plots[0].PlotVM.Plot.Traces[0];
+        var marker = new Marker(trace, 0, true, false, 1, FreqUnit.GHz) { Function = MarkerFunction.Vertical };
+        trace.Markers.Add(marker);
+        var config = DataDisplayViewModel.BuildTraceConfig(trace, _dir);
+        var json = JsonSerializer.Serialize(config.Markers[0], DataDisplayJson.Options);
+        var restored = JsonSerializer.Deserialize<MarkerConfig>(json, DataDisplayJson.Options);
+        Assert.Equal(MarkerFunction.Vertical, restored!.Function);
+        Assert.Equal(MarkerFunction.Normal, JsonSerializer.Deserialize<MarkerConfig>("{}", DataDisplayJson.Options)!.Function);
+        Assert.Equal(MarkerFunction.Vertical, new Marker(marker).Function);
+
+        string path = Path.Combine(_dir, "marker.cdd");
+        await window.SaveAllAsync(path);
+        var reopened = new DisplayWindowViewModel();
+        reopened.DataSourceLibrary.ResultsRootProvider = () => _dir;
+        await reopened.LoadAllAsync(path);
+        var savedMarker = Assert.Single(reopened.DataDisplay!.Plots[0].PlotVM.Plot.Traces[0].Markers);
+        Assert.Equal(MarkerFunction.Vertical, savedMarker.Function);
+        Assert.True(savedMarker.IsMulti);
+    }
+
+    [Fact]
     public void TabAnnotations_RoundTripInOrder_AndAreOptional()
     {
         var options = DataDisplayJson.Options;
@@ -70,10 +123,88 @@ public sealed class DataDisplayEditUndoTests : IDisposable
         tab.Annotations = [new CanvasText(10, -20, "Gain\nand noise"),
                            new CanvasLine(-10, 4, 90, 4),
                            new CanvasLine(10, 30, 90, 35, CanvasLineStyle.Dashed),
-                           new CanvasBox(90, 80, 10, 20, CanvasLineStyle.Dashed) { Color = "#FF008000" }];
+                           new CanvasBox(90, 80, 10, 20, CanvasLineStyle.Dashed) { Color = "#FF008000", FillColor = "#4080FF00" },
+                           new CanvasOval(10, 20, 90, 80) { LineWidth = 3, FillColor = "#800080FF" },
+                           new CanvasLine(0, 0, 10, 10) { StartArrow = true, EndArrow = true, LineWidth = 4 }];
         var json = JsonSerializer.Serialize(tab, options);
         var restored = JsonSerializer.Deserialize<TabConfig>(json, options)!;
         Assert.Equal(tab.Annotations, restored.Annotations);
+    }
+
+    [Fact]
+    public async Task SelectAll_CopyAndDeleteIncludeAnnotations()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var box = new CanvasBox(10, 20, 80, 60);
+        var oval = new CanvasOval(30, 40, 100, 80);
+        display.AddAnnotation(box);
+        display.AddAnnotation(oval);
+        display.SelectAll();
+        Assert.True(display.AllAnnotationsSelected);
+        bool copied = false;
+        window.SetAnnotationCopyAction((plots, theme, annotations) =>
+        {
+            Assert.Single(plots);
+            Assert.Equal(new CanvasAnnotation[] { box, oval }, annotations.Items);
+            copied = true;
+            return Task.CompletedTask;
+        });
+        await window.InvokeCopyAsync();
+        Assert.True(copied);
+        display.DeleteSelected();
+        Assert.Empty(display.Plots);
+        Assert.Empty(display.Annotations);
+        Assert.False(display.HasAnySelection);
+        display.UndoRedo.Undo();
+        Assert.Single(display.Plots);
+        Assert.Equal(new CanvasAnnotation[] { box, oval }, display.Annotations);
+    }
+
+    [Fact]
+    public async Task AnnotationClipboard_PastesAppearanceAndUndoesAsOneStep()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var oval = new CanvasOval(10, 20, 80, 60) { FillColor = "#408000FF", LineWidth = 3 };
+        display.AddAnnotation(oval);
+        display.SelectAnnotation(0);
+        string? clipboard = null;
+        window.SetAnnotationCopyAction((plots, theme, annotations) =>
+        {
+            Assert.Empty(plots);
+            clipboard = PlotExporter.BuildContainersJson(plots, annotations.Items);
+            return Task.CompletedTask;
+        });
+        window.SetGetClipboardTextAction(() => Task.FromResult(clipboard));
+        await window.InvokeCopyAsync();
+        await window.InvokePasteAsync();
+        Assert.Equal(2, display.Annotations.Count);
+        Assert.Equal(oval with { X = 30, Y = 40, EndX = 100, EndY = 80 }, display.Annotations[1]);
+        display.UndoRedo.Undo();
+        Assert.Equal(oval, Assert.Single(display.Annotations));
+        display.UndoRedo.Redo();
+        Assert.Equal(2, display.Annotations.Count);
+    }
+
+    [Fact]
+    public async Task ShapeAppearanceInspector_IsUndoable()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var box = new CanvasBox(10, 20, 80, 60);
+        display.AddAnnotation(box);
+        display.SelectAnnotation(0);
+        var inspector = display.AnnotationInspector;
+        inspector.HasFill = true;
+        inspector.SetFillColor("#800080FF");
+        inspector.FillOpacity = 25;
+        inspector.LineWidth = 4;
+        var edited = Assert.IsType<CanvasBox>(display.SelectedAnnotation);
+        Assert.Equal("#400080ff", edited.FillColor!.ToLowerInvariant());
+        Assert.Equal(4, edited.LineWidth);
+        for (int count = 0; count < 4; count++) display.UndoRedo.Undo();
+        Assert.Equal(box, display.SelectedAnnotation);
     }
 
     [Fact]

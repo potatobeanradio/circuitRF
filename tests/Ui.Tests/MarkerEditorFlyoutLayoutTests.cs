@@ -61,6 +61,50 @@ public class MarkerEditorFlyoutLayoutTests
         Assert.Contains("{Binding ShowNormZ}", row, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void FrequencyEditorShowsTheUnitWithoutPuttingItInTheEditableValue()
+    {
+        var editor = System.Xml.Linq.XDocument.Load(Path.Combine(
+            RepoRoot(), "src/Ui/Views/DataDisplay/MarkerInfoBoxView.axaml"));
+        var elements = editor.Descendants().ToList();
+        Assert.Contains(elements, element => element.Name.LocalName == "TextBox.InnerRightContent");
+        Assert.Contains(elements, element => element.Name.LocalName == "TextBlock"
+            && element.Attributes().Any(attribute => attribute.Name.LocalName == "Name" && attribute.Value == "FrequencyUnit"));
+
+        var code = File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Views/DataDisplay/MarkerInfoBoxView.axaml.cs"));
+        Assert.Contains("FrequencyUnit.Text = vm.FreqUnit.Description()", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanvasEditingShortcutsAreGuardedFromTextFields()
+    {
+        var xaml = File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Views/DataDisplay/DataDisplayView.axaml"));
+        foreach (var gesture in new[] { "Delete", "Back", "Escape", "Ctrl+A", "Ctrl+X", "Ctrl+Z", "Meta+X", "Meta+Z", "Ctrl+Shift+D" })
+            Assert.DoesNotContain($"<KeyBinding Gesture=\"{gesture}\"", xaml, StringComparison.Ordinal);
+
+        var code = File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Views/DataDisplay/DataDisplayView.axaml.cs"));
+        int handler = code.IndexOf("protected override void OnKeyDown", StringComparison.Ordinal);
+        int guard = code.IndexOf("IsTypingInAField", handler, StringComparison.Ordinal);
+        int delete = code.IndexOf("DeleteSelectedCommand.Execute", handler, StringComparison.Ordinal);
+        int cut = code.IndexOf("window.CutCommand", handler, StringComparison.Ordinal);
+        Assert.True(handler >= 0 && guard > handler && delete > guard && cut > guard);
+    }
+
+    [Fact]
+    public void MarkerIconsFollowTheirButtonAndMenuForegrounds()
+    {
+        var xaml = System.Xml.Linq.XDocument.Load(Path.Combine(
+            RepoRoot(), "src/Ui/Views/DataDisplay/DataDisplayView.axaml"));
+        var button = xaml.Descendants().Single(element => element.Name.LocalName == "Button"
+            && element.Attributes().Any(attribute => attribute.Name.LocalName == "AutomationProperties.Name"
+                                                     && attribute.Value == "Add Marker"));
+        var paints = button.Descendants().Where(element => element.Name.LocalName == "Path")
+            .SelectMany(element => element.Attributes().Where(attribute => attribute.Name.LocalName is "Fill" or "Stroke"))
+            .ToList();
+        Assert.NotEmpty(paints);
+        Assert.All(paints, attribute => Assert.Contains(".Foreground}", attribute.Value, StringComparison.Ordinal));
+    }
+
     private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

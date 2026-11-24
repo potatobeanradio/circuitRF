@@ -114,6 +114,15 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// <summary>Current zoom level, read from parent DataDisplayViewModel.</summary>
     public double ZoomLevel => _parent.ZoomLevel;
 
+    public bool MarkerToolArmed => _parent.MarkerToolArmed;
+
+    /// <summary>The display this plot is on — for a view that has to follow its armed tools.</summary>
+    internal DataDisplayViewModel Display => _parent;
+
+    public MarkerFunction MarkerToolFunction => _parent.MarkerToolFunction;
+
+    public void DisarmMarkerTool() => _parent.MarkerToolArmed = false;
+
     // ---- View (screen) layout — zoom+offset applied -----------------
     //  These are what the ItemContainerTheme actually binds to.
     //  Parent calls NotifyViewProperties() when zoom or offset changes.
@@ -747,6 +756,11 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// </summary>
     public void OnMarkerMoved() => _parent.OnContainerMarkerMoved(this);
 
+    public void RefreshMarkerReadouts()
+    {
+        foreach (var box in GetMarkerInfoBoxes()) box.RefreshForViewport();
+    }
+
     /// <summary>
     /// Fires PlotNeedsRedraw so PlotContainerView calls InvalidateVisual
     /// on its PlotControl without going through the full PlotChanged pipeline.
@@ -891,10 +905,29 @@ public partial class PlotContainerViewModel : ViewModelBase
             var trace = PlotVM.Plot.Traces.FirstOrDefault(t => t.Markers.Contains(marker));
             if (trace is null || trace.IsContourTrace) continue;
             eligible = true;
+            double beforeFrequency = marker.Freq;
+            var beforePosition = marker.PositionStatic;
+            var beforeFunction = marker.Function;
+            var resolved = PlotVM.Plot.ResolveMarker(trace, marker);
+            if (resolved.Unavailable) continue;
+            marker.Freq = resolved.Freq;
+            marker.PositionStatic = resolved.PositionStatic;
             if (trace.StepMarkerAlongX(marker, direction))
             {
+                if (beforeFunction is MarkerFunction.Minimum or MarkerFunction.Maximum)
+                {
+                    marker.Function = MarkerFunction.Normal;
+                    if (FindMarkerInfoBoxVm(marker) is { } box)
+                        PushUndoCommand(new MoveMarkerFrequencyCommand(box, beforeFrequency, beforePosition,
+                            marker.Freq, marker.PositionStatic, beforeFunction, marker.Function));
+                }
                 moved = true;
                 FindMarkerInfoBoxVm(marker)?.OnMarkerMoved();   // reposition box + redraw + dirty
+            }
+            else
+            {
+                marker.Freq = beforeFrequency;
+                marker.PositionStatic = beforePosition;
             }
         }
         if (moved) RequestPlotRedraw();   // ensure the glyph redraws (and dirty fires) even if a box is hidden

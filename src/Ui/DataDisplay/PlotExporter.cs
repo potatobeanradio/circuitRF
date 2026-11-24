@@ -167,12 +167,13 @@ namespace CircuitRF.Ui.DataDisplay
         internal static async Task CopyContainersToClipboardAsync(
             Control                               anchor,
             IReadOnlyList<PlotContainerViewModel> containers,
-            RenderTheme                           theme)
+            RenderTheme                           theme,
+            AnnotationPage? annotations = null)
         {
-            byte[]  pdf    = BuildPdfBytesForContainers(containers, theme);
-            string  svg    = BuildSvgStringForContainers(containers, theme);
-            string  json   = BuildContainersJson(containers);
-            Bitmap? bitmap = BuildBitmapForContainers(containers, theme);
+            byte[]  pdf    = BuildPdfBytesForContainers(containers, theme, annotations);
+            string  svg    = BuildSvgStringForContainers(containers, theme, annotations);
+            string  json   = BuildContainersJson(containers, annotations?.Items);
+            Bitmap? bitmap = BuildBitmapForContainers(containers, theme, annotations);
             await SetClipboardDataAsync(anchor, pdf, svg, json, bitmap);
         }
 
@@ -201,13 +202,13 @@ namespace CircuitRF.Ui.DataDisplay
 
         /// <summary>Renders all plots in <paramref name="containers"/> to a PDF byte array.</summary>
         internal static byte[] BuildPdfBytesForContainers(
-            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme)
-            => BuildPdfBytes(canvas => RenderContainersToCanvas(canvas, containers, theme));
+            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null)
+            => BuildPdfBytes(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations));
 
         /// <summary>Renders all plots in <paramref name="containers"/> to an SVG string.</summary>
         internal static string BuildSvgStringForContainers(
-            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme)
-            => BuildSvgString(canvas => RenderContainersToCanvas(canvas, containers, theme));
+            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null)
+            => BuildSvgString(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations));
 
         /// <summary>
         /// Renders all plots to a high-resolution raster bitmap (2× page size) suitable
@@ -216,7 +217,7 @@ namespace CircuitRF.Ui.DataDisplay
         /// Returns null if rendering fails.
         /// </summary>
         internal static Bitmap? BuildBitmapForContainers(
-            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme)
+            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null)
         {
             const float Scale = 2.0f;
             int w = (int)(PageW * Scale);
@@ -229,7 +230,7 @@ namespace CircuitRF.Ui.DataDisplay
             // one plot raster this repo builds outside PlotDocumentWriter, so it enters the scope
             // itself rather than drawing a 3D surface to a different standard than Export does.
             using (PlotDocumentScope.Enter())
-                RenderContainersToCanvas(canvas, containers, theme);
+                RenderContainersToCanvas(canvas, containers, theme, annotations);
 
             using var skData = skBitmap.Encode(SKEncodedImageFormat.Png, 100);
             if (skData is null) return null;
@@ -251,9 +252,11 @@ namespace CircuitRF.Ui.DataDisplay
         /// paste turns each path back into the reference that display would save
         /// (<see cref="DataDisplayViewModel.PasteFromConfigAsync"/>).
         /// </remarks>
-        internal static string BuildContainersJson(IReadOnlyList<PlotContainerViewModel> containers)
+        internal static string BuildContainersJson(IReadOnlyList<PlotContainerViewModel> containers,
+            IReadOnlyList<CanvasAnnotation>? annotations = null)
         {
-            var config = new DataDisplayConfig { ZoomLevel = 1.0 };
+            var config = new DataDisplayConfig { ZoomLevel = 1.0,
+                Annotations = annotations is { Count: > 0 } ? annotations.ToList() : null };
             foreach (var c in containers)
             {
                 var pc = DataDisplayViewModel.BuildPlotContainerConfig(c, "", c.Library);
@@ -286,9 +289,47 @@ namespace CircuitRF.Ui.DataDisplay
         private static void RenderContainersToCanvas(
             SKCanvas                              canvas,
             IReadOnlyList<PlotContainerViewModel> containers,
-            RenderTheme                           theme)
+            RenderTheme                           theme, AnnotationPage? annotations = null)
             => PlotComposer.Render(canvas, containers.Select(Place).ToList(),
-                                   theme, AppSettings.Current, PagePlacement.Letter);
+                                   theme, AppSettings.Current, PagePlacement.Letter, annotations?.Items,
+                                   annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0);
+
+        internal static async Task ExportDocumentAsync(Control anchor, DisplayWindowViewModel window, string name)
+        {
+            var display = window.DataDisplay;
+            var top = TopLevel.GetTopLevel(anchor);
+            if (top is null || display is null) return;
+            var pages = window.Tabs.Select(tab => (
+                Plots: tab.DataDisplay.Plots.Select(Place).ToList(),
+                Annotations: new AnnotationPage(tab.DataDisplay.Annotations.ToArray(), tab.DataDisplay.ZoomLevel,
+                    tab.DataDisplay.ViewOffsetX, tab.DataDisplay.ViewOffsetY))).ToList();
+            var activePage = Math.Max(0, window.Tabs.IndexOf(window.ActiveTab!));
+            var file = await top.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export Data Display", SuggestedFileName = name + ".pdf", DefaultExtension = "pdf",
+                FileTypeChoices = [new FilePickerFileType("PDF Document") { Patterns = ["*.pdf"] },
+                    new FilePickerFileType("SVG Image") { Patterns = ["*.svg"] },
+                    new FilePickerFileType("PNG Image") { Patterns = ["*.png"] }],
+            });
+            if (file is null) return;
+            string path = file.Path.LocalPath;
+            Action<SKCanvas> DrawPage(int index) => canvas => PlotComposer.Render(canvas,
+                pages[index].Plots, display.Theme, AppSettings.Current, PagePlacement.Letter,
+                pages[index].Annotations.Items, pages[index].Annotations.Zoom,
+                pages[index].Annotations.OffsetX, pages[index].Annotations.OffsetY);
+            var draw = DrawPage(activePage);
+            var extension = Path.GetExtension(path).ToLowerInvariant();
+            byte[] bytes = extension switch
+            {
+                ".pdf" when pages.Count > 1 => PlotDocumentWriter.BuildPdfBytes(
+                    Enumerable.Range(0, pages.Count).Select(DrawPage).ToList(), PagePlacement.Letter),
+                ".pdf" => PlotDocumentWriter.BuildPdfBytes(draw, PagePlacement.Letter, PlotDocumentWriter.PdfTitleFor(path)),
+                ".svg" => System.Text.Encoding.UTF8.GetBytes(PlotDocumentWriter.BuildSvgString(draw, PagePlacement.Letter)),
+                ".png" => PlotDocumentWriter.BuildPngBytes(draw, PagePlacement.Letter, 2) ?? [],
+                _ => throw new InvalidOperationException("Choose PDF, SVG or PNG for a Data Display export."),
+            };
+            CircuitRF.Design.Cells.AtomicFile.WriteAllBytes(path, bytes);
+        }
 
         /// <summary>
         /// A live container as the six numbers <see cref="PlotComposer"/> lays out — RND-4's

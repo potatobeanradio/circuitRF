@@ -22,10 +22,33 @@ public partial class DataDisplayView : UserControl
         Loaded               += OnLoaded;
         AttachedToVisualTree += OnAttachedToVisualTree;
         DataContextChanged   += OnDataContextChangedFocus;
+        // The workspace window binds Escape (DisarmPlacement) at Window level, and a Window KeyBinding marks the key
+        // handled before it is routed — so no Escape handler in this view (a text box's cancel, a canvas gesture's
+        // cancel, disarm and deselect below) ever ran in the application. See OnEscapeTunnel.
+        AddHandler(KeyDownEvent, OnEscapeTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+    }
+
+    /// <summary>
+    /// Escape with focus in this display is routed as if the window had not claimed it: un-handled here, at the top of the
+    /// tunnel, so the focused control answers first (a text box cancels its edit, a canvas gesture in flight is abandoned)
+    /// and <see cref="OnKeyDown"/> then disarms every tool, or with none armed drops the selection. The window's own
+    /// Escape (disarming a schematic placement) has already run and has nothing to do here.
+    /// </summary>
+    private void OnEscapeTunnel(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && e.KeyModifiers == KeyModifiers.None && e.Handled && IsKeyboardFocusWithin)
+            e.Handled = false;
     }
 
     // ── Activation focus — claim keyboard focus when this document's tab is activated ──
     private DataDisplayDocument? _focusDoc;
+
+    private void OnAddMarkerClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is DataDisplayDocument doc && sender is MenuItem { Tag: string tag }
+            && Enum.TryParse<MarkerFunction>(tag, out var function))
+            doc.ViewModel.Window.DataDisplay?.ArmMarkerTool(function);
+    }
 
     private void OnDataContextChangedFocus(object? sender, System.EventArgs e)
     {
@@ -60,8 +83,7 @@ public partial class DataDisplayView : UserControl
     /// bare-letter gesture has to answer: a <c>TextBox</c> does not mark <c>KeyDown</c> handled for
     /// an ordinary character — it consumes <c>TextInput</c> instead — so a document-level <c>F</c>
     /// binding would re-fit the plots every time someone typed an "f" into the tab-rename box, an
-    /// axis label, a marker name or an axis limit. The existing bare bindings above (Delete, Home,
-    /// End, Page Up/Down) are safe only because a focused <c>TextBox</c> handles those itself.
+    /// axis label, a marker name or an axis limit.
     ///
     /// <para>Guarded the way <c>MatchDesignerWindow</c> and <c>WirePanelKeys</c> guard theirs, and
     /// widened to the same three control types <c>WirePanelKeys</c> uses, since the display's
@@ -70,15 +92,35 @@ public partial class DataDisplayView : UserControl
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
-        if (e.Handled || e.KeyModifiers != KeyModifiers.None) return;
+        if (e.Handled || IsTypingInAField(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement())) return;
+        if (DataContext is not DataDisplayDocument doc) return;
 
+        if (e.KeyModifiers == KeyModifiers.None && e.Key is (Key.Delete or Key.Back))
+        {
+            if (doc.ViewModel.Window.DeleteSelectedCommand.CanExecute(null))
+            {
+                doc.ViewModel.Window.DeleteSelectedCommand.Execute(null);
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (e.KeyModifiers == KeyModifiers.None && e.Key == Key.Escape)
+        {
+            if (doc.ViewModel.Window.DeselectAllCommand.CanExecute(null))
+            {
+                doc.ViewModel.Window.DeselectAllCommand.Execute(null);
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (HandleEditingShortcut(e, doc.ViewModel.Window)) return;
+        if (e.KeyModifiers != KeyModifiers.None) return;
         // Z arms the magnifier — the same key the schematic editor has always used for its Zoom Box
         // (owner, 2026-09-11). Under the SAME typing guard as F below and for the same reason: a bare
         // letter must not arm a tool while someone is typing a "z" into a marker name.
         if (e.Key is not (Key.F or Key.Z)) return;
-        if (IsTypingInAField(TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement())) return;
-        if (DataContext is not DataDisplayDocument doc) return;
-
         var cmd = e.Key == Key.Z ? doc.ViewModel.Window.ZoomBoxCommand
                                  : doc.ViewModel.Window.FitAllCommand;
         if (!cmd.CanExecute(null)) return;
@@ -88,6 +130,27 @@ public partial class DataDisplayView : UserControl
 
     private static bool IsTypingInAField(IInputElement? focused) =>
         focused is TextBox or AutoCompleteBox or ComboBox { IsEditable: true };
+
+    private static bool HandleEditingShortcut(KeyEventArgs e, DisplayWindowViewModel window)
+    {
+        System.Windows.Input.ICommand? command = (e.KeyModifiers, e.Key) switch
+        {
+            (KeyModifiers.Control or KeyModifiers.Meta, Key.A) => window.SelectAllCommand,
+            (KeyModifiers.Control or KeyModifiers.Meta, Key.C) => window.CopyCommand,
+            (KeyModifiers.Control or KeyModifiers.Meta, Key.X) => window.CutCommand,
+            (KeyModifiers.Control or KeyModifiers.Meta, Key.V) => window.PasteCommand,
+            (KeyModifiers.Control or KeyModifiers.Meta, Key.Z) => window.UndoCommand,
+            (KeyModifiers.Control, Key.Y) => window.RedoCommand,
+            (KeyModifiers.Control | KeyModifiers.Shift, Key.Z) => window.RedoCommand,
+            (KeyModifiers.Meta | KeyModifiers.Shift, Key.Z) => window.RedoCommand,
+            (KeyModifiers.Control | KeyModifiers.Shift, Key.D) => window.RemovePlotCommand,
+            (KeyModifiers.Meta | KeyModifiers.Shift, Key.D) => window.RemovePlotCommand,
+            _ => null,
+        };
+        if (command is null) return false;
+        if (command.CanExecute(null)) { command.Execute(null); e.Handled = true; }
+        return true;
+    }
 
     private void OnAttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
     {
@@ -122,6 +185,8 @@ public partial class DataDisplayView : UserControl
 
         win.SetRichCopyAction((containers, theme) =>
             PlotExporter.CopyContainersToClipboardAsync(this, containers, theme));
+        win.SetAnnotationCopyAction((containers, theme, annotations) =>
+            PlotExporter.CopyContainersToClipboardAsync(this, containers, theme, annotations));
         win.SetGetClipboardTextAction(() => ClipboardRead.TextAsync(TopLevel.GetTopLevel(this)?.Clipboard));
 
         win.DataSourceLibrary.FindMissingFileAsync = path => FindMissingSnpFileAsync(path);
@@ -262,6 +327,13 @@ public partial class DataDisplayView : UserControl
 
         foreach (var path in npyFiles)
             await doc.ViewModel.Window.DataSourceLibrary.LoadFileAsync(path);
+    }
+
+    private async void OnExportDocument(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not DataDisplayDocument doc || doc.ViewModel.Window.DataDisplay is not { } display) return;
+        try { await PlotExporter.ExportDocumentAsync(this, doc.ViewModel.Window, doc.ViewModel.Window.ActiveTab?.Name ?? "display"); }
+        catch (Exception error) { await ShowErrorAsync(error.Message); }
     }
 
     private async Task DoExportDataAsync()

@@ -997,6 +997,15 @@ namespace CircuitRF.Render.DataDisplay
         /// <c>CollectionChanged</c> subscription still belongs to the live plot, so the snapshot
         /// adds no handler and can trigger no autoscale.</para>
         /// </remarks>
+        public Marker ResolveMarker(Trace trace, Marker marker)
+        {
+            if (marker.Function is not (MarkerFunction.Minimum or MarkerFunction.Maximum)) return marker;
+            var resolved = new Marker(marker) { Id = marker.Id };
+            resolved.Unavailable = PlotType != PlotType.Rect ||
+                !trace.TrySetVisibleExtremum(resolved, Axes.Window, marker.Function == MarkerFunction.Maximum);
+            return resolved;
+        }
+
         public Plot RenderSnapshot()
         {
             var snapshot = (Plot)MemberwiseClone();
