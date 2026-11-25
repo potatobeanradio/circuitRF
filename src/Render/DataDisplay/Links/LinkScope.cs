@@ -15,16 +15,41 @@ using RfCore.Data;
 
 namespace CircuitRF.Render.DataDisplay;
 
+/// <summary>A source's value as an expression operand: the number in base SI, or why there is none.</summary>
+/// <param name="IsBool">An on/off value — a button — which enters the expression as a Bool, so <c>if(@button1, …)</c>,
+/// <c>!@button1</c> and <c>&amp;&amp;</c> read it as the condition it is.</param>
+public readonly record struct LinkOperandValue(double Value, string? Error = null, bool IsBool = false);
+
 public static class LinkScope
 {
     [ThreadStatic] private static Func<string, Axis, LinkMatchResult>? _current;
+    [ThreadStatic] private static Func<string, LinkOperandValue>? _values;
 
-    /// <summary>Makes <paramref name="resolver"/> the one <c>@name</c> operands ask, until the result is disposed.</summary>
-    public static IDisposable Enter(Func<string, Axis, LinkMatchResult>? resolver)
+    /// <summary>Makes <paramref name="resolver"/> the one <c>@name</c> slice tokens ask, and <paramref name="values"/> the
+    /// one <c>@name</c> scalar operands ask (brief-ddl-6 R-ddl6-4), until the result is disposed.</summary>
+    public static IDisposable Enter(Func<string, Axis, LinkMatchResult>? resolver,
+                                    Func<string, LinkOperandValue>? values = null)
     {
-        var previous = _current;
+        var previous = (_current, _values);
         _current = resolver;
-        return new Restore(previous);
+        _values  = values;
+        return new Restore(previous.Item1, previous.Item2);
+    }
+
+    /// <summary>The value of the source <paramref name="name"/> as a scalar operand, in base SI — a control's value, a
+    /// marker's X, a button's 0 or 1.</summary>
+    internal static bool TryValue(string name, out LinkOperandValue value, out string error)
+    {
+        value = default; error = "";
+        if (_values is null)
+        {
+            error = $"'@{name}' is a display value, and only a Data Display has one to read.";
+            return false;
+        }
+        var v = _values(name);
+        if (v.Error is { } e) { error = e; return false; }
+        value = v;
+        return true;
     }
 
     internal static bool TryIndex(string name, Axis axis, out int index, out string error)
@@ -39,8 +64,9 @@ public static class LinkScope
         return true;
     }
 
-    private sealed class Restore(Func<string, Axis, LinkMatchResult>? previous) : IDisposable
+    private sealed class Restore(Func<string, Axis, LinkMatchResult>? previous, Func<string, LinkOperandValue>? values)
+        : IDisposable
     {
-        public void Dispose() => _current = previous;
+        public void Dispose() { _current = previous; _values = values; }
     }
 }

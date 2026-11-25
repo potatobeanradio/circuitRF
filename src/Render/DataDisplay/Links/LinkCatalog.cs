@@ -56,6 +56,7 @@ public static class LinkCatalog
         // Display controls (brief-ddl-5 R-ddl5-8) sit beside the markers; they sit on no trace, so they close no cycle.
         foreach (var (ti, control) in doc.Controls())
         {
+            if (!ControlLinkSource.IsSource(control)) continue;   // a readout shows a source; it is not one
             var value = ControlLinkSource.Resolve(control, sources);
             bool matches = axis is not null && LinkMatch.Match(value, axis, 0, data).IsLive;
             string where = ti == tab ? "control" : $"{doc.Tabs[ti].Name} ▸ control";

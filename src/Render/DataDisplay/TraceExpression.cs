@@ -6,7 +6,8 @@
 //    1. Scan the expression string for CubeName[...] refs
 //    2. Slice each ref to a rank-1 array
 //    3. Validate dimensions (same X length)
-//    4. Substitute refs with __c0, __c1, … placeholders
+//    4. Substitute refs with __c0, __c1, … placeholders, and each
+//       `@name` display value (brief-ddl-6) with __l0, __l1, …
 //    5. Parse the result with Parser.Parse
 //    6. Evaluate per X-sample via Evaluator.InjectResolved
 //    7. Return (xVals, complexValues?, realValues?, xAxisName, xUnit)
@@ -107,14 +108,15 @@ public static class TraceExpression
             return false;
         }
 
-        if (!ScanRefs(expression, ds, out var uniqueRefs, out var substitutions, out error)) return false;
+        if (!ScanRefs(expression, ds, out var uniqueRefs, out var substitutions, out var links, out error)) return false;
+        if (!ReadLinks(links, out var linkValues, out error)) return false;
 
         // A function that reads a whole axis (mean_over, histogram, cdf, …) cannot be evaluated a sample at a
         // time: the expression is evaluated ONCE over the cubes it names, and its result's one axis is the X. Nor can one
         // that reads a whole S cube and its analysis (a noise or gain circle), and a pinned frequency needs the whole
         // result to pin.
         if (Evaluator.CallsAxisFunction(expression) || Evaluator.CallsNetworkFunction(expression) || freqIndex >= 0)
-            return TryEvaluateWhole(expression, ds, plotType, uniqueRefs, substitutions, freqIndex,
+            return TryEvaluateWhole(expression, ds, plotType, uniqueRefs, substitutions, linkValues, freqIndex,
                                     out xValues, out complexValues, out realValues, out xAxisName, out xUnit, out xLabels,
                                     out companions, out pinned, out error);
 
@@ -198,8 +200,8 @@ public static class TraceExpression
         // ── Step 4: Substitute placeholders ──────────────────────────────────
         var sb = new System.Text.StringBuilder(expression);
         // Replace from right to left to preserve positions.
-        foreach (var (start, end, pIdx) in substitutions.OrderByDescending(s => s.start))
-            sb.Remove(start, end - start).Insert(start, $"__c{pIdx}");
+        foreach (var (start, end, placeholder) in substitutions.OrderByDescending(s => s.start))
+            sb.Remove(start, end - start).Insert(start, placeholder);
         string substituted = sb.ToString();
 
         // ── Step 5: Parse ─────────────────────────────────────────────────────
@@ -224,6 +226,8 @@ public static class TraceExpression
         var scope = new Scope("te");
         for (int k = 0; k < uniqueRefs.Count; k++)
             scope.Bind($"__c{k}", "0");
+        for (int k = 0; k < linkValues.Length; k++)
+            scope.Bind($"__l{k}", "0");
 
         // `freq` — the trace's own X axis in Hz, when that axis IS a frequency. A trace expression is
         // evaluated one X-sample at a time, so unlike the measurement scope's cube-valued `freq` this
@@ -244,6 +248,8 @@ public static class TraceExpression
             for (int k = 0; k < uniqueRefs.Count; k++)
                 ev.InjectResolved("te", $"__c{k}", new Value(uniqueRefs[k].Data![i]));
             if (freqIsX) ev.InjectResolved("te", "freq", new Value(xAx.Values[i]));
+            for (int k = 0; k < linkValues.Length; k++)
+                ev.InjectResolved("te", $"__l{k}", linkValues[k]);
 
             try
             {
@@ -319,7 +325,8 @@ public static class TraceExpression
 
     /// <summary>Step 1 of the pipeline: the cube references an expression names, and where each one sits.</summary>
     private static bool ScanRefs(string expression, DataSet ds, out List<CubeRefInfo> uniqueRefs,
-                                 out List<(int start, int end, int pIdx)> substitutions, out string error)
+                                 out List<(int start, int end, string placeholder)> substitutions, out List<string> links,
+                                 out string error)
     {
         error = "";
         // ── Step 1: Extract cube refs ─────────────────────────────────────────
@@ -337,13 +344,31 @@ public static class TraceExpression
         // uniqueRefs: in order of first appearance
         var refMap      = new Dictionary<string, int>(StringComparer.Ordinal);
         uniqueRefs    = new List<CubeRefInfo>();
-        substitutions = new List<(int start, int end, int pIdx)>();
+        substitutions = new List<(int start, int end, string placeholder)>();
+        links = new List<string>();
 
         static bool IsIdent(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '.';
 
         int pos = 0;
         while (pos < expression.Length)
         {
+            // `@name` outside a slice is a display value (brief-ddl-6 R-ddl6-4): a placeholder, injected with the
+            // source's value like a cube reference is — never written into the text. One inside a slice was taken
+            // with its cube reference, as a link token.
+            if (expression[pos] == '@' && (pos == 0 || !IsIdent(expression[pos - 1])))
+            {
+                int e = pos + 1;
+                while (e < expression.Length && (char.IsLetterOrDigit(expression[e]) || expression[e] == '_')) e++;
+                if (e > pos + 1)
+                {
+                    string link = expression[(pos + 1)..e];
+                    int li = links.IndexOf(link);
+                    if (li < 0) { li = links.Count; links.Add(link); }
+                    substitutions.Add((pos, e, $"__l{li}"));
+                    pos = e;
+                    continue;
+                }
+            }
             bool matched = false;
             foreach (var name in cubeNames)
             {
@@ -383,7 +408,7 @@ public static class TraceExpression
                     refMap[refStr] = pIdx;
                     uniqueRefs.Add(new CubeRefInfo(name, refStr, body));
                 }
-                substitutions.Add((pos, pos + refStr.Length, pIdx));
+                substitutions.Add((pos, pos + refStr.Length, $"__c{pIdx}"));
                 pos += refStr.Length;
                 matched = true;
                 break;
@@ -400,6 +425,23 @@ public static class TraceExpression
         return true;
     }
 
+    /// <summary>Each <c>@name</c> scalar operand's value, in base SI, from the display the trace is resolved in.</summary>
+    private static bool ReadLinks(List<string> links, out Value[] values, out string error)
+    {
+        values = new Value[links.Count];
+        error = "";
+        for (int k = 0; k < links.Count; k++)
+        {
+            if (!LinkScope.TryValue(links[k], out var v, out var why))
+            {
+                error = $"'@{links[k]}': {why}";
+                return false;
+            }
+            values[k] = v.IsBool ? new Value(v.Value != 0) : new Value(v.Value);
+        }
+        return true;
+    }
+
     /// <summary>
     /// Evaluates an expression that calls an axis function (<see cref="Evaluator.AxisFunctions"/>) ONCE over the
     /// cubes it names, and returns whatever it gives — a single number included. What the Data Display reads a
@@ -410,19 +452,20 @@ public static class TraceExpression
     {
         value = default;
         expression = PortPairSpelling.Rewrite(expression.Trim(), ds);
-        if (!ScanRefs(expression, ds, out var refs, out var subs, out error)) return false;
-        return TryEvaluateWholeValue(expression, ds, refs, subs, out value, out _, out error);
+        if (!ScanRefs(expression, ds, out var refs, out var subs, out var links, out error)) return false;
+        if (!ReadLinks(links, out var linkValues, out error)) return false;
+        return TryEvaluateWholeValue(expression, ds, refs, subs, linkValues, out value, out _, out error);
     }
 
     private static bool TryEvaluateWhole(
         string expression, DataSet ds, PlotType plotType, List<CubeRefInfo> refs,
-        List<(int start, int end, int pIdx)> substitutions, int freqIndex,
+        List<(int start, int end, string placeholder)> substitutions, Value[] linkValues, int freqIndex,
         out double[] xValues, out Complex[]? complexValues, out double[]? realValues,
         out string xAxisName, out string? xUnit, out string[]? xLabels,
         out IReadOnlyDictionary<string, DataCube> companions, out FreqPin? pinned, out string error)
     {
         xValues = []; complexValues = null; realValues = null; xAxisName = ""; xUnit = null; xLabels = null; pinned = null;
-        if (!TryEvaluateWholeValue(expression, ds, refs, substitutions, out var result, out companions, out error))
+        if (!TryEvaluateWholeValue(expression, ds, refs, substitutions, linkValues, out var result, out companions, out error))
             return false;
 
         // A result that keeps freq beside another axis (a circle's [freq, point]), or any result when a frequency is asked
@@ -495,8 +538,8 @@ public static class TraceExpression
 
     /// <summary>Binds each reference as the cube its slice leaves and evaluates the expression once.</summary>
     private static bool TryEvaluateWholeValue(
-        string expression, DataSet ds, List<CubeRefInfo> refs, List<(int start, int end, int pIdx)> substitutions,
-        out Value result, out IReadOnlyDictionary<string, DataCube> companions, out string error)
+        string expression, DataSet ds, List<CubeRefInfo> refs, List<(int start, int end, string placeholder)> substitutions,
+        Value[] linkValues, out Value result, out IReadOnlyDictionary<string, DataCube> companions, out string error)
     {
         result = default; companions = NoCompanions; error = "";
 
@@ -546,8 +589,8 @@ public static class TraceExpression
         }
 
         var sb = new System.Text.StringBuilder(expression);
-        foreach (var (start, end, pIdx) in substitutions.OrderByDescending(s => s.start))
-            sb.Remove(start, end - start).Insert(start, $"__c{pIdx}");
+        foreach (var (start, end, placeholder) in substitutions.OrderByDescending(s => s.start))
+            sb.Remove(start, end - start).Insert(start, placeholder);
 
         try
         {
@@ -558,6 +601,11 @@ public static class TraceExpression
             {
                 scope.Bind($"__c{k}", "0");
                 ev.InjectResolved("te", $"__c{k}", bound[k]);
+            }
+            for (int k = 0; k < linkValues.Length; k++)
+            {
+                scope.Bind($"__l{k}", "0");
+                ev.InjectResolved("te", $"__l{k}", linkValues[k]);
             }
             result     = ev.EvalExpr(ast, scope);
             companions = ev.TakeCompanions();

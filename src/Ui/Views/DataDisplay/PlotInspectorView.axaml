@@ -2450,6 +2450,16 @@
                                             ToolTip.Tip="Statistics">
                                         <mi:MaterialIcon Kind="ChartBar" Width="14" Height="14"/>
                                     </Button>
+                                    <!-- brief-ddl-6 R-ddl6-5: shown always, or while a display control is on (or off).
+                                         The menu is built per click (OnVisibilityMenuClick): it lists the controls the
+                                         document holds now. -->
+                                    <Button Classes="removeTrace"
+                                            Click="OnVisibilityMenuClick"
+                                            IsVisible="{Binding !IsSummaryColumn}"
+                                            ToolTip.Tip="{Binding VisibilityTip}"
+                                            AutomationProperties.Name="Trace visibility">
+                                        <mi:MaterialIcon Kind="{Binding VisibilityIcon}" Width="14" Height="14"/>
+                                    </Button>
                                 </StackPanel>
                                 </Grid>
                             </Border>

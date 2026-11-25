@@ -484,6 +484,14 @@ public sealed class TraceConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string?               ExpressionFreqLinkName { get; set; }
 
+    /// <summary>The source whose value shows this trace (brief-ddl-6 R-ddl6-5): a control's id, or its name in a
+    /// hand-written file. Omitted when the trace is always shown.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string?               ShownBy         { get; set; }
+    /// <summary>Shown while the <see cref="ShownBy"/> value is zero.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool                  ShownByInverted { get; set; }
+
     /// <summary>Absolute path of the X side's data source; null = the same source as the Y side.</summary>
     public string?               XSourcePath   { get; set; }
 

@@ -412,6 +412,8 @@ namespace CircuitRF.Render.DataDisplay
             // ---- Contour fill pre-pass (under all traces) ---------------
             foreach (var trace in plot.Traces)
             {
+                // A trace hidden by a control (brief-ddl-6 R-ddl6-5) is resolved but not drawn.
+                if (trace.HiddenByControl) continue;
                 var cd = trace.ContourData;
                 if (cd == null) continue;
                 if (cd.Grid == null) continue;
@@ -483,6 +485,7 @@ namespace CircuitRF.Render.DataDisplay
             // ---- Traces --------------------------------------------------
             foreach (var trace in plot.Traces)
             {
+                if (trace.HiddenByControl) continue;
                 if (trace.IsContourTrace)
                 {
                     var cd = trace.ContourData!;
@@ -543,7 +546,7 @@ namespace CircuitRF.Render.DataDisplay
             if (plot.PlotType == PlotType.Rect)
                 foreach (var trace in plot.Traces)
                     foreach (var marker in trace.Markers)
-                        if (marker.IsMulti)
+                        if (marker.IsMulti && !trace.HiddenByControl)
                             MarkerRenderer.DrawMultiMarkerLine(canvas, canvasSize, marker, trace, tf, theme);
 
             canvas.Restore();
@@ -566,6 +569,7 @@ namespace CircuitRF.Render.DataDisplay
                 foreach (var trace in plot.Traces)
                     foreach (var marker in trace.Markers)
                     {
+                        if (trace.HiddenByControl) continue;
                         var resolvedMarker = plot.ResolveMarker(trace, marker);
                         if (resolvedMarker.Unavailable) continue;
                         if (marker.VswrEnabled && VswrAvailableFor(plot, trace, marker))

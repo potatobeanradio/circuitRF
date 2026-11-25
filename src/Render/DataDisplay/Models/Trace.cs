@@ -1906,6 +1906,9 @@ namespace CircuitRF.Render.DataDisplay
             ExpressionFreqIndex = src.ExpressionFreqIndex;
             ExpressionFreqLink     = src.ExpressionFreqLink;
             ExpressionFreqLinkName = src.ExpressionFreqLinkName;
+            ShownBy         = src.ShownBy;
+            ShownByInverted = src.ShownByInverted;
+            ShownByName     = src.ShownByName;
             ExpressionFreqPin   = src.ExpressionFreqPin;
             StableSide          = src.StableSide;
             XSourcePath     = src.XSourcePath;
@@ -3502,6 +3505,32 @@ namespace CircuitRF.Render.DataDisplay
         /// Null outside a display, where an expression operand has nothing to follow.
         /// </summary>
         public Func<string, RfCore.Data.Axis, LinkMatchResult>? ExpressionLinks { get; set; }
+
+        /// <summary>
+        /// How an <c>@name</c> SCALAR operand of this trace's expression — one outside any slice, as in
+        /// <c>Pout - @slider1</c> — is read (brief-ddl-6 R-ddl6-4): the source's value in base SI. Installed by
+        /// <c>LinkResolve</c> beside <see cref="ExpressionLinks"/>; null outside a display.
+        /// </summary>
+        public Func<string, LinkOperandValue>? ExpressionValues { get; set; }
+
+        /// <summary>
+        /// The source whose value shows or hides this trace (brief-ddl-6 R-ddl6-5): a control's id (or, in a hand-written
+        /// file, its name). Shown while that value is non-zero — or while it is zero, <see cref="ShownByInverted"/>. Null
+        /// is always shown.
+        /// </summary>
+        public string? ShownBy { get; set; }
+
+        /// <summary>Shown while the <see cref="ShownBy"/> value is zero.</summary>
+        public bool ShownByInverted { get; set; }
+
+        /// <summary>The <see cref="ShownBy"/> source's name as last resolved, for the card and the legend.</summary>
+        public string? ShownByName { get; set; }
+
+        /// <summary>
+        /// Hidden by its <see cref="ShownBy"/> source as last resolved. A hidden trace still resolves, so showing it again
+        /// is instant; it is not drawn, and the legend lists it as hidden. Never saved.
+        /// </summary>
+        public bool HiddenByControl { get; set; }
 
         /// <summary>Where a marker sits to read cube sample <paramref name="sample"/> of this single-curve cube trace —
         /// its world point, on a Rect or a Smith plot alike — or null when the sample is not drawn.</summary>

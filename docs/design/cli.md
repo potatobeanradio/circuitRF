@@ -2383,7 +2383,10 @@ slider keeps the range the file last saved, as it does in the window). `--contro
 the stop nearest that value (a unit is compared in base SI against the slider's own, and a different one
 is a refusal naming both; a bare number is in the slider's unit); `--control slider1=#5` takes stop 5. It
 is parsed by the `--marker` grammar, applies before links resolve, may be repeated and writes nothing
-back. A name that is no control is a refusal listing the controls.
+back. A name that is no control is a refusal listing the controls. A knob takes the same two forms as a
+slider; a button takes `=1` or `=0` (or `#1`/`#0`) and refuses anything else (brief-ddl-6). A readout has no
+value to set; it shows what its source shows after the links resolve, and traces shown by a control are drawn
+or left out by the same pass, so a display holding either is resolved even with no link in it.
 
 The gate is `tests/Ui.Tests/Render/RenderDataDisplayCliTests.cs`, which authors a display through the
 application's own view models, saves it, and compares the verb's output as a PROCESS against

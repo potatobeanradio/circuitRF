@@ -126,7 +126,7 @@ public static class TraceResolve
         try
         {
             // An `@name` operand of a multi-cube expression asks this trace's own link resolver (brief-ddl-1).
-            using var links = LinkScope.Enter(t.ExpressionLinks);
+            using var links = LinkScope.Enter(t.ExpressionLinks, t.ExpressionValues);
             SetCubeDataFromCore(t, ds, plotType, freqUnit, xDs, probe);
             // The statistical pictures' own marks (brief-yield-8): the fit over a histogram, and the limits of the
             // goals the trace draws. Read from the same DataSet, by the same expression engine, in the window and

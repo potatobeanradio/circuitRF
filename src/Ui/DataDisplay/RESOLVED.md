@@ -2708,3 +2708,28 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   re-measures the boxes of every plot it touched, in place (`MarkerInfoBoxViewModel.RefreshAfterMove`).
 - **Controls stack by selection, as plots do**: each has a `ZIndex` the selection bumps, so a selected control overlapping
   another comes to the front. Checked in UiSnapshot with scripted thumb, frame, gripper and lock gestures.
+
+## The knob, the button and the readout (brief-ddl-6, 2026-11-24)
+
+- **Skia's SVG writer has no radial gradient.** A shader from `SKShader.CreateRadialGradient` comes out of `SKSvgCanvas`
+  as an empty `<defs/>` and a circle with no `fill`, which every SVG viewer paints solid black — a lit button exported as
+  three black discs, with nothing reported. Linear gradients are written properly. The glow and the bloom are therefore
+  concentric filled circles whose alphas compose exactly to the falloff (`ControlRenderer.GradedDisc`, 28 rings): plain
+  vector in SVG and PDF, the same on the canvas. Checked by rasterising the `render` SVG with Svg.Skia, not only by
+  grepping it; the gate asserts every circle carries its own fill.
+- **`if()` takes only a Bool.** The expression language refuses a Real condition ("Condition must be Bool, got Real"), so
+  a button's 0/1 injected as a number could not drive `if(@button1, …)`. A button enters an expression as a Bool
+  (`LinkOperandValue.IsBool`); every other source as a Real in base SI. The language itself is unchanged.
+- **Changing the knob's rate mid-drag must not jump it.** The turn is measured from where the drag began; re-basing on
+  the NEW pointer height when Ctrl changes dropped the movement since the last pointer event. It re-bases on the last
+  height seen, at the value that height gave.
+- **A visibility change resolves no data**, so `LinkResolve` hands back the traces whose shown state moved alongside the
+  ones it re-resolved; otherwise the window, which redraws only what a follow returns, would leave a switched trace drawn.
+  Readouts are redrawn after every follow, whether or not a trace moved: a marker stepped with nothing linked to it still
+  changes what a readout of it says.
+- **Gate 1's "10 px with Ctrl moves a twentieth"** does not follow from the rate the brief sets (one sweep per 200 px, a
+  tenth of that with Ctrl): 100 px with Ctrl is a twentieth. The rate is what is implemented and tested.
+- **A control cannot close a cycle with a trace.** A control's bound domain reads an axis of a source FILE, never a trace,
+  so "a knob bound to the trace that reads `@k1`" has no edge back to the trace. What the link graph must refuse is a
+  scalar operand whose source sits on the consumer — `Pout[2, :] - @m1` with m1 on that trace — and it does, because
+  `LinkGraph.OperandNames` already counted every `@name` in an expression, in a slice or not.

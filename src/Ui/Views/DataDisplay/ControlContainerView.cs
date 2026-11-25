@@ -56,7 +56,7 @@ public sealed class ControlContainerView : Panel
 
     private const double DragThreshold = 4.0;
 
-    private enum Mode { None, Pending, Value, Move, Resize }
+    private enum Mode { None, Pending, Value, Move, Resize, Press }
 
     private Mode _gesture;
     private bool    _pendingAlt, _pendingCtrl;
@@ -179,9 +179,16 @@ public sealed class ControlContainerView : Panel
             _gesture = Mode.Resize;
             vm.BeginResize();
         }
+        else if (!alt && OnFace(vm, p) && vm.Model is ButtonControl)
+        {
+            // A button's face: a toggle flips, a momentary one lights until the press ends (R-ddl6-2).
+            _gesture = Mode.Press;
+            _faceFocused = true;
+            vm.PressButton();
+        }
         else if (!alt && OnFace(vm, p))
         {
-            // The face operates at once: a click on the track jumps the thumb there.
+            // The face operates at once: a click on the track jumps the thumb there; a knob is turned by the drag.
             _gesture = Mode.Value;
             _faceFocused = true;
             vm.BeginValueDrag(Sk(p));
@@ -210,6 +217,9 @@ public sealed class ControlContainerView : Panel
             if (hot != _gripHot || thumb != _thumbHot) { _gripHot = hot; _thumbHot = thumb; Redraw(); }
             Cursor = hot ? new Cursor(StandardCursorType.BottomRightCorner)
                    : EndAt(vm, p) is not null ? new Cursor(StandardCursorType.Ibeam)
+                   : vm.Model is KnobControl k && !e.KeyModifiers.HasFlag(KeyModifiers.Alt) && OnFace(vm, p)
+                     ? new Cursor(ControlRenderer.KnobTickAt(k, (float)Bounds.Width, (float)Bounds.Height, Sk(p)) is not null
+                                  ? StandardCursorType.Hand : StandardCursorType.SizeNorthSouth)
                    : !e.KeyModifiers.HasFlag(KeyModifiers.Alt) && OnFace(vm, p) ? new Cursor(StandardCursorType.Hand)
                    : vm.IsLocked ? Cursor.Default
                    : new Cursor(StandardCursorType.SizeAll);
@@ -221,8 +231,10 @@ public sealed class ControlContainerView : Panel
         switch (_gesture)
         {
             case Mode.Value:
-                if (_relative) vm.DragValueRelative(Sk(p));
-                else           vm.DragValueTo(Sk(p));
+                // A knob turns with the vertical drag, finely with Ctrl (R-ddl6-1).
+                if (vm.Model is KnobControl) vm.TurnKnob(p.Y, Fine(e.KeyModifiers));
+                else if (_relative) vm.DragValueRelative(Sk(p));
+                else                vm.DragValueTo(Sk(p));
                 break;
 
             case Mode.Resize:
@@ -238,6 +250,8 @@ public sealed class ControlContainerView : Panel
                 if (Math.Sqrt(dx * dx + dy * dy) < DragThreshold) return;
                 // Alt only moves, and a locked control does not move; its gripper corner does nothing at all.
                 if (vm.IsLocked && (_pendingAlt || _inert)) return;
+                // A locked button or readout has no drag to give its frame: a press there is only a click.
+                if (vm.IsLocked && vm.Model is ButtonControl or ReadoutControl) return;
                 if (vm.IsLocked)
                 {
                     // A locked control's frame drag operates the face instead (R-ddl5-9) — by the drag, from where the
@@ -281,6 +295,7 @@ public sealed class ControlContainerView : Panel
         switch (gesture)
         {
             case Mode.Value:  vm.EndValueDrag(); break;
+            case Mode.Press:  vm.ReleaseButton(); break;
             case Mode.Resize: vm.EndResize(); break;
             case Mode.Move:   vm.Display.EndMoveOperation(); break;
             case Mode.Pending:
@@ -312,10 +327,23 @@ public sealed class ControlContainerView : Panel
             switch (_gesture)
             {
                 case Mode.Value:  vm.EndValueDrag(); break;
+                case Mode.Press:  vm.ReleaseButton(); break;
                 case Mode.Resize: vm.EndResize(); break;
                 case Mode.Move:   vm.Display.EndMoveOperation(); break;
             }
         _gesture = Mode.None;
+    }
+
+    /// <summary>Ctrl — or Cmd, as the application reads it on a Mac — turns a knob at a tenth of its rate.</summary>
+    private static bool Fine(KeyModifiers m) => m.HasFlag(KeyModifiers.Control) || m.HasFlag(KeyModifiers.Meta);
+
+    /// <summary>The wheel over a knob's dial steps it one stop a notch (R-ddl6-1); elsewhere it is the canvas's.</summary>
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        if (Vm is not { Model: KnobControl } vm || e.Delta.Y == 0 || !OnFace(vm, e.GetPosition(this))) return;
+        vm.Step(e.Delta.Y > 0 ? +1 : -1);
+        e.Handled = true;
     }
 
     // ---- keys ------------------------------------------------------------------------------------

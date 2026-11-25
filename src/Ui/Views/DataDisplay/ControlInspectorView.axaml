@@ -35,6 +35,60 @@
                      KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" PlaceholderText="{Binding NameText}" AutomationProperties.Name="Control label"/>
         </Grid>
 
+        <!-- brief-ddl-6: the button's two choices. -->
+        <StackPanel Spacing="4" IsVisible="{Binding IsButton}">
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Action"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Classes="seg-btn" Classes.active="{Binding IsToggle}" Content="Toggle"
+                            Command="{Binding SetToggleCommand}" ToolTip.Tip="A click turns it on, the next one off"/>
+                    <Button Classes="seg-btn" Classes.active="{Binding IsMomentary}" Content="Momentary"
+                            Command="{Binding SetMomentaryCommand}" ToolTip.Tip="On only while it is pressed"/>
+                </StackPanel>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Label at"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Classes="seg-btn" Classes.active="{Binding IsLabelUnder}" Content="Under"
+                            Command="{Binding SetLabelUnderCommand}"/>
+                    <Button Classes="seg-btn" Classes.active="{Binding IsLabelOnFace}" Content="On face"
+                            Command="{Binding SetLabelOnFaceCommand}"/>
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+
+        <!-- brief-ddl-6: what a readout shows. Pickers only. -->
+        <StackPanel Spacing="4" IsVisible="{Binding IsReadout}">
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Source"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="0"
+                          ItemsSource="{Binding ReadoutSourceItems}" SelectedItem="{Binding SelectedReadoutSource, Mode=TwoWay}"
+                          AutomationProperties.Name="Readout source"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Show"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Classes="seg-btn" Classes.active="{Binding IsShowValue}" Content="Value"
+                            Command="{Binding SetShowValueCommand}" ToolTip.Tip="The source's value: a marker's X, a control's setting"/>
+                    <Button Classes="seg-btn" Classes.active="{Binding IsShowCoordinate}" Content="Coordinate"
+                            Command="{Binding SetShowCoordinateCommand}" ToolTip.Tip="One coordinate the source supplies"/>
+                    <Button Classes="seg-btn" Classes.active="{Binding IsShowReading}" Content="Reading"
+                            Command="{Binding SetShowReadingCommand}" ToolTip.Tip="A marker's reading on its trace, as its info box gives it"/>
+                </StackPanel>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Coordinate"/>
+                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" MinWidth="0" IsEnabled="{Binding ReadoutAxisEnabled}"
+                          ItemsSource="{Binding ReadoutAxisItems}" SelectedItem="{Binding SelectedReadoutAxis, Mode=TwoWay}"
+                          AutomationProperties.Name="Readout coordinate"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <CheckBox Grid.Column="1" Content="Name" IsChecked="{Binding ReadoutShowName, Mode=TwoWay}"
+                          ToolTip.Tip="The label, or the source's name, above the value"/>
+            </Grid>
+        </StackPanel>
+
+        <StackPanel Spacing="4" IsVisible="{Binding IsStepped}">
         <Grid Classes="row" ColumnDefinitions="75,*">
             <TextBlock Classes="lbl" Text="Domain"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -98,12 +152,13 @@
                           AutomationProperties.Name="Bound axis"/>
             </Grid>
         </StackPanel>
+        </StackPanel>
 
         <!-- Reserved under both blocks: one line, the full sentence in its tooltip. -->
         <TextBlock Text="{Binding Problem}" Foreground="{DynamicResource CrfWarningBrush}" FontSize="11"
                    MinHeight="15" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Problem}"/>
 
-        <Grid Classes="row" ColumnDefinitions="75,*">
+        <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding IsSlider}">
             <TextBlock Classes="lbl" Text="Orientation"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <Button Classes="seg-btn" Classes.active="{Binding IsHorizontal}" Content="Horizontal"
@@ -125,7 +180,7 @@
                            Foreground="{DynamicResource SystemBaseMediumColor}"/>
             </StackPanel>
         </Grid>
-        <Grid Classes="row" ColumnDefinitions="75,*">
+        <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding IsStepped}">
             <TextBlock Classes="lbl" Text="Show"/>
             <!-- Two by two, the same at every panel width: a wrap would leave "Value" alone on a second line. -->
             <UniformGrid Grid.Column="1" Columns="2" VerticalAlignment="Center">
@@ -139,7 +194,7 @@
             </UniformGrid>
         </Grid>
         <Grid Classes="row" ColumnDefinitions="75,Auto,*">
-            <TextBlock Classes="lbl" Text="Accent"/>
+            <TextBlock Classes="lbl" Text="{Binding AccentLabel}"/>
             <Button Grid.Column="1" Click="PickAccent" ToolTip.Tip="Choose the accent colour"
                     AutomationProperties.Name="Accent colour" VerticalAlignment="Center">
                 <Border Width="20" Height="14" BorderThickness="1" Background="{Binding AccentSwatch}"
@@ -147,6 +202,24 @@
             </Button>
             <Button Grid.Column="2" Click="ResetAccent" Content="Default" Margin="4,0,0,0" VerticalAlignment="Center"
                     IsEnabled="{Binding !IsDefaultAccent}"/>
+        </Grid>
+        <!-- A button's eight preset colours; the swatch above opens any other. -->
+        <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding IsButton}">
+            <ItemsControl Grid.Column="1" ItemsSource="{Binding ColorPresets}" VerticalAlignment="Center">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3"/></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ColorPreset">
+                        <Button Padding="0" MinWidth="0" MinHeight="0" Width="18" Height="18" ToolTip.Tip="{Binding Hex}"
+                                Command="{Binding $parent[ItemsControl].((vm:ControlInspectorViewModel)DataContext).PickPresetCommand}"
+                                CommandParameter="{Binding}">
+                            <Border Width="16" Height="16" CornerRadius="8" Background="{Binding Swatch}" BorderThickness="1"
+                                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
         </Grid>
         <Grid Classes="row" ColumnDefinitions="75,*">
             <CheckBox Grid.Column="1" Content="Lock Position" IsChecked="{Binding Locked, Mode=TwoWay}"

@@ -117,7 +117,7 @@ public sealed partial class LinkGraph
     /// multi-cube expression, whose <c>@name</c> operands live in its text. The same test <c>TraceResolve</c> makes.</summary>
     internal static bool IsSingleCube(Trace t) => t.CubeName is not null && t.Slice is not null;
 
-    [GeneratedRegex(@"@([A-Za-z0-9_][A-Za-z0-9_.\-]*)")]
+    [GeneratedRegex(@"@([A-Za-z0-9_][A-Za-z0-9_.]*)")]
     private static partial Regex LinkOperand();
 
     /// <summary>The <c>@name</c> operands of an expression, in order, each once.</summary>

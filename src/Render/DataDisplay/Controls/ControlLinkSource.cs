@@ -18,10 +18,15 @@ namespace CircuitRF.Render.DataDisplay;
 
 public static class ControlLinkSource
 {
+    /// <summary>Whether <paramref name="c"/> is a link source: every control but the readout, which only shows one.</summary>
+    public static bool IsSource(DisplayControl c) => c is not ReadoutControl;
+
     /// <summary>The link value of <paramref name="c"/> as it now stands.</summary>
     public static LinkValue Resolve(DisplayControl c, IPlotDataSources? sources)
     {
-        if (c is not SliderControl s) return new LinkValue(c.Id, c.Name, []);
+        // A button is 0 or 1 with no unit, and a pinned axis takes that as an index (brief-ddl-6 R-ddl6-6).
+        if (c is ButtonControl b) return new LinkValue(c.Id, c.Name, [], Scalar: new LinkScalar(b.NumericValue, "", IsIndex: true));
+        if (c is not SteppedControl s) return new LinkValue(c.Id, c.Name, []);
         if (s.Domain == SliderDomain.Bound)
         {
             var (path, group) = Refresh(s, sources);
@@ -40,7 +45,7 @@ public static class ControlLinkSource
     /// <see cref="SliderControl.BoundUnit"/>, and returns the file and group it read. When the source, the cube or the
     /// axis is gone the slider keeps what it last read (R-ddl5-7) and the path is the stored one.
     /// </summary>
-    public static (string? Path, string Group) Refresh(SliderControl s, IPlotDataSources? sources)
+    public static (string? Path, string Group) Refresh(SteppedControl s, IPlotDataSources? sources)
     {
         string? abs = s.SourcePath is { } sp && sources is not null ? sources.ResolveAbs(sp) ?? sp : s.SourcePath;
         if (AxisOf(s, sources, abs) is not { } axis) return (abs, GroupOf(s.CubeName, null));
@@ -51,7 +56,7 @@ public static class ControlLinkSource
     }
 
     /// <summary>Why a bound slider cannot read its axis now, or null when it can (or is not bound).</summary>
-    public static string? Problem(SliderControl s, IPlotDataSources? sources)
+    public static string? Problem(SteppedControl s, IPlotDataSources? sources)
     {
         if (s.Domain != SliderDomain.Bound) return null;
         if (s.SourcePath is null || s.CubeName is null || s.AxisName is null) return "Choose a source, quantity and axis.";
@@ -63,7 +68,7 @@ public static class ControlLinkSource
         return null;
     }
 
-    private static Axis? AxisOf(SliderControl s, IPlotDataSources? sources, string? abs)
+    private static Axis? AxisOf(SteppedControl s, IPlotDataSources? sources, string? abs)
     {
         if (sources is null || abs is null || s.CubeName is null || s.AxisName is null) return null;
         if (sources.DataFor(abs) is not { } ds || !ds.Contains(s.CubeName)) return null;
@@ -84,7 +89,7 @@ public static class ControlLinkSource
     /// A range end typed into the slider's inline editor — <c>800 MHz</c>, <c>0.8 GHz</c>, or a bare number in the
     /// slider's own unit — as a number in that unit. Null, with the reason, for anything else.
     /// </summary>
-    public static double? ParseRangeEnd(SliderControl s, string? text, out string? error)
+    public static double? ParseRangeEnd(SteppedControl s, string? text, out string? error)
     {
         error = null;
         var m = NumberWithUnit.Match(text ?? "");
@@ -108,7 +113,15 @@ public static class ControlLinkSource
     /// </summary>
     public static string? SetFromText(DisplayControl c, int? index, double value, string unit)
     {
-        if (c is not SliderControl s) return $"{c.Name} has no value to set.";
+        if (c is ButtonControl b)
+        {
+            // A button takes 0 or 1 — as a number or as its stop (#0, #1).
+            double v01 = index ?? value;
+            if (unit.Length > 0 || (v01 != 0 && v01 != 1)) return $"{c.Name} is a button: 0 or 1.";
+            b.On = v01 == 1;
+            return null;
+        }
+        if (c is not SteppedControl s) return $"{c.Name} has no value to set.";
         var stops = s.Stops;
         if (index is { } i)
         {
@@ -125,7 +138,7 @@ public static class ControlLinkSource
                 return $"{c.Name} is in {(s.DisplayUnit.Length > 0 ? s.DisplayUnit : "no unit")}, not {unit}.";
             v = value / scale;
         }
-        s.SetStop(SliderControl.NearestStop(stops, v));
+        s.SetStop(SteppedControl.NearestStop(stops, v));
         return null;
     }
 }

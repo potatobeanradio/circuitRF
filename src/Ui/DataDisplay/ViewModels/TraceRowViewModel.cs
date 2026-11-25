@@ -3522,6 +3522,7 @@ public partial class TraceRowViewModel : ViewModelBase
     /// </summary>
     internal void OnLinksFollowed()
     {
+        RefreshVisibility();   // shown by a control (brief-ddl-6 R-ddl6-5)
         if (_trace.Slice is { } slice)
             foreach (var r in AxisRoles)
             {

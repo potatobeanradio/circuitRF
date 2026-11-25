@@ -33,11 +33,15 @@ public static class LinkResolve
     {
         var graph = LinkGraph.Build(doc);
         var done  = new List<Trace>(graph.Order.Count);
+        // Visibility first (brief-ddl-6 R-ddl6-5): it changes no data, so a trace whose shown state moved is handed
+        // back to be redrawn whether or not anything else about it follows a link.
+        foreach (var (ti, _, t) in doc.Traces())
+            if (ApplyShownBy(doc, ti, t, sources)) done.Add(t);
         foreach (var t in graph.Order)
         {
             if (doc.PlotOf(t) is not { } plot) continue;
             if (!released && UpdatesOnRelease(t)) continue;
-            done.Add(t);
+            if (!done.Contains(t)) done.Add(t);
             t.FrozenLinks.Clear();
             var notes  = new List<string>();
             bool frozen = false;
@@ -74,7 +78,8 @@ public static class LinkResolve
             }
             else
             {
-                t.ExpressionLinks = ExpressionResolver(doc, t, sources, cycle is not null, notes, () => frozen = true);
+                t.ExpressionLinks  = ExpressionResolver(doc, t, sources, cycle is not null, notes, () => frozen = true);
+                t.ExpressionValues = ValueResolver(doc, t, sources, cycle);
                 var freqSlot = slots.FirstOrDefault(s => s.SliceIndex == LinkGraph.ExpressionFreqSlot);
                 bool hadAxis = t.ExpressionFreqPin is not null;
                 if (freqSlot is not null) frozen |= ApplyExpressionFreq(t, freqSlot, cycle is not null, sources, notes);
@@ -111,7 +116,75 @@ public static class LinkResolve
             SummaryResolve.Rebuild(plot, ds, ContourResolve.GroupFor(views, plot.SummaryLoadpullGroup));
             done.AddRange(plot.Traces.Where(x => x.IsSummaryColumn));
         }
+
+        // Readouts last: they show sources as the traces they sit on now stand (brief-ddl-6 R-ddl6-3).
+        ReadoutResolve.Apply(doc, sources);
         return done;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="t"/> is shown by its <see cref="Trace.ShownBy"/> source: while that source's value is
+    /// non-zero, or zero when inverted. A source that is gone leaves the trace shown. True when the shown state changed.
+    /// </summary>
+    private static bool ApplyShownBy(LinkDocument doc, int tab, Trace t, IPlotDataSources sources)
+    {
+        bool was = t.HiddenByControl;
+        if (t.ShownBy is not { Length: > 0 } key)
+        {
+            t.HiddenByControl = false;
+            t.ShownByName = null;
+            return was;
+        }
+        var control = doc.FindControl(key) ?? doc.FindControlByName(key, tab);
+        if (control is null || !ControlLinkSource.IsSource(control))
+        {
+            t.HiddenByControl = false;
+            t.ShownByName = null;
+            return was;
+        }
+        t.ShownByName = control.Name;
+        double v = ScalarValue(ControlLinkSource.Resolve(control, sources)) ?? 0;
+        t.HiddenByControl = (v != 0) == t.ShownByInverted;
+        return was != t.HiddenByControl;
+    }
+
+    /// <summary>A link value's own number in base SI — a control's value, else a marker's X — or null when it has
+    /// none (a point on the Smith chart).</summary>
+    public static double? ScalarValue(LinkValue v)
+    {
+        if (v.Scalar is { } sc) return sc.Value * (sc.IsIndex ? 1 : SiUnit.Split(sc.Unit).Scale);
+        if (v.Coordinates.Count > 0) return v.Coordinates[0].Value * SiUnit.Split(v.Coordinates[0].Unit).Scale;
+        return null;
+    }
+
+    /// <summary>
+    /// How an <c>@name</c> scalar operand of an expression is read (brief-ddl-6 R-ddl6-4): the source's value in base
+    /// SI — a control's value, a marker's X value, a button's 0 or 1, the lowest trial selected. A source on a cycle
+    /// gives no value, and the expression says so.
+    /// </summary>
+    private static Func<string, LinkOperandValue> ValueResolver(LinkDocument doc, Trace t, IPlotDataSources sources,
+                                                                string? cycle)
+    {
+        int tab = doc.TabOf(t);
+        return name =>
+        {
+            if (cycle is not null) return new(0, $"{cycle}: a cycle.");
+            if (LinkDocument.IsSelection(name))
+            {
+                var selected = doc.SelectedTrials?.Invoke(t.SourcePath);
+                return selected is { Count: > 0 } ? new(selected.Min()) : new(0, "no trial is selected.");
+            }
+            if (doc.FindControlByName(name, tab) is { } control)
+            {
+                if (!ControlLinkSource.IsSource(control)) return new(0, $"{name} is a readout; it shows a value and has none of its own.");
+                if (control is ButtonControl b) return new(b.NumericValue, IsBool: true);   // on/off: a condition
+                return ScalarValue(ControlLinkSource.Resolve(control, sources)) is { } cv ? new(cv) : new(0, $"{name} has no value.");
+            }
+            if (!doc.TryFindByName(name, tab, out var site, out var err)) return new(0, err);
+            return ScalarValue(MarkerLinkSource.Resolve(site, sources)) is { } mv
+                ? new(mv)
+                : new(0, $"{name} is a point on the Smith chart, not a number.");
+        };
     }
 
     /// <summary>

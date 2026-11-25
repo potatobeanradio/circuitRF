@@ -54,6 +54,15 @@ public static class LinkMatch
         if (value.Scalar is { } sc && UnitsMatch(sc.Unit, axis.Name, axis))
             return Nearest(value.Name, sc.Value, axis);
 
+        // A button's 0 or 1 (brief-ddl-6 R-ddl6-6): the first or second case of the axis — two corners, two bias points
+        // written as an axis. A longer axis is said to be one, since only its first two cases are reachable.
+        if (value.Scalar is { IsIndex: true } ix && axis.Length > 0)
+        {
+            int i = Math.Clamp((int)Math.Round(ix.Value), 0, axis.Length - 1);
+            return new(i, LinkMatchKind.SameAxis,
+                       axis.Length == 2 ? null : $"{value.Name} picks case 0 or 1; {axis.Name} has {axis.Length}.");
+        }
+
         // Companions — a list of cases (a bias `point`) described by 1-D cubes over it (`vgs[point]`, `vds[point]`):
         // the case nearest the source's coordinates. A nearest match by design; interpolating between bias points
         // would be a model, and is not here.
@@ -190,6 +199,7 @@ public static class LinkMatch
     public static string Supplies(LinkValue value)
         => value.Coordinates.Count > 0
             ? string.Join(" and ", value.Coordinates.Select(c => c.Unit.Length > 0 ? $"{c.Axis} ({c.Unit})" : c.Axis))
+            : value.Scalar is { IsIndex: true } ? "0 or 1"
             : value.Scalar is { } s ? (s.Unit.Length > 0 ? $"a value in {s.Unit}" : "a plain value")
             : value.Position is not null ? "a point on the Smith chart"
             : "nothing";

@@ -66,7 +66,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
 
     internal ControlContainerViewModel? Target => _target;
     private DisplayControl? Model => _target?.Model;
-    private SliderControl? Slider => _target?.Model as SliderControl;
+    private SteppedControl? Slider => _target?.Model as SteppedControl;
 
     public bool IsActive => _target is not null;
 
@@ -148,6 +148,10 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         nameof(IsSmall), nameof(IsMedium), nameof(IsLarge), nameof(IsCustom),
         nameof(ShowLabel), nameof(ShowTicks), nameof(ShowEnds), nameof(ShowValue),
         nameof(AccentSwatch), nameof(IsDefaultAccent), nameof(Locked),
+        nameof(IsStepped), nameof(IsSlider), nameof(IsButton), nameof(IsReadout),
+        nameof(IsToggle), nameof(IsMomentary), nameof(IsLabelUnder), nameof(IsLabelOnFace),
+        nameof(SelectedReadoutSource), nameof(IsShowValue), nameof(IsShowCoordinate), nameof(IsShowReading),
+        nameof(SelectedReadoutAxis), nameof(ReadoutAxisEnabled), nameof(ReadoutShowName), nameof(AccentLabel),
     ];
 
     // ---- name and label --------------------------------------------------------------------------------
@@ -230,7 +234,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         if (Slider is not { Domain: SliderDomain.Bound }) return;
         Edit(c =>
         {
-            var s = (SliderControl)c;
+            var s = (SteppedControl)c;
             double v = Convert(s.CurrentValue, s.DisplayUnit, s.Unit);
             s.Domain = SliderDomain.Range;
             s.Value = v;
@@ -255,7 +259,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         if (Slider is not { Domain: SliderDomain.Range }) return;
         Edit(c =>
         {
-            var s = (SliderControl)c;
+            var s = (SteppedControl)c;
             double v = s.CurrentValue;
             string unit = s.Unit;
             s.Domain = SliderDomain.Bound;
@@ -267,7 +271,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
             ControlLinkSource.Refresh(s, Sources);
             // The stop nearest the value it had, so a switch does not jump the slider to its first stop.
             if (s.BoundValues is { Length: > 0 } stops)
-                s.Index = SliderControl.NearestStop(stops, Convert(v, unit, s.BoundUnit));
+                s.Index = SteppedControl.NearestStop(stops, Convert(v, unit, s.BoundUnit));
         }, "domain");
     }
 
@@ -293,10 +297,10 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     }
 
     /// <summary>A range edit, then the value onto the nearest of the new stops, so what is saved is what is shown.</summary>
-    private void EditRange(Action<SliderControl> edit, string what)
+    private void EditRange(Action<SteppedControl> edit, string what)
         => Edit(c =>
         {
-            var s = (SliderControl)c;
+            var s = (SteppedControl)c;
             edit(s);
             s.Value = s.Stops[s.StopIndex];
         }, what);
@@ -364,9 +368,9 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
                 else EditRange(s => s.Points = null, "points");
                 return;
             }
-            if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 2 && n <= SliderControl.ContinuousStops)
+            if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= 2 && n <= SteppedControl.ContinuousStops)
                 EditRange(s => s.Points = n, "points");
-            else Refuse($"Points must be a whole number from 2 to {SliderControl.ContinuousStops}.");
+            else Refuse($"Points must be a whole number from 2 to {SteppedControl.ContinuousStops}.");
         }
     }
 
@@ -381,7 +385,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         {
             if (Slider is null) return;
             string unit = (value ?? "").Trim();
-            Edit(c => ((SliderControl)c).Unit = unit, "unit");
+            Edit(c => ((SteppedControl)c).Unit = unit, "unit");
         }
     }
 
@@ -418,7 +422,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
             if (value.Entry is not { FilePath: { } path } entry) { Refresh(); return; }
             Edit(c =>
             {
-                var s = (SliderControl)c;
+                var s = (SteppedControl)c;
                 s.SourcePath = SourceKey(path);
                 // The quantity and the axis carry over when the new source has them; otherwise its first.
                 var quantities = QuantitiesOf(entry.Data);
@@ -444,7 +448,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
             { Refresh(); return; }
             Edit(c =>
             {
-                var s = (SliderControl)c;
+                var s = (SteppedControl)c;
                 s.CubeName = value.Value;
                 var axes = LinkableAxes(cube);
                 if (axes.All(a => a.Name != s.AxisName)) s.AxisName = axes.FirstOrDefault()?.Name;
@@ -462,7 +466,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
             if (_syncing || value is null || value.Missing || Equals(value, _selectedAxis)) return;
             Edit(c =>
             {
-                var s = (SliderControl)c;
+                var s = (SteppedControl)c;
                 s.AxisName = value.Value;
                 s.Index = 0;
                 ControlLinkSource.Refresh(s, Sources);
@@ -474,12 +478,12 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     /// The one problem line: a refused entry first, then why the bound axis cannot be read now — or, on a range, what
     /// about it is not what it says.
     /// </summary>
-    public string? Problem => NameError ?? FieldError ?? Slider switch
+    public string? Problem => NameError ?? FieldError ?? (Model as ReadoutControl)?.Problem ?? Slider switch
     {
         { Domain: SliderDomain.Bound } s => ControlLinkSource.Problem(s, Sources),
         { Log: true } s when s.Start <= 0 || s.Stop <= 0 => "A log range needs a start and stop above 0.",
-        { Log: false, Points: null } s when s.Step > 0 && Math.Abs(s.Stop - s.Start) / s.Step + 1 > SliderControl.ContinuousStops + 1e-9
-            => $"Step too fine: {SliderControl.ContinuousStops} stops shown.",
+        { Log: false, Points: null } s when s.Step > 0 && Math.Abs(s.Stop - s.Start) / s.Step + 1 > SteppedControl.ContinuousStops + 1e-9
+            => $"Step too fine: {SteppedControl.ContinuousStops} stops shown.",
         { } s when s.Start > s.Stop => "Start is above stop: the slider runs backwards.",
         _ => null,
     };
@@ -487,7 +491,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     public bool HasProblem => Problem is not null;
 
     /// <summary>The first quantity of <paramref name="entry"/> with a linkable axis, and that axis.</summary>
-    private static void BindFirst(SliderControl s, DataSourceEntryViewModel entry)
+    private static void BindFirst(SteppedControl s, DataSourceEntryViewModel entry)
     {
         var first = QuantitiesOf(entry.Data).FirstOrDefault();
         s.CubeName = first.Name;
@@ -588,6 +592,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         _selectedSource = source;
         _selectedQuantity = quantity;
         _selectedAxis = axis;
+        RebuildReadoutPickers();
     }
 
     /// <summary>Replaces the list's contents only when they differ, so an open drop-down is not rebuilt under the
@@ -601,8 +606,8 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
 
     // ---- orientation and size --------------------------------------------------------------------------
 
-    public bool IsHorizontal => Slider is { Orientation: ControlOrientation.Horizontal };
-    public bool IsVertical   => Slider is { Orientation: ControlOrientation.Vertical };
+    public bool IsHorizontal => Model is SliderControl { Orientation: ControlOrientation.Horizontal };
+    public bool IsVertical   => Model is SliderControl { Orientation: ControlOrientation.Vertical };
 
     [RelayCommand] private void SetHorizontal() => SetOrientation(ControlOrientation.Horizontal);
     [RelayCommand] private void SetVertical()   => SetOrientation(ControlOrientation.Vertical);
@@ -610,7 +615,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     /// <summary>A preset is re-applied, so the frame turns with the slider; a custom frame swaps its sides.</summary>
     private void SetOrientation(ControlOrientation o)
     {
-        if (Slider is not { } slider || slider.Orientation == o) return;
+        if (Model is not SliderControl slider || slider.Orientation == o) return;
         Edit(c =>
         {
             var s = (SliderControl)c;
@@ -636,25 +641,25 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     public bool ShowLabel
     {
         get => Slider?.ShowLabel ?? false;
-        set { if (Slider is not null) Edit(c => ((SliderControl)c).ShowLabel = value, "label shown"); }
+        set { if (Slider is not null) Edit(c => ((SteppedControl)c).ShowLabel = value, "label shown"); }
     }
 
     public bool ShowTicks
     {
         get => Slider?.ShowTicks ?? false;
-        set { if (Slider is not null) Edit(c => ((SliderControl)c).ShowTicks = value, "ticks"); }
+        set { if (Slider is not null) Edit(c => ((SteppedControl)c).ShowTicks = value, "ticks"); }
     }
 
     public bool ShowEnds
     {
         get => Slider?.ShowEnds ?? false;
-        set { if (Slider is not null) Edit(c => ((SliderControl)c).ShowEnds = value, "ends"); }
+        set { if (Slider is not null) Edit(c => ((SteppedControl)c).ShowEnds = value, "ends"); }
     }
 
     public bool ShowValue
     {
         get => Slider?.ShowValue ?? false;
-        set { if (Slider is not null) Edit(c => ((SliderControl)c).ShowValue = value, "readout"); }
+        set { if (Slider is not null) Edit(c => ((SteppedControl)c).ShowValue = value, "readout"); }
     }
 
     /// <summary>The colour the control is drawn in — its own, else the default accent it falls back to.</summary>
@@ -683,4 +688,169 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         get => Model?.Locked ?? false;
         set { if (Model is not null) Edit(c => c.Locked = value, value ? "lock" : "unlock"); }
     }
+
+    // ---- kinds (brief-ddl-6) ---------------------------------------------------------------------------
+
+    /// <summary>A slider or a knob: the domain, range and show rows.</summary>
+    public bool IsStepped => Model is SteppedControl;
+    public bool IsSlider  => Model is SliderControl;
+    public bool IsButton  => Model is ButtonControl;
+    public bool IsReadout => Model is ReadoutControl;
+
+    /// <summary>A button's colour is the light it gives; every other control's is its accent.</summary>
+    public string AccentLabel => IsButton ? "Colour" : "Accent";
+
+    /// <summary>The eight colours a button offers before any other (R-ddl6-2).</summary>
+    public IReadOnlyList<ColorPreset> ColorPresets { get; } =
+        [.. ButtonControl.Presets.Select(h => new ColorPreset(h, new SolidColorBrush(Color.Parse(h))))];
+
+    [RelayCommand]
+    private void PickPreset(ColorPreset? preset)
+    {
+        if (preset is not null) SetAccent(Color.Parse(preset.Hex));
+    }
+
+    // ---- the button ------------------------------------------------------------------------------------
+
+    public bool IsToggle    => Model is ButtonControl { Mode: ButtonMode.Toggle };
+    public bool IsMomentary => Model is ButtonControl { Mode: ButtonMode.Momentary };
+
+    [RelayCommand] private void SetToggle()    => SetMode(ButtonMode.Toggle);
+    [RelayCommand] private void SetMomentary() => SetMode(ButtonMode.Momentary);
+
+    /// <summary>A momentary button is dark at rest, so becoming one puts it out.</summary>
+    private void SetMode(ButtonMode mode)
+    {
+        if (Model is not ButtonControl b || b.Mode == mode) return;
+        Edit(c =>
+        {
+            var x = (ButtonControl)c;
+            x.Mode = mode;
+            if (mode == ButtonMode.Momentary) x.On = false;
+        }, "mode");
+    }
+
+    public bool IsLabelUnder  => Model is ButtonControl { LabelPlacement: ButtonLabelPlacement.Under };
+    public bool IsLabelOnFace => Model is ButtonControl { LabelPlacement: ButtonLabelPlacement.OnFace };
+
+    [RelayCommand] private void SetLabelUnder()  => SetPlacement(ButtonLabelPlacement.Under);
+    [RelayCommand] private void SetLabelOnFace() => SetPlacement(ButtonLabelPlacement.OnFace);
+
+    /// <summary>A preset frame follows the label: under it the frame is taller.</summary>
+    private void SetPlacement(ButtonLabelPlacement placement)
+    {
+        if (Model is not ButtonControl b || b.LabelPlacement == placement) return;
+        Edit(c =>
+        {
+            var x = (ButtonControl)c;
+            x.LabelPlacement = placement;
+            if (x.Size != ControlSize.Custom) x.ApplySize(x.Size);
+        }, "label place");
+    }
+
+    // ---- the readout -----------------------------------------------------------------------------------
+
+    /// <summary>Every source a readout can show: the markers and the input controls of the document, and the trial
+    /// selection.</summary>
+    public ObservableCollection<ControlPickItem> ReadoutSourceItems { get; } = new();
+
+    /// <summary>The coordinates the readout's source supplies.</summary>
+    public ObservableCollection<ControlPickItem> ReadoutAxisItems { get; } = new();
+
+    private ControlPickItem? _selectedReadoutSource, _selectedReadoutAxis;
+
+    private void RebuildReadoutPickers()
+    {
+        var sources = new List<ControlPickItem>();
+        var axes = new List<ControlPickItem>();
+        ControlPickItem? source = null, axis = null;
+        if (Model is ReadoutControl r)
+        {
+            var doc = _display.CurrentLinkDocument();
+            foreach (var site in doc.Markers())
+                sources.Add(new ControlPickItem(site.Marker.Id.ToString("D"), $"{site.Marker.Name}  (marker)"));
+            foreach (var (_, c) in doc.Controls())
+                if (ControlLinkSource.IsSource(c)) sources.Add(new ControlPickItem(c.Id, $"{c.Name}  ({c.KindName})"));
+            sources.Add(new ControlPickItem(LinkDocument.SelectionId, "selected  (the trials selected)"));
+            source = sources.FirstOrDefault(i => string.Equals(i.Value, r.Source, StringComparison.OrdinalIgnoreCase));
+            if (source is null && (r.Source ?? r.SourceName) is { } gone)
+                sources.Add(source = new ControlPickItem(gone, $"{r.SourceName ?? gone} (gone)", Missing: true));
+
+            if (r.Source is { } id && doc.FindMarker(id) is { } m)
+                foreach (var c in MarkerLinkSource.Resolve(m, Sources).Coordinates)
+                    axes.Add(new ControlPickItem(c.Axis, c.Unit.Length > 0 ? $"{c.Axis} ({c.Unit})" : c.Axis));
+            if (r.Axis is { } an)
+            {
+                axis = axes.FirstOrDefault(a => a.Value == an);
+                if (axis is null) axes.Add(axis = new ControlPickItem(an, $"{an} (missing)", Missing: true));
+            }
+        }
+        Replace(ReadoutSourceItems, sources);
+        Replace(ReadoutAxisItems, axes);
+        _selectedReadoutSource = source;
+        _selectedReadoutAxis = axis;
+    }
+
+    public ControlPickItem? SelectedReadoutSource
+    {
+        get => _selectedReadoutSource;
+        set
+        {
+            if (_syncing || value is null || value.Missing || Equals(value, _selectedReadoutSource) || Model is not ReadoutControl) return;
+            var doc = _display.CurrentLinkDocument();
+            string name = doc.FindMarker(value.Value)?.Marker.Name ?? doc.FindControl(value.Value)?.Name ?? value.Value;
+            Edit(c =>
+            {
+                var r = (ReadoutControl)c;
+                r.Source = value.Value;
+                r.SourceName = name;
+                // A coordinate is the new source's own: its first, when the readout shows one.
+                r.Axis = r.Show == ReadoutShow.Coordinate && doc.FindMarker(value.Value) is { } m
+                    ? MarkerLinkSource.Resolve(m, Sources).Coordinates.FirstOrDefault()?.Axis : null;
+            }, "source");
+        }
+    }
+
+    public bool IsShowValue      => Model is ReadoutControl { Show: ReadoutShow.Value };
+    public bool IsShowCoordinate => Model is ReadoutControl { Show: ReadoutShow.Coordinate };
+    public bool IsShowReading    => Model is ReadoutControl { Show: ReadoutShow.Reading };
+
+    [RelayCommand] private void SetShowValue()      => SetShow(ReadoutShow.Value);
+    [RelayCommand] private void SetShowCoordinate() => SetShow(ReadoutShow.Coordinate);
+    [RelayCommand] private void SetShowReading()    => SetShow(ReadoutShow.Reading);
+
+    private void SetShow(ReadoutShow show)
+    {
+        if (Model is not ReadoutControl r || r.Show == show) return;
+        Edit(c =>
+        {
+            var x = (ReadoutControl)c;
+            x.Show = show;
+            if (show == ReadoutShow.Coordinate && x.Axis is null && x.Source is { } id
+                && _display.CurrentLinkDocument().FindMarker(id) is { } m)
+                x.Axis = MarkerLinkSource.Resolve(m, Sources).Coordinates.FirstOrDefault()?.Axis;
+        }, "show");
+    }
+
+    /// <summary>The coordinate picker is live only while the readout shows a coordinate.</summary>
+    public bool ReadoutAxisEnabled => IsShowCoordinate;
+
+    public ControlPickItem? SelectedReadoutAxis
+    {
+        get => _selectedReadoutAxis;
+        set
+        {
+            if (_syncing || value is null || value.Missing || Equals(value, _selectedReadoutAxis) || Model is not ReadoutControl) return;
+            Edit(c => ((ReadoutControl)c).Axis = value.Value, "coordinate");
+        }
+    }
+
+    public bool ReadoutShowName
+    {
+        get => (Model as ReadoutControl)?.ShowName ?? false;
+        set { if (Model is ReadoutControl) Edit(c => ((ReadoutControl)c).ShowName = value, "name shown"); }
+    }
 }
+
+/// <summary>One of a button's preset colours, as the inspector's swatch row shows it.</summary>
+public sealed record ColorPreset(string Hex, IBrush Swatch);

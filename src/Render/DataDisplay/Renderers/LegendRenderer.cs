@@ -300,11 +300,15 @@ namespace CircuitRF.Render.DataDisplay
             using var text = new SKPaint { IsAntialias = true, Color = theme.TextColor };
             float sample = (float)m.SampleW, gap = (float)m.Gap;
             float baseline = font.Size * 0.35f;
+            using var hidden = new SKPaint { IsAntialias = true, Color = theme.TextColor.WithAlpha(110) };
             foreach (var r in rows)
             {
+                // A trace hidden by a control keeps its row, its text dimmed and said to be hidden (brief-ddl-6
+                // R-ddl6-5). No layer: an alpha layer is not plain vector in an SVG or PDF export.
                 DrawSample(canvas, r.Trace, r.X, r.X + sample, r.Cy, (float)m.Lw, theme, r.Curve);
                 string s = Fit(r.Label, r.TextRoom, font, fallback);
-                RendererText.DrawLeftTextWithFallback(canvas, s, r.X + sample + gap, r.Cy + baseline, font, fallback, text);
+                RendererText.DrawLeftTextWithFallback(canvas, s, r.X + sample + gap, r.Cy + baseline, font, fallback,
+                                                      r.Trace.HiddenByControl ? hidden : text);
             }
         }
 
@@ -322,7 +326,8 @@ namespace CircuitRF.Render.DataDisplay
                 int i = plot.Traces.IndexOf(t);
                 string name = i >= 0 && i < minimal.Count ? minimal[i] : t.ShortDescription;
                 name = plot.PlotType == PlotType.Rect ? t.RectYLabel(name, false) : name;
-                list.Add((t, curve < 0 ? name : oneTrace ? t.FamilyCurveLabel(curve) : $"{t.FamilyCurveLabel(curve)}: {name}", curve));
+                string label = curve < 0 ? name : oneTrace ? t.FamilyCurveLabel(curve) : $"{t.FamilyCurveLabel(curve)}: {name}";
+                list.Add((t, t.HiddenByControl ? label + " (hidden)" : label, curve));
             }
             return list;
         }

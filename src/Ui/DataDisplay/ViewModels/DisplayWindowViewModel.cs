@@ -588,6 +588,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         var wasFrozen = doc.Traces().SelectMany(x => x.Trace.FrozenLinks.Select(k => (x.Trace, k))).ToHashSet();
         var resolved = LinkResolve.Resolve(doc, new LibraryDataSources(DataSourceLibrary), released);
         LinkConsumerResolutions += resolved.Count;
+        foreach (var tab in Tabs) tab.DataDisplay.RedrawReadouts();   // a readout shows sources, whatever followed
         if (resolved.Count == 0) return;
         var set = resolved.ToHashSet();
         foreach (var tab in Tabs) tab.DataDisplay.AfterLinksFollowed(set, editing);
@@ -739,6 +740,11 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
     /// <summary><b>Controls ▸ Slider</b> (brief-ddl-5 R-ddl5-7).</summary>
     [RelayCommand] private void AddSlider() => DataDisplay?.AddSlider();
+
+    /// <summary><b>Controls ▸ Knob</b>, <b>Button</b> and <b>Readout</b> (brief-ddl-6).</summary>
+    [RelayCommand] private void AddKnob() => DataDisplay?.AddKnob();
+    [RelayCommand] private void AddButton() => DataDisplay?.AddButton();
+    [RelayCommand] private void AddReadout() => DataDisplay?.AddReadout();
 
     /// <summary>The statistics table of the selected Monte Carlo result (brief-yield-8 R-ya8-5). Disabled, rather than
     /// pressed to no effect, while the selected source carries no statistics — its tooltip says what it needs.</summary>

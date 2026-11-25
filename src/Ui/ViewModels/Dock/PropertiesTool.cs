@@ -296,7 +296,14 @@ public partial class PropertiesTool : Tool
 
     /// <summary>What the selected control is, as the panel header names it.</summary>
     private static string HeadingOf(ControlInspectorViewModel c)
-        => c.Target?.Model is SliderControl ? "Slider" : "Control";
+        => c.Target?.Model switch
+        {
+            SliderControl  => "Slider",
+            KnobControl    => "Knob",
+            ButtonControl  => "Button",
+            ReadoutControl => "Readout",
+            _              => "Control",
+        };
 
     partial void OnControlInspectorVmChanged(ControlInspectorViewModel? oldValue, ControlInspectorViewModel? newValue)
     {

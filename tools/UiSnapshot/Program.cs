@@ -1587,10 +1587,15 @@ else if (view == "control-inspector")
     void PrintControl()
     {
         var m = tab.DataDisplay.Controls[0].Model;
-        string detail = m is CircuitRF.Render.DataDisplay.SliderControl sl
-            ? $"{sl.Domain} {sl.Orientation} stops={sl.Stops.Count} value={sl.CurrentValue:G6} {sl.DisplayUnit}"
-              + (sl.Domain == CircuitRF.Render.DataDisplay.SliderDomain.Bound ? $" src={sl.SourcePath} cube={sl.CubeName} axis={sl.AxisName}" : "")
-            : m.KindName;
+        string detail = m switch
+        {
+            CircuitRF.Render.DataDisplay.SteppedControl sl =>
+                $"{m.KindName} {sl.Domain} {(sl as CircuitRF.Render.DataDisplay.SliderControl)?.Orientation} stops={sl.Stops.Count} value={sl.CurrentValue:G6} {sl.DisplayUnit}"
+                + (sl.Domain == CircuitRF.Render.DataDisplay.SliderDomain.Bound ? $" src={sl.SourcePath} cube={sl.CubeName} axis={sl.AxisName}" : ""),
+            CircuitRF.Render.DataDisplay.ButtonControl b => $"button {b.Mode} on={b.On} label={b.LabelPlacement}",
+            CircuitRF.Render.DataDisplay.ReadoutControl r => $"readout {r.SourceName} {r.Show} {r.Axis} text='{r.Text}'",
+            _ => m.KindName,
+        };
         Console.WriteLine($"control {m.Name} label='{m.Label}' {m.Size} {m.Width:0}x{m.Height:0} accent={m.Accent ?? "default"} "
                         + $"locked={m.Locked} {detail} problem='{inspector.Problem}' nameError='{inspector.NameError}'");
         if (inspector.IsBound)

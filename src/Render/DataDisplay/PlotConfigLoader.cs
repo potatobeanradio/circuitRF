@@ -360,6 +360,8 @@ public static class PlotConfigLoader
         trace.ExpressionFreqIndex = traceConfig.ExpressionFreqIndex ?? -1;
         trace.ExpressionFreqLink     = traceConfig.ExpressionFreqLink;
         trace.ExpressionFreqLinkName = traceConfig.ExpressionFreqLinkName;
+        trace.ShownBy         = traceConfig.ShownBy;
+        trace.ShownByInverted = traceConfig.ShownByInverted;
         trace.Label = string.IsNullOrEmpty(traceConfig.Label) ? null : traceConfig.Label;
         if (!string.IsNullOrEmpty(traceConfig.XSourcePath))
             trace.XSourcePath = sources.ResolveAbs(traceConfig.XSourcePath);

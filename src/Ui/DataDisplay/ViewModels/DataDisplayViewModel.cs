@@ -324,6 +324,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         try
         {
             var moved = LinkResolve.Resolve(CurrentLinkDocument(), new LibraryDataSources(Library));
+            RedrawReadouts();
             if (moved.Count > 0) AfterLinksFollowed(moved, editing);
         }
         finally { _localFollowing = false; }
@@ -2253,6 +2254,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             ExpressionFreqIndex = t.ExpressionFreqIndex >= 0 ? t.ExpressionFreqIndex : null,
             ExpressionFreqLink     = t.ExpressionFreqLink,
             ExpressionFreqLinkName = t.ExpressionFreqLinkName,
+            ShownBy         = t.ShownBy,
+            ShownByInverted = t.ShownByInverted,
             XSourcePath   = t.XSourcePath is { Length: > 0 } xp
                 ? ComputeSourceKey(xp, library)
                 : null,

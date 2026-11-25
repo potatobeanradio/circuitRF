@@ -174,7 +174,7 @@ internal sealed class CddSources : IPlotDataSources
         // A bound slider's source (brief-ddl-5) is read when it is there and never refused when it is not: a slider
         // whose source is gone keeps the range it last read, as it does in the window.
         foreach (var tab in tabs)
-        foreach (var slider in (tab.Controls ?? []).OfType<SliderControl>())
+        foreach (var slider in (tab.Controls ?? []).OfType<SteppedControl>())
         {
             if (slider.Domain != SliderDomain.Bound || slider.SourcePath is not { Length: > 0 } sref
                 || sref == DataSourceRef.Selected || s._refToPath.ContainsKey(sref)) continue;

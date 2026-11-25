@@ -306,6 +306,15 @@
                             <MenuItem Header="Slider" Command="{Binding ViewModel.Window.AddSliderCommand}">
                                 <MenuItem.Icon><mi:MaterialIcon Kind="RayStartEnd" Width="16" Height="16"/></MenuItem.Icon>
                             </MenuItem>
+                            <MenuItem Header="Knob" Command="{Binding ViewModel.Window.AddKnobCommand}">
+                                <MenuItem.Icon><mi:MaterialIcon Kind="Speedometer" Width="16" Height="16"/></MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="Button" Command="{Binding ViewModel.Window.AddButtonCommand}">
+                                <MenuItem.Icon><mi:MaterialIcon Kind="RadioboxMarked" Width="16" Height="16"/></MenuItem.Icon>
+                            </MenuItem>
+                            <MenuItem Header="Readout" Command="{Binding ViewModel.Window.AddReadoutCommand}">
+                                <MenuItem.Icon><mi:MaterialIcon Kind="Numeric" Width="16" Height="16"/></MenuItem.Icon>
+                            </MenuItem>
                         </MenuFlyout>
                     </Button.Flyout>
                 </Button>

@@ -472,6 +472,50 @@ slider's ends are its axis's samples and are not edited there. The editor sits o
 by default and saved as `PlotContainerConfig.Card` — whole plots sit on one panel style (`CardStyle`): a shade off
 the background, a hairline border, rounded corners. One style in one place, so the three never drift apart.
 
+**The knob, the button and the readout (DDL-6).** Every control takes the frame rules above (operate versus
+arrange, S/M/L and the gripper, Lock Position).
+
+*The knob* (`KnobControl`) shares the slider's two domains and value rules through their common base,
+`SteppedControl`. Its face is a dial over a 270° sweep, open at the bottom — the first stop at lower left, the last
+at lower right — with ticks outside it, an accent arc for the value run, an indicator line on the body and the
+value under it. A vertical drag turns it, up increasing: one full sweep per 200 px, a tenth of that rate with Ctrl
+(or Cmd); pressing or releasing Ctrl mid-drag changes the rate from where the pointer is, without a jump. The
+wheel over the dial steps it one stop a notch. On a BOUND knob a press on a tick sets that stop. A locked knob's
+frame drag turns it, as its face does.
+
+*The button* (`ButtonControl`) is `Toggle` (a click flips it; one undo step, saved) or `Momentary` (1 while
+pressed; neither recorded nor saved — a gesture, not a setting). Its illumination colour is the control's accent,
+picked from eight presets or any colour; its label sits under the face or on it. Dark, the face is the colour at
+low saturation; lit, it is the colour with a soft glow past its edge and a tighter bloom at its heart. **Both
+falloffs are graded vector discs, not gradient shaders**: Skia's SVG writer has no radial gradient — it leaves an
+empty `<defs/>` and an unfilled circle, which every viewer paints black — so each falloff is concentric circles
+whose alphas compose to it exactly (`ControlRenderer.GradedDisc`). They are plain vector in SVG and PDF and look
+the same on the canvas. Its value is 0 or 1 with no unit; a pinned axis linked to it takes that as an INDEX
+(`LinkScalar.IsIndex`, R-ddl6-6), so a button flips between the two cases of a two-element axis; on a longer
+axis the note says only the first two are reachable.
+
+*The readout* (`ReadoutControl`) is an indicator, not a source: it names a marker, a control or `selected`
+(by id, as a link does) and shows its VALUE, one COORDINATE it supplies (`m1 · Vgs`), or a marker's READING. A
+marker's value and reading are lines of its own info box (`Trace.BuildMarkerBoxLines`: the X line, and the last
+line), so a readout says what the box says, unit and prefix included; a control's value is written as the control
+writes it, and a button reads On or Off. What it shows is worked out at the end of `LinkResolve`
+(`ReadoutResolve`), so the window, Copy/Export and `render` agree; it is not saved. Its digits fill the frame and
+shrink to its width; the name line above them is optional.
+
+*Display values in expressions.* An `@name` outside a slice is a scalar operand (R-ddl6-4): the source's value in
+base SI — a control's value, a marker's X, the lowest trial selected — injected through
+`Evaluator.InjectResolved` as a placeholder (`__l0`), never written into the text. **A button enters as a Bool**,
+because the expression language takes only a Bool as a condition: `if(@button1, dB(SP1.S(2,1)), dB(SP1.S(1,1)))`,
+`!@button1` and `&&` read it as the switch it is; arithmetic on it is written `if(@button1, 1, 0)`. The link graph
+already counts these operands, so a cycle through one is refused. A source with no number (a free point on the
+Smith chart, a readout) is an error on the trace that says so.
+
+*Shown by a control.* A trace's card has an eye whose menu binds the trace to a control: shown while its value is
+non-zero, or zero when inverted (`TraceConfig.ShownBy` holds the control's id, `ShownByInverted`). A hidden
+trace still resolves, so showing it is instant; it is not drawn (nor its markers), and the legend keeps its row,
+dimmed, with "(hidden)". A control that is gone leaves the trace shown. Resolved in `LinkResolve`, so `render`
+draws the same set.
+
 **HB drive.** In the shipped power amplifier example's HB sweep, the node voltages, currents and every measurement
 carry the same sweep axis (name, length, values, unitless), so a marker on Pout against Pin drives
 `V[@m1, node, :]` by index (rule 1). Recorded in `src/Render/DataDisplay/RESOLVED.md`.

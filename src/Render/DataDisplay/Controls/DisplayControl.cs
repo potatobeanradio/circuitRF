@@ -30,8 +30,23 @@ public enum ControlOrientation { Horizontal, Vertical }
 [JsonConverter(typeof(JsonStringEnumConverter<SliderDomain>))]
 public enum SliderDomain { Range, Bound }
 
+/// <summary>What a button does when its face is pressed (brief-ddl-6 R-ddl6-2).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ButtonMode>))]
+public enum ButtonMode { Toggle, Momentary }
+
+/// <summary>Where a button's label sits.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ButtonLabelPlacement>))]
+public enum ButtonLabelPlacement { Under, OnFace }
+
+/// <summary>What a readout shows of its source (brief-ddl-6 R-ddl6-3).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ReadoutShow>))]
+public enum ReadoutShow { Value, Coordinate, Reading }
+
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "Kind")]
 [JsonDerivedType(typeof(SliderControl), "Slider")]
+[JsonDerivedType(typeof(KnobControl), "Knob")]
+[JsonDerivedType(typeof(ButtonControl), "Button")]
+[JsonDerivedType(typeof(ReadoutControl), "Readout")]
 public abstract class DisplayControl
 {
     /// <summary>The id a link names — persistent, so renaming keeps links (overview D1).</summary>
@@ -105,14 +120,13 @@ public abstract class DisplayControl
 }
 
 /// <summary>
-/// A slider (R-ddl5-3). Its value is always one of its stops: a BOUND slider's stops are one axis's samples, so its
-/// value is a sample and it supplies exactly the coordinate a marker on that axis would; a RANGE slider's stops are
-/// its own, and its value is a number with a unit.
+/// A control whose value is one of a list of stops (R-ddl5-3): the slider and the knob (brief-ddl-6 R-ddl6-1), which
+/// share the two domains and every value rule. A BOUND control's stops are one axis's samples, so its value is a sample
+/// and it supplies exactly the coordinate a marker on that axis would; a RANGE control's stops are its own, and its
+/// value is a number with a unit.
 /// </summary>
-public sealed class SliderControl : DisplayControl
+public abstract class SteppedControl : DisplayControl
 {
-    public override string KindName => "slider";
-
     public SliderDomain Domain { get; set; } = SliderDomain.Range;
 
     // ---- bound to an axis ----
@@ -128,7 +142,7 @@ public sealed class SliderControl : DisplayControl
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? AxisName { get; set; }
 
-    /// <summary>The axis's samples as they were last read. A source that is gone keeps them (R-ddl5-7), so the slider
+    /// <summary>The axis's samples as they were last read. A source that is gone keeps them (R-ddl5-7), so the control
     /// still has its range and its value, and says so.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double[]? BoundValues { get; set; }
@@ -137,7 +151,7 @@ public sealed class SliderControl : DisplayControl
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? BoundUnit { get; set; }
 
-    /// <summary>The stop a bound slider is on — an index into the axis.</summary>
+    /// <summary>The stop a bound control is on — an index into the axis.</summary>
     public int Index { get; set; }
 
     // ---- a range of its own ----
@@ -153,12 +167,11 @@ public sealed class SliderControl : DisplayControl
     public string Unit { get; set; } = "";
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Log { get; set; }
-    /// <summary>A range slider's value, in <see cref="Unit"/>.</summary>
+    /// <summary>A range control's value, in <see cref="Unit"/>.</summary>
     public double Value { get; set; }
 
     // ---- look ----
 
-    public ControlOrientation Orientation { get; set; } = ControlOrientation.Horizontal;
     /// <summary>Whether the name or label is drawn in the control. Off, the label strip is given up and the rest moves
     /// into its space.</summary>
     public bool ShowLabel { get; set; } = true;
@@ -166,33 +179,14 @@ public sealed class SliderControl : DisplayControl
     public bool ShowEnds  { get; set; } = true;
     public bool ShowValue { get; set; } = true;
 
-    public override (double Width, double Height) PresetSize(ControlSize size)
+    protected void CopyStepped(SteppedControl o)
     {
-        var (w, h) = size switch
-        {
-            ControlSize.Small => (200.0, 60.0),
-            ControlSize.Large => (360.0, 100.0),
-            _                 => (240.0, 68.0),
-        };
-        return Orientation == ControlOrientation.Vertical ? (h * 1.25, w) : (w, h);
-    }
-
-    public override DisplayControl Clone()
-    {
-        var c = new SliderControl();
-        c.CopyFrom(this);
-        return c;
-    }
-
-    public override void CopyFrom(DisplayControl other)
-    {
-        var o = (SliderControl)other;
         CopyBase(o);
         Domain = o.Domain; SourcePath = o.SourcePath; CubeName = o.CubeName; AxisName = o.AxisName;
         BoundValues = o.BoundValues is null ? null : (double[])o.BoundValues.Clone();
         BoundUnit = o.BoundUnit; Index = o.Index;
         Start = o.Start; Stop = o.Stop; Step = o.Step; Points = o.Points; Unit = o.Unit; Log = o.Log; Value = o.Value;
-        Orientation = o.Orientation; ShowLabel = o.ShowLabel; ShowTicks = o.ShowTicks; ShowEnds = o.ShowEnds; ShowValue = o.ShowValue;
+        ShowLabel = o.ShowLabel; ShowTicks = o.ShowTicks; ShowEnds = o.ShowEnds; ShowValue = o.ShowValue;
     }
 
     // ---- stops ----
@@ -201,7 +195,7 @@ public sealed class SliderControl : DisplayControl
     public const int ContinuousStops = 1001;
 
     /// <summary>
-    /// The values the slider can take, in order, in the unit it shows (<see cref="DisplayUnit"/>): a bound slider's
+    /// The values the control can take, in order, in the unit it shows (<see cref="DisplayUnit"/>): a bound control's
     /// axis samples (as last read), else the range's own stops. Never empty.
     /// </summary>
     [JsonIgnore]
@@ -229,11 +223,11 @@ public sealed class SliderControl : DisplayControl
         }
     }
 
-    /// <summary>The unit the stops and the readout are in: the axis's for a bound slider, the range's own otherwise.</summary>
+    /// <summary>The unit the stops and the readout are in: the axis's for a bound control, the range's own otherwise.</summary>
     [JsonIgnore]
     public string DisplayUnit => Domain == SliderDomain.Bound ? BoundUnit ?? "" : Unit;
 
-    /// <summary>The stop the slider is on.</summary>
+    /// <summary>The stop the control is on.</summary>
     [JsonIgnore]
     public int StopIndex
     {
@@ -249,7 +243,26 @@ public sealed class SliderControl : DisplayControl
     [JsonIgnore]
     public double CurrentValue => Stops[StopIndex];
 
-    /// <summary>Puts the slider on stop <paramref name="index"/> (clamped). True when it moved.</summary>
+    /// <summary>Where the control is along its stops, 0 at the first and 1 at the last — the knob's angle.</summary>
+    [JsonIgnore]
+    public double Fraction
+    {
+        get
+        {
+            int n = Stops.Count;
+            return n > 1 ? (double)StopIndex / (n - 1) : 0;
+        }
+    }
+
+    /// <summary>Puts the control on the stop nearest fraction <paramref name="f"/> of the way along (clamped). True when
+    /// it moved.</summary>
+    public bool SetFraction(double f)
+    {
+        int n = Stops.Count;
+        return SetStop((int)Math.Round(Math.Clamp(f, 0, 1) * (n - 1)));
+    }
+
+    /// <summary>Puts the control on stop <paramref name="index"/> (clamped). True when it moved.</summary>
     public bool SetStop(int index)
     {
         var s = Stops;
@@ -275,6 +288,177 @@ public sealed class SliderControl : DisplayControl
             if (d < bestD) { bestD = d; best = i; }
         }
         return best;
+    }
+}
+
+/// <summary>A slider (R-ddl5-3): a stepped control drawn as a track and a thumb, horizontal or vertical.</summary>
+public sealed class SliderControl : SteppedControl
+{
+    public override string KindName => "slider";
+
+    public ControlOrientation Orientation { get; set; } = ControlOrientation.Horizontal;
+
+    public override (double Width, double Height) PresetSize(ControlSize size)
+    {
+        var (w, h) = size switch
+        {
+            ControlSize.Small => (200.0, 60.0),
+            ControlSize.Large => (360.0, 100.0),
+            _                 => (240.0, 68.0),
+        };
+        return Orientation == ControlOrientation.Vertical ? (h * 1.25, w) : (w, h);
+    }
+
+    public override DisplayControl Clone()
+    {
+        var c = new SliderControl();
+        c.CopyFrom(this);
+        return c;
+    }
+
+    public override void CopyFrom(DisplayControl other)
+    {
+        var o = (SliderControl)other;
+        CopyStepped(o);
+        Orientation = o.Orientation;
+    }
+}
+
+/// <summary>
+/// A knob (brief-ddl-6 R-ddl6-1): the slider's two domains and value rules, drawn as a dial over a 270° sweep. A
+/// vertical drag turns it, the wheel steps it, and a click on a bound knob's tick sets that stop.
+/// </summary>
+public sealed class KnobControl : SteppedControl
+{
+    public override string KindName => "knob";
+
+    /// <summary>The sweep of the dial, in degrees, from its first stop to its last.</summary>
+    public const double SweepDegrees = 270;
+
+    /// <summary>A vertical drag of this many pixels turns the knob through its whole sweep; ten times as many with
+    /// Ctrl.</summary>
+    public const double PixelsPerSweep = 200;
+
+    public override (double Width, double Height) PresetSize(ControlSize size) => size switch
+    {
+        ControlSize.Small => (96.0, 112.0),
+        ControlSize.Large => (164.0, 188.0),
+        _                 => (120.0, 140.0),
+    };
+
+    public override DisplayControl Clone()
+    {
+        var c = new KnobControl();
+        c.CopyFrom(this);
+        return c;
+    }
+
+    public override void CopyFrom(DisplayControl other) => CopyStepped((KnobControl)other);
+}
+
+/// <summary>
+/// An illuminated button (brief-ddl-6 R-ddl6-2). <see cref="ButtonMode.Toggle"/> flips on a click;
+/// <see cref="ButtonMode.Momentary"/> is on only while pressed. Its value is 0 or 1, with no unit, and the illumination
+/// colour is the control's accent.
+/// </summary>
+public sealed class ButtonControl : DisplayControl
+{
+    public override string KindName => "button";
+
+    public ButtonMode Mode { get; set; } = ButtonMode.Toggle;
+
+    public ButtonLabelPlacement LabelPlacement { get; set; } = ButtonLabelPlacement.Under;
+
+    /// <summary>Lit. Saved for a toggle, so a display reopens as it was left; a momentary button is never saved lit.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool On { get; set; }
+
+    /// <summary>The value it supplies: 1 lit, 0 dark.</summary>
+    [JsonIgnore] public double NumericValue => On ? 1 : 0;
+
+    /// <summary>The eight colours the inspector offers before "any colour".</summary>
+    public static readonly string[] Presets =
+        ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#00c7be", "#0a84ff", "#af52de", "#f2f2f7"];
+
+    public override (double Width, double Height) PresetSize(ControlSize size)
+    {
+        double k = size switch { ControlSize.Small => 0.8, ControlSize.Large => 1.35, _ => 1.0 };
+        return LabelPlacement == ButtonLabelPlacement.Under ? (96 * k, 112 * k) : (96 * k, 96 * k);
+    }
+
+    public override DisplayControl Clone()
+    {
+        var c = new ButtonControl();
+        c.CopyFrom(this);
+        return c;
+    }
+
+    public override void CopyFrom(DisplayControl other)
+    {
+        var o = (ButtonControl)other;
+        CopyBase(o);
+        Mode = o.Mode; LabelPlacement = o.LabelPlacement; On = o.On;
+    }
+}
+
+/// <summary>
+/// A readout (brief-ddl-6 R-ddl6-3): an indicator with no input. It shows a link source's value as text — a marker's,
+/// a control's, <c>selected</c> — with its unit and SI prefix; or one coordinate the source supplies; or a marker's
+/// reading on its own trace (its info box's value line). What it shows is worked out where links are resolved
+/// (<see cref="ReadoutResolve"/>), so the window, Copy/Export and <c>render</c> show the same text.
+/// </summary>
+public sealed class ReadoutControl : DisplayControl
+{
+    public override string KindName => "readout";
+
+    /// <summary>The source's id (a marker's or a control's), or <c>selected</c>. A link follows the id, so renaming the
+    /// source keeps it (overview D1).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Source { get; set; }
+
+    /// <summary>The source's name as last read — what a hand-written file names, and what is shown when it is gone.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceName { get; set; }
+
+    public ReadoutShow Show { get; set; } = ReadoutShow.Value;
+
+    /// <summary>The coordinate shown with <see cref="ReadoutShow.Coordinate"/>: an axis the source supplies.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Axis { get; set; }
+
+    /// <summary>The name line above the value: the label, else <c>m1 · Vgs</c>.</summary>
+    public bool ShowName { get; set; } = true;
+
+    /// <summary>The value as last resolved, with its unit. Not saved: worked out again on open.</summary>
+    [JsonIgnore] public string? Text { get; set; }
+
+    /// <summary>What the name line says when there is no label: <c>m1</c>, <c>m1 · Vgs</c>.</summary>
+    [JsonIgnore] public string? NameText { get; set; }
+
+    /// <summary>Why there is nothing to show — no source chosen, or the source is gone. Null when <see cref="Text"/> is
+    /// current.</summary>
+    [JsonIgnore] public string? Problem { get; set; }
+
+    public override (double Width, double Height) PresetSize(ControlSize size) => size switch
+    {
+        ControlSize.Small => (150.0, 48.0),
+        ControlSize.Large => (280.0, 88.0),
+        _                 => (196.0, 62.0),
+    };
+
+    public override DisplayControl Clone()
+    {
+        var c = new ReadoutControl();
+        c.CopyFrom(this);
+        return c;
+    }
+
+    public override void CopyFrom(DisplayControl other)
+    {
+        var o = (ReadoutControl)other;
+        CopyBase(o);
+        Source = o.Source; SourceName = o.SourceName; Show = o.Show; Axis = o.Axis; ShowName = o.ShowName;
+        Text = o.Text; NameText = o.NameText; Problem = o.Problem;
     }
 }
 

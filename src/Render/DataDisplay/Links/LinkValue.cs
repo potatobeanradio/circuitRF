@@ -51,7 +51,9 @@ public sealed record LinkPosition(
 }
 
 /// <summary>A plain value with its unit — what a display control supplies (DDL-5).</summary>
-public sealed record LinkScalar(double Value, string Unit);
+/// <param name="IsIndex">The value is a case number — a button's 0 or 1 (brief-ddl-6 R-ddl6-6) — which a pinned axis
+/// takes as its index rather than matching a sample to it.</param>
+public sealed record LinkScalar(double Value, string Unit, bool IsIndex = false);
 
 /// <summary>
 /// What a link source gave, the last time it was asked. <see cref="Frozen"/> is set when the source is gone and this

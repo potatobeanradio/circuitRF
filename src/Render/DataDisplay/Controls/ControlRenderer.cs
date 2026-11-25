@@ -20,7 +20,7 @@ using SkiaSharp;
 
 namespace CircuitRF.Render.DataDisplay;
 
-public static class ControlRenderer
+public static partial class ControlRenderer
 {
     /// <summary>The accent a control takes when it names none: the display's own selection colour.</summary>
     public static SKColor DefaultAccent => RenderTheme.SelectionColorFallback;
@@ -84,7 +84,7 @@ public static class ControlRenderer
     }
 
     /// <summary>Whether the widest value a horizontal slider can show fits between its end labels with room either side.</summary>
-    private static bool ValueFitsBetweenEnds(SliderControl c, float w, float u, float pad)
+    private static bool ValueFitsBetweenEnds(SteppedControl c, float w, float u, float pad)
     {
         if (!c.ShowEnds) return true;
         var stops = c.Stops;
@@ -112,6 +112,8 @@ public static class ControlRenderer
     public static bool HitFace(DisplayControl c, float w, float h, SKPoint p) => c switch
     {
         SliderControl s => Layout(s, w, h).Face.Contains(p),
+        KnobControl k   => KnobFaceContains(k, w, h, p),
+        ButtonControl b => ButtonFaceContains(b, w, h, p),
         _ => false,
     };
 
@@ -134,7 +136,10 @@ public static class ControlRenderer
         canvas.Translate(bounds.Left, bounds.Top);
         switch (c)
         {
-            case SliderControl s: DrawSlider(canvas, s, theme, bounds.Width, bounds.Height); break;
+            case SliderControl s:  DrawSlider(canvas, s, theme, bounds.Width, bounds.Height); break;
+            case KnobControl k:    DrawKnob(canvas, k, theme, bounds.Width, bounds.Height); break;
+            case ButtonControl b:  DrawButton(canvas, b, theme, bounds.Width, bounds.Height); break;
+            case ReadoutControl r: DrawReadout(canvas, r, theme, bounds.Width, bounds.Height); break;
         }
         canvas.Restore();
     }
@@ -282,6 +287,14 @@ public static class ControlRenderer
     public static void DrawChrome(SKCanvas canvas, DisplayControl control, float w, float h, bool selected, bool locked,
                                   bool grip, bool thumbActive, SKColor selection)
     {
+        if (thumbActive && control is KnobControl knob)
+        {
+            // The dial answers the pointer as the slider's thumb does: a ring of its accent around it.
+            var kl = KnobLayout(knob, w, h);
+            using var halo = new SKPaint { Color = AccentOf(knob).WithAlpha(60), IsAntialias = true, Style = SKPaintStyle.Stroke,
+                                           StrokeWidth = 3 * kl.U };
+            canvas.DrawCircle(kl.Center, kl.Radius * 0.72f + 3 * kl.U, halo);
+        }
         if (thumbActive && control is SliderControl s)
         {
             // The thumb answers the pointer: a ring of its accent around it while hovered or held. A plain stroke,
@@ -318,7 +331,7 @@ public static class ControlRenderer
     }
 
     /// <summary>A stop as the slider shows it: engineering notation in its unit (<c>2.4 GHz</c>), or the bare number.</summary>
-    public static string Format(SliderControl c, double v, string unit)
+    public static string Format(SteppedControl c, double v, string unit)
     {
         // A range reads in the unit it was written in — a MHz slider says "2400 MHz", never "2.4 GHz", so the number
         // the user typed is the number they see, and the end editor opens on the same text. A bound slider shows its

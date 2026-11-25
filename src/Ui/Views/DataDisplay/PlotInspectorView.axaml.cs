@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using Avalonia;
@@ -181,10 +182,17 @@ public partial class PlotInspectorView : UserControl
 
     /// <summary>The trace card's Statistics menu (brief-yield-8 R-ya8-2), built from the card's view model on each
     /// click — its entries depend on the trace and its source.</summary>
+    /// <summary>The card's eye (brief-ddl-6 R-ddl6-5): always shown, or shown by one of the document's controls.</summary>
+    private void OnVisibilityMenuClick(object? sender, RoutedEventArgs e)
+        => OpenEntryMenu(sender, vm => vm.VisibilityMenu());
+
     private void OnStatisticsMenuClick(object? sender, RoutedEventArgs e)
+        => OpenEntryMenu(sender, vm => vm.StatisticsMenu());
+
+    private static void OpenEntryMenu(object? sender, Func<TraceRowViewModel, IReadOnlyList<StatisticsMenuEntry>> build)
     {
         if (sender is not Control anchor || anchor.DataContext is not TraceRowViewModel vm) return;
-        var entries = vm.StatisticsMenu();
+        var entries = build(vm);
         if (entries.Count == 0) return;
         var menu = new ContextMenu();
         foreach (var entry in entries) menu.Items.Add(MenuItemOf(entry));

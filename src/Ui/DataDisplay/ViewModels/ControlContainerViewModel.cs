@@ -97,12 +97,99 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
     internal void BeginValueDrag(SKPoint viewPoint)
     {
         _valueStart = Model.Clone();
+        if (Model is KnobControl knob)
+        {
+            // A knob is turned by the drag, not set by where it is pressed — except a bound knob's tick, which a
+            // press sets (R-ddl6-1).
+            if (ControlRenderer.KnobTickAt(knob, (float)ViewWidth, (float)ViewHeight, viewPoint) is { } tick && knob.SetStop(tick))
+            {
+                RedrawRequested?.Invoke();
+                Display.RequestLinkFollow(released: false);
+            }
+            BeginKnobTurn(viewPoint.Y, fine: false);
+            return;
+        }
         DragValueTo(viewPoint);
     }
+
+    // ---- the knob: a vertical drag turns it (R-ddl6-1) ----------------------------------------------
+
+    private double _turnFrom, _turnY, _lastTurnY;
+    private bool _turnFine;
+
+    /// <summary>Takes where the knob is now as the start of a turn: the drag's distance from <paramref name="y"/> turns
+    /// it from here. Called again when Ctrl is pressed or let go mid-drag, so the rate changes without a jump.</summary>
+    internal void BeginKnobTurn(double y, bool fine)
+    {
+        _turnFrom = Model is SteppedControl s ? s.Fraction : 0;
+        _turnY = _lastTurnY = y;
+        _turnFine = fine;
+    }
+
+    /// <summary>
+    /// The knob at pointer height <paramref name="y"/> (screen pixels): up increases, one full sweep per
+    /// <see cref="KnobControl.PixelsPerSweep"/> pixels, a tenth of that rate with <paramref name="fine"/> (Ctrl).
+    /// </summary>
+    internal void TurnKnob(double y, bool fine)
+    {
+        if (Model is not KnobControl k) return;
+        if (fine != _turnFine)
+        {
+            // The rate changes from where the pointer last was, so pressing Ctrl mid-drag never jumps the knob.
+            _turnFrom = Math.Clamp(_turnFrom + (_turnY - _lastTurnY) / (KnobControl.PixelsPerSweep * (_turnFine ? 10 : 1)), 0, 1);
+            _turnY = _lastTurnY;
+            _turnFine = fine;
+        }
+        _lastTurnY = y;
+        double perSweep = KnobControl.PixelsPerSweep * (fine ? 10 : 1);
+        if (!k.SetFraction(_turnFrom + (_turnY - y) / perSweep)) return;
+        RedrawRequested?.Invoke();
+        Display.RequestLinkFollow(released: false);
+    }
+
+    // ---- the button (R-ddl6-2) ----------------------------------------------------------------------
+
+    /// <summary>
+    /// A press on a button's face: a toggle flips, one undo step, saved; a momentary button lights while held and is
+    /// neither recorded nor saved — it is a gesture, not a setting. Links follow either way.
+    /// </summary>
+    internal void PressButton()
+    {
+        if (Model is not ButtonControl b) return;
+        if (b.Mode == ButtonMode.Toggle)
+        {
+            var before = Model.Clone();
+            b.On = !b.On;
+            RedrawRequested?.Invoke();
+            Record(before, b.On ? "on" : "off");
+        }
+        else
+        {
+            if (b.On) return;
+            b.On = true;
+            Gesture.Note("control.press", Model.Name);
+            RedrawRequested?.Invoke();
+        }
+        Display.RequestLinkFollow(released: true);
+    }
+
+    /// <summary>The press ended (released, or the pointer lost): a momentary button goes dark.</summary>
+    internal void ReleaseButton()
+    {
+        if (Model is not ButtonControl { Mode: ButtonMode.Momentary, On: true } b) return;
+        b.On = false;
+        Gesture.Note("control.release", Model.Name);
+        RedrawRequested?.Invoke();
+        Display.RequestLinkFollow(released: true);
+    }
+
+    /// <summary>A readout's text changed with the links it shows: drawn again.</summary>
+    internal void RequestRedraw() => RedrawRequested?.Invoke();
 
     /// <summary>The value under <paramref name="viewPoint"/> (control-relative, screen pixels); links follow live.</summary>
     internal void DragValueTo(SKPoint viewPoint)
     {
+        if (Model is KnobControl) { TurnKnob(viewPoint.Y, _turnFine); return; }
         if (Model is not SliderControl s) return;
         int stop = ControlRenderer.StopAt(s, (float)ViewWidth, (float)ViewHeight, viewPoint);
         if (!s.SetStop(stop)) return;
@@ -132,11 +219,13 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
     {
         _valueStart = Model.Clone();
         _relativeFrom = viewPoint;
-        _relativeStop = Model is SliderControl s ? s.StopIndex : 0;
+        _relativeStop = Model is SteppedControl s ? s.StopIndex : 0;
+        if (Model is KnobControl) BeginKnobTurn(viewPoint.Y, fine: false);
     }
 
     internal void DragValueRelative(SKPoint viewPoint)
     {
+        if (Model is KnobControl) { TurnKnob(viewPoint.Y, _turnFine); return; }
         if (Model is not SliderControl s) return;
         var l = ControlRenderer.Layout(s, (float)ViewWidth, (float)ViewHeight);
         float dx = l.TrackEnd.X - l.TrackStart.X, dy = l.TrackEnd.Y - l.TrackStart.Y;
@@ -153,7 +242,7 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
     /// <summary>An arrow key on a selected control: one stop, one undo step (as a selected marker steps).</summary>
     public bool Step(int direction)
     {
-        if (Model is not SliderControl s) return false;
+        if (Model is not SteppedControl s) return false;
         var start = Model.Clone();
         if (!s.SetStop(s.StopIndex + direction)) return false;
         RedrawRequested?.Invoke();

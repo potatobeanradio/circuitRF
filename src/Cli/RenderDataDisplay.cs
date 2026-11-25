@@ -173,7 +173,7 @@ internal static class RenderDataDisplay
 
         // A bound slider reads its stops from its source; then a --control sets a value for this render only
         // (brief-ddl-5 R-ddl5-10), on the document in memory.
-        foreach (var slider in tabs.SelectMany(t => t.Controls ?? []).OfType<SliderControl>())
+        foreach (var slider in tabs.SelectMany(t => t.Controls ?? []).OfType<SteppedControl>())
             if (slider.Domain == SliderDomain.Bound) ControlLinkSource.Refresh(slider, sources);
         foreach (var cv in controlSets)
         {
@@ -449,10 +449,13 @@ internal static class RenderDataDisplay
     private static bool HoldsMarkers(TabConfig tab)
         => tab.Plots.Any(p => p.Traces.Any(t => t.Markers.Count > 0));
 
+    // A trace shown by a control and a readout (brief-ddl-6 R-ddl6-3, R-ddl6-5) are resolved by the link pass too.
     private static bool HoldsLinks(TabConfig tab)
         => tab.Plots.Any(p => p.Traces.Any(t =>
                t.CubeSlice.Any(s => s.Link is not null || s.LinkName is not null)
-               || (t.Expression is { } e && LinkGraph.OperandNames(e).Count > 0)));
+               || t.ShownBy is not null
+               || (t.Expression is { } e && LinkGraph.OperandNames(e).Count > 0)))
+           || (tab.Controls ?? []).Any(c => c is ReadoutControl);
 
     /// <summary>
     /// One <c>--marker</c>: a marker moved to a value on its trace's X axis (the nearest sample) or to an index on it,

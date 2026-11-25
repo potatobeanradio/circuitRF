@@ -47,10 +47,44 @@ public partial class DataDisplayViewModel
     /// it, moved down past any control already there, so it is always in view — selected, so the inspector opens on it.
     /// One undo step.
     /// </summary>
-    public ControlContainerViewModel AddSlider()
+    public ControlContainerViewModel AddSlider() => AddControl(new SliderControl());
+
+    /// <summary><b>Controls ▸ Knob</b> (brief-ddl-6 R-ddl6-1), placed as a slider is.</summary>
+    public ControlContainerViewModel AddKnob() => AddControl(new KnobControl());
+
+    /// <summary><b>Controls ▸ Button</b> (R-ddl6-2): a toggle, dark.</summary>
+    public ControlContainerViewModel AddButton() => AddControl(new ButtonControl());
+
+    /// <summary><b>Controls ▸ Readout</b> (R-ddl6-3): showing the selected marker when there is one, else the first
+    /// marker or control of the document, so it reads something at once.</summary>
+    public ControlContainerViewModel AddReadout()
+    {
+        var doc = CurrentLinkDocument();
+        var marker = SelectedMarkerForReadout() ?? doc.Markers().Select(m => (LinkDocument.MarkerSite?)m).FirstOrDefault();
+        var r = new ReadoutControl();
+        if (marker is { } m) { r.Source = m.Marker.Id.ToString("D"); r.SourceName = m.Marker.Name; }
+        else if (doc.Controls().Select(x => x.Control).FirstOrDefault(ControlLinkSource.IsSource) is { } c)
+        { r.Source = c.Id; r.SourceName = c.Name; }
+        var vm = AddControl(r);
+        RequestLinkFollow(released: true);
+        return vm;
+    }
+
+    /// <summary>The one selected marker of this tab, as the link source a new readout shows.</summary>
+    private LinkDocument.MarkerSite? SelectedMarkerForReadout()
+    {
+        var selected = _markerInfoBoxes.Where(b => b.IsSelected).Select(b => b.Marker).Distinct().ToList();
+        if (selected.Count != 1) return null;
+        foreach (var site in CurrentLinkDocument().Markers())
+            if (ReferenceEquals(site.Marker, selected[0])) return site;
+        return null;
+    }
+
+    /// <summary>A new control of any kind: named, Medium, at the next free canvas slot, selected; one undo step.</summary>
+    private ControlContainerViewModel AddControl(DisplayControl model)
     {
         var all = DocumentControlsProvider?.Invoke() ?? _controls.Select(c => c.Model);
-        var model = new SliderControl { Name = DisplayControl.NextName("slider", all) };
+        model.Name = DisplayControl.NextName(model.KindName, all);
         model.ApplySize(ControlSize.Medium);
         (model.Left, model.Top) = ComputeNewControlPosition(model.Width, model.Height);
         var vm = new ControlContainerViewModel(model, this);
@@ -97,6 +131,14 @@ public partial class DataDisplayViewModel
         RefreshSelection();
         // Its dependents freeze where it last put them, and are said to (brief-ddl-2 R-ddl2-8).
         RequestLinkFollow(released: true, announce: true);
+    }
+
+    /// <summary>After the links followed: every readout is drawn again, since what it shows may have moved
+    /// (brief-ddl-6 R-ddl6-3).</summary>
+    internal void RedrawReadouts()
+    {
+        foreach (var c in _controls)
+            if (c.Model is ReadoutControl) c.RequestRedraw();
     }
 
     /// <summary>A control's model changed: the links that follow it, and the inspector.</summary>
@@ -217,7 +259,7 @@ public partial class DataDisplayViewModel
     private async System.Threading.Tasks.Task LoadControlSourcesAsync()
     {
         if (Library is null) return;
-        foreach (var slider in _controls.Select(c => c.Model).OfType<SliderControl>())
+        foreach (var slider in _controls.Select(c => c.Model).OfType<SteppedControl>())
         {
             if (slider.Domain != SliderDomain.Bound || slider.SourcePath is not { Length: > 0 } sref) continue;
             if (sref != DataSourceRef.Selected && Library.ResolveAbs(sref) is { } abs && System.IO.File.Exists(abs)
