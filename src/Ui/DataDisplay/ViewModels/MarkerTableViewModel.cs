@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
@@ -49,6 +50,44 @@ public sealed class MarkerTableViewModel : CanvasBoxViewModel
         double thumb = Math.Max(20, track * track / (MarkerTableRenderer.FullWidth(rows) - MarkerTableRenderer.FixedWidth));
         double fraction = Math.Clamp((position - MarkerTableRenderer.FixedWidth - thumb / 2) / (track - thumb), 0, 1);
         HorizontalScrollOffset = fraction * MarkerTableRenderer.MaxHorizontalScroll(rows);
+        OnPropertyChanged(nameof(NeedsRedraw));
+    }
+
+    public void RevealMarker(Marker marker, Trace trace)
+    {
+        var rows = Rows;
+        float top = 0;
+        var row = rows.FirstOrDefault(item => ReferenceEquals(item.Marker, marker));
+        if (row is null) return;
+        foreach (var item in rows)
+        {
+            if (ReferenceEquals(item, row)) break;
+            top += MarkerTableRenderer.RowHeight(item);
+        }
+        float rowHeight = MarkerTableRenderer.RowHeight(row);
+        var size = MarkerTableRenderer.Measure(rows);
+        float viewportHeight = size.H - MarkerTableRenderer.HeaderHeightFor(rows) -
+            (MarkerTableRenderer.MaxHorizontalScroll(rows) > 0 ? MarkerTableRenderer.ScrollbarHeight : 0);
+        if (top < ScrollOffset || rowHeight > viewportHeight)
+            ScrollOffset = top;
+        else if (top + rowHeight > ScrollOffset + viewportHeight)
+            ScrollOffset = top + rowHeight - viewportHeight;
+        ScrollOffset = Math.Clamp(ScrollOffset, 0, MarkerTableRenderer.MaxScroll(rows));
+
+        var columns = MarkerTable.Columns(rows);
+        int index = -1;
+        for (int column = 0; column < columns.Count; column++)
+            if (ReferenceEquals(columns[column].Trace, trace)) { index = column; break; }
+        if (index >= 0)
+        {
+            float left = index * MarkerTableRenderer.ValueColumn;
+            float viewportWidth = size.W - MarkerTableRenderer.FixedWidth;
+            if (left < HorizontalScrollOffset)
+                HorizontalScrollOffset = left;
+            else if (left + MarkerTableRenderer.ValueColumn > HorizontalScrollOffset + viewportWidth)
+                HorizontalScrollOffset = left + MarkerTableRenderer.ValueColumn - viewportWidth;
+            HorizontalScrollOffset = Math.Clamp(HorizontalScrollOffset, 0, MarkerTableRenderer.MaxHorizontalScroll(rows));
+        }
         OnPropertyChanged(nameof(NeedsRedraw));
     }
 

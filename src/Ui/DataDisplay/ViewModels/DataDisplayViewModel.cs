@@ -781,6 +781,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         trace.Markers.Add(marker);
         container.OnPlotChanged(null, EventArgs.Empty);
+        container.GetMarkerTable()?.RevealMarker(marker, trace);
         container.RequestPlotRedraw();
     }
 

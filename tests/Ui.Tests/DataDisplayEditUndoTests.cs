@@ -193,6 +193,70 @@ public sealed class DataDisplayEditUndoTests : IDisposable
     }
 
     [Fact]
+    public async Task MarkerTableRevealsNewMarkerOnLaterTrace()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var plot = container.PlotVM.Plot;
+        var first = plot.Traces[0];
+        for (int index = 1; index < 5; index++)
+            container.Inspector.AddTraceCommand.Execute(null);
+        for (int index = 1; index <= 15; index++)
+            first.Markers.Add(new Marker(first, 0, index == 1, false, index, FreqUnit.GHz)
+            {
+                Function = index == 1 ? MarkerFunction.Vertical : MarkerFunction.Normal,
+            });
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        var later = plot.Traces[^1];
+        var marker = new Marker(later, 0, false, false, 16, FreqUnit.GHz);
+        later.Markers.Add(marker);
+        container.OnPlotChanged(null, EventArgs.Empty);
+        container.OnMarkerAdded(marker, later);
+
+        Assert.Contains(table.Rows, row => ReferenceEquals(row.Marker, marker));
+        Assert.True(table.ScrollOffset > 0);
+        Assert.True(table.HorizontalScrollOffset > 0);
+        float bottom = MarkerTableRenderer.Measure(table.Rows).H - MarkerTableRenderer.ScrollbarHeight;
+        Assert.Same(marker, MarkerTableRenderer.RowAt(table.Rows, bottom - 2, table.ScrollOffset)!.Marker);
+        display.UndoRedo.Undo();
+        Assert.DoesNotContain(table.Rows, row => ReferenceEquals(row.Marker, marker));
+        table.Scroll(-10000);
+        table.ScrollHorizontal(-10000);
+        display.UndoRedo.Redo();
+        Assert.Contains(table.Rows, row => ReferenceEquals(row.Marker, marker));
+        Assert.True(table.ScrollOffset > 0);
+        Assert.True(table.HorizontalScrollOffset > 0);
+        Assert.Same(marker, MarkerTableRenderer.RowAt(table.Rows, bottom - 2, table.ScrollOffset)!.Marker);
+    }
+
+    [Fact]
+    public async Task MarkerTableUpdatesWhenMarkerIsAddedToSecondTrace()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var plot = container.PlotVM.Plot;
+        container.Inspector.AddTraceCommand.Execute(null);
+        var first = plot.Traces[0];
+        var second = plot.Traces[1];
+        first.Markers.Add(new Marker(first, 0, false, false, 1, FreqUnit.GHz));
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        var marker = new Marker(second, 0, false, false, 2, FreqUnit.GHz);
+        second.Markers.Add(marker);
+        container.OnPlotChanged(null, EventArgs.Empty);
+        container.OnMarkerAdded(marker, second);
+
+        Assert.Equal(2, table.Rows.Count);
+        Assert.Same(second, table.Rows[1].Trace);
+        Assert.Same(marker, table.Rows[1].Marker);
+        Assert.Equal(MarkerTableRenderer.Measure(table.Rows).W * display.ZoomLevel, table.BoxWidth);
+        Assert.Equal(MarkerTableRenderer.Measure(table.Rows).H * display.ZoomLevel, table.BoxHeight);
+    }
+
+    [Fact]
     public async Task MarkerTableMoveIsUndoable()
     {
         var window = await OpenSavedDisplayAsync();

@@ -15,6 +15,8 @@ identifies coordinate lines at their source, so X and Y remain separate even for
 markers. Each trace now has its own column in plot order, shared across marker rows; the Marker and X columns
 stay fixed while overflowing trace columns scroll horizontally. Ordinary markers leave unrelated cells empty.
 Exports measure and draw the complete table, including columns outside the on-screen viewport.
+Adding a marker also reveals its row and owning trace column, including on redo: rows are grouped by trace,
+so a later trace's marker can otherwise be present but outside both scrollable viewports.
 
 ## 2026-11-23 — Escape never reached the display; crosshair over plots; toolbar wraps
 

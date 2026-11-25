@@ -857,6 +857,7 @@ public partial class PlotContainerViewModel : ViewModelBase
     {
         _parent.RecordMarkerAdded(marker, trace, this);
         if (FindMarkerInfoBoxVm(marker) is { } box) _parent.SelectOnly(box);
+        GetMarkerTable()?.RevealMarker(marker, trace);
     }
 
     /// <summary>
