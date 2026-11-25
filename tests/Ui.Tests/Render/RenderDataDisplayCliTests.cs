@@ -101,6 +101,7 @@ public sealed class RenderDataDisplayCliTests(ITestOutputHelper output) : IDispo
         Assert.Single(fixture.Window.DataDisplay!.MarkerTables);
         string fromApp = PlotExporter.BuildSvgStringForContainers(
             fixture.Window.DataDisplay.Plots.ToList(), fixture.Window.DataDisplay.Theme);
+        Assert.DoesNotContain("freq=", fromApp);
         string path = Path.Combine(_root, "marker-table.svg");
         var (exit, stdout, stderr) = RunCli("render", fixture.Cdd, "-o", path);
         output.WriteLine(stdout + stderr);

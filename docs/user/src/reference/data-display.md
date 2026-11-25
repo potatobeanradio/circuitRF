@@ -386,7 +386,9 @@ Click the `freq=` row of a marker's box to enter a frequency in the displayed un
 the nearest available sample; Enter commits and Escape cancels.
 
 **Marker table.** Right-click a plot and choose **Show Marker Table** to collect its markers in a movable table.
-Each row names its marker and shows its X coordinate. Each trace has its own labeled Y column; an ordinary marker
+Each row names its marker and shows its X coordinate. When all markers share one coordinate, its name appears in
+the heading instead of being repeated in each cell; mixed or multiple coordinates keep their labels. Each trace has
+its own labeled Y column; an ordinary marker
 leaves the other traces' cells blank, while a multi-marker fills each compatible trace's cell. The column heading
 identifies the trace, so its values omit the repeated trace name; additional readings retain their own labels.
 Markers on different sources keep their own trace and sample; the source is shown when needed to

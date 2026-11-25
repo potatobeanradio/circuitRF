@@ -229,7 +229,7 @@ public sealed class MarkerFrequencyToleranceTests
         var traceLines = MarkerTableRenderer.WrapText(row.TraceLabel, MarkerTableRenderer.ValueColumn - 10);
         Assert.True(traceLines.Count > 1);
         Assert.Equal(row.TraceLabel, string.Concat(traceLines));
-        Assert.Equal(string.Concat(row.Coordinates), string.Concat(row.CoordinateLines));
+        Assert.Equal(string.Concat(row.DisplayCoordinates), string.Concat(row.CoordinateLines));
         Assert.Equal(string.Concat(row.TraceReadings[0].DisplayValues), string.Concat(row.TraceReadings[0].ValueLines));
         Assert.True(MarkerTableRenderer.HeaderHeightFor([row]) >= traceLines.Count * MarkerTableRenderer.LineHeight);
         var wrapped = MarkerTableRenderer.WrapText("S(1,1) dB20=-0.03245 dB", 110);
@@ -301,7 +301,55 @@ public sealed class MarkerFrequencyToleranceTests
         trace.Markers.Add(marker);
         var row = Assert.Single(MarkerTable.Rows(plot));
         Assert.Contains(row.Coordinates, coordinate => coordinate.StartsWith("Vds=2", StringComparison.Ordinal));
+        Assert.Equal("Vds", MarkerTable.CoordinateName([row]));
+        Assert.Equal("2 V", Assert.Single(row.DisplayCoordinates));
         Assert.Contains(Assert.Single(row.TraceReadings).Values, value => value.Contains("5", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MarkerTablePromotesSharedFrequencyLabelToHeader()
+    {
+        var (plot, trace) = Fixture();
+        trace.Markers.Add(new Marker(trace, trace.Data.Frequencies[0], false, false, 1, plot.FreqUnits));
+        trace.Markers.Add(new Marker(trace, trace.Data.Frequencies[1], false, false, 2, plot.FreqUnits));
+        var rows = MarkerTable.Rows(plot);
+        Assert.Equal("freq", MarkerTable.CoordinateName(rows));
+        Assert.All(rows, row =>
+        {
+            string original = Assert.Single(row.Coordinates);
+            Assert.StartsWith("freq=", original);
+            Assert.Equal(original["freq=".Length..], Assert.Single(row.DisplayCoordinates));
+        });
+    }
+
+    [Fact]
+    public void MarkerTableKeepsLabelsForMixedOrMultipleCoordinates()
+    {
+        var (plot, trace) = Fixture();
+        trace.Markers.Add(new Marker(trace, trace.Data.Frequencies[0], false, false, 1, plot.FreqUnits));
+        var row = Assert.Single(MarkerTable.Rows(plot));
+        var mixed = new MarkerTableRow(row.Marker, trace, row.TraceLabel, row.Readout, ["Vds=2 V"], row.TraceReadings);
+        var multi = new MarkerTableRow(row.Marker, trace, row.TraceLabel, row.Readout,
+            ["freq=1 GHz", "harmonic=2"], row.TraceReadings);
+        Assert.Null(MarkerTable.CoordinateName([row, mixed]));
+        Assert.Null(MarkerTable.CoordinateName([multi]));
+        Assert.Equal(multi.Coordinates, multi.DisplayCoordinates);
+    }
+
+    [Fact]
+    public void MarkerTableKeepsLabelsWhenTracesUseDifferentAxes()
+    {
+        var (plot, frequencyTrace) = Fixture();
+        var sweepTrace = new Trace(frequencyTrace.Data, MatrixType.S, 0, 0, DependentVarFormat.Db) { CubeName = "current" };
+        sweepTrace.SetCubeData([1, 2, 3], null, [4.0, 5.0, 6.0], "Vds", "V", PlotType.Rect, plot.FreqUnits);
+        plot.Traces.Add(sweepTrace);
+        frequencyTrace.Markers.Add(new Marker(frequencyTrace, frequencyTrace.Data.Frequencies[0], false, false, 1, plot.FreqUnits));
+        sweepTrace.Markers.Add(new Marker(sweepTrace, 0, false, false, 2, plot.FreqUnits) { PositionStatic = sweepTrace.Points[1] });
+
+        var rows = MarkerTable.Rows(plot);
+        Assert.Null(MarkerTable.CoordinateName(rows));
+        Assert.StartsWith("freq=", Assert.Single(rows[0].DisplayCoordinates));
+        Assert.Equal("Vds=2 V", Assert.Single(rows[1].DisplayCoordinates));
     }
 
     [Theory]

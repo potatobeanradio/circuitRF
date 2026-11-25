@@ -15,16 +15,38 @@ public sealed record MarkerTableTraceReading(Trace Trace, string Label, IReadOnl
 }
 
 public sealed record MarkerTableRow(Marker Marker, Trace Trace, string TraceLabel, IReadOnlyList<string> Readout,
-    IReadOnlyList<string> Coordinates, IReadOnlyList<MarkerTableTraceReading> TraceReadings)
+    IReadOnlyList<string> Coordinates, IReadOnlyList<MarkerTableTraceReading> TraceReadings, string? CommonCoordinateName = null)
 {
     public string MarkerName { get; } = Marker.Name;
     internal IReadOnlyList<string> MarkerLines { get; } = MarkerTableRenderer.WrapText(Marker.Name, MarkerTableRenderer.MarkerColumn - 10);
-    internal IReadOnlyList<string> CoordinateLines { get; } = Coordinates
+    internal IReadOnlyList<string> DisplayCoordinates { get; } = Coordinates.Select(coordinate =>
+        CommonCoordinateName is { } name && coordinate.StartsWith(name + "=", StringComparison.Ordinal)
+            ? coordinate[(name.Length + 1)..] : coordinate).ToArray();
+    internal IReadOnlyList<string> CoordinateLines { get; } = Coordinates.Select(coordinate =>
+        CommonCoordinateName is { } name && coordinate.StartsWith(name + "=", StringComparison.Ordinal)
+            ? coordinate[(name.Length + 1)..] : coordinate)
         .SelectMany(line => MarkerTableRenderer.WrapText(line, MarkerTableRenderer.CoordinateColumn - 10)).ToArray();
 }
 
 public static class MarkerTable
 {
+    internal static string? CoordinateName(IReadOnlyList<MarkerTableRow> rows)
+    {
+        string? common = null;
+        foreach (var row in rows)
+        {
+            if (row.Coordinates.Count == 0) continue;
+            if (row.Coordinates.Count != 1) return null;
+            string coordinate = row.Coordinates[0];
+            int equals = coordinate.IndexOf('=');
+            if (equals <= 0) return null;
+            string name = coordinate[..equals];
+            if (common is not null && !string.Equals(name, common, StringComparison.Ordinal)) return null;
+            common = name;
+        }
+        return common;
+    }
+
     internal static string CellValue(Trace trace, string value)
     {
         string description = trace.ReadoutDescription(false);
@@ -94,7 +116,10 @@ public static class MarkerTable
                 }
             rows.Add(new MarkerTableRow(marker, trace, Label(trace), lines, coordinates, readings));
         }
-        return rows.OrderBy(row => row.Marker.Index).ToArray();
+        string? coordinateName = CoordinateName(rows);
+        return rows.OrderBy(row => row.Marker.Index)
+            .Select(row => new MarkerTableRow(row.Marker, row.Trace, row.TraceLabel, row.Readout,
+                row.Coordinates, row.TraceReadings, coordinateName)).ToArray();
     }
 }
 
@@ -118,6 +143,7 @@ public static class MarkerTableRenderer
     {
         var columns = MarkerTable.Columns(rows);
         int lines = columns.Count == 0 ? 1 : columns.Max(column => WrapText(column.Label, ValueColumn - 10).Count);
+        lines = Math.Max(lines, WrapText(MarkerTable.CoordinateName(rows) ?? "X", CoordinateColumn - 10).Count);
         return Math.Max(HeaderHeight, 7 + lines * LineHeight);
     }
 
@@ -218,7 +244,9 @@ public static class MarkerTableRenderer
         using var fallbackBold = new SKFont(SkiaFonts.DejaVuBold, 12);
         canvas.DrawRect(0, 0, width, height, fill);
         RendererText.DrawLeftTextWithFallback(canvas, "Marker", 5, 16, bold, fallbackBold, text);
-        RendererText.DrawLeftTextWithFallback(canvas, "X", MarkerColumn + 5, 16, bold, fallbackBold, text);
+        var coordinateHeader = WrapText(MarkerTable.CoordinateName(rows) ?? "X", CoordinateColumn - 10);
+        for (int line = 0; line < coordinateHeader.Count; line++)
+            DrawCell(canvas, coordinateHeader[line], MarkerColumn, CoordinateColumn, 16 + line * LineHeight, bold, fallbackBold, text);
         canvas.Save();
         canvas.ClipRect(new SKRect(FixedWidth, 0, width, bottom));
         for (int index = 0; index < columns.Count; index++)
