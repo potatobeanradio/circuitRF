@@ -25,9 +25,15 @@ internal static class FilterLadderDrawing
     private const double Lead = MatchSchematicGeometry.LeadHalf;
     /// <summary>
     /// Column step: the Match pitch plus room for a shunt symbol's labels, which the filter always
-    /// puts beside the symbol, to clear the next column's own labels.
+    /// puts beside the symbol, to clear the next column's own labels. <b>A whole number of
+    /// <see cref="Grid"/> steps</b>: every x below is built from it, and a pitch of 850 put every other
+    /// column, its ground and the far termination half a grid step off, which Place filter carried
+    /// onto the schematic.
     /// </summary>
-    private const double Pitch = MatchLadderLayout.Pitch + 150.0;
+    private const double Pitch = MatchLadderLayout.Pitch + 2.0 * Grid;
+
+    /// <summary>The schematic's connection grid, which every position in the drawing sits on.</summary>
+    internal const double Grid = 100.0;
 
     /// <summary>Rail height of a through-path tank's inductor.</summary>
     internal const double TankRailY = MatchLadderLayout.SpineY - 2.0 * Lead;
@@ -158,7 +164,7 @@ internal static class FilterLadderDrawing
             ctx.Add(dc, x, y, false);
             ctx.Add(dl, x, TankRailY, false, labelAbove: true);
             ctx.Arms.Add(new MatchParallelArm(x - Lead, x + Lead, TankRailY));
-            return x + Pitch + Lead / 2.0;
+            return x + Pitch + Lead;
         }
 
         // One element, or a chain of them: consecutive spine columns.
