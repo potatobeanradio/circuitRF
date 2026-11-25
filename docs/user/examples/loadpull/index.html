@@ -63,6 +63,28 @@ rings around what it found. It needs no grid file. The outer sweep takes it acro
 a second, disabled sweep over <code>VDD</code> is there to enable when you want a surface.</p>
 <p>Both benches carry <code>Meas</code> blocks reading <code>V</code> at the drain by net name and harmonic index — the same
 accessor the harmonic-balance benches use, because a loadpull result is a cube like any other.</p>
+<h2 id="linked-plots-a-display-that-follows-its-markers-and-controls">Linked Plots — a display that follows its markers and controls</h2>
+<p>Run <strong>Loadpull</strong> and <strong>LoadpullPursuit</strong>, then open <code>Linked Plots.cdd</code>. Its plots are linked: a marker or a
+control on one decides what another shows. Nothing in it simulates; it reads the two results.</p>
+<p><strong>Load.</strong> Drag <strong>m1</strong> anywhere on the Smith chart, between the measured loads (the dots) as well as onto one.
+The plot on the right shows Gt and PAE against Pout <em>at m1's load</em>: dashed, because they are interpolated
+from the loads around it, and solid once m1 sits on a measured load (Shift-drag puts it back on one). The
+<strong>At marker</strong> table reads Pout, Gt, PAE and the load at the same point.</p>
+<p><strong>Frequency.</strong> The Pursuit bench searched for the optimum at 1.8, 2.0 and 2.2 GHz. The left plot is the
+reactance of the maximum-power and maximum-efficiency loads at each frequency. Click m2's box and step it
+with the arrow keys: the Pout and PAE contours on the right follow it to that frequency.</p>
+<p><strong>Panel.</strong> The controls are locked in place (right-click one for <strong>Lock Position</strong>), so a drag anywhere on
+them works them rather than moving them.</p>
+<ul>
+<li>The <strong>Frequency</strong> knob turns with a drag (up or right turns it up) or the mouse wheel. The contours, the measured loads and
+every curve follow it.</li>
+<li><strong>m3</strong> is free and <strong>m4</strong> sits on a measured load. The Pout and Gt curves at m3 are interpolated (dashed);
+the ones at m4 are what the run computed there (solid).</li>
+<li>The <strong>Measured</strong> button shows or hides m4's curves.</li>
+<li>The <strong>Drive step</strong> slider picks the drive the harmonics plot reads: the drain voltage's harmonics at m4.</li>
+<li>The readouts under them show each control's value.</li>
+</ul>
+<p>Every one of these can be set without a window too: <code>circuitrf render &quot;Linked Plots.cdd&quot; --tab Panel --control freq=2.2GHz --control measured=0 -o panel.png</code>.</p>
 
 </main>
 

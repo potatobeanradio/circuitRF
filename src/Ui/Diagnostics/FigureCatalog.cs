@@ -886,6 +886,22 @@ public static class FigureCatalog
           + "against its target, the anti-resonances the run named, and what removing each "
           + "capacitor would cost."),
 
+        // ── Linked plots and controls (brief-ddl-8) ───────────────────────────────
+        // The shipped Loadpull example's own Linked Plots.cdd, opened over a fresh run of its two benches.
+        new("linked-plots-load", DocDataDisplayFixtures.LinkedLoad, 1000, 560,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The Loadpull example's Load tab. m1 sits between the measured loads (the dots), so the plot beside it shows Gt "
+          + "and PAE at m1 interpolated from the loads around it, dashed; the At marker table reads the same point."),
+
+        new("linked-plots-interpolated", DocDataDisplayFixtures.LinkedInterpolated, 600, 336, null,
+            "Pout and Gt against drive at two loads: m3, free between the measured loads, interpolated and dashed; and m4, "
+          + "on a measured load, solid. The interpolated curve covers the drives near compression the fit is built from."),
+
+        new("linked-plots-panel", DocDataDisplayFixtures.LinkedPanel, 1260, 690,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The Panel tab: a knob bound to frequency, a button that shows the measured curves, a slider bound to the drive, "
+          + "and a readout of each, all locked in place. The contours, the loads and every curve follow them."),
+
         // ── Transient (brief TRN-9) ──────────────────────────────────────────────
         // Each is a run of a shipped transient example's bench, drawn by the Transient preset.
         new("transient-filter-step", DocDataDisplayFixtures.TransientFilterStep, 850, 640,

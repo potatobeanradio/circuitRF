@@ -106,43 +106,56 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
                 RedrawRequested?.Invoke();
                 Display.RequestLinkFollow(released: false);
             }
-            BeginKnobTurn(viewPoint.Y, fine: false);
+            BeginKnobTurn(viewPoint, fine: false);
             return;
         }
         DragValueTo(viewPoint);
     }
 
-    // ---- the knob: a vertical drag turns it (R-ddl6-1) ----------------------------------------------
+    // ---- the knob: a drag turns it (R-ddl6-1) --------------------------------------------------------
 
-    private double _turnFrom, _turnY, _lastTurnY;
+    // Up turns it up, at one sweep per KnobControl.PixelsPerSweep pixels, as the brief asks. Right turns it up too —
+    // clockwise across the top of the dial, the way the dial itself goes — at its own rate: a drag across the dial's
+    // width (its outer diameter, ticks included) is one whole sweep, so moving across the knob sweeps its arc at any
+    // size. Down and left turn it down; a diagonal drag adds the two. Ctrl makes both ten times finer.
+    private double _turnFrom, _turnX, _turnY, _lastTurnX, _lastTurnY;
     private bool _turnFine;
 
-    /// <summary>Takes where the knob is now as the start of a turn: the drag's distance from <paramref name="y"/> turns
-    /// it from here. Called again when Ctrl is pressed or let go mid-drag, so the rate changes without a jump.</summary>
-    internal void BeginKnobTurn(double y, bool fine)
+    /// <summary>Takes where the knob is now as the start of a turn: the drag from <paramref name="at"/> turns it from
+    /// here. Called again when Ctrl is pressed or let go mid-drag, so the rate changes without a jump.</summary>
+    internal void BeginKnobTurn(SKPoint at, bool fine)
     {
         _turnFrom = Model is SteppedControl s ? s.Fraction : 0;
-        _turnY = _lastTurnY = y;
+        _turnX = _lastTurnX = at.X;
+        _turnY = _lastTurnY = at.Y;
         _turnFine = fine;
     }
 
-    /// <summary>
-    /// The knob at pointer height <paramref name="y"/> (screen pixels): up increases, one full sweep per
-    /// <see cref="KnobControl.PixelsPerSweep"/> pixels, a tenth of that rate with <paramref name="fine"/> (Ctrl).
-    /// </summary>
-    internal void TurnKnob(double y, bool fine)
+    /// <summary>The fraction of a sweep a drag of (<paramref name="dx"/>, <paramref name="dy"/>) screen pixels turns
+    /// the knob: up and right positive.</summary>
+    private double TurnOf(KnobControl k, double dx, double dy, bool fine)
+    {
+        var l = ControlRenderer.KnobLayout(k, (float)ViewWidth, (float)ViewHeight);
+        double across = Math.Max(24, 2 * (l.Radius + l.TickRoom));
+        double finer = fine ? 10 : 1;
+        return -dy / (KnobControl.PixelsPerSweep * finer) + dx / (across * finer);
+    }
+
+    /// <summary>The knob with the pointer at <paramref name="at"/> (control-relative screen pixels).</summary>
+    internal void TurnKnob(SKPoint at, bool fine)
     {
         if (Model is not KnobControl k) return;
         if (fine != _turnFine)
         {
             // The rate changes from where the pointer last was, so pressing Ctrl mid-drag never jumps the knob.
-            _turnFrom = Math.Clamp(_turnFrom + (_turnY - _lastTurnY) / (KnobControl.PixelsPerSweep * (_turnFine ? 10 : 1)), 0, 1);
+            _turnFrom = Math.Clamp(_turnFrom + TurnOf(k, _lastTurnX - _turnX, _lastTurnY - _turnY, _turnFine), 0, 1);
+            _turnX = _lastTurnX;
             _turnY = _lastTurnY;
             _turnFine = fine;
         }
-        _lastTurnY = y;
-        double perSweep = KnobControl.PixelsPerSweep * (fine ? 10 : 1);
-        if (!k.SetFraction(_turnFrom + (_turnY - y) / perSweep)) return;
+        _lastTurnX = at.X;
+        _lastTurnY = at.Y;
+        if (!k.SetFraction(_turnFrom + TurnOf(k, at.X - _turnX, at.Y - _turnY, fine))) return;
         RedrawRequested?.Invoke();
         Display.RequestLinkFollow(released: false);
     }
@@ -189,7 +202,7 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
     /// <summary>The value under <paramref name="viewPoint"/> (control-relative, screen pixels); links follow live.</summary>
     internal void DragValueTo(SKPoint viewPoint)
     {
-        if (Model is KnobControl) { TurnKnob(viewPoint.Y, _turnFine); return; }
+        if (Model is KnobControl) { TurnKnob(viewPoint, _turnFine); return; }
         if (Model is not SliderControl s) return;
         int stop = ControlRenderer.StopAt(s, (float)ViewWidth, (float)ViewHeight, viewPoint);
         if (!s.SetStop(stop)) return;
@@ -220,12 +233,12 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
         _valueStart = Model.Clone();
         _relativeFrom = viewPoint;
         _relativeStop = Model is SteppedControl s ? s.StopIndex : 0;
-        if (Model is KnobControl) BeginKnobTurn(viewPoint.Y, fine: false);
+        if (Model is KnobControl) BeginKnobTurn(viewPoint, fine: false);
     }
 
     internal void DragValueRelative(SKPoint viewPoint)
     {
-        if (Model is KnobControl) { TurnKnob(viewPoint.Y, _turnFine); return; }
+        if (Model is KnobControl) { TurnKnob(viewPoint, _turnFine); return; }
         if (Model is not SliderControl s) return;
         var l = ControlRenderer.Layout(s, (float)ViewWidth, (float)ViewHeight);
         float dx = l.TrackEnd.X - l.TrackStart.X, dy = l.TrackEnd.Y - l.TrackStart.Y;
@@ -277,9 +290,10 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
         Record(start, "resize");
     }
 
-    /// <summary>The smallest frame the gripper leaves: the Small preset, the least a control's text is legible at.</summary>
-    private double MinWidth  => Model.PresetSize(ControlSize.Small).Width;
-    private double MinHeight => Model.PresetSize(ControlSize.Small).Height;
+    /// <summary>The smallest frame the gripper leaves (<see cref="DisplayControl.MinimumSize"/>): the Small preset for
+    /// most kinds, much smaller for a button.</summary>
+    private double MinWidth  => Model.MinimumSize().Width;
+    private double MinHeight => Model.MinimumSize().Height;
 
     // ---- edits ------------------------------------------------------------------------------------
 

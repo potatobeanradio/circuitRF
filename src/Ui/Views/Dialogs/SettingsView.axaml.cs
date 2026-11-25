@@ -190,6 +190,7 @@ public partial class SettingsView : Window
             SyncThemeButtons(prefs.Appearance ?? AppearanceMode.System);
 
             RealisticOnOpenCheck.IsChecked = Realistic3DPreference.OnOpen;
+            PlotsAsCardsCheck.IsChecked = CircuitRF.Ui.DataDisplay.PlotCardPreference.NewPlots;
             HertzonInteractivityCheck.IsChecked = CircuitRF.Ui.Viewer3D.Interaction3DPreference.Hertzon;
             SoftwarePresentCheck.IsChecked = prefs.View3DSoftwarePresent ?? true;
 
@@ -262,6 +263,13 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.ShowDockersOnLaunch = ShowDockersOnLaunchCheck.IsChecked);
+    }
+
+    // Takes effect for the next plot added; plots already on a display keep their own Card setting.
+    private void OnPlotsAsCardsChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        CircuitRF.Ui.DataDisplay.PlotCardPreference.NewPlots = PlotsAsCardsCheck.IsChecked == true;
     }
 
     // Takes effect at the next open; a design already open keeps whatever its toolbar button says.

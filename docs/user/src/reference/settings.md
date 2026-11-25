@@ -90,6 +90,11 @@ settings compose rather than competing.
 **Message times** — how the Messages panel stamps each line: *Time*, *Date + Time*, or *Hidden*. This one
 is live; the panel re-renders as you change it.
 
+**Plots as cards** starts every plot you add to a Data Display on a card: a panel a shade off the background with
+a hairline border and rounded corners. It is off by default. Each plot keeps its own **Card** setting in the Plot
+inspector's Labels section, which is what a saved display remembers, so a display opens the same on any machine
+and turning this off changes no plot already on one.
+
 ### 3D View {#view-3d}
 
 **Open 3D designs in realistic view** opens every 3D design with the realistic view already on, as if you had

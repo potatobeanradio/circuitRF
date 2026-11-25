@@ -75,6 +75,39 @@ public class Hero3LoadpullTests(ITestOutputHelper output)
         Assert.Equal(2e9, p.ToneHz, precision: 3);
     }
 
+    // ── Unreached drives ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A drive the ladder never reached reads NaN in every metric, never 0: a padded 0 is 0 dB of gain and 0 % efficiency,
+    /// which a plot drew as a cliff at the end of every measured curve. The Converged flag stays 0 there.
+    /// </summary>
+    [Fact]
+    public void Hero3Loadpull_UnreachedDrives_ReadNaN_NotZero()
+    {
+        var (lib, tb) = CnlReader.ReadFile(Path.Combine(Hero3Dir(), "hero3_at_compression.cnl"));
+        var netlist   = new Elaborator(lib).Elaborate(tb);
+        var lpa = tb.Analyses.OfType<LoadpullAnalysis>().First();
+        var p   = LoadpullEngine.Resolve(lpa, netlist.ResolvedGlobals);
+        var ds  = new LoadpullEngine(netlist, tb).Run(p);
+
+        int nG = ds["Gt"].Axes[0].Length, nP = ds["Gt"].Axes[1].Length, unreached = 0;
+        for (int gi = 0; gi < nG; gi++)
+        {
+            // The last rung any metric was written for: past it the ladder stopped.
+            int last = -1;
+            for (int pi = 0; pi < nP; pi++) if (!double.IsNaN((double)ds["Pdc"][gi, pi])) last = pi;
+            Assert.True(last >= 0);
+            for (int pi = last + 1; pi < nP; pi++)
+            {
+                unreached++;
+                foreach (var cube in new[] { "Pout", "Gt", "Gp", "DE", "PAE", "Pdc" })
+                    Assert.True(double.IsNaN((double)ds[cube][gi, pi]), $"{cube}[{gi}, {pi}] past the stop is {(double)ds[cube][gi, pi]}");
+                Assert.Equal(0.0, (double)ds["Converged"][gi, pi]);
+            }
+        }
+        Assert.True(unreached > 0, "hero3_at_compression stops at compression, so some drives are never reached");
+    }
+
     // ── 1. Golden generator ────────────────────────────────────────────────────
 
     [Fact]

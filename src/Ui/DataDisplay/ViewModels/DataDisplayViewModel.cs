@@ -816,7 +816,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         // leaves nothing to deselect — the indentation said one thing and the compiler read another.
         if (addEmptyPlot)
         {
-            AddPlot(PlotType.Smith);
+            AddPlot(PlotType.Smith, card: PlotCardPreference.NewPlots);
             if (!selectEmptyPlot)
                 SelectOnly((PlotContainerViewModel?) null);
         }
@@ -943,7 +943,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         double   left      = -1,
         double   top       = -1,
         double   width     = -1,
-        double   height    = -1)
+        double   height    = -1,
+        bool     card      = false)
     {
         Gesture.Note("addPlot", $"{plotType} (now {Plots.Count + 1})");
         bool square = plotType is PlotType.Smith or PlotType.Polar;
@@ -984,7 +985,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
         // A new plot's frequency axis and its markers' readouts open in the preferred unit
         // (brief-dfr22-1); a plot restored from a .cdd passes its own saved unit.
-        var plot      = new Plot(plotType, freqUnit ?? PreferredUnits.PlotFrequencyUnit);
+        // A plot the user adds starts on a card when Settings says so (PlotCardPreference); the caller decides, so a
+        // tool's own panels and a restored plot are never carded by a preference.
+        var plot      = new Plot(plotType, freqUnit ?? PreferredUnits.PlotFrequencyUnit) { Card = card };
         var plotVm    = new PlotViewModel(plot);
         var inspector = new PlotInspectorViewModel(plot, () => { }, Library);
 

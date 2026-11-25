@@ -70,6 +70,10 @@ edited. On a rectangular, Smith or polar plot it has three sections: **Traces** 
 **Labels** (the title and axis labels) and **Axes** (limits, autoscale and limit areas). The plot's
 right-click **Axes Limits** and **Axes Labels…** open it on the matching section.
 
+**Card**, in the Labels section, puts the plot on a card: a panel a shade off the background, with a hairline
+border and rounded corners, as the display's controls and marker boxes are drawn. It is saved with the plot.
+**Settings ▸ General ▸ Appearance ▸ Plots as cards** starts every plot you add on one.
+
 Every edit in a display is one undo step: a trace card, a label, a limit, the plot type, a move, a marker.
 Undoing every edit since the last save leaves the `.cdd` unmodified again.
 
@@ -393,6 +397,11 @@ vertical line across the plot, and its info box lists each trace's value at that
 voltage, `P(Iout)=12.3 dBm`, `dB(S(2,1))=-0.42 dB`, `V(Vin)=1.98 V` on a waveform. The unit comes from the quantity a
 result names (`V` is volts, `I` amperes, a power watts, an S-parameter a ratio) and the dB function or transform applied
 to it. A trace whose unit is not known, such as arithmetic on two quantities, shows the bare number.
+
+**A marker can drive another plot.** A pinned axis of any trace can follow a marker instead of a fixed index, so
+moving the marker moves the other plot with it — the drive-up at the load a marker sits on, the spectrum at a marker's
+drive. Knobs, sliders, buttons and readouts placed on the canvas do the same without a marker. See
+{{anchor: linked-plots|Linked plots and controls}}.
 
 ## Monte Carlo statistics {#statistics}
 

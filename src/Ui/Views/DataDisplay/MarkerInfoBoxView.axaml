@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             xmlns:ctl="using:CircuitRF.Ui.Controls"
              x:Class="CircuitRF.Ui.Views.DataDisplay.MarkerInfoBoxView"
              x:DataType="vm:MarkerInfoBoxViewModel"
              Width="{Binding BoxWidth}"
@@ -17,11 +18,10 @@
     -->
 
     <Canvas>
-        <TextBox x:Name="FrequencyEditor" IsVisible="False" Padding="2,0"
-                 MinHeight="0" VerticalContentAlignment="Center">
-            <TextBox.InnerRightContent>
-                <TextBlock x:Name="FrequencyUnit" VerticalAlignment="Center" Margin="3,0,2,0"/>
-            </TextBox.InnerRightContent>
-        </TextBox>
+        <!-- The application's inline editor: the label's own face and size, its number placed on the frequency's own
+             baseline after "freq=". The unit is not in the box: it is plain text just past the box's right edge, on the
+             same baseline, so only the number is edited (OpenFrequencyEditor, PlaceFrequencyUnit). -->
+        <ctl:SchematicInlineEditBox x:Name="FrequencyEditor"/>
+        <TextBlock x:Name="FrequencyUnit" IsVisible="False" IsHitTestVisible="False"/>
     </Canvas>
 </UserControl>

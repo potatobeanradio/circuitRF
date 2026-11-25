@@ -31,7 +31,8 @@
                      IsVisible="{Binding IsEditingName}"
                      VerticalAlignment="Center"
                      MinWidth="60"
-                     Padding="2,0"
+                     FontSize="12"
+                     Padding="3,0"
                      LostFocus="OnNameEditLostFocus"
                      KeyDown="OnNameEditKeyDown"/>
 

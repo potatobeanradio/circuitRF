@@ -492,3 +492,15 @@ issue.
 
 Gate: `LoadpullSettingsReachTests` (Hero 3 unswept under the CLI's settings, under the defaults, and swept over one
 point, bit for bit).
+
+## A drive the ladder never reached was 0, not NaN (2026-11-24)
+
+`BuildLoadpullDataSet` sized every per-drive metric `{gridPoint, pinStep}` to the whole Pin axis and wrote only the
+rungs the ladder climbed, so the rest kept the array default: **0 dB of Gt and Gp, 0 % DE and PAE, 0 W of Pdc, 0 V and
+0 A of bias**. Pout looked right only by accident, because the post-processor's dBm conversion refuses 0 W and writes
+NaN. A plot of Gt or PAE against drive therefore ended in a vertical cliff to zero at every load, and anything reading
+the cube without the stop index read numbers the run never computed. They are NaN now, as NF beside them has been since
+NZ-6 for the same reason; `Converged`, `IsTickle` and the spectra keep 0, which is what "not converged" and "no signal"
+mean. Found drawing the Loadpull example's linked display (brief-ddl-8). Every loadpull, pursuit and Hero 3 test in
+Engine, RfCore and Ui passed unchanged — the goldens are written from the per-rung results, never from the padded cube.
+Gate: `Hero3LoadpullTests.Hero3Loadpull_UnreachedDrives_ReadNaN_NotZero`.

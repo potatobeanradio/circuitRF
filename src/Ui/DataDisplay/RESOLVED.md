@@ -2746,3 +2746,55 @@ iterates it. Do not add a third box kind with its own copies of those loops.
 - **A hand-written `.cdd` opens dirty once a bound slider fills in its stops**, and a second `ResolveLinks` after open
   autoscales a followed plot and moves its saved window, so a test that asserts "clean before, dirty after" opens a file
   the application has saved once, and does not resolve again.
+
+## The user page and the example (brief-ddl-8, 2026-11-24)
+
+- **The example display is authored through the application's own load and save.** Hand-written JSON opens dirty the
+  moment a bound control fills in its stops, and differs from what the application writes in a dozen defaults; the
+  shipped `Linked Plots.cdd` was opened by a `DisplayWindowViewModel` over real runs of the two benches, positioned
+  through `DisplayVariables.Set`, and saved by `SaveAllAsync`. Its sources are relative (`Loadpull.npy`), as a run writes
+  them, and it holds no path from the machine it was made on.
+- **A synthesised drive-up was flagged "dimension mismatch" beside a measured read of the same loadpull.** Its X is named
+  "available input power" and the measured trace's `pinStep`, though both are the drive. A synthesised curve whose X is
+  the sweep key now records the axis it stands for (`Trace.SynthesisXAxisOf`) and the Y label compares
+  `ComparableXAxisName`.
+- **A `harmonic` X was labelled "freq (GHz)" with no fundamental to make it one.** A loadpull's `V[…, harmonic]` has no
+  tone cube, so the X is the order 0…5; `Plot.XLabelFor` names it a frequency only when the trace places orders at their
+  frequencies (`Trace.HarmonicXIsFrequency`).
+- **A contour label box exported to SVG as an opaque black slab.** The default box is black at 55 %, and Skia's SVG writer
+  drops the paint of pure black and its opacity with it; only the docs factory guarded against that. The box is painted
+  `#010101` at the same alpha (`SvgSafeFill`), which looks identical and is written with its fill.
+- **The axis label strip now marks a hidden trace "(hidden)"**, as its legend row does (DDL-6 left it to the legend).
+- **Two control-chrome defects.** The lock badge is centred on the frame's corner and the compositor clipped the custom
+  draw to the frame, cutting it in half: the draw reports bounds grown by `ControlRenderer.ChromeOverhang`. And a frame
+  change from the inspector (Horizontal to Vertical, a preset) requested its redraw before layout gave the surface its new
+  size, so the last drawing — badge at the old corner — stayed: the surface redraws on every size change.
+- **Settings ▸ Appearance ▸ Plots as cards** (`PlotCardPreference`, `AppPreferences.DataDisplayPlotsAsCards`, off by
+  default) is passed to `AddPlot` by the display's own entry points only — the toolbar's Add Plot commands and the empty
+  plot a new display starts with. `AddPlot` is also how embedded tools (the S-parameter viewer, the Smith tool, the
+  filter designers) build their panels and how a `.cdd` is restored, and neither should be carded by a preference; a
+  restored plot's saved `Card` is applied after creation either way. It is a parameter, not a later edit, so the card is
+  part of the plot as added and never a second undo step.
+- **A label-less slider sat high in its card.** Centring the rows RESERVED under the track counted the empty bottom of
+  the end-label row as content. With nothing above the track it is now centred on what is drawn (thumb top to the
+  labels' ink), moved 35 % of the way toward the card's middle because the light labels weigh less than the track.
+- **A button resizes far below the Small preset** (`DisplayControl.MinimumSize`, 24 x 24 for a button; every other kind
+  still stops at Small), and a caption that would be drawn under 7 px is left off, its strip given to the lamp.
+- **The frame shows the arrow cursor**, not the four-way move cursor, which read as crosshairs over every control.
+- **A knob turns with a sideways drag too.** Right turns it up (clockwise across the dial's top), left down, added to the
+  vertical turn. At first sideways shared the vertical 200 px per sweep, which is wider than the dial, so a drag across
+  the knob reached only its middle; sideways is now one sweep per dial width (its outer diameter), at any size. Its
+  hover cursor is the hand, as a slider's track is — an up-down cursor no longer says what the drag does, and a four-way
+  one read as crosshairs.
+- **Every Data Display inline editor opens its text where the text was drawn.** All four now use the application's one
+  inline editor (`SchematicInlineEditBox`: IBM Plex at the drawn size, its text on the drawn Skia baseline), measured
+  to within a pixel of the label in UiSnapshot (`--dclick` added for it):
+  - a slider's end: the stop of a horizontal slider is drawn flush right, so its editor is right-aligned on that edge
+    (`SchematicInlineEditBox.RightInset`, measured as the left padding's mirror) and grows leftward as it is typed;
+  - a marker box's frequency: the number opens after "freq=" where it was drawn (it used to start where "freq=" did);
+    the unit is plain text past the box, not in it and not in the editable value, backed in the box's own colour and
+    wide enough with the box to cover the old value so none of it shows through;
+  - the canvas text tool: typed on the baseline, in the face and size, the annotation will be drawn with;
+  - a tab's name: the label's size (12) and inset (border 1 + padding 3 = the label's 4).
+  The shared box is opaque by default now (`SystemControlBackgroundAltHighBrush`, which the schematic already set on its
+  own): a see-through box shows the old text under the new.

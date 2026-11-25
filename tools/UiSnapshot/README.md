@@ -17,7 +17,7 @@ layout edits — run `tools/UpdateLayoutHarness` first and point `--clay` at the
 ```
 dotnet build tools/UiSnapshot
 dotnet run --project tools/UiSnapshot --no-build -- <file.cdd> -o out.png [--view canvas|inspector|display] \
-    [--plot n] [--size WxH] [--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
+    [--plot n] [--size WxH] [--results <dir>] [--click x,y] [--dclick x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 ```
 
 | Option | Means |
@@ -289,6 +289,7 @@ capture. Coordinates are window DIPs — take them from a first capture.
 
 | Step | Does |
 |---|---|
+| `--click x,y` | `--dclick x,y` is a double-click there (an inline editor opens). |
 | `--click x,y` | Left press and release. |
 | `--drag x0,y0:x1,y1` | Left press, ten moves (so it crosses a click threshold), release. A leading modifier holds it throughout: `--drag Alt+x0,y0:x1,y1`. |
 | `--drag-hold x0,y0:x1,y1` | The same, not released, so a capture shows the gesture's live chrome. |

@@ -325,7 +325,8 @@ namespace CircuitRF.Render.DataDisplay
                     float length = PathCanvasLength(pts, tf);
                     if (length < minLabelLenPx) { ringIndex++; continue; }
 
-                    bgPaint.Color  = labelBg.WithAlpha((byte)Math.Round(labelBg.Alpha * fadeF));
+                    // Translucent black is the default box, and Skia's SVG writer drops its paint (SvgSafeFill).
+                    bgPaint.Color  = SvgSafeFill.Of(labelBg.WithAlpha((byte)Math.Round(labelBg.Alpha * fadeF)));
                     bgStroke.Color = new SKColor(0, 0, 0, (byte)Math.Round(120 * fadeF));
 
                     // R8A §4.1 — the world-unit arc walk + box/text draw, shared with harmonicaRF's

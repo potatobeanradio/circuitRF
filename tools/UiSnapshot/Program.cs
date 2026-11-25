@@ -464,7 +464,7 @@ for (int i = 0; i < args.Length; i++)
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
             sizeGiven = true;
             break;
-        case "--click" or "--drag" or "--drag-hold" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover" or "--wait"
+        case "--click" or "--dclick" or "--drag" or "--drag-hold" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover" or "--wait"
             or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row" or "--c3d-pick" or "--c3d-pick-add" or "--c3d-boolean-menu" or "--c3d-menu"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
@@ -1641,6 +1641,17 @@ foreach (var (kind, arg) in steps)
             var p = PointOf(arg);
             host.MouseDown(p, MouseButton.Left, RawInputModifiers.None);
             host.MouseUp(p, MouseButton.Left, RawInputModifiers.None);
+            break;
+        }
+        case "--dclick":
+        {
+            // Two presses at one point with nothing between them: the second is a double-click (an inline editor's way in).
+            var p = PointOf(arg);
+            for (int k = 0; k < 2; k++)
+            {
+                host.MouseDown(p, MouseButton.Left, RawInputModifiers.None);
+                host.MouseUp(p, MouseButton.Left, RawInputModifiers.None);
+            }
             break;
         }
         case "--drag":

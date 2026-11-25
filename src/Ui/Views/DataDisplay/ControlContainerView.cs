@@ -50,6 +50,15 @@ public sealed class ControlContainerView : Panel
     private sealed class Surface(ControlContainerView owner) : Control
     {
         public override void Render(DrawingContext context) => owner.RenderSurface(context);
+
+        // A new size is a new drawing: everything — the lock badge's corner included — is placed from the size. An
+        // inspector edit that changes the frame (an orientation swap, a preset) asks for its redraw BEFORE layout has
+        // given the surface that size, so without this the last drawing stayed, laid out for the old frame.
+        protected override void OnSizeChanged(SizeChangedEventArgs e)
+        {
+            base.OnSizeChanged(e);
+            InvalidateVisual();
+        }
     }
 
     private void Redraw() => _surface.InvalidateVisual();
@@ -114,7 +123,10 @@ public sealed class ControlContainerView : Panel
                                        bool selected, bool locked, bool grip, bool thumb, SKColor selection) : ICustomDrawOperation
     {
         public bool Equals(ICustomDrawOperation? other) => false;
-        public Rect Bounds => bounds;
+        // The chrome reaches past the frame — the lock badge is centred ON the corner, the selection outline's stroke
+        // straddles the edge — and the compositor clips a custom draw to the bounds it reports, so it reports them
+        // with that overhang. Hit testing stays on the frame itself.
+        public Rect Bounds => bounds.Inflate(ControlRenderer.ChromeOverhang);
         public bool HitTest(Point p) => bounds.Contains(p);
 
         public void Render(ImmediateDrawingContext context)
@@ -217,12 +229,9 @@ public sealed class ControlContainerView : Panel
             if (hot != _gripHot || thumb != _thumbHot) { _gripHot = hot; _thumbHot = thumb; Redraw(); }
             Cursor = hot ? new Cursor(StandardCursorType.BottomRightCorner)
                    : EndAt(vm, p) is not null ? new Cursor(StandardCursorType.Ibeam)
-                   : vm.Model is KnobControl k && !e.KeyModifiers.HasFlag(KeyModifiers.Alt) && OnFace(vm, p)
-                     ? new Cursor(ControlRenderer.KnobTickAt(k, (float)Bounds.Width, (float)Bounds.Height, Sk(p)) is not null
-                                  ? StandardCursorType.Hand : StandardCursorType.SizeNorthSouth)
                    : !e.KeyModifiers.HasFlag(KeyModifiers.Alt) && OnFace(vm, p) ? new Cursor(StandardCursorType.Hand)
-                   : vm.IsLocked ? Cursor.Default
-                   : new Cursor(StandardCursorType.SizeAll);
+                   // The frame keeps the ordinary arrow: a four-way move cursor over every control read as crosshairs.
+                   : Cursor.Default;
             return;
         }
         if (e.Pointer.Captured != this) return;
@@ -231,8 +240,8 @@ public sealed class ControlContainerView : Panel
         switch (_gesture)
         {
             case Mode.Value:
-                // A knob turns with the vertical drag, finely with Ctrl (R-ddl6-1).
-                if (vm.Model is KnobControl) vm.TurnKnob(p.Y, Fine(e.KeyModifiers));
+                // A knob turns with the drag — up or right turns it up — finely with Ctrl (R-ddl6-1).
+                if (vm.Model is KnobControl) vm.TurnKnob(Sk(p), Fine(e.KeyModifiers));
                 else if (_relative) vm.DragValueRelative(Sk(p));
                 else                vm.DragValueTo(Sk(p));
                 break;
@@ -362,7 +371,7 @@ public sealed class ControlContainerView : Panel
 
     // ---- editing a range's ends in place ---------------------------------------------------------
 
-    private TextBox? _endEditor;
+    private SchematicInlineEditBox? _endEditor;
 
     /// <summary>True for an event that started in the open end editor — it is the text box's, not the slider's.</summary>
     private bool FromEditor(RoutedEventArgs e)
@@ -391,18 +400,17 @@ public sealed class ControlContainerView : Panel
             ? $"{end.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)} {s.Unit}"
             : end.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
 
-        double fontSize = Math.Max(11, label.FontSize);
-        double width = Math.Max(InlineEdit.WidthFromMeasuredText(
-                           InlineEdit.MeasureWidth(text, fontSize, new Typeface(FontFamily.Default)), fontSize) + 10, 64);
-        var box = new TextBox
+        // The application's inline editor (the schematic's): the label's own face and size, its text set on the label's
+        // Skia baseline — so the text in the box opens exactly where the label was drawn.
+        var box = new SchematicInlineEditBox { Name = "SliderEndEditor" };
+        box.Open(text, label.Rect.Left, label.Baseline, label.FontSize);
+        // The stop of a horizontal slider is drawn flush to the track's right end, so its editor is right-aligned on that
+        // edge: the text stays where it was and grows leftward, into the slider, as it is typed.
+        if (!isStart && s.Orientation == ControlOrientation.Horizontal)
         {
-            Name = "SliderEndEditor", Text = text, FontSize = fontSize, Width = width, MinHeight = 0,
-            Padding = new Thickness(3, 1), VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
-        };
-        // Anchored on the label's own edge — the start's left, the stop's right (its text is right-aligned there).
-        bool alignRight = !isStart && s.Orientation == ControlOrientation.Horizontal;
-        Canvas.SetLeft(box, alignRight ? label.Rect.Right - width + 3 : label.Rect.Left - 4);
-        Canvas.SetTop(box, label.Rect.MidY - (fontSize + 8) / 2);
+            box.TextAlignment = TextAlignment.Right;
+            box.Margin = new Thickness(label.Rect.Right + SchematicInlineEditBox.RightInset - box.Width, box.Margin.Top, 0, 0);
+        }
         box.AddHandler(KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Enter) { CommitEndEditor(vm, isStart); e.Handled = true; }
@@ -413,8 +421,7 @@ public sealed class ControlContainerView : Panel
         _endEditor = box;
         _editorHost.Children.Add(box);
         box.Focus();
-        box.SelectionStart = 0;
-        box.SelectionEnd = InlineEdit.ValueSelectionLength(text);
+        box.SelectValueOnly();
         CircuitRF.Ui.DataDisplay.Gesture.Note("control.editEnd", $"{s.Name} {(isStart ? "start" : "stop")}");
     }
 

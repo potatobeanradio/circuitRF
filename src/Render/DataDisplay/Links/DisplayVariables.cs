@@ -202,6 +202,9 @@ public sealed partial class DisplayVariables
         string name = site.Marker.Name;
         if (site.Marker.FreePosition || t.IsContourTrace)
             return new(VariableSetStatus.Refused, $"{name} is placed freely on the chart, not on a sample.");
+        // A trace that draws nothing has no axis to name in a refusal, and no sample to stand on.
+        int count = t.IsCubeBound ? t.CubeXValues?.Count ?? 0 : t.Data?.Frequencies?.Length ?? 0;
+        if (count == 0) return new(VariableSetStatus.Refused, $"{name}'s trace draws nothing to put it on.");
         int sample;
         if (index is { } i) sample = i;
         else
@@ -216,10 +219,7 @@ public sealed partial class DisplayVariables
         bool Change() => t.PlaceMarkerAtSample(site.Marker, sample);
         bool placed = _writer is { } w ? w.WriteMarker(site, Change) : Change();
         if (placed) return VariableSetResult.Ok;
-        int count = t.IsCubeBound ? t.CubeXValues?.Count ?? 0 : t.Data.Frequencies.Length;
-        return new(VariableSetStatus.Refused, count > 0
-            ? $"{name}'s trace has samples 0..{count - 1}."
-            : $"{name}'s trace draws nothing to put it on.");
+        return new(VariableSetStatus.Refused, $"{name}'s trace has samples 0..{count - 1}.");
     }
 
     // ---- the value grammar (R-ddl1-10) -------------------------------------------------------------

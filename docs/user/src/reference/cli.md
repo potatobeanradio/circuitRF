@@ -2593,6 +2593,13 @@ With `--json`, `result.render.dataDisplay` names **every source and the file it 
 and which of `--data` or the document bound it. That is the part the picture cannot tell you: "the plot
 is empty" and "the plot read the wrong run" look identical.
 
+**`--marker` and `--control` draw a linked display at another setting**, for this render only; nothing
+is written back. `--marker m1=2.4GHz` puts m1 on the sample of its trace nearest that value (a unit is
+compared with the trace's own, and a different one is a refusal naming both), `--marker m1=#17` on sample
+17. `--control freq=2.2GHz` sets a slider or a knob to its nearest stop, `#5` to stop 5, and a button takes
+`=1` or `=0`. Both may be repeated, and every plot that follows the marker or control is drawn following
+it — see [Linked plots and controls](linked-plots.html).
+
 <h3 id="render-field">A 3D view's field plot</h3>
 
 A 3D setup's model — a `.cem` with a 3D solver, or a `.c3d` — is drawn as a section with

@@ -63,6 +63,20 @@ public static partial class ControlRenderer
             float below = (c.ShowTicks ? 6 * u : 0) + (bottomRow ? 13 * u : 0);
             float top = topRow ? label.Bottom + r + 2 * u : pad + r;
             float y = Math.Min(top + Math.Max(0, (h - pad - below - top - r) * 0.5f), h - pad - below - r);
+            if (!topRow)
+            {
+                // With nothing above the track the card is centred on what is DRAWN, not on the rows reserved for it:
+                // the end labels' digits fill only the top of their row, so centring the reserved block left the empty
+                // strip under them counted as content and the slider sat high. The labels are light beside the track
+                // and thumb, so the result is drawn a little further toward the card's middle, where the eye puts it.
+                float tickReach = c.ShowTicks ? 1.5f * u + 5 * u : 0;
+                float labelInk  = bottomRow ? 1.5f * u + (c.ShowTicks ? 6 * u : 1 * u) + 10 * u * 0.85f : 0;
+                float inkBelow  = r + Math.Max(tickReach, labelInk);
+                float inkCentred   = (h + r - inkBelow) / 2;
+                float trackCentred = h / 2;
+                y = inkCentred + 0.35f * (trackCentred - inkCentred);
+                y = Math.Clamp(y, pad + r, Math.Max(pad + r, h - pad * 0.5f - inkBelow));
+            }
             var a = new SKPoint(pad + r, y);
             var b = new SKPoint(w - pad - r, y);
             // The face reaches down over the tick row: the ticks read as part of the track, and a drag begun on them
@@ -274,6 +288,10 @@ public static partial class ControlRenderer
     /// <summary>The gripper's corner triangle: points whose distance in from the bottom-right corner, along both edges
     /// together, is under this many pixels resize. A triangle rather than a square, so it stays off the end label.</summary>
     public const float GripReach = 13f;
+
+    /// <summary>How far the window's chrome reaches past a control's frame: the lock badge, centred on the corner (radius
+    /// 7.5 about a point 1 px in), and the selection outline's stroke. A host must not clip the chrome tighter.</summary>
+    public const float ChromeOverhang = 8f;
 
     /// <summary>True when <paramref name="p"/> is in the gripper's corner triangle of a <paramref name="w"/> ×
     /// <paramref name="h"/> frame.</summary>

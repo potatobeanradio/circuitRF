@@ -21,21 +21,34 @@ namespace CircuitRF.Render.DataDisplay;
 public static partial class ControlRenderer
 {
     /// <summary>Where a button's parts sit: the face disc, the room its glow takes, and the label under it.</summary>
-    public sealed record ButtonLayoutInfo(float U, SKPoint Center, float Radius, float GlowRadius, SKRect Label);
+    /// <param name="ShowsLabel">The caption is drawn: false on a frame too small for it to be read, which gives its strip
+    /// to the lamp.</param>
+    public sealed record ButtonLayoutInfo(float U, SKPoint Center, float Radius, float GlowRadius, SKRect Label,
+                                          bool ShowsLabel = true);
+
+    /// <summary>The smallest caption, in pixels, a button draws; below it the caption is left off.</summary>
+    private const float MinButtonCaption = 7f;
 
     /// <summary>How far the glow reaches past the face, as a multiple of its radius.</summary>
     private const float GlowReach = 1.34f;
 
     public static ButtonLayoutInfo ButtonLayout(ButtonControl c, float w, float h)
     {
-        bool under = c.LabelPlacement == ButtonLabelPlacement.Under;
+        bool under = c.LabelPlacement == ButtonLabelPlacement.Under && c.Caption.Length > 0;
         float u = Math.Max(0.2f, Math.Min(w / 96f, h / (under ? 112f : 96f)));
+        // A caption that would be drawn too small to read is given up, and the lamp takes its strip.
+        bool shows = c.Caption.Length > 0 && (under ? 12 * u : Math.Min(13 * u, 0.42f * 96 / 2 / GlowReach * u)) >= MinButtonCaption;
+        if (under && !shows)
+        {
+            under = false;
+            u = Math.Max(0.2f, Math.Min(w / 96f, h / 96f));
+        }
         float pad = 5 * u;
         float labelH = under ? 17 * u : 0;
         var label = new SKRect(pad, h - pad - labelH, w - pad, h - pad);
         var region = new SKRect(pad, pad, w - pad, h - pad - labelH);
         float r = Math.Max(4 * u, Math.Min(region.Width, region.Height) / 2 / GlowReach);
-        return new ButtonLayoutInfo(u, new SKPoint(region.MidX, region.MidY), r, r * GlowReach, label);
+        return new ButtonLayoutInfo(u, new SKPoint(region.MidX, region.MidY), r, r * GlowReach, label, shows);
     }
 
     private static bool ButtonFaceContains(ButtonControl c, float w, float h, SKPoint p)
@@ -91,7 +104,7 @@ public static partial class ControlRenderer
         }
 
         string caption = c.Caption;
-        if (caption.Length == 0) return;
+        if (caption.Length == 0 || !l.ShowsLabel) return;
         if (c.LabelPlacement == ButtonLabelPlacement.Under)
         {
             using var font = new SKFont(SkiaFonts.PlexRegular, 12 * u);

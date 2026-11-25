@@ -67,9 +67,10 @@ public class MarkerEditorFlyoutLayoutTests
         var editor = System.Xml.Linq.XDocument.Load(Path.Combine(
             RepoRoot(), "src/Ui/Views/DataDisplay/MarkerInfoBoxView.axaml"));
         var elements = editor.Descendants().ToList();
-        Assert.Contains(elements, element => element.Name.LocalName == "TextBox.InnerRightContent");
-        Assert.Contains(elements, element => element.Name.LocalName == "TextBlock"
+        // The unit is plain text beside the box — neither in the editable value nor inside the box.
+        var unit = Assert.Single(elements, element => element.Name.LocalName == "TextBlock"
             && element.Attributes().Any(attribute => attribute.Name.LocalName == "Name" && attribute.Value == "FrequencyUnit"));
+        Assert.DoesNotContain(unit.Ancestors(), a => a.Name.LocalName.Contains("InlineEditBox") || a.Name.LocalName == "TextBox");
 
         var code = File.ReadAllText(Path.Combine(RepoRoot(), "src/Ui/Views/DataDisplay/MarkerInfoBoxView.axaml.cs"));
         Assert.Contains("FrequencyUnit.Text = vm.FreqUnit.Description()", code, StringComparison.Ordinal);

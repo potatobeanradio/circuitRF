@@ -1307,8 +1307,10 @@ namespace CircuitRF.Render.DataDisplay
 
                 // Reference X-axis = first trace's cube X-axis (the plot's X axis). Cube traces whose X-axis
                 // name differs are softly flagged "dimension mismatch" but still attempt to render.
+                // A synthesised drive-up compares as the drive axis it stands for (brief-ddl-3): beside a measured read of
+                // the same loadpull it is the same X, not a mismatch.
                 string? refCubeXAxis = plot.Traces.Count > 0 && plot.Traces[0].IsCubeBound
-                    ? plot.Traces[0].CubeXAxisName
+                    ? plot.Traces[0].ComparableXAxisName
                     : null;
 
                 string LabelFor(Trace t)
@@ -1321,8 +1323,10 @@ namespace CircuitRF.Render.DataDisplay
                     bool mismatch = t.IsCubeBound
                                     && refCubeXAxis != null
                                     && !plot.XLabelsDiffer
-                                    && !string.Equals(t.CubeXAxisName, refCubeXAxis, StringComparison.Ordinal);
-                    return t.RectYLabel(networkFallback, mismatch);
+                                    && !string.Equals(t.ComparableXAxisName, refCubeXAxis, StringComparison.Ordinal);
+                    // A trace hidden by a control keeps its label, said to be hidden, as its legend row does (brief-ddl-6).
+                    string label = t.RectYLabel(networkFallback, mismatch);
+                    return t.HiddenByControl ? label + " (hidden)" : label;
                 }
 
                 string yLabel = plot.YLabel;

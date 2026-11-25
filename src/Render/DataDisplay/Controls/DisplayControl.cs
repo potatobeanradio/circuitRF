@@ -85,6 +85,9 @@ public abstract class DisplayControl
     /// <summary>The fixed size a preset gives this kind, for its orientation.</summary>
     public abstract (double Width, double Height) PresetSize(ControlSize size);
 
+    /// <summary>The smallest frame the gripper leaves: the Small preset, the least most kinds stay legible at.</summary>
+    public virtual (double Width, double Height) MinimumSize() => PresetSize(ControlSize.Small);
+
     /// <summary>Sets <see cref="Size"/> and, for a preset, the frame to its size.</summary>
     public void ApplySize(ControlSize size)
     {
@@ -326,7 +329,7 @@ public sealed class SliderControl : SteppedControl
 
 /// <summary>
 /// A knob (brief-ddl-6 R-ddl6-1): the slider's two domains and value rules, drawn as a dial over a 270° sweep. A
-/// vertical drag turns it, the wheel steps it, and a click on a bound knob's tick sets that stop.
+/// drag turns it (up or right increases), the wheel steps it, and a click on a bound knob's tick sets that stop.
 /// </summary>
 public sealed class KnobControl : SteppedControl
 {
@@ -335,7 +338,7 @@ public sealed class KnobControl : SteppedControl
     /// <summary>The sweep of the dial, in degrees, from its first stop to its last.</summary>
     public const double SweepDegrees = 270;
 
-    /// <summary>A vertical drag of this many pixels turns the knob through its whole sweep; ten times as many with
+    /// <summary>A drag of this many pixels (up plus right) turns the knob through its whole sweep; ten times as many with
     /// Ctrl.</summary>
     public const double PixelsPerSweep = 200;
 
@@ -385,6 +388,10 @@ public sealed class ButtonControl : DisplayControl
         double k = size switch { ControlSize.Small => 0.8, ControlSize.Large => 1.35, _ => 1.0 };
         return LabelPlacement == ButtonLabelPlacement.Under ? (96 * k, 112 * k) : (96 * k, 96 * k);
     }
+
+    /// <summary>A lamp needs no room for a track or digits, so it goes far below the Small preset: a small indicator
+    /// beside a plot. Under that, its label is given up rather than drawn too small to read.</summary>
+    public override (double Width, double Height) MinimumSize() => (24, 24);
 
     public override DisplayControl Clone()
     {

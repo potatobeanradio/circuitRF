@@ -810,6 +810,11 @@ public sealed class LoadpullEngine
         var biasILoad  = new double[fomLen];
         var biasVSrc   = new double[fomLen];
         var biasISrc   = new double[fomLen];
+        // A drive the ladder never reached (it stopped at compression, PinMax or a failed seed) has no value: NaN, as NF
+        // below has always been. A padded 0 read as 0 dB of gain and 0 % efficiency, and drew a cliff to zero at the end
+        // of every measured curve. The flags (Converged, IsTickle) stay 0, which is what "not converged" means.
+        foreach (var metric in new[] { pout, gt, gp2, de, pae, pdc, biasVLoad, biasILoad, biasVSrc, biasISrc })
+            Array.Fill(metric, double.NaN);
 
         // Grid-point buffers {gridPoint}
         var zLoad     = new Complex[nG];
@@ -879,7 +884,7 @@ public sealed class LoadpullEngine
                                 iinData[(gi * nP + pi) * nH + hi] = step.ISrcIn[hi];
                     }
                 }
-                // else: pi >= PinSteps.Count — padded with 0 (default)
+                // else: pi >= PinSteps.Count — the metrics stay NaN (above); the flags and spectra stay 0
             }
         }
 

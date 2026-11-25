@@ -463,6 +463,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? View3DRealisticOnOpen { get; set; }
 
+    // Whether a plot ADDED to a Data Display starts as a card (Settings ▸ Appearance ▸ Plots as cards). Per USER: a look
+    // the person prefers, applied to what they add; a plot's own Card flag is what the .cdd saves. Null means the shipped
+    // default (off). See PlotCardPreference.
+    [JsonPropertyName("data_display_plots_as_cards")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DataDisplayPlotsAsCards { get; set; }
+
     // Whether a 3D view the compositor offers no usable GPU interop to (a remote X session, a VM) reads each frame back
     // and draws it in software instead of refusing to draw (Settings ▸ General). Per USER, a property of the machine.
     // Null means the shipped default (on). Read by Viewer3DPane.Host when a view opens.

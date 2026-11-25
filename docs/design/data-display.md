@@ -478,7 +478,9 @@ arrange, S/M/L and the gripper, Lock Position).
 *The knob* (`KnobControl`) shares the slider's two domains and value rules through their common base,
 `SteppedControl`. Its face is a dial over a 270° sweep, open at the bottom — the first stop at lower left, the last
 at lower right — with ticks outside it, an accent arc for the value run, an indicator line on the body and the
-value under it. A vertical drag turns it, up increasing: one full sweep per 200 px, a tenth of that rate with Ctrl
+value under it. A drag turns it, up or right increasing (right is clockwise across the dial's top): upward one full sweep
+per 200 px, sideways one sweep across the dial's outer diameter (so dragging across the knob sweeps its arc at any size),
+a diagonal adding the two; a tenth of either rate with Ctrl
 (or Cmd); pressing or releasing Ctrl mid-drag changes the rate from where the pointer is, without a jump. The
 wheel over the dial steps it one stop a notch. On a BOUND knob a press on a tick sets that stop. A locked knob's
 frame drag turns it, as its face does.
@@ -527,6 +529,19 @@ there is nothing around it; the window's (`DisplayWindowViewModel.Variables`) re
 and the links follow. `render --marker/--control` set through it, so there is no second write path. Subscribers are
 told, after every link follow, of each variable whose value, sample or text moved, whoever moved it. A plugin session
 would be handed this object, never the window (`plugins.md` §8).
+
+**The example and the user page (DDL-8).** The shipped Loadpull example's `Linked Plots.cdd` exercises the series:
+a free marker between the measured loads driving an interpolated detail and an At-marker table (Load); a marker on
+the Pursuit run's optimum loads against frequency driving its contours' frequency (Frequency); and a locked panel of
+a knob bound to frequency, a slider bound to the drive, a button showing the measured curves beside the
+interpolated ones, and readouts (Panel). It reads the example's two benches and simulates nothing. It was authored
+through the application's own load and save, so it ships in the form the application writes. The user page is
+`docs/user/src/reference/linked-plots.md`; its figures are the example's display captured over a fresh run
+(`DocDataDisplayFixtures.Linked`), in a results folder of their own because the docs' shared one already holds another
+fixture's `Loadpull.npy`. Two defects the example surfaced are fixed: a synthesised drive-up compares as the drive
+axis it stands for (`Trace.SynthesisXAxisOf`), so beside a measured read of the same loadpull it is not flagged
+"dimension mismatch"; and a `harmonic` X is labelled a frequency only where the trace places orders at their
+frequencies (`Trace.HarmonicXIsFrequency`) — a loadpull's `V[…, harmonic]` has no tone, and read "freq (GHz)" over 0…5.
 
 **HB drive.** In the shipped power amplifier example's HB sweep, the node voltages, currents and every measurement
 carry the same sweep axis (name, length, values, unitless), so a marker on Pout against Pin drives

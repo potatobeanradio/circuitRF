@@ -175,6 +175,9 @@ public static class LoadpullLinks
             if (double.IsFinite(ps.X[i]) && double.IsFinite(ps.Y[i])) { xsOut.Add(ps.X[i]); ysOut.Add(ps.Y[i]); }
         double[] x = [.. xsOut], y = [.. ysOut];
         string xName = metricX == LoadpullSurface.SweepKeyName ? "available input power" : Bare(t.XSpec ?? metricX);
+        // Against the sweep key the curve is plotted over the same drive the trace's own X axis is.
+        string? standsFor = metricX == LoadpullSurface.SweepKeyName
+            ? t.Slice?.Where(s => s.Role == AxisRole.KeepAsX).Select(s => s.AxisName).FirstOrDefault() : null;
         string xUnit = UnitOf(metricX);
         string label = $"interpolated, Γ {pos.Gamma.Magnitude:0.##}∠{pos.Gamma.Phase * 180 / Math.PI:0}°";
 
@@ -191,6 +194,7 @@ public static class LoadpullLinks
             tr.InvalidSpecText  = null;
             tr.IsSynthesized    = true;
             tr.SynthesisLabel   = label;
+            tr.SynthesisXAxisOf = standsFor;
         };
         return ReadKind.Synthesised;
     }

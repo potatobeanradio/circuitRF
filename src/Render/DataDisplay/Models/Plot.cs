@@ -813,7 +813,9 @@ namespace CircuitRF.Render.DataDisplay
             string? unit    = t.CubeXUnit;
             if (string.IsNullOrEmpty(axisName)) axisName = "x";
             bool isFreq = unit is "Hz" or "kHz" or "MHz" or "GHz";
-            bool isHarmonicAxis = string.Equals(axisName, Trace.HarmonicAxisName, StringComparison.Ordinal);
+            // A harmonic axis is frequency only where the trace places each order at its frequency; otherwise its values
+            // are orders, and "freq (GHz)" under 0…5 would be wrong.
+            bool isHarmonicAxis = t.HarmonicXIsFrequency;
             if (isFreq || isHarmonicAxis)
                 return $"freq ({FreqUnits.Description()})";
             // θ and φ, not "theta" and "phi" — the same mapping the trace card's axis rows and the

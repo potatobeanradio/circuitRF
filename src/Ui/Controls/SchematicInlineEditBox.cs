@@ -45,6 +45,13 @@ public class SchematicInlineEditBox : TextBox
     /// <summary>What the box's width holds besides its text: the padding on both sides and the border.</summary>
     private const double Chrome = 2 * LeftPad + 4.0;
 
+    /// <summary>
+    /// With <c>TextAlignment.Right</c>, how far inside the box's right edge its text ends — the right padding, the mirror
+    /// of <see cref="MarginFor"/>'s left (measured: a right-aligned slider end lands on its label to the pixel). A
+    /// right-aligned host sets <c>Margin.Left = textRight + RightInset - Width</c>.
+    /// </summary>
+    public const double RightInset = LeftPad;
+
     private static readonly FontFamily PlexRegular =
         new("avares://CircuitRF.Ui/Assets/Fonts/IBM_Plex_Sans/static/IBMPlexSans-Regular.ttf#IBM Plex Sans");
 
@@ -137,6 +144,9 @@ public class SchematicInlineEditBox : TextBox
         VerticalAlignment = VerticalAlignment.Top;
         // The face WidthFor measures and the canvas draws labels in, so the box fits its text and lines up with what it replaces.
         FontFamily = PlexRegular;
+        // Opaque, always: the box sits ON the text it replaces, and a see-through box shows the old text under the new.
+        // The schematic's host sets the same brush; this makes it the default for every host, a code-built box included.
+        Bind(BackgroundProperty, this.GetResourceObservable("SystemControlBackgroundAltHighBrush"));
         // Never a scrollbar: the box is sized to its text.
         ScrollViewer.SetHorizontalScrollBarVisibility(this, ScrollBarVisibility.Hidden);
         ScrollViewer.SetVerticalScrollBarVisibility(this, ScrollBarVisibility.Hidden);

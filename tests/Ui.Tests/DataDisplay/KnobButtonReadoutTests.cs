@@ -108,17 +108,28 @@ public sealed class KnobButtonReadoutTests : IDisposable
         var k1 = ControlOf(w, "k1");
         var knob = (KnobControl)k1.Model;
         var l = ControlRenderer.KnobLayout(knob, (float)k1.ViewWidth, (float)k1.ViewHeight);
+        SKPoint By(float dx, float dy) => new(l.Center.X + dx, l.Center.Y + dy);
         k1.BeginValueDrag(l.Center);
-        k1.TurnKnob(l.Center.Y - 100, fine: false);
+        k1.TurnKnob(By(0, -100), fine: false);
         k1.EndValueDrag();
         Assert.Equal(50, knob.CurrentValue, 9);
         k1.BeginValueDrag(l.Center);
-        k1.TurnKnob(l.Center.Y - 100, fine: true);
+        k1.TurnKnob(By(0, -100), fine: true);
         k1.EndValueDrag();
         Assert.Equal(55, knob.CurrentValue, 9);   // a twentieth of the span more
+        // Sideways too — clockwise across the dial's top: a drag across the dial's width is one whole sweep.
+        float across = 2 * (l.Radius + l.TickRoom);
+        k1.BeginValueDrag(l.Center);
+        k1.TurnKnob(By(across * 0.2f, 0), fine: false);
+        k1.EndValueDrag();
+        Assert.Equal(75, knob.CurrentValue, 9);
+        k1.BeginValueDrag(l.Center);
+        k1.TurnKnob(By(-across * 0.1f, 0), fine: false);
+        k1.EndValueDrag();
+        Assert.Equal(65, knob.CurrentValue, 9);
         // Down turns it back, and it stops at its ends.
         k1.BeginValueDrag(l.Center);
-        k1.TurnKnob(l.Center.Y + 1000, fine: false);
+        k1.TurnKnob(By(0, 1000), fine: false);
         k1.EndValueDrag();
         Assert.Equal(0, knob.CurrentValue, 9);
 

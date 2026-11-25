@@ -3794,3 +3794,10 @@ up to +0.1 dB in the stopband.
   points and then spends the whole budget again. Not changed; an agent that wants only the write should run with
   `emBudget` equal to the solves already cached, or write the VAR block itself and run `create what=layout`.
 
+
+## `check` named a display's selected source as the sentinel `run.npy` (2026-11-24)
+
+A summary table reads the document's SELECTED source, so `CddSources.Describe` added the sentinel for one — and reported
+"reads 'run.npy', which is not in …" for a display whose selection is `Loadpull.npy` and which names `run.npy` nowhere.
+It now reports the file the sentinel stands for (`SelectedDataSource`), and the sentinel only when nothing is selected.
+`render`'s binding is unchanged: it does need the selected source for those columns.

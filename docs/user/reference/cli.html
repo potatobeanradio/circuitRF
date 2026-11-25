@@ -3459,6 +3459,12 @@ did nothing would give you a full picture you believed was a crop.</p>
 <p>With <code>--json</code>, <code>result.render.dataDisplay</code> names <strong>every source and the file it actually resolved to</strong>,
 and which of <code>--data</code> or the document bound it. That is the part the picture cannot tell you: &quot;the plot
 is empty&quot; and &quot;the plot read the wrong run&quot; look identical.</p>
+<p><strong><code>--marker</code> and <code>--control</code> draw a linked display at another setting</strong>, for this render only; nothing
+is written back. <code>--marker m1=2.4GHz</code> puts m1 on the sample of its trace nearest that value (a unit is
+compared with the trace's own, and a different one is a refusal naming both), <code>--marker m1=#17</code> on sample
+17. <code>--control freq=2.2GHz</code> sets a slider or a knob to its nearest stop, <code>#5</code> to stop 5, and a button takes
+<code>=1</code> or <code>=0</code>. Both may be repeated, and every plot that follows the marker or control is drawn following
+it — see <a href="linked-plots.html">Linked plots and controls</a>.</p>
 <h3 id="render-field">A 3D view's field plot</h3>
 <p>A 3D setup's model — a <code>.cem</code> with a 3D solver, or a <code>.c3d</code> — is drawn as a section with
 <code>--section z=35um</code> (or <code>xz@y=…</code>, <code>yz@x=…</code>; every length carries a unit) or as an outline with <code>--iso</code>.

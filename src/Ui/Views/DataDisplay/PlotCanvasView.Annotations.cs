@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Rendering.SceneGraph;
+using CircuitRF.Ui.Controls;
 using Avalonia.Skia;
 using SkiaSharp;
 using CircuitRF.Render.DataDisplay;
@@ -18,7 +19,7 @@ namespace CircuitRF.Ui.Views.DataDisplay;
 public partial class PlotCanvasView
 {
     private AnnotationLayer? _annotationLayer;
-    private TextBox? _annotationEditor;
+    private SchematicInlineEditBox? _annotationEditor;
     private Point _textAnchor;
     private IPointer? _linePointer;
     private Point _linePress;
@@ -309,7 +310,9 @@ public partial class PlotCanvasView
     {
         if (_contentGrid is not { } grid) return;
         _textAnchor = anchor;
-        var editor = new TextBox
+        // The application's inline editor, in the face and size the text will be drawn in, its first line on the baseline
+        // the annotation will have — so what is typed is where it lands (PositionAnnotationEditor).
+        var editor = new SchematicInlineEditBox
         {
             Name = "AnnotationTextInput", AcceptsReturn = true, MinWidth = 160, TextWrapping = TextWrapping.NoWrap
         };
@@ -328,9 +331,14 @@ public partial class PlotCanvasView
     {
         if (_annotationEditor is not { } editor || Display is not { } display) return;
         var point = ViewPoint(display, _textAnchor.X, _textAnchor.Y);
-        Canvas.SetLeft(editor, point.X);
-        Canvas.SetTop(editor, point.Y);
-        editor.FontSize = Math.Max(1, 16 * display.ZoomLevel);
+        double zoom = display.ZoomLevel > 0 ? display.ZoomLevel : 1.0;
+        var probe = new CanvasText(0, 0, "Ag");
+        double size = Math.Max(1, probe.FontSize * zoom);
+        double baseline = AnnotationRenderer.Layout(probe).Baseline * zoom;
+        string text = editor.Text ?? "";
+        if (editor.IsVisible) editor.MoveTo(point.X, point.Y + baseline, size);
+        else editor.Open(text, point.X, point.Y + baseline, size);
+        editor.Width = double.NaN;   // grows with what is typed, from MinWidth
     }
 
     private void OnAnnotationEditorKey(object? sender, KeyEventArgs e)

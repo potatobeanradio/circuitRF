@@ -240,7 +240,13 @@ internal sealed class CddSources : IPlotDataSources
         }
         if (wanted.Contains(DataSourceRef.Selected, StringComparer.Ordinal)
             || tabs.Any(tb => tb.Plots.Any(p => p.Traces.Any(tc => tc.SummaryColumn is not null))))
-            Want(DataSourceRef.Selected);
+        {
+            // The sentinel is reported as the file it stands for — the document's selection — so a display whose
+            // selection is Loadpull.npy is not said to read a "run.npy" that nothing names. Unselected, it stays the
+            // sentinel, which is what the refusal for it names.
+            wanted.Remove(DataSourceRef.Selected);
+            Want(string.IsNullOrEmpty(config.SelectedDataSource) ? DataSourceRef.Selected : config.SelectedDataSource);
+        }
 
         string  cddDir     = Path.GetDirectoryName(Path.GetFullPath(cddPath)) ?? ".";
         string? wsDir      = WorkspaceRootFinder.FindAncestorCws(cddDir) is { } cws

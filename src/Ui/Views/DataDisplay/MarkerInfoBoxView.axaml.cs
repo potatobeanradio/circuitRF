@@ -30,6 +30,7 @@ using Avalonia.Skia;
 using Material.Icons;
 using Material.Icons.Avalonia;
 using SkiaSharp;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using RfCore;
@@ -60,6 +61,8 @@ public partial class MarkerInfoBoxView : UserControl
         PointerReleased += OnPointerReleased;
         DoubleTapped    += OnDoubleTapped;
         FrequencyEditor.KeyDown += OnFrequencyEditorKeyDown;
+        FrequencyEditor.TextChanged += (_, _) => { if (FrequencyEditor.IsVisible) FitFrequencyEditor(); };
+        FrequencyEditor.LayoutUpdated += (_, _) => PlaceFrequencyUnit();
         FrequencyEditor.LostFocus += (_, _) => CloseFrequencyEditor(commit: true);
 
         // Invalidate when any resource in the lookup chain changes (e.g.
@@ -472,6 +475,25 @@ public partial class MarkerInfoBoxView : UserControl
         e.Handled = true;
     }
 
+    /// <summary>Where the freq line's VALUE is drawn — its left edge, its baseline and the text size — as
+    /// <c>MarkerRenderer.DrawInfoBox</c> draws it: after the "freq=" prefix, in IBM Plex at the box's text size.</summary>
+    private (double X, double Baseline, double Size, double ValueWidth)? FrequencyValueAnchor()
+    {
+        if (Vm is not { } vm) return null;
+        var lines = vm.Trace.BuildMarkerBoxLines(vm.DisplayMarker, vm.FreqUnit, vm.ShowFilePrefix, vm.PlotTraces);
+        int index = lines.FindIndex(line => line.Item1.StartsWith("freq=", StringComparison.OrdinalIgnoreCase));
+        if (index < 0) return null;
+        double ts = Bounds.Height / (1.3 * lines.Count + 0.3);
+        double padding = ts * 0.3;
+        string line = lines[index].Item1;
+        string prefix = line[..(line.IndexOf('=') + 1)];
+        using var font   = new SkiaSharp.SKFont(CircuitRF.Render.SkiaFonts.PlexRegular, (float)ts);
+        using var fontFb = new SkiaSharp.SKFont(CircuitRF.Render.SkiaFonts.DejaVuRegular, (float)ts);
+        double prefixW = CircuitRF.Render.DataDisplay.RendererText.MeasureTextWithFallback(prefix, font, fontFb);
+        double valueW = CircuitRF.Render.DataDisplay.RendererText.MeasureTextWithFallback(line[prefix.Length..], font, fontFb);
+        return (padding + prefixW, padding + ts * (index + 0.85) + index * padding, ts, valueW);
+    }
+
     private Rect? FrequencyRowBounds()
     {
         if (Vm is not { } vm || !vm.Trace.TryGetMarkerFrequency(vm.DisplayMarker, out _)) return null;
@@ -486,17 +508,23 @@ public partial class MarkerInfoBoxView : UserControl
 
     private void OpenFrequencyEditor()
     {
-        if (Vm is not { } vm || FrequencyRowBounds() is not { } row ||
+        if (Vm is not { } vm || FrequencyValueAnchor() is not { } at ||
             !vm.Trace.TryGetMarkerFrequency(vm.DisplayMarker, out double frequency)) return;
-        Canvas.SetLeft(FrequencyEditor, row.X);
-        Canvas.SetTop(FrequencyEditor, row.Y);
-        FrequencyEditor.Width = row.Width;
-        FrequencyEditor.Height = row.Height;
-        FrequencyEditor.FontSize = Math.Max(8, row.Height / 1.3);
-        FrequencyUnit.FontSize = FrequencyEditor.FontSize;
+        // The number, opened where the line drew it after "freq=", in the label's face and size; the unit is plain text
+        // past the box, not in it. The box widens with what is typed, and the unit follows.
+        string number = (frequency * vm.FreqUnit.Scale()).ToString("G12", System.Globalization.CultureInfo.InvariantCulture);
         FrequencyUnit.Text = vm.FreqUnit.Description();
-        FrequencyEditor.Text = (frequency * vm.FreqUnit.Scale()).ToString("G12", System.Globalization.CultureInfo.InvariantCulture);
-        FrequencyEditor.IsVisible = true;
+        FrequencyUnit.FontSize = at.Size;
+        FrequencyUnit.FontFamily = FrequencyEditor.FontFamily;
+        // Opaque, in the colour the box is drawn in, and together with the editor at least as wide as the value the line
+        // drew — so none of the old "2 GHz" shows past the box while it is edited.
+        var fill = AppSettingsViewModel.Instance.MarkerBoxTransparentBackground
+            ? vm.Theme.BackgroundColor : CircuitRF.Render.DataDisplay.CardStyle.Fill(vm.Theme);
+        FrequencyUnit.Background = new SolidColorBrush(Color.FromArgb(fill.Alpha, fill.Red, fill.Green, fill.Blue));
+        _frequencyValueRight = at.X + at.ValueWidth + 1;
+        FrequencyEditor.Open(number, at.X, at.Baseline, at.Size);
+        FitFrequencyEditor();
+        FrequencyUnit.IsVisible = true;
         FrequencyEditor.Focus();
         FrequencyEditor.SelectAll();
     }
@@ -511,10 +539,57 @@ public partial class MarkerInfoBoxView : UserControl
     {
         if (_closingFrequencyEditor || !FrequencyEditor.IsVisible) return;
         _closingFrequencyEditor = true;
-        if (commit && Vm is { } vm && NumericText.TryParseDouble(FrequencyEditor.Text, out double value))
-            vm.TrySetFrequency(value / vm.FreqUnit.Scale());
+        if (commit && Vm is { } vm && FrequencyHz(FrequencyEditor.Text, vm.FreqUnit) is { } hz)
+            vm.TrySetFrequency(hz);
         FrequencyEditor.IsVisible = false;
+        FrequencyUnit.IsVisible = false;
         _closingFrequencyEditor = false;
+    }
+
+    /// <summary>
+    /// The box holds the number alone, sized to it as typed (with no two-character floor, so a single digit's box is not
+    /// wide), and the unit is drawn just past the box's right edge on the line's baseline — where the line's own unit
+    /// sat, and following the box as digits are typed.
+    /// </summary>
+    private void FitFrequencyEditor()
+    {
+        double size = FrequencyEditor.FontSize;
+        using var font = new SkiaSharp.SKFont(CircuitRF.Render.SkiaFonts.PlexRegular, (float)size);
+        double chrome = SchematicInlineEditBox.WidthFor("", size) - InlineEdit.WidthFromMeasuredText(0, size);
+        double number = font.MeasureText(FrequencyEditor.Text ?? "");
+        FrequencyEditor.Width = chrome + Math.Max(size * 0.6, number + size * 0.3);
+        PlaceFrequencyUnit();
+    }
+
+    /// <summary>
+    /// The unit just past the box's right edge, as the box is actually laid out (its theme can add to the width asked
+    /// for), at the height the box sets its own text — its top, its border and its top padding.
+    /// </summary>
+    private void PlaceFrequencyUnit()
+    {
+        if (!FrequencyEditor.IsVisible) return;
+        var b = FrequencyEditor.Bounds;
+        if (b.Width <= 0) return;
+        double gap = FrequencyEditor.FontSize * 0.25;
+        double left = b.Right;
+        FrequencyUnit.Padding = new Thickness(gap, 0, 2, 0);
+        FrequencyUnit.Margin = new Thickness(left, b.Top + FrequencyEditor.BorderThickness.Top + FrequencyEditor.Padding.Top, 0, 0);
+        FrequencyUnit.MinWidth = Math.Max(0, _frequencyValueRight - left);
+    }
+
+    private double _frequencyValueRight;
+
+    private static readonly System.Text.RegularExpressions.Regex NumberWithUnit = new(@"^\s*(\S+?)\s*([A-Za-z]*Hz)?\s*$");
+
+    /// <summary>The frequency typed into the editor, in Hz: a number in the display unit, or a number with a frequency
+    /// unit of its own (<c>2400 MHz</c>). Null for anything else.</summary>
+    internal static double? FrequencyHz(string? text, FreqUnit displayUnit)
+    {
+        var m = NumberWithUnit.Match(text ?? "");
+        if (!m.Success || !NumericText.TryParseDouble(m.Groups[1].Value, out double v)) return null;
+        if (m.Groups[2].Value is not { Length: > 0 } unit) return v / displayUnit.Scale();
+        var (scale, baseUnit) = CircuitRF.Render.DataDisplay.SiUnit.Split(unit);
+        return baseUnit == "Hz" ? v * scale : null;
     }
 
     private void OpenEditorFlyout()

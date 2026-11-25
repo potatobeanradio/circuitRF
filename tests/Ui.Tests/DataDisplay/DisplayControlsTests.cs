@@ -325,6 +325,35 @@ public sealed class DisplayControlsTests : IDisposable
         Assert.True(w2.Tabs[0].DataDisplay.Plots[0].PlotVM.Plot.Card);
     }
 
+    /// <summary>Settings ▸ Appearance ▸ Plots as cards: a plot the toolbar adds starts on a card; a plot restored from a
+    /// file keeps the Card flag it was saved with, whatever the setting.</summary>
+    [Fact]
+    public async Task PlotsAsCards_CardsAPlotTheToolbarAdds_AndNeverOneAFileRestores()
+    {
+        string npy = Run();
+        string cdd = Cdd("cards-pref.cdd", Bound(npy), Pinned(npy, "Pout", "gridPoint", "pinStep"));
+        bool was = CircuitRF.Ui.DataDisplay.PlotCardPreference.TestOverrideActive;
+        var stored = CircuitRF.Ui.DataDisplay.PlotCardPreference.TestOverrideStore;
+        CircuitRF.Ui.DataDisplay.PlotCardPreference.TestOverrideActive = true;
+        try
+        {
+            CircuitRF.Ui.DataDisplay.PlotCardPreference.NewPlots = true;
+            var w = await OpenAsync(cdd);
+            Assert.False(w.Tabs[0].DataDisplay.Plots[0].PlotVM.Plot.Card);   // as saved
+            w.AddSmithPlotCommand.Execute(null);
+            Assert.True(w.Tabs[0].DataDisplay.Plots[^1].PlotVM.Plot.Card);
+
+            CircuitRF.Ui.DataDisplay.PlotCardPreference.NewPlots = false;
+            w.AddTablePlotCommand.Execute(null);
+            Assert.False(w.Tabs[0].DataDisplay.Plots[^1].PlotVM.Plot.Card);
+        }
+        finally
+        {
+            CircuitRF.Ui.DataDisplay.PlotCardPreference.TestOverrideActive = was;
+            CircuitRF.Ui.DataDisplay.PlotCardPreference.TestOverrideStore = stored;
+        }
+    }
+
     [Fact]
     public void HidingTheLabel_GivesItsStripToTheTrack_AndIsSaved()
     {

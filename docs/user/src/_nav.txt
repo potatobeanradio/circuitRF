@@ -59,6 +59,7 @@ reference/transient.html    | The circuit in time: pulses, start-up and settling
 reference/measurements.html | Post-processing a run into named quantities.
 reference/netlist.html      | The .cnl elaborated-netlist format.
 reference/data-display.html | Plots, tables, trace cards and markers.
+reference/linked-plots.html | A plot that follows a marker on another plot; sliders, knobs, buttons and readouts on the canvas.
 reference/plot-types.html   | Rectangular, Smith, Polar and Table — and which data each will accept.
 reference/tuning.html       | Sliders on any value, with every Data Display following them as you drag.
 reference/sensitivity.html  | Which values move each goal, ranked at the design as it stands — S-parameter blocks included.

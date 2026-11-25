@@ -1136,6 +1136,14 @@ namespace CircuitRF.Render.DataDisplay
         public void SetSpectrumFundamentals(double[]? f0ByX) => _f0ByX = f0ByX;
 
         /// <summary>
+        /// The X is a <c>harmonic</c> axis drawn as frequency: its fundamental is known (an HB result's tone), so each order
+        /// is placed at its frequency. Without one — a loadpull's <c>V[…, harmonic]</c> carries no tone cube — the X is the
+        /// harmonic NUMBER, and must not be labelled as a frequency.
+        /// </summary>
+        public bool HarmonicXIsFrequency
+            => string.Equals(_cubeXAxisName, HarmonicAxisName, StringComparison.Ordinal) && _f0ByX is not null;
+
+        /// <summary>
         /// How many samples of this single-curve cube trace are readable — the SHORTER of the X array
         /// and the value array, never the X array alone.
         ///
@@ -3461,6 +3469,17 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>What the label says about a synthesised curve: "interpolated, Γ 0.42∠151°". Null otherwise.</summary>
         public string? SynthesisLabel { get; set; }
+
+        /// <summary>
+        /// The cube axis a synthesised drive-up stands in for — the trace's own drive axis (<c>pinStep</c>) — when its X
+        /// is the loadpull's sweep key, so a plot holding it beside a measured read of the same loadpull compares like
+        /// with like rather than flagging "dimension mismatch". Null otherwise; reset with <see cref="IsSynthesized"/>.
+        /// </summary>
+        public string? SynthesisXAxisOf { get; set; }
+
+        /// <summary>The X axis a plot compares across its traces: the axis a synthesised curve stands for, else the
+        /// cube's own.</summary>
+        public string? ComparableXAxisName => SynthesisXAxisOf ?? CubeXAxisName;
 
         /// <summary>
         /// Run after every resolution of this trace, so a curve the link resolution replaced — a synthesised drive-up —

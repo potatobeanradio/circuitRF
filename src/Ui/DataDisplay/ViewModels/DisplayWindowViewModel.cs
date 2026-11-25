@@ -733,11 +733,14 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     private void ToggleInspector() => IsInspectorOpen = !IsInspectorOpen;
 
     [RelayCommand]
-    private void AddPlot() => DataDisplay?.AddPlot(PlotType.Rect);
+    private void AddPlot() => AddUserPlot(PlotType.Rect);
 
-    [RelayCommand] private void AddSmithPlot() => DataDisplay?.AddPlot(PlotType.Smith);
-    [RelayCommand] private void AddPolarPlot() => DataDisplay?.AddPlot(PlotType.Polar);
-    [RelayCommand] private void AddTablePlot() => DataDisplay?.AddPlot(PlotType.Table);
+    /// <summary>A plot from the toolbar: on a card when Settings ▸ Appearance ▸ Plots as cards is on.</summary>
+    private void AddUserPlot(PlotType type) => DataDisplay?.AddPlot(type, card: PlotCardPreference.NewPlots);
+
+    [RelayCommand] private void AddSmithPlot() => AddUserPlot(PlotType.Smith);
+    [RelayCommand] private void AddPolarPlot() => AddUserPlot(PlotType.Polar);
+    [RelayCommand] private void AddTablePlot() => AddUserPlot(PlotType.Table);
 
     /// <summary><b>Controls ▸ Slider</b> (brief-ddl-5 R-ddl5-7).</summary>
     [RelayCommand] private void AddSlider() => DataDisplay?.AddSlider();
@@ -834,7 +837,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     /// only route to it was "add a polar plot, then convert it", which is not a route anybody
     /// finds. One more button, the same <c>AddPlot</c>, no new placement or sizing rule.
     /// </summary>
-    [RelayCommand] private void AddSurfacePlot() => DataDisplay?.AddPlot(PlotType.Surface3D);
+    [RelayCommand] private void AddSurfacePlot() => AddUserPlot(PlotType.Surface3D);
 
     /// <summary>Ctrl/Cmd+A in the data display — select everything (plots + markers) in the active tab.</summary>
     [RelayCommand] private void SelectAll() => DataDisplay?.SelectAll();

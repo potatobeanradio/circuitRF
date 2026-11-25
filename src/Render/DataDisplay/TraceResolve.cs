@@ -122,6 +122,7 @@ public static class TraceResolve
         // follows one: an edit that unlinked it must not leave the model drawn in place of the measurement.
         t.IsSynthesized  = false;
         t.SynthesisLabel = null;
+        t.SynthesisXAxisOf = null;
         if (t.AfterResolve is not null && !(t.Slice?.Any(s => s.IsLinked) ?? false)) t.AfterResolve = null;
         try
         {
