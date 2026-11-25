@@ -82,6 +82,25 @@ public sealed class ContourMarkerReadoutTests
         Assert.Contains("%",            lines[2]);
     }
 
+    [Fact]
+    public void MarkerTableIncludesEveryContourReadout()
+    {
+        var plot = new Plot(PlotType.Smith, FreqUnit.GHz);
+        var power = ContourTrace("Pout_dBm", 41.5, gammaPlane: true);
+        var efficiency = ContourTrace("PAE", 63.25, gammaPlane: true);
+        plot.Traces.Add(power);
+        plot.Traces.Add(efficiency);
+        ContourMarker(power, new Complex(0.2, 0.1));
+        var row = Assert.Single(MarkerTable.Rows(plot));
+        Assert.Contains(row.Readout, line => line.StartsWith("Pout_dBm=", StringComparison.Ordinal));
+        Assert.Contains(row.Readout, line => line.StartsWith("PAE=", StringComparison.Ordinal));
+        Assert.Contains(row.Readout, line => line.StartsWith("Z=", StringComparison.Ordinal));
+        Assert.Equal(new[] { power, efficiency }, row.TraceReadings.Select(reading => reading.Trace));
+        Assert.StartsWith("Pout_dBm=", Assert.Single(row.TraceReadings[0].Values));
+        Assert.StartsWith("PAE=", Assert.Single(row.TraceReadings[1].Values));
+        Assert.Contains(row.Coordinates, line => line.StartsWith("Z=", StringComparison.Ordinal));
+    }
+
     /// <summary>Impedance, then Γ, after the metric rows — and only those five rows.</summary>
     [Fact]
     public void RowOrder_IsName_Metrics_Impedance_Gamma()

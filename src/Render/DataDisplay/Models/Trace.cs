@@ -3638,7 +3638,7 @@ namespace CircuitRF.Render.DataDisplay
         /// harmonic-stem InfoBox); otherwise a single "&lt;axis&gt;=&lt;value&gt;" row. Then the X-axis
         /// row (swept variable name + value + unit), then the cube value.</summary>
         private List<(string, bool)> BuildCubeMarkerBoxLines(Marker m, FreqUnit freqUnit, bool showFilePrefix,
-            IReadOnlyList<Trace>? plotTraces = null)
+            IReadOnlyList<Trace>? plotTraces = null, List<int>? coordinateIndices = null)
         {
             var lines = new List<(string, bool)> { (m.MarkerString, true) };
 
@@ -3783,6 +3783,9 @@ namespace CircuitRF.Render.DataDisplay
                 if (!double.IsNaN(_pinnedSpectralFreqHz))
                     lines.Add(($"freq={_pinnedSpectralFreqHz * freqUnit.Scale():G6} {freqUnit.Description()}", false));
             }
+
+            if (coordinateIndices is not null)
+                for (int index = 1; index < lines.Count; index++) coordinateIndices.Add(index);
 
             // Value row — from the branch the marker is actually on.
             string val = IsFamily
@@ -4474,7 +4477,7 @@ namespace CircuitRF.Render.DataDisplay
         }
 
         public List<(string Text, bool Bold)> BuildMarkerBoxLines(Marker m, FreqUnit freqUnit,
-            bool showFilePrefix = true, IReadOnlyList<Trace>? plotTraces = null)
+            bool showFilePrefix = true, IReadOnlyList<Trace>? plotTraces = null, List<int>? coordinateIndices = null)
         {
             if (m.Unavailable) return [(m.MarkerString, true), ("No visible samples", false)];
             // A FREELY-PLACED MARKER READS ITS OWN POSITION, in the two spellings that position has
@@ -4486,6 +4489,7 @@ namespace CircuitRF.Render.DataDisplay
             {
                 var g = new Complex(m.PositionStatic.X, m.PositionStatic.Y);
                 var z0 = Z0 == Complex.Zero ? new Complex(50, 0) : Z0;
+                coordinateIndices?.AddRange([1, 2]);
                 return
                 [
                     (m.MarkerString, true),
@@ -4516,9 +4520,13 @@ namespace CircuitRF.Render.DataDisplay
                 // goes into a matching network. Γ follows it only on a Γ plane (Smith/Polar), where it
                 // is a second reading of the same point; on a Rect contour the coordinate IS the
                 // impedance and a Γ row would just repeat the row above.
+                coordinateIndices?.Add(lines.Count);
                 lines.Add((DbFloor.Label("Z", m.FormatImpedanceComplex(ContourImpedance(coord))) + " Ω", false));
                 if (cd.GammaPlane)
+                {
+                    coordinateIndices?.Add(lines.Count);
                     lines.Add((DbFloor.Label("Γ", m.FormatComplex(coord)), false));
+                }
                 return lines;
             }
 
@@ -4528,6 +4536,8 @@ namespace CircuitRF.Render.DataDisplay
                 var fline = GetStemFreqString(m);
                 if (!string.IsNullOrEmpty(fline)) lines.Add((fline, false));
                 lines.Add((GetStemOrderString(m), false));
+                if (coordinateIndices is not null)
+                    for (int index = 1; index < lines.Count; index++) coordinateIndices.Add(index);
                 lines.Add((GetStemValString(m, showFilePrefix), false));
                 if (m.Function == MarkerFunction.Vertical && plotTraces != null)
                     foreach (var other in plotTraces)
@@ -4537,7 +4547,7 @@ namespace CircuitRF.Render.DataDisplay
             }
 
             if (IsCubeXMarker)
-                return BuildCubeMarkerBoxLines(m, freqUnit, showFilePrefix, plotTraces);
+                return BuildCubeMarkerBoxLines(m, freqUnit, showFilePrefix, plotTraces, coordinateIndices);
 
             var standardLines = new List<(string, bool)>
             {
@@ -4545,6 +4555,7 @@ namespace CircuitRF.Render.DataDisplay
                 (m.FreqString,                          false),
                 (GetMarkerValString(m, showFilePrefix), false)
             };
+            coordinateIndices?.Add(1);
             if (MarkerShowsImpedance(m))
                 standardLines.Add((GetMarkerImpedanceString(m), false));
             if (IsStabilityCircle)

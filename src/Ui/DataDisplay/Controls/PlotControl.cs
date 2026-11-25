@@ -309,6 +309,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private Point   _legendPressWindowPt;
         private ContextMenu? _legendContextMenu;
         private MenuItem? _addMarkerMenuItem;
+        private MenuItem? _markerTableMenuItem;
         private MenuItem? _addAsGoalMenuItem;
         private MenuItem? _trialMenuItem;
         private MenuItem? _selectAllMarkersMenuItem;
@@ -614,6 +615,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var item4 = new MenuItem { Header = "Add Marker", Icon = icon };
             _addMarkerMenuItem = item4;
 
+            _markerTableMenuItem = new MenuItem { Header = "Show Marker Table", Icon = new MaterialIcon { Kind = MaterialIconKind.Table } };
+            _markerTableMenuItem.Click += (_, _) => ContainerProvider?.Invoke()?.ToggleMarkerTable();
+
             icon = new MaterialIcon { Kind = MaterialIconKind.Target };
             _addAsGoalMenuItem = new MenuItem { Header = "Add as Goal", Icon = icon };
 
@@ -667,6 +671,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(itemAdmittance);
             menu.Items.Add(new Separator());
             menu.Items.Add(item4);
+            menu.Items.Add(_markerTableMenuItem);
             menu.Items.Add(_addAsGoalMenuItem);
             menu.Items.Add(_trialMenuItem);
             menu.Items.Add(itemSelectAll);
@@ -711,6 +716,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         /// </remarks>
         private void RefreshContextMenuState()
         {
+            if (_markerTableMenuItem is not null)
+            {
+                _markerTableMenuItem.IsVisible = ContainerProvider?.Invoke() is not null;
+                _markerTableMenuItem.Header = _plot?.ShowMarkerTable == true ? "Hide Marker Table" : "Show Marker Table";
+            }
             _iconAxesLocked.Kind = _plot?.Axes.LockedPanning ?? false
                 ? MaterialIconKind.CheckboxOutline
                 : MaterialIconKind.CheckboxBlankOutline;
@@ -2975,6 +2985,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             };
             itemSelectAll.Click += (_, _) => ContainerProvider?.Invoke()?.SelectAllMarkers();
 
+            var markerTable = new MenuItem
+            {
+                Header = _plot?.ShowMarkerTable == true ? "Hide Marker Table" : "Show Marker Table",
+                Icon = new MaterialIcon { Kind = MaterialIconKind.Table },
+                IsVisible = ContainerProvider?.Invoke() is not null,
+            };
+            markerTable.Click += (_, _) => ContainerProvider?.Invoke()?.ToggleMarkerTable();
+
             icon = new MaterialIcon { Kind = MaterialIconKind.Settings };
             var itemProps = new MenuItem { Header = "Table Properties…", Icon = icon };
             itemProps.Click += OnMenuPlotProperties;
@@ -2996,6 +3014,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             itemDelete.Click += (_, _) => DeletePlotRequested?.Invoke(this, EventArgs.Empty);
 
             menu.Items.Add(itemAddMarker);
+            menu.Items.Add(markerTable);
             menu.Items.Add(itemSelectAll);
             menu.Items.Add(new Separator());
             menu.Items.Add(itemProps);

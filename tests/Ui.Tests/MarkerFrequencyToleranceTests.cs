@@ -16,6 +16,7 @@
 
 using CircuitRF.Render.DataDisplay;
 using RfCore;
+using SkiaSharp;
 
 namespace CircuitRF.Ui.Tests;
 
@@ -153,6 +154,185 @@ public sealed class MarkerFrequencyToleranceTests
         Assert.True(cube.TryGetMarkerFrequency(marker, out frequency));
         Assert.Equal(3e9, frequency);
         Assert.False(cube.TrySetVisibleExtremum(marker, new PlotRect(5, 0, 1, 1), maximum: true));
+    }
+
+    [Fact]
+    public void MarkerTableReadsEachMarkersOwnTraceAndSample()
+    {
+        var (plot, first) = Fixture();
+        var second = new Trace(new SNP([3e9, 4e9], 2), MatrixType.S, 1, 0, DependentVarFormat.Db);
+        second.BuildPath(PlotType.Rect, plot.FreqUnits);
+        plot.Traces.Add(second);
+        var firstMarker = new Marker(first, first.Data.Frequencies[1], false, false, 1, plot.FreqUnits)
+        {
+            ShowInfoBox = false,
+        };
+        var secondMarker = new Marker(second, 4e9, false, false, 2, plot.FreqUnits);
+        first.Markers.Add(firstMarker);
+        second.Markers.Add(secondMarker);
+
+        var rows = MarkerTable.Rows(plot, showFilePrefix: true);
+        Assert.Equal(2, rows.Count);
+        Assert.Same(firstMarker, rows[0].Marker);
+        Assert.Same(first, rows[0].Trace);
+        Assert.Same(secondMarker, rows[1].Marker);
+        Assert.Same(second, rows[1].Trace);
+        Assert.Equal(new[] { first, second }, MarkerTable.Columns(rows).Select(column => column.Trace));
+        Assert.DoesNotContain(rows[0].TraceReadings, reading => reading.Trace == second);
+        Assert.DoesNotContain(rows[1].TraceReadings, reading => reading.Trace == first);
+        Assert.Equal(first.BuildMarkerBoxLines(firstMarker, plot.FreqUnits, false, plot.Traces).Skip(1).Select(line => line.Text), rows[0].Readout);
+        Assert.Equal(second.BuildMarkerBoxLines(secondMarker, plot.FreqUnits, false, plot.Traces).Skip(1).Select(line => line.Text), rows[1].Readout);
+        Assert.DoesNotContain(rows[0].Readout, line => line.Contains("dB dB", StringComparison.Ordinal));
+
+        Assert.Same(firstMarker, MarkerTableRenderer.RowAt(rows, MarkerTableRenderer.HeaderHeight + 1, 0)!.Marker);
+        Assert.Same(secondMarker, MarkerTableRenderer.RowAt(rows,
+            MarkerTableRenderer.HeaderHeight + MarkerTableRenderer.RowHeight(rows[0]) + 1, 0)!.Marker);
+        Assert.Null(MarkerTableRenderer.RowAt(rows, 1, 0));
+    }
+
+    [Fact]
+    public void MarkerTableWrapsLongReadoutsWithoutDroppingText()
+    {
+        var (plot, trace) = Fixture();
+        trace.Label = "A long trace name with units and additional detail";
+        var marker = new Marker(trace, trace.Data.Frequencies[0], false, false, 1, plot.FreqUnits);
+        trace.Markers.Add(marker);
+        var row = Assert.Single(MarkerTable.Rows(plot));
+        var traceLines = MarkerTableRenderer.WrapText(row.TraceLabel, MarkerTableRenderer.ValueColumn - 10);
+        Assert.True(traceLines.Count > 1);
+        Assert.Equal(row.TraceLabel, string.Concat(traceLines));
+        Assert.Equal(string.Concat(row.Coordinates), string.Concat(row.CoordinateLines));
+        Assert.Equal(string.Concat(row.TraceReadings[0].Values), string.Concat(row.TraceReadings[0].ValueLines));
+        Assert.True(MarkerTableRenderer.HeaderHeightFor([row]) >= traceLines.Count * MarkerTableRenderer.LineHeight);
+        var wrapped = MarkerTableRenderer.WrapText("S(1,1) dB20=-0.03245 dB", 110);
+        Assert.Equal("S(1,1) dB20=-0.03245 dB", string.Concat(wrapped));
+        Assert.Contains(wrapped, line => line.Contains("-0.03245 dB", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MarkerTableDisambiguatesSourcesAndMultiMarkerReadings()
+    {
+        var (plot, first) = Fixture();
+        first.SourcePath = "/first/run.s2p";
+        var second = new Trace(new SNP([1e6, 2e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            SourcePath = "/second/run.s2p",
+        };
+        second.BuildPath(PlotType.Rect, plot.FreqUnits);
+        plot.Traces.Add(second);
+        var marker = new Marker(first, first.Data.Frequencies[1], true, false, 1, plot.FreqUnits)
+        {
+            Function = MarkerFunction.Vertical,
+        };
+        first.Markers.Add(marker);
+        var row = Assert.Single(MarkerTable.Rows(plot));
+        Assert.Contains("/first/run.s2p", row.TraceLabel);
+        Assert.Contains(row.Readout, line => line.Contains("/second/run.s2p", StringComparison.Ordinal));
+        Assert.Equal(2, row.TraceReadings.Count);
+        Assert.Equal(new[] { first, second }, MarkerTable.Columns([row]).Select(column => column.Trace));
+        Assert.Same(first, row.TraceReadings[0].Trace);
+        Assert.Same(second, row.TraceReadings[1].Trace);
+        Assert.Contains("/first/run.s2p", row.TraceReadings[0].Label);
+        Assert.Contains("/second/run.s2p", row.TraceReadings[1].Label);
+        Assert.Equal(first.GetMultiMarkerLine(marker, second), Assert.Single(row.TraceReadings[1].Values));
+        Assert.Equal(marker.FreqString, Assert.Single(row.Coordinates));
+        Assert.DoesNotContain(row.TraceReadings.SelectMany(reading => reading.Values), value => value == marker.FreqString);
+    }
+
+    [Fact]
+    public void MarkerTableSeparatesCubeSweepCoordinatesFromValues()
+    {
+        var (plot, trace) = Fixture();
+        trace.CubeName = "current";
+        trace.SetCubeData([1, 2, 3], null, [4.0, 5.0, 6.0], "Vds", "V", PlotType.Rect, plot.FreqUnits);
+        var marker = new Marker(trace, 0, false, false, 1, plot.FreqUnits)
+        {
+            PositionStatic = trace.Points[1],
+        };
+        trace.Markers.Add(marker);
+        var row = Assert.Single(MarkerTable.Rows(plot));
+        Assert.Contains(row.Coordinates, coordinate => coordinate.StartsWith("Vds=2", StringComparison.Ordinal));
+        Assert.Contains(Assert.Single(row.TraceReadings).Values, value => value.Contains("5", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0.35f, 0.1f)]
+    [InlineData(0.63f, 0.7f)]
+    [InlineData(1.0f, 0.4f)]
+    [InlineData(1.37f, 0.8f)]
+    [InlineData(2.0f, 0.2f)]
+    public void MarkerTableGridRemainsOnePixelAtEveryZoom(float scale, float offset)
+    {
+        using var bitmap = new SKBitmap(1100, 200);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Transparent);
+        float origin = 10 + offset;
+        canvas.Translate(origin, origin);
+        canvas.Scale(scale);
+        MarkerTableRenderer.Draw(canvas, [], RenderTheme.Light);
+        var border = RenderTheme.Light.BorderColor;
+        var (width, height) = MarkerTableRenderer.Measure([]);
+        int centerY = (int)(origin + (MarkerTableRenderer.HeaderHeight + 7) * scale);
+        int centerX = (int)(origin + 100 * scale);
+
+        foreach (float x in new[] { 0f, MarkerTableRenderer.MarkerColumn,
+                 MarkerTableRenderer.FixedWidth, width })
+        {
+            int position = (int)(origin + x * scale);
+            Assert.Equal(1, Enumerable.Range(position - 2, 5).Count(pixel => bitmap.GetPixel(pixel, centerY) == border));
+        }
+        foreach (float y in new[] { 0f, MarkerTableRenderer.HeaderHeight, height })
+        {
+            int position = (int)(origin + y * scale);
+            Assert.Equal(1, Enumerable.Range(position - 2, 5).Count(pixel => bitmap.GetPixel(centerX, pixel) == border));
+        }
+    }
+
+    [Fact]
+    public void MarkerTableScrollReachesLaterRows()
+    {
+        var (plot, trace) = Fixture();
+        for (int index = 1; index <= 20; index++)
+            trace.Markers.Add(new Marker(trace, trace.Data.Frequencies[0], false, false, index, plot.FreqUnits));
+        var rows = MarkerTable.Rows(plot);
+        float scroll = MarkerTableRenderer.MaxScroll(rows);
+        Assert.True(scroll > 0);
+        Assert.True(MarkerTableRenderer.MeasureAll(rows).H > MarkerTableRenderer.Measure(rows).H);
+        Assert.Same(rows[^1].Marker, MarkerTableRenderer.RowAt(rows, MarkerTableRenderer.Measure(rows).H - 1, scroll)!.Marker);
+    }
+
+    [Fact]
+    public void MarkerTableColumnsRemainStableAndScrollHorizontally()
+    {
+        var (plot, first) = Fixture();
+        for (int index = 1; index < 5; index++)
+        {
+            var trace = new Trace(first.Data, MatrixType.S, index % 2, 0, DependentVarFormat.Db)
+            {
+                Label = $"Trace {index} with a long identifying name",
+            };
+            trace.BuildPath(PlotType.Rect, plot.FreqUnits);
+            plot.Traces.Add(trace);
+        }
+        var marker = new Marker(plot.Traces[3], first.Data.Frequencies[1], true, false, 1, plot.FreqUnits)
+        {
+            Function = MarkerFunction.Vertical,
+        };
+        plot.Traces[3].Markers.Add(marker);
+        var ordinary = new Marker(first, first.Data.Frequencies[0], false, false, 2, plot.FreqUnits);
+        first.Markers.Add(ordinary);
+        var rows = MarkerTable.Rows(plot);
+        var columns = MarkerTable.Columns(rows);
+        Assert.Equal(plot.Traces, columns.Select(column => column.Trace));
+        Assert.Single(rows[0].TraceReadings);
+        Assert.Equal(5, rows[1].TraceReadings.Count);
+        Assert.Equal(MarkerTableRenderer.Width, MarkerTableRenderer.Measure(rows).W);
+        Assert.True(MarkerTableRenderer.MeasureAll(rows).W > MarkerTableRenderer.Measure(rows).W);
+        Assert.Equal(MarkerTableRenderer.MeasureAll(rows).W - MarkerTableRenderer.Measure(rows).W,
+            MarkerTableRenderer.MaxHorizontalScroll(rows));
+        Assert.Same(marker, MarkerTableRenderer.RowAt(rows,
+            MarkerTableRenderer.HeaderHeightFor(rows) + MarkerTableRenderer.RowHeight(rows[0]) + 1, 0)!.Marker);
+        Assert.Null(MarkerTableRenderer.RowAt(rows, MarkerTableRenderer.Measure(rows).H - 1, 0));
     }
 
     [Fact]

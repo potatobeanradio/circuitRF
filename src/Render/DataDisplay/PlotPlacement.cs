@@ -45,7 +45,7 @@ public static class PlotPlacement
         foreach (var t in plot.Traces)
         foreach (var m in t.Markers)
         {
-            if (!m.ShowInfoBox) continue;
+            if (!m.ShowInfoBox || (plot.ShowMarkerTable && !plot.MarkerTableShowInfoBoxes)) continue;
 
             // A marker whose box was never dragged has no stored position — the window places one
             // 15/10 px from the glyph the first time it builds the box, and PERSISTS it. A `.cdd`
@@ -77,6 +77,15 @@ public static class PlotPlacement
             legend = new PlacedLegend(pos.X, pos.Y, w, h, lw);
         }
 
+        PlacedMarkerTable? markerTable = null;
+        if (plot.ShowMarkerTable)
+        {
+            var pos = double.IsFinite(plot.MarkerTablePos.X) && double.IsFinite(plot.MarkerTablePos.Y)
+                ? plot.MarkerTablePos : new PlotPoint(left, top + height + 24);
+            var (tableWidth, tableHeight) = MarkerTableRenderer.MeasureAll(MarkerTable.Rows(plot, hasMultipleSources));
+            markerTable = new PlacedMarkerTable(pos.X, pos.Y, tableWidth, tableHeight);
+        }
+
         return new PlacedPlot
         {
             Plot                = plot,
@@ -90,6 +99,7 @@ public static class PlotPlacement
             RightLabelStrips    = rightStrips,
             MarkerBoxes         = boxes,
             Legend              = legend,
+            MarkerTable         = markerTable,
             ShowFilePrefix      = hasMultipleSources,
             AlwaysShowSource    = hasMultipleSources,
             AliasFor            = aliasFor,

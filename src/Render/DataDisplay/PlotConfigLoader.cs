@@ -93,6 +93,10 @@ public static class PlotConfigLoader
         plot.Legend                      = pc.Legend;
         plot.LegendPos                   = pc.Legend == LegendPlacement.Floating && pc.LegendLeft is { } ll && pc.LegendTop is { } lt
                                            ? new PlotPoint(ll, lt) : new PlotPoint(double.NaN, double.NaN);
+        plot.ShowMarkerTable             = pc.ShowMarkerTable;
+        plot.MarkerTableShowInfoBoxes    = pc.MarkerTableShowInfoBoxes;
+        plot.MarkerTablePos              = pc.MarkerTableLeft is { } ml && pc.MarkerTableTop is { } mt
+                           ? new PlotPoint(ml, mt) : new PlotPoint(double.NaN, double.NaN);
         plot.ShowSpecLines               = pc.SpecLines;
         plot.LimitAreas                  = pc.LimitAreas?.Select(a => a.ToArea()).ToList() ?? new();
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);

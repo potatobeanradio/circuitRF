@@ -44,7 +44,8 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary><paramref name="readout"/> with this trace's <see cref="ValueUnit"/> after it, when there is one and the
         /// readout is a number (not NaN, not empty).</summary>
         internal string WithValueUnit(string readout)
-            => ValueUnit is { Length: > 0 } u && readout.Length > 0 && readout != "NaN" ? $"{readout} {u}" : readout;
+            => ValueUnit is { Length: > 0 } u && readout.Length > 0 && readout != "NaN"
+                && !readout.EndsWith($" {u}", StringComparison.Ordinal) ? $"{readout} {u}" : readout;
 
         private string? InferValueUnit()
         {

@@ -134,6 +134,23 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
+        <ItemsControl ItemsSource="{Binding DataDisplay.MarkerTables}" Background="{x:Null}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><Canvas Background="{x:Null}"/></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                    <Setter Property="Canvas.Top" Value="{ReflectionBinding ViewTop}"/>
+                </ControlTheme>
+            </ItemsControl.ItemContainerTheme>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:MarkerTableViewModel">
+                    <controls:MarkerTableView/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <ItemsControl ItemsSource="{Binding DataDisplay.MarkerInfoBoxes}"
                       Background="{x:Null}">
             <ItemsControl.ItemsPanel>

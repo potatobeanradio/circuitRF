@@ -6,6 +6,7 @@
              x:DataType="vm:MarkerInfoBoxViewModel"
              Width="{Binding BoxWidth}"
              Height="{Binding BoxHeight}"
+             IsVisible="{Binding IsBoxVisible}"
              Background="Transparent">
 
     <!--

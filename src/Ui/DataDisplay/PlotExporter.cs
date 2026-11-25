@@ -365,7 +365,13 @@ namespace CircuitRF.Ui.DataDisplay
                 Legend              = c.GetLegendBox() is { } lb
                                        ? new PlacedLegend(lb.ViewLeft, lb.ViewTop, lb.BoxWidth, lb.BoxHeight, lb.Lw)
                                        : null,
+                MarkerTable         = c.GetMarkerTable() is { } table
+                                       ? new PlacedMarkerTable(table.ViewLeft, table.ViewTop,
+                                           MarkerTableRenderer.MeasureAll(table.Rows).W * table.BoxWidth / MarkerTableRenderer.Measure(table.Rows).W,
+                                           MarkerTableRenderer.MeasureAll(table.Rows).H * table.BoxWidth / MarkerTableRenderer.Measure(table.Rows).W)
+                                       : null,
                 MarkerBoxes         = c.GetMarkerInfoBoxes()
+                                       .Where(b => b.IsBoxVisible)
                                        .Select(b => new PlacedMarkerBox(
                                            b.Marker, b.Trace, b.FreqUnit,
                                            b.ViewLeft, b.ViewTop, b.BoxWidth, b.BoxHeight,

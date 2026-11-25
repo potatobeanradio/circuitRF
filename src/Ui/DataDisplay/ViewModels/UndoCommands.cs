@@ -166,6 +166,14 @@ internal sealed class RemoveMarkerCommand : IUndoableCommand
 
 // ---- Legend placement -------------------------------------------------
 
+internal sealed class SetMarkerTableCommand(DataDisplayViewModel display, PlotContainerViewModel container, bool visible)
+    : IUndoableCommand
+{
+    private readonly bool _before = container.PlotVM.Plot.ShowMarkerTable;
+    public void Execute() => display.SetMarkerTableVisible(container, visible);
+    public void Undo() => display.SetMarkerTableVisible(container, _before);
+}
+
 /// <summary>A plot's legend moved between placements — lifted out of the plot as a floating box, or turned off by Delete
 /// — together with the floating position it had or takes. The placement goes through the inspector, so the plot, its
 /// strips and its legend box are rebuilt exactly as a click on the legend buttons rebuilds them.</summary>
