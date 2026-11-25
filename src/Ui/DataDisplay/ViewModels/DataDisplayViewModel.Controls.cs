@@ -69,7 +69,9 @@ public partial class DataDisplayViewModel
         get
         {
             var sel = _controls.Where(c => c.IsSelected).Take(2).ToList();
-            return sel.Count == 1 ? sel[0] : null;
+            if (sel.Count != 1 || _plots.Any(p => p.IsSelected) || Boxes.Any(b => b.IsSelected)
+                || AllAnnotationsSelected && _annotations.Count > 0) return null;
+            return sel[0];
         }
     }
 
@@ -206,19 +208,45 @@ public partial class DataDisplayViewModel
     public void SelectOnly(ControlContainerViewModel? vm)
     {
         SelectOnly((PlotContainerViewModel?)null);
-        if (vm is not null) { vm.IsSelected = true; vm.ZIndex = _nextZIndex++; }
+        if (vm is not null) { vm.IsSelected = true; BringToFront(vm); }
         RefreshSelection();
     }
 
     public void ToggleSelect(ControlContainerViewModel vm)
     {
         vm.IsSelected = !vm.IsSelected;
-        if (vm.IsSelected) vm.ZIndex = _nextZIndex++;
+        if (vm.IsSelected) BringToFront(vm);
         RefreshSelection();
     }
 
-    /// <summary>The next stacking index: a control given it is drawn over every other.</summary>
-    internal int NextControlZ() => _nextZIndex++;
+    // ---- stacking ------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Draws <paramref name="vm"/> over the other plots, as one undo step that dirties the document — unless it already
+    /// is on top, when nothing changes. Not while an undo or redo is being applied: that is not the user restacking.
+    /// </summary>
+    internal void BringToFront(PlotContainerViewModel vm)
+    {
+        if (_plots.All(o => ReferenceEquals(o, vm) || o.ZIndex < vm.ZIndex)) return;
+        Restack(z => vm.ZIndex = z, vm.ZIndex);
+    }
+
+    /// <summary>Draws <paramref name="vm"/> over the other controls of its layer (panels are a layer of their own), as
+    /// <see cref="BringToFront(PlotContainerViewModel)"/> does a plot.</summary>
+    internal void BringToFront(ControlContainerViewModel vm)
+    {
+        bool panel = vm.Model.IsPanel;
+        if (_controls.Where(o => o.Model.IsPanel == panel).All(o => ReferenceEquals(o, vm) || o.ZIndex < vm.ZIndex)) return;
+        Restack(z => vm.ZIndex = z, vm.ZIndex);
+    }
+
+    private void Restack(Action<int> set, int before)
+    {
+        if (UndoRedo.IsApplying) return;
+        var command = new RestackCommand(set, before, _nextZIndex++);
+        command.Execute();
+        UndoRedo.Push(command);
+    }
 
     private void DeselectControls()
     {

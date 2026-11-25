@@ -108,8 +108,28 @@ public partial class PropertiesTool : Tool
     [ObservableProperty]
     private ControlInspectorViewModel? _controlInspectorVm;
 
+    /// <summary>The active tab's inspector for two or more selected items; it shows itself only then.</summary>
+    [ObservableProperty]
+    private SelectionInspectorViewModel? _selectionInspectorVm;
+
     partial void OnPlotInspectorVmChanged(PlotInspectorViewModel? value) =>
         OnPropertyChanged(nameof(HasSelectedPlot));
+
+    partial void OnSelectionInspectorVmChanged(SelectionInspectorViewModel? oldValue, SelectionInspectorViewModel? newValue)
+    {
+        if (oldValue is not null) oldValue.PropertyChanged -= OnSelectionInspectorChanged;
+        if (newValue is not null) newValue.PropertyChanged += OnSelectionInspectorChanged;
+        OnPropertyChanged(nameof(HasSelectedPlot));
+    }
+
+    private void OnSelectionInspectorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not nameof(SelectionInspectorViewModel.IsActive)) return;
+        OnPropertyChanged(nameof(HasSelectedPlot));
+        if (IsDataDisplayActive) HeaderText = DataDisplayHeader(_activeDisplayWindow);
+    }
+
+    private DisplayWindowViewModel? _activeDisplayWindow;
 
     /// <summary>True only once a single plot is actually selected — gates the plot-inspector
     /// portion of the "Plot" context separately from <see cref="IsDataDisplayActive"/> (which is
@@ -117,7 +137,7 @@ public partial class PropertiesTool : Tool
     /// visible). Without this, the plot inspector's own chrome (Add Trace, plot-type buttons, …)
     /// would render with a null DataContext — visible but uninitialized — whenever a Data Display
     /// document is active with no plot selected.</summary>
-    public bool HasSelectedPlot => PlotInspectorVm is not null;
+    public bool HasSelectedPlot => PlotInspectorVm is not null && SelectionInspectorVm is not { IsActive: true };
 
     /// <summary>Datasets section (R-dd-4/5) shown beside the plot inspector whenever a Data
     /// Display document is active — not gated on a single plot being selected, since it is
@@ -275,6 +295,8 @@ public partial class PropertiesTool : Tool
         PlotInspectorVm       = vm;
         AnnotationInspectorVm = window?.DataDisplay?.AnnotationInspector;
         ControlInspectorVm    = window?.DataDisplay?.ControlInspector;
+        SelectionInspectorVm  = window?.DataDisplay?.SelectionInspector;
+        _activeDisplayWindow  = window;
         FileInfoVm            = null;
         EditorVm.SetContext(null);
         SymbolInspectorVm.SetContext(null);
@@ -291,6 +313,7 @@ public partial class PropertiesTool : Tool
     /// editing, not what the document is.</summary>
     private string DataDisplayHeader(DisplayWindowViewModel? window)
         => window is null ? "Properties"
+         : SelectionInspectorVm is { IsActive: true } ? "Selection"
          : ControlInspectorVm is { IsActive: true } c ? HeadingOf(c)
          : "Plot";
 
@@ -315,7 +338,7 @@ public partial class PropertiesTool : Tool
     private void OnControlInspectorChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(ControlInspectorViewModel.IsActive) && IsDataDisplayActive)
-            HeaderText = ControlInspectorVm is { IsActive: true } c ? HeadingOf(c) : "Plot";
+            HeaderText = DataDisplayHeader(_activeDisplayWindow);
     }
 
     /// <summary>

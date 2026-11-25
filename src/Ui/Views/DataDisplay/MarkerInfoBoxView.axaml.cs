@@ -104,7 +104,12 @@ public partial class MarkerInfoBoxView : UserControl
             removeMarker:         () => Vm.RemoveMarker(),
             showFilePrefix:       Vm.ShowFilePrefix,
             onContourModeToggled: () => Vm.RequestRedraw(),
-            onShowInfoBoxToggled: () => Vm.Container.RequestInfoBoxRebuild(),
+            onShowInfoBoxToggled: () =>
+            {
+                if (Vm?.Container is not { } container) return;   // hiding the box removes this view's own model
+                container.RequestInfoBoxRebuild();
+                container.RequestPlotRedraw();   // a saved change: undoable, and dirty
+            },
             onVswrToggled:        () => { Vm.RequestRedraw(); Vm.Container.RequestPlotRedraw(); },
             linkTargets:          Vm.Container.LinkTargetsFor(Vm.Marker),
             onSnapToggled:        () => { Vm.OnMarkerMoved(); Vm.Container.RequestInfoBoxRebuild(); });

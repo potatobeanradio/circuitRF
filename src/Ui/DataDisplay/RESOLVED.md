@@ -2778,8 +2778,8 @@ iterates it. Do not add a third box kind with its own copies of those loops.
 - **A label-less slider sat high in its card.** Centring the rows RESERVED under the track counted the empty bottom of
   the end-label row as content. With nothing above the track it is now centred on what is drawn (thumb top to the
   labels' ink), moved 35 % of the way toward the card's middle because the light labels weigh less than the track.
-- **A button resizes far below the Small preset** (`DisplayControl.MinimumSize`, 24 x 24 for a button; every other kind
-  still stops at Small), and a caption that would be drawn under 7 px is left off, its strip given to the lamp.
+- **A button resizes far below the Small preset** (`DisplayControl.MinimumSize`, 24 x 24 for a button, later 12 x 12;
+  a slider and a knob later went to half their Small preset each way), and a caption that would be drawn under 7 px is left off, its strip given to the lamp.
 - **The frame shows the arrow cursor**, not the four-way move cursor, which read as crosshairs over every control.
 - **A knob turns with a sideways drag too.** Right turns it up (clockwise across the dial's top), left down, added to the
   vertical turn. At first sideways shared the vertical 200 px per sweep, which is wider than the dial, so a drag across
@@ -2806,15 +2806,39 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   over it (`SyncControlLayers`). The plot layer (`PlotCanvas`) therefore has NO background — a press between plots
   must reach a panel — and the canvas colour and the empty-canvas press handler moved to a `CanvasGround` border
   under every layer. Export draws panels before plots in `PlotComposer` for the same order.
-- **Stacking is saved, but is not an edit.** `ZIndex` is written by `BuildTabConfig` (save) only, never by
-  `BuildPlotContainerConfig`: the edit recorder snapshots that, and every click that brings a plot forward would
-  otherwise become an undo step. The dirty snapshot zeroes it for the same reason.
+- **Stacking is saved, and (since a later change the same day) an edit.** `ZIndex` is written by `BuildTabConfig`
+  (save) only, never by `BuildPlotContainerConfig`, so the plot edit recorder does not see it. Bringing an item
+  forward is `BringToFront` → a `RestackCommand` of its own, and only when it was not already in front of its layer
+  (plots; controls; panels), so clicking the front item again records nothing. A marquee and Select All select
+  without restacking. The dirty comparison ranks the indices within each layer and compares the ORDER, since a
+  restack always hands out a fresh index and undo must still come back clean.
+- **Controls were missing from the dirty comparison** (`DisplayWindowViewModel.BuildComparisonJson` copied only plots
+  and annotations), so an edit to a control alone (its colour, its lock) never marked the document unsaved. They
+  are compared now.
+- **Show Info Box is saved in the plot's form, but its three toggles** (the marker flyout, the box's menu, the
+  plot's marker menu) **reported no content change**, so it was neither undoable nor dirtying. Each now calls
+  `RequestPlotRedraw`, which the edit recorder turns into one undo step.
 - **A plot's card spans what it draws.** `PlotCanvasGeometry.CardSpan` is the one rectangle for the card and the
   selection outline: a Rect plot's is fitted to its Y-label columns, tick numbers and title
   (`AxesRenderer.RectContentSpan`) instead of the canvas, whose margin is a fixed fraction; a Smith or Polar plot's
   takes in its label strips, which sit OUTSIDE the clipped `PlotControl`. So in the window the container draws the
   card and outline (`PlotContainerView.CardLayer`, `PlotControl.DrawsCard = false`), and `PlotComposer` draws it
   before the strips with `drawCard: false`.
+- **The plot takes the pointer over that same span.** `PlotControl`'s draw operation is what Avalonia hit-tests, and
+  it answered for the whole canvas, so a press beside a Rect plot's labels (outside its card) still picked the plot.
+  `PlotControl.HitArea` narrows it to the card, and the resize grip sits at the card's corner, not the canvas's.
+- **Several selected: the shared section** (`SelectionInspectorViewModel`, shown at two or more of plots, controls,
+  marker and legend boxes and drawings). Lock Position covers plots, controls and text (not lines, boxes or ovals,
+  which have none); Card covers plots, controls (not panels) and marker boxes; size, label and accent show only when
+  nothing but controls is selected. One `CompositeCommand` per change: a plot's part is a `PlotEditCommand` built from
+  its saved form before and after (applied through `RestorePlot` so the canvas follows), between `CheckpointEdits`
+  and `RebaseEditHistory`. `SelectedControl` now means one control and nothing else, so a control among other items
+  is not edited by the single-control inspector.
+- **The marquee lagged** because every pointer move republished the selection: each time the sweep covered exactly
+  one plot or one control the Properties panel built that item's inspector, then tore it down. A marquee now
+  measures every item once (`BeginDragSelect`), keeps the pre-drag selection when additive (it used to keep anything
+  it had swept over, even after the box shrank back), and publishes once on release (`EndDragSelect`, or on lost
+  capture). Plots are hit by their card (`CardSpan`), the same rectangle a click uses.
 - **Trap: a visual invalidated inside a render pass throws** ("Visual was invalidated during the render pass"). The
   card layer follows the plot through `PlotControl.Rendered`, which posts its invalidation to the dispatcher.
 - **Smith and Polar grid numbers had a 250-px canvas cutoff**, so a display zoomed far out lost them. Their face

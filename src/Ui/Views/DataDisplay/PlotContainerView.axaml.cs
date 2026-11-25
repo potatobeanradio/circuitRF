@@ -54,9 +54,7 @@ public partial class PlotContainerView : UserControl
             if (selection ? !vm.IsSelected : !plot.Card) return;
             var pc = owner._plotControl;
             if (pc.Bounds.Width <= 2 || pc.Bounds.Height <= 2 || pc.TranslatePoint(default, this) is not { } at) return;
-            var (cl, cr) = CircuitRF.Render.DataDisplay.PlotCanvasGeometry.CardSpan(
-                plot, pc.Bounds.Width, pc.Bounds.Height, vm.LeftLabelStrips.Count, vm.RightLabelStrips.Count,
-                vm.LabelStripViewWidth);
+            var (cl, cr) = owner.CardSpan(vm, pc.Bounds.Size);
             var rect = new Rect(at.X + cl, at.Y, cr - cl, pc.Bounds.Height);
             double radius = plot.Card ? CircuitRF.Render.DataDisplay.PlotCanvasGeometry.CardRadius(pc.Bounds.Width, pc.Bounds.Height) : 3;
             if (selection)
@@ -76,6 +74,22 @@ public partial class PlotContainerView : UserControl
         }
     }
 
+    /// <summary>The card's left and right edges on the plot canvas for a canvas of <paramref name="size"/>: what the
+    /// card and the selection outline span, what the plot takes the pointer over and where the resize grip sits.</summary>
+    private (double Left, double Right) CardSpan(PlotContainerViewModel vm, Size size)
+        => CircuitRF.Render.DataDisplay.PlotCanvasGeometry.CardSpan(
+            vm.PlotVM.Plot, size.Width, size.Height, vm.LeftLabelStrips.Count, vm.RightLabelStrips.Count,
+            vm.LabelStripViewWidth);
+
+    /// <summary>The grip at the card's lower-right corner rather than the canvas's, which on a Rect plot is wider.</summary>
+    private void PlaceResizeHandle()
+    {
+        if (DataContext is not PlotContainerViewModel vm || _plotControl.Bounds.Width <= 2) return;
+        var (_, right) = CardSpan(vm, _plotControl.Bounds.Size);
+        double inset = Math.Max(0, _plotControl.Bounds.Width - right) + 2;
+        if (Math.Abs(_resizeHandle.Margin.Right - inset) > 0.5) _resizeHandle.Margin = new Thickness(0, 0, inset, 2);
+    }
+
     // ---- Constructor ------------------------------------------------
 
     public PlotContainerView()
@@ -87,6 +101,15 @@ public partial class PlotContainerView : UserControl
         _plotControl.ShowPositionLock = true;   // a Data Display plot sits on a canvas it can be moved on
         // The card is drawn here, wide enough for the label strips beside the plot, and the selection outline with it.
         _plotControl.DrawsCard = false;
+        // The plot takes the pointer over its card only: a Rect plot's canvas runs past its labels on both sides.
+        _plotControl.HitArea = size =>
+        {
+            if (DataContext is not PlotContainerViewModel vm) return new Rect(size);
+            var (l, r) = CardSpan(vm, size);
+            l = Math.Clamp(l, 0, size.Width);
+            r = Math.Clamp(r, l, size.Width);
+            return new Rect(l, 0, r - l, size.Height);
+        };
         var grid = this.FindControl<Grid>("RootGrid")!;
         _cardLayer = new CardLayer(this, selection: false);
         _selectionLayer = new CardLayer(this, selection: true);
@@ -99,6 +122,7 @@ public partial class PlotContainerView : UserControl
         {
             _cardLayer.InvalidateVisual();
             _selectionLayer.InvalidateVisual();
+            PlaceResizeHandle();
         }, DispatcherPriority.Render);
 
         // Subscribe to plot events for state refresh

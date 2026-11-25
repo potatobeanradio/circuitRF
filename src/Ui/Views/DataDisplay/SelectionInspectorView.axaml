@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.SelectionInspectorView"
+             x:DataType="vm:SelectionInspectorViewModel"
+             IsVisible="{Binding IsActive, FallbackValue=False}">
+    <!-- Several items selected: what they have in common, laid out as the control inspector lays out the same rows. A
+         check box they disagree on shows as mixed, and a click sets every one of them. -->
+    <UserControl.Styles>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="CheckBox.show">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Padding" Value="4,0,0,0"/>
+            <Setter Property="Margin" Value="0,0,16,0"/>
+        </Style>
+        <Style Selector="Grid.row">
+            <Setter Property="MinHeight" Value="30"/>
+        </Style>
+    </UserControl.Styles>
+    <StackPanel Margin="8,4,8,8" Spacing="4">
+        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Margin="0,4,0,2"
+                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+        <StackPanel Spacing="4" IsVisible="{Binding OnlyControls}">
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Size"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Classes="seg-btn" Classes.active="{Binding IsSmall}" Content="S" MinWidth="26"
+                            HorizontalContentAlignment="Center" Command="{Binding SetSmallCommand}" ToolTip.Tip="Small"/>
+                    <Button Classes="seg-btn" Classes.active="{Binding IsMedium}" Content="M" MinWidth="26"
+                            HorizontalContentAlignment="Center" Command="{Binding SetMediumCommand}" ToolTip.Tip="Medium"/>
+                    <Button Classes="seg-btn" Classes.active="{Binding IsLarge}" Content="L" MinWidth="26"
+                            HorizontalContentAlignment="Center" Command="{Binding SetLargeCommand}" ToolTip.Tip="Large"/>
+                    <TextBlock Text="Mixed" IsVisible="{Binding IsMixedSize}" VerticalAlignment="Center" Margin="6,0,0,0"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </StackPanel>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding HasShowLabel}">
+                <TextBlock Classes="lbl" Text="Show"/>
+                <CheckBox Grid.Column="1" Classes="show" Content="Label" IsChecked="{Binding ShowLabel, Mode=TwoWay}"
+                          ToolTip.Tip="The name or label inside each control"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,Auto,*" IsVisible="{Binding HasAccent}">
+                <TextBlock Classes="lbl" Text="{Binding AccentLabel}"/>
+                <Button Grid.Column="1" Click="PickAccent" ToolTip.Tip="Choose one colour for all of them"
+                        AutomationProperties.Name="Accent colour" VerticalAlignment="Center">
+                    <Panel Width="20" Height="14">
+                        <Border BorderThickness="1" Background="{Binding AccentSwatch}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <TextBlock Text="–" IsVisible="{Binding IsMixedAccent}" HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" FontSize="11"/>
+                    </Panel>
+                </Button>
+                <Button Grid.Column="2" Click="ResetAccent" Content="Default" Margin="4,0,0,0" VerticalAlignment="Center"
+                        IsEnabled="{Binding !IsDefaultAccent}"/>
+            </Grid>
+            <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding AllButtons}">
+                <ItemsControl Grid.Column="1" ItemsSource="{Binding ColorPresets}" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="3"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ColorPreset">
+                            <Button Padding="0" MinWidth="0" MinHeight="0" Width="18" Height="18" ToolTip.Tip="{Binding Hex}"
+                                    Command="{Binding $parent[ItemsControl].((vm:SelectionInspectorViewModel)DataContext).PickPresetCommand}"
+                                    CommandParameter="{Binding}">
+                                <Border Width="16" Height="16" CornerRadius="8" Background="{Binding Swatch}" BorderThickness="1"
+                                        BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </StackPanel>
+
+        <Grid Classes="row" ColumnDefinitions="75,*">
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox Classes="show" Content="Card" IsChecked="{Binding Card, Mode=TwoWay}" IsVisible="{Binding HasCard}"
+                          ToolTip.Tip="Draw each on its card; off, straight onto the canvas"/>
+                <CheckBox Content="Lock Position" IsChecked="{Binding Locked, Mode=TwoWay}" IsVisible="{Binding HasLock}"
+                          ToolTip.Tip="Neither moved nor resized; each still works"/>
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</UserControl>

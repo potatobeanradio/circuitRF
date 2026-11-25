@@ -162,9 +162,9 @@ keys. Each gesture is one undo step when it ends, and the plots follow live whil
 
 **Size.** The inspector's **S**, **M** and **L** are fixed sizes. The gripper at the bottom-right corner
 resizes freely, and the size reads *Custom*; picking S, M or L again snaps back. A control's drawing grows
-with its frame: a Large slider is a bigger slider, not a Small one with more room. Most controls stop at their
-Small size; a button goes much smaller, to a lamp beside a plot, and leaves its label off once it would be too
-small to read.
+with its frame: a Large slider is a bigger slider, not a Small one with more room. A slider or knob goes down
+to half its Small size each way, and a readout stops at its Small size; a button goes much smaller, to a lamp
+beside a plot, and leaves its label off once it would be too small to read.
 
 **Card.** Every control sits on a card. Clear **Card** in the inspector to draw the control straight onto the
 canvas.
@@ -172,8 +172,13 @@ canvas.
 **Properties…** in a control's right-click menu brings the Properties panel forward, or opens it floating if
 it was closed. A text on the canvas has the same menu, with **Lock Position**.
 
-**Stacking.** The last plot or control you selected is drawn over the others, and the display saves the
-order. Panels are always at the bottom, then plots, then controls.
+**Several at once.** With two or more things selected (Select All, a drag around them, or Ctrl-clicks), the
+Properties panel shows what they have in common and sets it on all of them as one undo step. **Lock Position**
+covers plots, controls and text, and **Card** covers plots, controls and marker boxes. With only controls
+selected, their size, label and colour show as well. A setting they disagree on shows as mixed.
+
+**Stacking.** Clicking a plot or control brings it in front of the others, and the display saves the order;
+bringing something forward can be undone. Panels are always at the bottom, then plots, then controls.
 
 **Lock Position.** Right-click a control and choose **Lock Position**. A plot has the same item, above
 **Lock Axes Panning**. A locked control cannot be moved or

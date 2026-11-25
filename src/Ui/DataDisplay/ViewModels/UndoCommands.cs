@@ -504,3 +504,12 @@ internal sealed class PasteCommand : IUndoableCommand
             _display.InternalRemoveContainer(c);
     }
 }
+
+// ---- Stacking ----------------------------------------------------------
+
+/// <summary>A plot or control brought to the front: its stacking index before and after.</summary>
+internal sealed class RestackCommand(Action<int> set, int before, int after) : IUndoableCommand
+{
+    public void Execute() => set(after);
+    public void Undo()    => set(before);
+}

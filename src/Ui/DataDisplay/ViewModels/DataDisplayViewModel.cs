@@ -109,7 +109,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         SelectedAnnotationIndex = index;
         OnPropertyChanged(nameof(SelectedAnnotation));
         OnPropertyChanged(nameof(HasAnySelection));
+        SelectionChanged?.Invoke();
     }
+
+    /// <summary>Raised when what is selected has settled — after a click, Select All, or a marquee's release, never
+    /// on each step of a marquee.</summary>
+    public event Action? SelectionChanged;
 
     internal void EditAnnotation(int index, CanvasAnnotation annotation)
     {
@@ -1461,7 +1466,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         if (vm is not null)
         {
             vm.IsSelected = true;
-            vm.ZIndex     = _nextZIndex++;
+            BringToFront(vm);
         }
         RefreshSelection();
     }
@@ -1498,6 +1503,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         AllAnnotationsSelected = _annotations.Count > 0;
         OnPropertyChanged(nameof(SelectedAnnotation));
         OnPropertyChanged(nameof(HasAnySelection));
+        OnPropertyChanged(nameof(SelectedControl));
+        SelectionChanged?.Invoke();
     }
 
     /// <summary>
@@ -1508,7 +1515,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         vm.IsLegendSelected = false;
         vm.IsSelected = !vm.IsSelected;
-        if (vm.IsSelected) vm.ZIndex = _nextZIndex++;
+        if (vm.IsSelected) BringToFront(vm);
         RefreshSelection();
     }
 
@@ -1565,35 +1572,77 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void SelectItemsInRect(Rect screenRect, bool addToSelection)
     {
-        foreach (var p in _plots)
-        {
-            var itemRect     = new Rect(p.ViewContainerLeft, p.ViewTop, p.ViewTotalWidth, p.ViewHeight);
-            bool shouldSelect = screenRect.Intersects(itemRect);
-            bool newSelected  = addToSelection ? (p.IsSelected || shouldSelect) : shouldSelect;
-            if (p.IsSelected != newSelected)
-            {
-                p.IsSelected = newSelected;
-                if (newSelected) p.ZIndex = _nextZIndex++;
-            }
-        }
+        bool own = _marquee is null;
+        if (own) BeginDragSelect(addToSelection);
+        var m = _marquee!;
 
-        foreach (var m in Boxes)
+        foreach (var (p, rect) in m.Plots)
         {
-            var itemRect      = new Rect(m.ViewLeft, m.ViewTop, m.BoxWidth, m.BoxHeight);
-            bool shouldSelect = screenRect.Intersects(itemRect);
-            bool newSelected  = addToSelection ? (m.IsSelected || shouldSelect) : shouldSelect;
-            if (m.IsSelected != newSelected)
-                m.IsSelected = newSelected;
+            bool newSelected = m.Kept.Contains(p) || screenRect.Intersects(rect);
+            if (p.IsSelected != newSelected) p.IsSelected = newSelected;   // a marquee selects; it does not restack
         }
-
-        foreach (var c in _controls)
+        foreach (var (b, rect) in m.Boxes)
         {
-            bool shouldSelect = screenRect.Intersects(new Rect(c.ViewLeft, c.ViewTop, c.ViewWidth, c.ViewHeight));
-            bool newSelected  = addToSelection ? (c.IsSelected || shouldSelect) : shouldSelect;
+            bool newSelected = m.Kept.Contains(b) || screenRect.Intersects(rect);
+            if (b.IsSelected != newSelected) b.IsSelected = newSelected;
+        }
+        foreach (var (c, rect) in m.Controls)
+        {
+            bool newSelected = m.Kept.Contains(c) || screenRect.Intersects(rect);
             if (c.IsSelected != newSelected) c.IsSelected = newSelected;
         }
 
+        if (own) EndDragSelect();
+        else OnPropertyChanged(nameof(HasAnySelection));
+    }
+
+    /// <summary>A marquee in progress: what it measured when it started and what it keeps whatever it covers.</summary>
+    private sealed record Marquee(
+        HashSet<object> Kept,
+        List<(PlotContainerViewModel Item, Rect Rect)> Plots,
+        List<(CanvasBoxViewModel Item, Rect Rect)> Boxes,
+        List<(ControlContainerViewModel Item, Rect Rect)> Controls);
+
+    private Marquee? _marquee;
+
+    /// <summary>
+    /// A marquee starts: each item's screen rectangle is measured once (a plot by its card, what it draws, not its
+    /// canvas), and with <paramref name="addToSelection"/> what is selected now stays selected. Until
+    /// <see cref="EndDragSelect"/> the selection is shown on the canvas but not published to the Properties panel, which
+    /// would otherwise build a plot's or a control's inspector each time the sweep passes over exactly one of them.
+    /// </summary>
+    public void BeginDragSelect(bool addToSelection)
+    {
+        var kept = new HashSet<object>();
+        if (addToSelection)
+        {
+            foreach (var p in _plots)    if (p.IsSelected) kept.Add(p);
+            foreach (var b in Boxes)     if (b.IsSelected) kept.Add(b);
+            foreach (var c in _controls) if (c.IsSelected) kept.Add(c);
+        }
+        _marquee = new Marquee(
+            kept,
+            _plots.Select(p => (p, PlotHitRect(p))).ToList(),
+            Boxes.Select(b => (b, new Rect(b.ViewLeft, b.ViewTop, b.BoxWidth, b.BoxHeight))).ToList(),
+            _controls.Select(c => (c, new Rect(c.ViewLeft, c.ViewTop, c.ViewWidth, c.ViewHeight))).ToList());
+    }
+
+    /// <summary>The marquee ends: the selection it left is published once.</summary>
+    public void EndDragSelect()
+    {
+        if (_marquee is null) return;
+        _marquee = null;
         RefreshSelection();
+    }
+
+    /// <summary>A plot's card on screen — the rectangle it draws, outlines when selected and takes the pointer over.</summary>
+    private static Rect PlotHitRect(PlotContainerViewModel p)
+    {
+        if (p.ViewWidth <= 0 || p.ViewHeight <= 0)
+            return new Rect(p.ViewContainerLeft, p.ViewTop, p.ViewTotalWidth, p.ViewHeight);
+        var (l, r) = PlotCanvasGeometry.CardSpan(p.PlotVM.Plot, p.ViewWidth, p.ViewHeight,
+            p.LeftLabelStrips.Count, p.RightLabelStrips.Count, p.LabelStripViewWidth);
+        return new Rect(p.ViewLeft + l, p.ViewTop, Math.Max(0, r - l), p.ViewHeight);
     }
 
     internal void RefreshSelection()
@@ -1605,6 +1654,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         SingleSelectedPlot = selected.Count == 1 ? selected[0] : null;
         OnPropertyChanged(nameof(HasAnySelection));
         OnPropertyChanged(nameof(SelectedControl));
+        SelectionChanged?.Invoke();
     }
 
     // ---- Coordinated move -------------------------------------------

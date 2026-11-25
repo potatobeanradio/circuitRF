@@ -74,7 +74,12 @@ public sealed class DisplayCardsAndLayersTests : IDisposable
         PlotContainerConfig P(double left) => new()
         {
             PlotType = PlotType.Rect, Left = left, Top = 0, Width = 400, Height = 250, Card = card,
-            Traces = [new TraceConfig { SourcePath = npy, CubeName = "Gain", Expression = "Gain" }],
+            Traces = [new TraceConfig
+            {
+                SourcePath = npy, CubeName = "Gain", Expression = "Gain",
+                Markers = [new MarkerConfig { Id = Guid.NewGuid().ToString("D"), Name = left == 0 ? "m1" : "m2",
+                                              PositionStaticX = 1.5e9f, PositionStaticY = 5 }],
+            }],
         };
         var config = new DataDisplayConfig
         {
@@ -109,12 +114,10 @@ public sealed class DisplayCardsAndLayersTests : IDisposable
 
         d.SelectOnly(d.Plots[1]);
         d.SelectOnly(d.Plots[0]);   // the first plot is brought over the second
-        d.SelectOnly(d.Controls[1]);
         await w.SaveAllAsync(cdd);
 
         var again = (await OpenAsync(cdd)).Tabs[0].DataDisplay;
         Assert.True(again.Plots[0].ZIndex > again.Plots[1].ZIndex);
-        Assert.True(again.Controls[1].ZIndex > again.Controls[0].ZIndex);
     }
 
     [Fact]
@@ -129,6 +132,86 @@ public sealed class DisplayCardsAndLayersTests : IDisposable
         d.EndMoveOperation();
         Assert.Equal((0.0, 0.0), (d.Plots[0].Left, d.Plots[0].Top));
         Assert.Equal((540.0, 30.0), (d.Plots[1].Left, d.Plots[1].Top));
+    }
+
+    [Fact]
+    public async Task SelectAll_LocksEverything_AsOneUndoStep()
+    {
+        var d = (await OpenAsync(Cdd("all.cdd"))).Tabs[0].DataDisplay;
+        d.SelectAll();
+        var sel = d.SelectionInspector;
+        Assert.True(sel.IsActive && sel.HasLock && sel.HasCard && !sel.OnlyControls);
+        Assert.Null(d.SelectedControl);   // one control among others is not edited alone
+
+        sel.Locked = true;
+        Assert.True(d.Plots.All(p => p.PlotVM.Plot.PositionLocked) && d.Controls.All(c => c.Model.Locked));
+        d.UndoRedo.Undo();
+        Assert.True(d.Plots.All(p => !p.PlotVM.Plot.PositionLocked) && d.Controls.All(c => !c.Model.Locked));
+
+        d.SelectOnly(d.Controls[0]);
+        d.ToggleSelect(d.Controls[1]);
+        // A panel and a button: both controls, but a panel has no accent and is its own card.
+        Assert.Equal((true, false, true), (sel.OnlyControls, sel.HasAccent, sel.HasCard));
+    }
+
+    [Fact]
+    public async Task Marquee_PicksAPlotByItsCard()
+    {
+        var d = (await OpenAsync(Cdd("marquee.cdd"))).Tabs[0].DataDisplay;
+        var p = d.Plots[1];
+        var (l, _) = PlotCanvasGeometry.CardSpan(p.PlotVM.Plot, p.ViewWidth, p.ViewHeight);
+        Assert.True(l > 2);   // the card starts inside the canvas
+        double y = p.ViewTop + p.ViewHeight / 2;
+        d.SelectItemsInRect(new Avalonia.Rect(p.ViewLeft + 1, y, 1, 1), false);   // beside the card
+        Assert.False(p.IsSelected);
+        d.SelectItemsInRect(new Avalonia.Rect(p.ViewLeft + l + 4, y, 1, 1), false);
+        Assert.True(p.IsSelected);
+    }
+
+    [Fact]
+    public async Task BringingForward_IsAnUndoStep_AndDirties()
+    {
+        var w = await OpenAsync(Cdd("restack.cdd"));
+        var d = w.Tabs[0].DataDisplay;
+        Assert.False(w.HasUnsavedChanges());
+
+        d.SelectOnly(d.Plots[0]);   // the two load level, so this brings it forward
+        Assert.True(d.Plots[0].ZIndex > d.Plots[1].ZIndex);
+        Assert.True(w.HasUnsavedChanges());
+        var top = d.UndoRedo.Top;
+        d.SelectOnly(d.Plots[0]);   // already in front: nothing changes
+        Assert.Same(top, d.UndoRedo.Top);
+
+        d.UndoRedo.Undo();
+        Assert.False(w.HasUnsavedChanges());
+        d.UndoRedo.Redo();
+        Assert.True(d.Plots[0].ZIndex > d.Plots[1].ZIndex);
+        Assert.True(w.HasUnsavedChanges());
+
+        // Controls too, each among its own layer: the button over the button layer, which it alone is in.
+        d.UndoRedo.Undo();
+        d.SelectOnly(d.Controls[1]);
+        Assert.False(w.HasUnsavedChanges());
+    }
+
+    [Fact]
+    public async Task HidingAMarkerBox_IsAnUndoStep_AndDirties()
+    {
+        var w = await OpenAsync(Cdd("box.cdd"));
+        var d = w.Tabs[0].DataDisplay;
+        var c = d.Plots[0];
+        var marker = c.PlotVM.Plot.Traces[0].Markers[0];
+        Assert.True(marker.ShowInfoBox);
+        Assert.False(w.HasUnsavedChanges());
+
+        marker.ShowInfoBox = false;     // what the box's menu does
+        c.RequestInfoBoxRebuild();
+        c.RequestPlotRedraw();
+        Assert.True(w.HasUnsavedChanges());
+
+        d.UndoRedo.Undo();
+        Assert.True(c.PlotVM.Plot.Traces[0].Markers[0].ShowInfoBox);
+        Assert.False(w.HasUnsavedChanges());
     }
 
     [Fact]
@@ -170,7 +253,7 @@ public sealed class DisplayCardsAndLayersTests : IDisposable
     }
 
     [Fact]
-    public void Switch_OperatesOnItsTrack_AndAButtonGoesSmall()
+    public void Switch_OperatesOnItsTrack_AndControlsGoSmall()
     {
         var sw = new ButtonControl { Name = "s", Style = ButtonStyle.Switch };
         sw.ApplySize(ControlSize.Medium);
@@ -182,5 +265,8 @@ public sealed class DisplayCardsAndLayersTests : IDisposable
         sw.ApplySize(ControlSize.Medium);
         Assert.True(sw.Height > sw.Width);
         Assert.Equal((12.0, 12.0), sw.MinimumSize());
+        Assert.Equal((48.0, 56.0), new KnobControl().MinimumSize());   // half the Small preset each way
+        Assert.Equal((100.0, 30.0), new SliderControl().MinimumSize());
+        Assert.Equal((37.5, 100.0), new SliderControl { Orientation = ControlOrientation.Vertical }.MinimumSize());
     }
 }

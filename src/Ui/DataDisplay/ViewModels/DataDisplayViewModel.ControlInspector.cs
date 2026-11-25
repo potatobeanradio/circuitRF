@@ -14,4 +14,9 @@ public partial class DataDisplayViewModel
 
     /// <summary>Edits the one selected control; hidden while none is (<see cref="SelectedControl"/>).</summary>
     public ControlInspectorViewModel ControlInspector => _controlInspector ??= new(this);
+
+    private SelectionInspectorViewModel? _selectionInspector;
+
+    /// <summary>Edits what two or more selected items have in common; hidden otherwise.</summary>
+    public SelectionInspectorViewModel SelectionInspector => _selectionInspector ??= new(this);
 }

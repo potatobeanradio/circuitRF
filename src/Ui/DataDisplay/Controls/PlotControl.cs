@@ -1199,6 +1199,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         /// off and draws a card wide enough for them (the Data Display's PlotContainerView).</summary>
         public bool DrawsCard { get; set; } = true;
 
+        /// <summary>The part of the control that takes the pointer, in its own coordinates, for a control size; null is
+        /// all of it. The Data Display sets it to the plot's card, so a press beside a Rect plot's labels reaches the
+        /// canvas rather than the plot.</summary>
+        public Func<Size, Rect>? HitArea { get; set; }
+
         /// <summary>Raised after every frame is recorded, so a host drawing around the plot (its card) follows it.</summary>
         public event Action? Rendered;
 
@@ -1257,7 +1262,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 Overlay?.CaptureFrame(),
                 legendSel,
                 _trialCache,
-                DrawsCard));
+                DrawsCard,
+                HitArea?.Invoke(Bounds.Size)));
             Rendered?.Invoke();
         }
 
@@ -1282,6 +1288,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly SKColor _legendSelection;
             private readonly TrialLayerCache? _trialCache;
             private readonly bool _drawCard;
+            private readonly Rect? _hitArea;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -1298,9 +1305,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 Action<SKCanvas, TransformSet, RenderTheme>? overlay = null,
                 SKColor legendSelection = default,
                 TrialLayerCache? trialCache = null,
-                bool drawCard = true)
+                bool drawCard = true,
+                Rect? hitArea = null)
             {
                 _drawCard        = drawCard;
+                _hitArea         = hitArea;
                 _legendSelection = legendSelection;
                 _trialCache      = trialCache;
                 _bounds          = bounds;
@@ -1321,7 +1330,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
             public Rect Bounds => _bounds;
 
-            public bool HitTest(Point p) => _bounds.Contains(p);
+            public bool HitTest(Point p) => (_hitArea ?? _bounds).Contains(p);
 
             public void Render(ImmediateDrawingContext context)
             {
@@ -2848,6 +2857,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 onShowInfoBoxToggled: () =>
                 {
                     ContainerProvider?.Invoke()?.RequestInfoBoxRebuild();
+                    ContainerProvider?.Invoke()?.RequestPlotRedraw();   // a saved change: undoable, and dirty
                     InvalidateVisual();
                 },
                 onVswrToggled: () =>

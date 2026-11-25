@@ -105,6 +105,16 @@ public partial class PlotCanvasView : UserControl
         _contentGrid?.AddHandler(
             PointerReleasedEvent, OnDragSelectReleased,
             RoutingStrategies.Bubble, handledEventsToo: true);
+        // A marquee whose release never arrives still publishes what it selected.
+        if (_contentGrid is not null)
+            _contentGrid.PointerCaptureLost += (_, _) =>
+            {
+                if (!_maybeDragSelecting) return;
+                _maybeDragSelecting = false;
+                if (_isDragSelecting) Display?.EndDragSelect();
+                _isDragSelecting = false;
+                _dragSelectOverlay?.SetSelectionRect(null);
+            };
 
         // Zoom box — the press is a TUNNEL handler, unlike everything else here, because an armed
         // magnifier has to pre-empt the CHILDREN: a bubble handler runs after the plot or InfoBox
@@ -289,6 +299,8 @@ public partial class PlotCanvasView : UserControl
 
         if (!_isDragSelecting && Math.Sqrt(dx * dx + dy * dy) < DragSelectThreshold) return;
 
+        // The marquee measures every item once and tells the Properties panel what it selected only when it ends.
+        if (!_isDragSelecting) Display?.BeginDragSelect(_dragSelectAdditive);
         _isDragSelecting = true;
 
         var selRect = new Rect(
@@ -307,6 +319,7 @@ public partial class PlotCanvasView : UserControl
 
         e.Pointer.Capture(null);
         _maybeDragSelecting = false;
+        if (_isDragSelecting) Display?.EndDragSelect();
         _isDragSelecting    = false;
         _dragSelectOverlay?.SetSelectionRect(null);
     }

@@ -271,7 +271,7 @@ public sealed partial class ControlContainerViewModel : ViewModelBase
     internal void BeginResize()
     {
         _resizeStart = Model.Clone();
-        ZIndex = Display.NextControlZ();   // a control being enlarged is drawn over its neighbours
+        Display.BringToFront(this);   // a control being enlarged is drawn over its neighbours
     }
 
     /// <summary>The gripper: a free size in logical units, which makes the size Custom (R-ddl5-2).</summary>

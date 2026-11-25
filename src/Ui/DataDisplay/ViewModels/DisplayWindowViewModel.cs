@@ -330,8 +330,16 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         foreach (var tab in Tabs)
         {
             var full = tab.DataDisplay.BuildTabConfig(tab.Name, configDir: "");
-            // Stacking changes with every click that brings a plot forward, which is not an edit.
-            foreach (var pc in full.Plots) pc.ZIndex = 0;
+            // Stacking is compared as an ORDER, not as the indices: bringing an item forward hands it a fresh index,
+            // and an order put back by undo is the saved one again even though the numbers moved on.
+            int rank = 0;
+            foreach (var pc in full.Plots.OrderBy(p => p.ZIndex)) pc.ZIndex = rank++;
+            if (full.Controls is { } controls)
+                foreach (var layer in controls.GroupBy(c => c.IsPanel))
+                {
+                    rank = 0;
+                    foreach (var c in layer.OrderBy(c => c.ZIndex)) c.ZIndex = rank++;
+                }
             // Create a copy with ZoomLevel/ViewOffset zeroed so those changes
             // do not count as "unsaved".
             config.Tabs.Add(new TabConfig
@@ -339,6 +347,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
                 Name  = full.Name,
                 Plots = full.Plots,
                 Annotations = full.Annotations,
+                Controls = full.Controls,
                 // ZoomLevel / ViewOffsetX / ViewOffsetY left at default 0
             });
         }

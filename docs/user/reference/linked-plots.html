@@ -701,15 +701,19 @@ Alt-drag moves it from anywhere. Click the frame to select it; a selected contro
 keys. Each gesture is one undo step when it ends, and the plots follow live while you drag.</p>
 <p><strong>Size.</strong> The inspector's <strong>S</strong>, <strong>M</strong> and <strong>L</strong> are fixed sizes. The gripper at the bottom-right corner
 resizes freely, and the size reads <em>Custom</em>; picking S, M or L again snaps back. A control's drawing grows
-with its frame: a Large slider is a bigger slider, not a Small one with more room. Most controls stop at their
-Small size; a button goes much smaller, to a lamp beside a plot, and leaves its label off once it would be too
-small to read.</p>
+with its frame: a Large slider is a bigger slider, not a Small one with more room. A slider or knob goes down
+to half its Small size each way, and a readout stops at its Small size; a button goes much smaller, to a lamp
+beside a plot, and leaves its label off once it would be too small to read.</p>
 <p><strong>Card.</strong> Every control sits on a card. Clear <strong>Card</strong> in the inspector to draw the control straight onto the
 canvas.</p>
 <p><strong>Properties…</strong> in a control's right-click menu brings the Properties panel forward, or opens it floating if
 it was closed. A text on the canvas has the same menu, with <strong>Lock Position</strong>.</p>
-<p><strong>Stacking.</strong> The last plot or control you selected is drawn over the others, and the display saves the
-order. Panels are always at the bottom, then plots, then controls.</p>
+<p><strong>Several at once.</strong> With two or more things selected (Select All, a drag around them, or Ctrl-clicks), the
+Properties panel shows what they have in common and sets it on all of them as one undo step. <strong>Lock Position</strong>
+covers plots, controls and text, and <strong>Card</strong> covers plots, controls and marker boxes. With only controls
+selected, their size, label and colour show as well. A setting they disagree on shows as mixed.</p>
+<p><strong>Stacking.</strong> Clicking a plot or control brings it in front of the others, and the display saves the order;
+bringing something forward can be undone. Panels are always at the bottom, then plots, then controls.</p>
 <p><strong>Lock Position.</strong> Right-click a control and choose <strong>Lock Position</strong>. A plot has the same item, above
 <strong>Lock Axes Panning</strong>. A locked control cannot be moved or
 resized, and a drag on its frame works the control instead. It can still be selected, edited, copied and

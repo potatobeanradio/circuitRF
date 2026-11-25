@@ -201,6 +201,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
         // Targeted add/remove of THIS marker's InfoBox only — a full rebuild would recreate
         // every InfoBox VM (including the one this editor flyout is bound to) and dismiss the flyout.
         _parent?.Container.SetMarkerInfoBoxVisibility(_marker, _parent.Trace);
+        _parent?.Container.RequestPlotRedraw();   // a saved change: one undo step, and the document is dirty
     }
 
     // ---- The info box's card --------------------------------------------

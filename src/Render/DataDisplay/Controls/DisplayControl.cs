@@ -348,6 +348,13 @@ public sealed class SliderControl : SteppedControl
         return Orientation == ControlOrientation.Vertical ? (h * 1.25, w) : (w, h);
     }
 
+    /// <summary>Half the Small preset each way, for a compact panel.</summary>
+    public override (double Width, double Height) MinimumSize()
+    {
+        var (w, h) = PresetSize(ControlSize.Small);
+        return (w / 2, h / 2);
+    }
+
     public override DisplayControl Clone()
     {
         var c = new SliderControl();
@@ -384,6 +391,9 @@ public sealed class KnobControl : SteppedControl
         ControlSize.Large => (164.0, 188.0),
         _                 => (120.0, 140.0),
     };
+
+    /// <summary>Half the Small preset each way, for a compact panel.</summary>
+    public override (double Width, double Height) MinimumSize() => (48, 56);
 
     public override DisplayControl Clone()
     {
