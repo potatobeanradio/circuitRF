@@ -83,7 +83,7 @@ public static class MarkerTable
                 }
             rows.Add(new MarkerTableRow(marker, trace, Label(trace), lines, coordinates, readings));
         }
-        return rows;
+        return rows.OrderBy(row => row.Marker.Index).ToArray();
     }
 }
 

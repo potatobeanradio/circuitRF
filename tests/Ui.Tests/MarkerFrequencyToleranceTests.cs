@@ -191,6 +191,34 @@ public sealed class MarkerFrequencyToleranceTests
     }
 
     [Fact]
+    public void MarkerTableSortsNumericallyAcrossTraces()
+    {
+        var (plot, first) = Fixture();
+        var second = new Trace(first.Data, MatrixType.S, 1, 0, DependentVarFormat.Db);
+        second.BuildPath(PlotType.Rect, plot.FreqUnits);
+        plot.Traces.Add(second);
+        var marker1 = new Marker(second, first.Data.Frequencies[0], false, false, 1, plot.FreqUnits);
+        var marker2 = new Marker(first, first.Data.Frequencies[0], false, false, 2, plot.FreqUnits) { Name = "custom" };
+        var marker3 = new Marker(second, first.Data.Frequencies[0], false, false, 3, plot.FreqUnits);
+        var marker10 = new Marker(first, first.Data.Frequencies[0], false, false, 10, plot.FreqUnits);
+        first.Markers.Add(marker10);
+        first.Markers.Add(marker2);
+        second.Markers.Add(marker3);
+        second.Markers.Add(marker1);
+
+        var rows = MarkerTable.Rows(plot);
+        Assert.Equal(new[] { marker1, marker2, marker3, marker10 }, rows.Select(row => row.Marker));
+        Assert.Equal(new[] { second, first, second, first }, rows.Select(row => row.Trace));
+        Assert.Equal(new[] { first, second }, MarkerTable.Columns(rows).Select(column => column.Trace));
+        float y = MarkerTableRenderer.HeaderHeightFor(rows);
+        foreach (var row in rows)
+        {
+            Assert.Same(row.Marker, MarkerTableRenderer.RowAt(rows, y + 1, 0)!.Marker);
+            y += MarkerTableRenderer.RowHeight(row);
+        }
+    }
+
+    [Fact]
     public void MarkerTableWrapsLongReadoutsWithoutDroppingText()
     {
         var (plot, trace) = Fixture();
@@ -324,14 +352,14 @@ public sealed class MarkerFrequencyToleranceTests
         var rows = MarkerTable.Rows(plot);
         var columns = MarkerTable.Columns(rows);
         Assert.Equal(plot.Traces, columns.Select(column => column.Trace));
-        Assert.Single(rows[0].TraceReadings);
-        Assert.Equal(5, rows[1].TraceReadings.Count);
+        Assert.Equal(5, rows[0].TraceReadings.Count);
+        Assert.Single(rows[1].TraceReadings);
         Assert.Equal(MarkerTableRenderer.Width, MarkerTableRenderer.Measure(rows).W);
         Assert.True(MarkerTableRenderer.MeasureAll(rows).W > MarkerTableRenderer.Measure(rows).W);
         Assert.Equal(MarkerTableRenderer.MeasureAll(rows).W - MarkerTableRenderer.Measure(rows).W,
             MarkerTableRenderer.MaxHorizontalScroll(rows));
         Assert.Same(marker, MarkerTableRenderer.RowAt(rows,
-            MarkerTableRenderer.HeaderHeightFor(rows) + MarkerTableRenderer.RowHeight(rows[0]) + 1, 0)!.Marker);
+            MarkerTableRenderer.HeaderHeightFor(rows) + 1, 0)!.Marker);
         Assert.Null(MarkerTableRenderer.RowAt(rows, MarkerTableRenderer.Measure(rows).H - 1, 0));
     }
 
