@@ -146,7 +146,7 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         nameof(SelectedSource), nameof(SelectedQuantity), nameof(SelectedAxis), nameof(Problem), nameof(HasProblem),
         nameof(IsHorizontal), nameof(IsVertical),
         nameof(IsSmall), nameof(IsMedium), nameof(IsLarge), nameof(IsCustom),
-        nameof(ShowTicks), nameof(ShowEnds), nameof(ShowValue),
+        nameof(ShowLabel), nameof(ShowTicks), nameof(ShowEnds), nameof(ShowValue),
         nameof(AccentSwatch), nameof(IsDefaultAccent), nameof(Locked),
     ];
 
@@ -632,6 +632,12 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     private void SetSize(ControlSize size) => Edit(c => c.ApplySize(size), "size");
 
     // ---- look ------------------------------------------------------------------------------------------
+
+    public bool ShowLabel
+    {
+        get => Slider?.ShowLabel ?? false;
+        set { if (Slider is not null) Edit(c => ((SliderControl)c).ShowLabel = value, "label shown"); }
+    }
 
     public bool ShowTicks
     {

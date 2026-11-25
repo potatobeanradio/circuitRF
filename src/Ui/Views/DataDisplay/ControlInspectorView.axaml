@@ -127,13 +127,16 @@
         </Grid>
         <Grid Classes="row" ColumnDefinitions="75,*">
             <TextBlock Classes="lbl" Text="Show"/>
-            <WrapPanel Grid.Column="1" VerticalAlignment="Center">
+            <!-- Two by two, the same at every panel width: a wrap would leave "Value" alone on a second line. -->
+            <UniformGrid Grid.Column="1" Columns="2" VerticalAlignment="Center">
+                <CheckBox Classes="show" Content="Label" IsChecked="{Binding ShowLabel, Mode=TwoWay}"
+                          ToolTip.Tip="The name or label inside the control. Off, the slider moves into its space"/>
                 <CheckBox Classes="show" Content="Ticks" IsChecked="{Binding ShowTicks, Mode=TwoWay}"/>
                 <CheckBox Classes="show" Content="Ends" IsChecked="{Binding ShowEnds, Mode=TwoWay}"
                           ToolTip.Tip="The first and last values at the ends of the track"/>
                 <CheckBox Classes="show" Content="Value" IsChecked="{Binding ShowValue, Mode=TwoWay}"
                           ToolTip.Tip="The value it is on, as a readout"/>
-            </WrapPanel>
+            </UniformGrid>
         </Grid>
         <Grid Classes="row" ColumnDefinitions="75,Auto,*">
             <TextBlock Classes="lbl" Text="Accent"/>

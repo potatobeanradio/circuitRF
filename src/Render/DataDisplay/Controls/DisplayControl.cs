@@ -159,6 +159,9 @@ public sealed class SliderControl : DisplayControl
     // ---- look ----
 
     public ControlOrientation Orientation { get; set; } = ControlOrientation.Horizontal;
+    /// <summary>Whether the name or label is drawn in the control. Off, the label strip is given up and the rest moves
+    /// into its space.</summary>
+    public bool ShowLabel { get; set; } = true;
     public bool ShowTicks { get; set; } = true;
     public bool ShowEnds  { get; set; } = true;
     public bool ShowValue { get; set; } = true;
@@ -189,7 +192,7 @@ public sealed class SliderControl : DisplayControl
         BoundValues = o.BoundValues is null ? null : (double[])o.BoundValues.Clone();
         BoundUnit = o.BoundUnit; Index = o.Index;
         Start = o.Start; Stop = o.Stop; Step = o.Step; Points = o.Points; Unit = o.Unit; Log = o.Log; Value = o.Value;
-        Orientation = o.Orientation; ShowTicks = o.ShowTicks; ShowEnds = o.ShowEnds; ShowValue = o.ShowValue;
+        Orientation = o.Orientation; ShowLabel = o.ShowLabel; ShowTicks = o.ShowTicks; ShowEnds = o.ShowEnds; ShowValue = o.ShowValue;
     }
 
     // ---- stops ----

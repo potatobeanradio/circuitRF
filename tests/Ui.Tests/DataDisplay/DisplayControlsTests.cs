@@ -324,4 +324,24 @@ public sealed class DisplayControlsTests : IDisposable
         var w2 = await OpenAsync(saved);
         Assert.True(w2.Tabs[0].DataDisplay.Plots[0].PlotVM.Plot.Card);
     }
+
+    [Fact]
+    public void HidingTheLabel_GivesItsStripToTheTrack_AndIsSaved()
+    {
+        var shown = new SliderControl { Start = 0, Stop = 10, Step = 1 };
+        shown.ApplySize(ControlSize.Medium);
+        var hidden = (SliderControl)shown.Clone();
+        hidden.ShowLabel = false;
+        hidden.ShowValue = false;
+        float w = (float)shown.Width, h = (float)shown.Height;
+        Assert.True(ControlRenderer.Layout(hidden, w, h).TrackStart.Y < ControlRenderer.Layout(shown, w, h).TrackStart.Y);
+        Assert.Equal(0, ControlRenderer.Layout(hidden, w, h).Label.Height);
+
+        // Saved; a control written before the option reads as labelled.
+        string json = JsonSerializer.Serialize<DisplayControl>(hidden, DataDisplayJson.Options);
+        Assert.False(((SliderControl)JsonSerializer.Deserialize<DisplayControl>(json, DataDisplayJson.Options)!).ShowLabel);
+        string older = System.Text.RegularExpressions.Regex.Replace(json, @"""ShowLabel""\s*:\s*false\s*,", "");
+        Assert.DoesNotContain("ShowLabel", older);
+        Assert.True(((SliderControl)JsonSerializer.Deserialize<DisplayControl>(older, DataDisplayJson.Options)!).ShowLabel);
+    }
 }

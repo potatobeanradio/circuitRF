@@ -35,8 +35,10 @@ public static class ControlRenderer
     /// <param name="TrackStart">The first stop's centre.</param>
     /// <param name="TrackEnd">The last stop's centre.</param>
     /// <param name="Face">The track and thumb: what operates.</param>
+    /// <param name="ValueBelow">With the label hidden: the value readout sits between the end labels, under the
+    /// track (true), or in a slim row above it where there is no room between them (false).</param>
     public sealed record SliderLayout(float U, bool Vertical, SKRect Label, SKPoint TrackStart, SKPoint TrackEnd,
-                                      float ThumbRadius, SKRect Face);
+                                      float ThumbRadius, SKRect Face, bool ValueBelow = false);
 
     public static SliderLayout Layout(SliderControl c, float w, float h)
     {
@@ -46,31 +48,56 @@ public static class ControlRenderer
         float shortU = vertical ? w / 85f : h / 68f;
         float longU  = vertical ? h / 170f : w / 170f;
         float u = Math.Max(0.2f, Math.Min(shortU, longU));
-        float pad = 7 * u, labelH = 16 * u, r = 7 * u;
+        float pad = 7 * u, r = 7 * u;
+        // With its label hidden a control gives the label strip up, and what is left moves into the space. A value
+        // readout then goes between the end labels — unless the widest value it can show would not fit there, when it
+        // keeps a slim row of its own above the track. Decided from the widest value, so it never flips mid-drag.
+        bool valueBelow = !vertical && !c.ShowLabel && c.ShowValue && ValueFitsBetweenEnds(c, w, u, pad);
+        bool topRow = c.ShowLabel || (!vertical && c.ShowValue && !valueBelow);
+        float labelH = topRow ? 16 * u : 0;
         var label = new SKRect(pad, pad * 0.8f, w - pad, pad * 0.8f + labelH);
         if (!vertical)
         {
             // The track sits under the label with room for the ticks and the end labels below it.
-            float below = (c.ShowTicks ? 6 * u : 0) + (c.ShowEnds ? 13 * u : 0);
-            float top = label.Bottom + r + 2 * u;
+            bool bottomRow = c.ShowEnds || valueBelow;
+            float below = (c.ShowTicks ? 6 * u : 0) + (bottomRow ? 13 * u : 0);
+            float top = topRow ? label.Bottom + r + 2 * u : pad + r;
             float y = Math.Min(top + Math.Max(0, (h - pad - below - top - r) * 0.5f), h - pad - below - r);
             var a = new SKPoint(pad + r, y);
             var b = new SKPoint(w - pad - r, y);
             // The face reaches down over the tick row: the ticks read as part of the track, and a drag begun on them
             // slides the value rather than moving the panel.
             float faceBelow = Math.Max(r + 3 * u, c.ShowTicks ? r + 1.5f * u + 6 * u : 0);
-            return new(u, false, label, a, b, r, new SKRect(a.X - r - 3 * u, y - r - 3 * u, b.X + r + 3 * u, y + faceBelow));
+            return new(u, false, label, a, b, r, new SKRect(a.X - r - 3 * u, y - r - 3 * u, b.X + r + 3 * u, y + faceBelow),
+                       valueBelow);
         }
         else
         {
             // Vertical: the label on top, the value under it, the track down the left with ticks and ends beside it.
             float valueH = c.ShowValue ? 14 * u : 0;
             float x = pad + r + 2 * u;
-            var b = new SKPoint(x, label.Bottom + valueH + r + 4 * u);   // the LAST stop is at the top
+            var b = new SKPoint(x, label.Bottom + valueH + r + (labelH + valueH > 0 ? 4 * u : 0));   // the LAST stop is at the top
             var a = new SKPoint(x, h - pad - r);
             float faceRight = Math.Max(r + 3 * u, c.ShowTicks ? r + 1.5f * u + 6 * u : 0);
             return new(u, true, label, a, b, r, new SKRect(x - r - 3 * u, b.Y - r - 3 * u, x + faceRight, a.Y + r + 3 * u));
         }
+    }
+
+    /// <summary>Whether the widest value a horizontal slider can show fits between its end labels with room either side.</summary>
+    private static bool ValueFitsBetweenEnds(SliderControl c, float w, float u, float pad)
+    {
+        if (!c.ShowEnds) return true;
+        var stops = c.Stops;
+        if (stops.Count < 2) return true;
+        using var font  = new SKFont(SkiaFonts.PlexRegular, 12 * u);
+        using var fb    = new SKFont(SkiaFonts.DejaVuRegular, 12 * u);
+        using var small = new SKFont(SkiaFonts.PlexRegular, 10 * u);
+        using var sfb   = new SKFont(SkiaFonts.DejaVuRegular, 10 * u);
+        string unit = c.DisplayUnit;
+        string lo = Format(c, stops[0], unit), hi = Format(c, stops[^1], unit);
+        float widest = Math.Max(RendererText.MeasureTextWithFallback(lo, font, fb), RendererText.MeasureTextWithFallback(hi, font, fb));
+        float ends = RendererText.MeasureTextWithFallback(lo, small, sfb) + RendererText.MeasureTextWithFallback(hi, small, sfb);
+        return widest + ends + 20 * u <= w - 2 * pad;
     }
 
     /// <summary>The centre of stop <paramref name="i"/> of <paramref name="n"/>.</summary>
@@ -132,19 +159,30 @@ public static class ControlRenderer
         string unit = c.DisplayUnit;
         string valueText = Format(c, stops[at], unit);
 
-        // The label strip: the caption on the left, the value on the right (or under it, vertically).
-        float baseline = l.Label.Top + l.Label.Height * 0.78f;
+        // The label strip: the caption on the left, the value on the right (or under it, vertically). With the label
+        // hidden the value is under the track, between the end labels, or — vertically — where the caption was.
+        float baseline = l.Label.Top + 16 * u * 0.78f;
         float valueW = c.ShowValue ? RendererText.MeasureTextWithFallback(valueText, font, fallback) : 0;
-        float captionRoom = l.Vertical || !c.ShowValue ? l.Label.Width : l.Label.Width - valueW - 8 * u;
-        RendererText.DrawLeftTextWithFallback(canvas, Fit(c.Caption, captionRoom, font, fallback), l.Label.Left, baseline,
-                                              font, fallback, dim);
+        if (c.ShowLabel)
+        {
+            float captionRoom = l.Vertical || !c.ShowValue ? l.Label.Width : l.Label.Width - valueW - 8 * u;
+            RendererText.DrawLeftTextWithFallback(canvas, Fit(c.Caption, captionRoom, font, fallback), l.Label.Left, baseline,
+                                                  font, fallback, dim);
+        }
         if (c.ShowValue)
         {
-            if (!l.Vertical)
+            if (l.Vertical)
+                RendererText.DrawLeftTextWithFallback(canvas, Fit(valueText, l.Label.Width, font, fallback), l.Label.Left,
+                                                      c.ShowLabel ? baseline + 14 * u : baseline, font, fallback, text);
+            else if (!l.ValueBelow)
                 RendererText.DrawLeftTextWithFallback(canvas, valueText, l.Label.Right - valueW, baseline, font, fallback, text);
             else
-                RendererText.DrawLeftTextWithFallback(canvas, Fit(valueText, l.Label.Width, font, fallback), l.Label.Left,
-                                                      baseline + 14 * u, font, fallback, text);
+            {
+                float off = l.ThumbRadius + 1.5f * u + (c.ShowTicks ? 6 * u : 1 * u);
+                float y = l.TrackStart.Y + off + 10 * u * 0.85f;
+                RendererText.DrawLeftTextWithFallback(canvas, valueText, (l.TrackStart.X + l.TrackEnd.X - valueW) / 2, y,
+                                                      font, fallback, text);
+            }
         }
 
         // The track: the whole of it, then the run from the first stop to the thumb in the accent.

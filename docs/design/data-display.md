@@ -446,7 +446,10 @@ has gone keeps its range and value, and the inspector says so.
 *Drawing.* `ControlRenderer` draws every control, for the canvas, Copy/Export and `render` alike, with no blur or
 image filter (D7). Everything scales with the frame's short side, capped by the long side so a frame made tall
 for its width does not grow text its track has no room for. The window's chrome — the selection outline, the
-gripper, and a lock glyph on a locked selected control — is drawn by `DrawChrome` and never exported.
+gripper, and a lock glyph on a locked selected control — is drawn by `DrawChrome` and never exported. **Label**
+(`ShowLabel`, on by default) can be turned off: the label strip is given up and the track moves into it; a value
+readout then sits between the end labels, or — where the widest value it can show would not fit there — in a slim
+row above the track, decided from that widest value so it never moves during a drag.
 
 *Operate and arrange.* The face (track and thumb) operates: a press jumps the thumb there and a drag slides it;
 the frame (label strip and border) selects on a click and moves on a drag, with the rest of the selection;
