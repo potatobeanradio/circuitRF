@@ -387,9 +387,11 @@ the nearest available sample; Enter commits and Escape cancels.
 
 **Marker table.** Right-click a plot and choose **Show Marker Table** to collect its markers in a movable table.
 Each row names its marker and shows its X coordinate. Each trace has its own labeled Y column; an ordinary marker
-leaves the other traces' cells blank, while a multi-marker fills each compatible trace's cell.
+leaves the other traces' cells blank, while a multi-marker fills each compatible trace's cell. The column heading
+identifies the trace, so its values omit the repeated trace name; additional readings retain their own labels.
 Markers on different sources keep their own trace and sample; the source is shown when needed to
-distinguish them. Click a row to select its marker, use the arrow keys to step it, or double-click the row to edit
+distinguish them. Rows follow marker-number order across traces, and a newly added marker is brought into view.
+Click a row to select its marker, use the arrow keys to step it, or double-click the row to edit
 its properties. Drag the table by its header and scroll it when it has more rows than fit. For wide tables, drag
 the horizontal scrollbar or use Shift+wheel to reach the other trace columns.
 

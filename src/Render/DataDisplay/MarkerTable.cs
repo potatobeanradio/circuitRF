@@ -9,7 +9,8 @@ namespace CircuitRF.Render.DataDisplay;
 
 public sealed record MarkerTableTraceReading(Trace Trace, string Label, IReadOnlyList<string> Values, int TraceOrder)
 {
-    internal IReadOnlyList<string> ValueLines { get; } = Values
+    internal IReadOnlyList<string> DisplayValues { get; } = Values.Select(value => MarkerTable.CellValue(Trace, value)).ToArray();
+    internal IReadOnlyList<string> ValueLines { get; } = Values.Select(value => MarkerTable.CellValue(Trace, value))
         .SelectMany(value => MarkerTableRenderer.WrapText(value, MarkerTableRenderer.ValueColumn - 10)).ToArray();
 }
 
@@ -24,6 +25,16 @@ public sealed record MarkerTableRow(Marker Marker, Trace Trace, string TraceLabe
 
 public static class MarkerTable
 {
+    internal static string CellValue(Trace trace, string value)
+    {
+        string description = trace.ReadoutDescription(false);
+        if (description.Length == 0) return value;
+        string equalsPrefix = description + "=";
+        if (value.StartsWith(equalsPrefix, StringComparison.Ordinal)) return value[equalsPrefix.Length..];
+        string floorPrefix = description + " " + DbFloor.FlooredPrefix;
+        return value.StartsWith(floorPrefix, StringComparison.Ordinal) ? value[(description.Length + 1)..] : value;
+    }
+
     public static IReadOnlyList<MarkerTableTraceReading> Columns(IReadOnlyList<MarkerTableRow> rows)
         => rows.SelectMany(row => row.TraceReadings)
             .OrderBy(reading => reading.TraceOrder)

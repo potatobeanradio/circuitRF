@@ -230,7 +230,7 @@ public sealed class MarkerFrequencyToleranceTests
         Assert.True(traceLines.Count > 1);
         Assert.Equal(row.TraceLabel, string.Concat(traceLines));
         Assert.Equal(string.Concat(row.Coordinates), string.Concat(row.CoordinateLines));
-        Assert.Equal(string.Concat(row.TraceReadings[0].Values), string.Concat(row.TraceReadings[0].ValueLines));
+        Assert.Equal(string.Concat(row.TraceReadings[0].DisplayValues), string.Concat(row.TraceReadings[0].ValueLines));
         Assert.True(MarkerTableRenderer.HeaderHeightFor([row]) >= traceLines.Count * MarkerTableRenderer.LineHeight);
         var wrapped = MarkerTableRenderer.WrapText("S(1,1) dB20=-0.03245 dB", 110);
         Assert.Equal("S(1,1) dB20=-0.03245 dB", string.Concat(wrapped));
@@ -265,6 +265,27 @@ public sealed class MarkerFrequencyToleranceTests
         Assert.Equal(first.GetMultiMarkerLine(marker, second), Assert.Single(row.TraceReadings[1].Values));
         Assert.Equal(marker.FreqString, Assert.Single(row.Coordinates));
         Assert.DoesNotContain(row.TraceReadings.SelectMany(reading => reading.Values), value => value == marker.FreqString);
+    }
+
+    [Fact]
+    public void MarkerTableOmitsOnlyRedundantValueLabels()
+    {
+        var (plot, trace) = Fixture();
+        trace.SourcePath = "/results/run.s2p";
+        string description = trace.ReadoutDescription(false);
+        var reading = new MarkerTableTraceReading(trace, "run: " + description,
+            [description + "=-0.25 dB", description + " " + DbFloor.FlooredPrefix + "-250 dB",
+             "impedance=50 Ω", description + " extra=123", "Δ" + description + "=2 dB"], 0);
+
+        Assert.Equal(new[] { "-0.25 dB", DbFloor.FlooredPrefix + "-250 dB", "impedance=50 Ω",
+            description + " extra=123", "Δ" + description + "=2 dB" }, reading.DisplayValues);
+        Assert.Equal(string.Concat(reading.DisplayValues), string.Concat(reading.ValueLines));
+
+        var marker = new Marker(trace, trace.Data.Frequencies[0], false, false, 1, plot.FreqUnits);
+        trace.Markers.Add(marker);
+        var actual = Assert.Single(Assert.Single(MarkerTable.Rows(plot, showFilePrefix: true)).TraceReadings);
+        Assert.StartsWith(description + "=", actual.Values[0]);
+        Assert.DoesNotContain(description, actual.DisplayValues[0]);
     }
 
     [Fact]
