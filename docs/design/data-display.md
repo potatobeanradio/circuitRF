@@ -516,6 +516,18 @@ trace still resolves, so showing it is instant; it is not drawn (nor its markers
 dimmed, with "(hidden)". A control that is gone leaves the trace shown. Resolved in `LinkResolve`, so `render`
 draws the same set.
 
+**Display variables (DDL-7, the seam).** `DisplayVariables` (`src/Render/DataDisplay/Links/`) is the one API over a
+display's variables — its markers, its input controls (a readout shows a variable and is not one) and `selected`:
+`List`, `Get` (by id, else by a name used once), `Set` (the `--marker` grammar: `2.4GHz`, a bare number in the
+variable's own unit, or `#5`), and `Subscribe`. Each variable is reported with its value in base SI, its sample or
+stop, and its text as the display writes it. A set applies the value with the code the canvas uses
+(`Trace.PlaceMarkerAtSample`, `ControlLinkSource.SetFromText`) inside the host's `IDisplayVariableWriter`: headless
+there is nothing around it; the window's (`DisplayWindowViewModel.Variables`) records a control through
+`EditControlCommand` and a marker through the plot edit recorder an arrow step ends in — one undo step, a dirty mark,
+and the links follow. `render --marker/--control` set through it, so there is no second write path. Subscribers are
+told, after every link follow, of each variable whose value, sample or text moved, whoever moved it. A plugin session
+would be handed this object, never the window (`plugins.md` §8).
+
 **HB drive.** In the shipped power amplifier example's HB sweep, the node voltages, currents and every measurement
 carry the same sweep axis (name, length, values, unitless), so a marker on Pout against Pin drives
 `V[@m1, node, :]` by index (rule 1). Recorded in `src/Render/DataDisplay/RESOLVED.md`.

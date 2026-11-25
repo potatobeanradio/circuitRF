@@ -175,19 +175,12 @@ internal static class RenderDataDisplay
         // (brief-ddl-5 R-ddl5-10), on the document in memory.
         foreach (var slider in tabs.SelectMany(t => t.Controls ?? []).OfType<SteppedControl>())
             if (slider.Domain == SliderDomain.Bound) ControlLinkSource.Refresh(slider, sources);
+        // Set through the display's variables (brief-ddl-7), the one place a variable is set — the window's too.
+        var controlDoc = new LinkDocument([.. tabs.Select(t => new LinkDocument.Tab(t.Name, [], t.Controls))]);
+        var controlVars = new DisplayVariables(() => controlDoc, () => sources);
         foreach (var cv in controlSets)
-        {
-            var named = tabs.SelectMany(t => t.Controls ?? []).Where(c => c.Name == cv.Name).ToList();
-            if (named.Count != 1)
-            {
-                var all = tabs.SelectMany(t => t.Controls ?? []).Select(c => c.Name).OrderBy(n => n, StringComparer.Ordinal).ToList();
-                return JsonRun.Fail(CliDiagnostics.RenderControlUnresolved(cv.Raw, named.Count > 1
-                    ? $"'{cv.Name}' names {named.Count} controls; rename one."
-                    : all.Count == 0 ? "this display has no controls." : $"no control '{cv.Name}'. Controls: {string.Join(", ", all)}."));
-            }
-            if (ControlLinkSource.SetFromText(named[0], cv.Index, cv.Value, cv.Unit) is { } why)
-                return JsonRun.Fail(CliDiagnostics.RenderControlUnresolved(cv.Raw, why));
-        }
+            if (controlVars.SetControl(cv.Name, cv.Index, cv.Value, cv.Unit) is { Done: false } r)
+                return JsonRun.Fail(CliDiagnostics.RenderControlUnresolved(cv.Raw, r.Reason!));
 
         RunHost.Cancellation.ThrowIfCancellationRequested();
         RunHost.Control?.BeginStage("resolve");
@@ -463,69 +456,27 @@ internal static class RenderDataDisplay
     /// </summary>
     internal sealed record MarkerMove(string Raw, string Name, int? Index, double Value, string Unit)
     {
-        private static readonly System.Text.RegularExpressions.Regex Number = new(
-            @"^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*(\S*)\s*$");
-
-        /// <summary><c>m1=#17</c> or <c>m1=2.4GHz</c>; null for anything else.</summary>
+        /// <summary><c>m1=#17</c> or <c>m1=2.4GHz</c>; null for anything else. The value is read by the display
+        /// variables' own grammar (brief-ddl-7).</summary>
         public static MarkerMove? Parse(string raw)
         {
             int eq = raw.IndexOf('=');
             if (eq <= 0 || eq == raw.Length - 1) return null;
             string name = raw[..eq].Trim(), rhs = raw[(eq + 1)..].Trim();
             if (name.Length == 0) return null;
-            if (rhs.StartsWith('#'))
-                return int.TryParse(rhs[1..], System.Globalization.NumberStyles.None,
-                                    System.Globalization.CultureInfo.InvariantCulture, out int idx)
-                    ? new MarkerMove(raw, name, idx, 0, "") : null;
-
-            var m = Number.Match(rhs);
-            if (!m.Success) return null;
-            // Invariant, as every number on this command line is (CliEntry.ParseHz).
-            double v = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-            var (scale, unit) = SplitPrefix(m.Groups[2].Value);
-            return new MarkerMove(raw, name, null, v * scale, unit);
+            return DisplayVariables.ParseValue(rhs) is { } v ? new MarkerMove(raw, name, v.Index, v.Value, v.Unit) : null;
         }
 
-        /// <summary>"GHz" → (1e9, "Hz"); "dBm" → (1, "dBm"); "k" → (1e3, ""); "" → (1, "").</summary>
-        private static (double Scale, string Unit) SplitPrefix(string s)
-        {
-            if (s.Length == 0) return (1, "");
-            double? p = s[0] switch
-            {
-                'f' => 1e-15, 'p' => 1e-12, 'n' => 1e-9, 'u' or 'µ' => 1e-6, 'm' => 1e-3,
-                'k' => 1e3, 'M' => 1e6, 'G' => 1e9, 'T' => 1e12, _ => null,
-            };
-            // A prefix needs a unit after it, or to stand alone; "dB", "Hz", "K" are units of their own.
-            return p is { } scale && (s.Length == 1 || char.IsUpper(s[1]) || s[1..] is "s" or "m" or "g")
-                ? (scale, s[1..]) : (1, s);
-        }
-
-        /// <summary>Moves the marker; null when done, else the refusal.</summary>
+        /// <summary>Moves the marker, through the display's variables; null when done, else the refusal.</summary>
         public CircuitRF.Diagnostics.Diagnostic? Apply(LinkDocument doc)
         {
-            if (!doc.TryFindByName(Name, consumerTab: -1, out var site, out var why))
-                return CliDiagnostics.RenderMarkerUnresolved(Name, why);
-            var t = site.Trace;
-            if (site.Marker.FreePosition || t.IsContourTrace)
-                return CliDiagnostics.RenderMarkerNotPlaced(Raw, $"{Name} is placed freely on the chart, not on a sample.");
-
-            int sample;
-            if (Index is { } i) sample = i;
-            else
+            var r = new DisplayVariables(() => doc).SetMarker(Name, Index, Value, Unit);
+            return r.Status switch
             {
-                string axisUnit = t.IsCubeBound ? t.CubeXUnit ?? "" : "Hz";
-                if (Unit.Length > 0 && !string.Equals(Unit, axisUnit, StringComparison.Ordinal))
-                    return CliDiagnostics.RenderMarkerNotPlaced(Raw,
-                        $"{Name} is on {(t.IsCubeBound ? t.CubeXAxisName : "freq")}"
-                      + (axisUnit.Length > 0 ? $" ({axisUnit})" : ", which has no unit") + $", not in {Unit}.");
-                sample = t.NearestSampleTo(Value);
-            }
-            int count = t.IsCubeBound ? t.CubeXValues?.Count ?? 0 : t.Data.Frequencies.Length;
-            if (!t.PlaceMarkerAtSample(site.Marker, sample))
-                return CliDiagnostics.RenderMarkerNotPlaced(Raw, count > 0
-                    ? $"{Name}'s trace has samples 0..{count - 1}."
-                    : $"{Name}'s trace draws nothing to put it on.");
-            return null;
+                VariableSetStatus.Done    => null,
+                VariableSetStatus.Unknown => CliDiagnostics.RenderMarkerUnresolved(Name, r.Reason!),
+                _                         => CliDiagnostics.RenderMarkerNotPlaced(Raw, r.Reason!),
+            };
         }
     }
 

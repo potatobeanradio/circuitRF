@@ -2733,3 +2733,16 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   so "a knob bound to the trace that reads `@k1`" has no edge back to the trace. What the link graph must refuse is a
   scalar operand whose source sits on the consumer — `Pout[2, :] - @m1` with m1 on that trace — and it does, because
   `LinkGraph.OperandNames` already counted every `@name` in an expression, in a slice or not.
+
+## Display variables, the plugin seam (brief-ddl-7, 2026-11-24)
+
+- **The brief is "not scheduled"; only its seam is built.** `DisplayVariables` lists, reads, sets and publishes a
+  display's variables below the firewall; `render --marker/--control` and the window both set through it. The plugin
+  protocol (a `display` kind, variable events, declared panels, live data) is not built.
+- **A window set is made by the canvas's own commands, not by a new one.** A control: snapshot, apply, then
+  `ControlContainerViewModel.Record` (the `EditControlCommand` a thumb drag ends in). A marker: `CheckpointEdits` first so
+  an earlier edit stays its own step, apply, then the info box and `RequestPlotRedraw` — the plot edit recorder takes the
+  redraw as the one undo step, exactly as after an arrow step — and a follow.
+- **A hand-written `.cdd` opens dirty once a bound slider fills in its stops**, and a second `ResolveLinks` after open
+  autoscales a followed plot and moves its saved window, so a test that asserts "clean before, dirty after" opens a file
+  the application has saved once, and does not resolve again.

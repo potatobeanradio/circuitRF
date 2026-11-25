@@ -513,6 +513,14 @@ It has no headless form unless it also declares `params` and answers `commit` wi
 is `headless` (`PluginManifest.HasHeadlessForm`); `circuitRF plugin run` refuses one without, saying it "has no
 headless form".
 
+**A display's variables are the seam a display-bound plugin would use** (brief-ddl-7, not yet scheduled). A Data
+Display's markers, input controls and trial selection are listed, read, set and subscribed to through
+`DisplayVariables` in `src/Render/DataDisplay/Links/` — below the firewall, and never through a view model.
+`circuitrf render --marker/--control` sets through it, and the window holds one over its live tabs whose sets are
+made as the canvas makes them (an undo step, a dirty mark, a live follow). A display-bound plugin session would be
+handed that object; the protocol for it (a `display` kind, `event {kind: "variable"}`, `set` in a reply, declared
+control panels, live data sources) is sketched in the brief and is not built.
+
 ---
 
 ## 9. Installing

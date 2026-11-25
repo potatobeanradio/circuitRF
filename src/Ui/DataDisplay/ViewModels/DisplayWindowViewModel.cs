@@ -589,6 +589,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         var resolved = LinkResolve.Resolve(doc, new LibraryDataSources(DataSourceLibrary), released);
         LinkConsumerResolutions += resolved.Count;
         foreach (var tab in Tabs) tab.DataDisplay.RedrawReadouts();   // a readout shows sources, whatever followed
+        _variables?.Publish();   // a subscriber hears of every variable that moved, whoever moved it (brief-ddl-7)
         if (resolved.Count == 0) return;
         var set = resolved.ToHashSet();
         foreach (var tab in Tabs) tab.DataDisplay.AfterLinksFollowed(set, editing);
