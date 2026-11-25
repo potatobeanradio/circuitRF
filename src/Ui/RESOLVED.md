@@ -43015,3 +43015,13 @@ ordinary seed. It runs only when the plot is Rect and holds exactly the one seed
 network-parameter cube (or a Touchstone network), so a loadpull, HB or transient display, and any display
 the user has already authored, are untouched. `AutoCreateDataDisplaySinglePlotTests`' harness mirrors the
 call.
+
+## LC Filter Designer — the ladder drawing was half a grid step off (2026-11-25)
+
+`FilterLadderDrawing` stepped its columns by the Match pitch plus 150, 850 units on the schematic's
+100-unit connection grid, so every other column, its ground and the far termination sat 50 off the
+grid; a through-path tank also ended half a lead past a step. Place filter translates the fragment by
+whole grid steps, so it carried the offset onto the schematic, where pins then missed wires and
+grounds. The step is now 900 (the Match pitch plus two grid steps) and the tank ends a full lead on.
+`FilterLadderGridTests` checks every part, termination, wire end and placed component over 64 ladders
+(four responses, four forms, four orders); with the old step 56 of them fail.
