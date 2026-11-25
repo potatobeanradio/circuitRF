@@ -614,6 +614,18 @@ for ARCH in $ARCHES; do
 
         crf_notarise "$APPZIP" "${NAME}.app" || exit 1
 
+        # The ticket is stapled to a fresh COPY, which is what goes into the image. The bundle the smoke
+        # check above RAN is not writable to Terminal any more: once a signed app has been launched, macOS
+        # protects its bundle (the com.apple.macl attribute) and only a process with App Management
+        # permission may change it. Without that permission the stapler cannot write
+        # Contents/CodeResources and fails with "Could not remove existing ticket ... No such file or
+        # directory" and Error 73, after Apple has already accepted the app (2026-11-25). The copy has
+        # never been launched, carries the same code signature, and staples whatever the permission.
+        STAPLED_DIR="$(mktemp -d)"
+        ditto "$APP_BUNDLE" "${STAPLED_DIR}/${NAME}.app" || {
+            echo "❌ Could not copy ${NAME}.app for stapling."; exit 1; }
+        APP_BUNDLE="${STAPLED_DIR}/${NAME}.app"
+
         echo "📎 Stapling the ticket to ${NAME}.app..."
         xcrun stapler staple "$APP_BUNDLE" || {
             echo "❌ Could not staple ${NAME}.app."; exit 1; }
@@ -632,6 +644,8 @@ for ARCH in $ARCHES; do
     rm -f "$DMG"
     hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO -quiet "$DMG"
     rm -rf "$(dirname "$STAGE")"
+    if [ -n "${STAPLED_DIR:-}" ]; then rm -rf "$STAPLED_DIR"; fi
+    STAPLED_DIR=""
 
     # ── Sign and notarise the DISK IMAGE ──────────────────────────────────────
     #
