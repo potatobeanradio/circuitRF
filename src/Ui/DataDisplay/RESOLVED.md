@@ -2815,6 +2815,12 @@ iterates it. Do not add a third box kind with its own copies of those loops.
 - **Controls were missing from the dirty comparison** (`DisplayWindowViewModel.BuildComparisonJson` copied only plots
   and annotations), so an edit to a control alone (its colour, its lock) never marked the document unsaved. They
   are compared now.
+- **The first step of a drag on another plot stalled (136-200 ms headless, more with more traces)**: starting a
+  drag on an unselected plot selected it, and the Properties panel built that plot's whole inspector (a card per
+  trace) before the drag could go on. It looked tied to stacking because it happens exactly when the selection
+  changes. A drag now selects through `SelectHeld` (`BeginMoveFromPlot`, `BeginMoveFromControl`): the canvas shows
+  the selection at once, `RefreshSelection` is deferred, and `EndMoveOperation` publishes it — 0-7 ms per step.
+  The card and the dirty check measured at ~0.01 and ~0.04 ms and were not the cause.
 - **Show Info Box is saved in the plot's form, but its three toggles** (the marker flyout, the box's menu, the
   plot's marker menu) **reported no content change**, so it was neither undoable nor dirtying. Each now calls
   `RequestPlotRedraw`, which the edit recorder turns into one undo step.

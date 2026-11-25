@@ -135,6 +135,14 @@ public partial class PlotContainerView : UserControl
         PointerPressed  += OnViewPointerPressed;
         PointerMoved    += OnViewPointerMoved;
         PointerReleased += OnViewPointerReleased;
+        // A drag whose release never arrives still ends: its undo step is pushed and the selection published.
+        PointerCaptureLost += (_, _) =>
+        {
+            if (!_mayMove) return;
+            _mayMove = false;
+            if (_isMoving && DataContext is PlotContainerViewModel vm) vm.EndMove();
+            _isMoving = false;
+        };
 
         // DoubleTapped is handled here because PlotContainerView captures the
         // pointer on first press, so PlotControl never sees the second tap.
@@ -414,10 +422,9 @@ public partial class PlotContainerView : UserControl
             if (!_isMoving)
             {
                 _isMoving = true;
-                // Ensure this plot is selected before moving.
-                if (!vm.IsSelected) vm.RequestSelectOnly();
-                // Snapshot start positions of all selected items for undo.
-                vm.BeginMove();
+                // Selected first when it is not (the Properties panel follows when the drag ends), then the start
+                // positions of everything selected are taken for undo.
+                vm.BeginMoveSelecting();
             }
 
             _lastRoot = current;
@@ -434,6 +441,7 @@ public partial class PlotContainerView : UserControl
     {
         if (!_mayMove || e.Pointer.Captured != this) return;
 
+        _mayMove = false;   // first, so the capture-lost below is this release, not a lost drag
         e.Pointer.Capture(null);
 
         if (DataContext is PlotContainerViewModel vm)

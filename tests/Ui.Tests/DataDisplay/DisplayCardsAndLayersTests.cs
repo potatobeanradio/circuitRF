@@ -195,6 +195,19 @@ public sealed class DisplayCardsAndLayersTests : IDisposable
     }
 
     [Fact]
+    public async Task DraggingAnUnselectedPlot_TellsTheInspectorWhenTheDragEnds()
+    {
+        var d = (await OpenAsync(Cdd("drag.cdd"))).Tabs[0].DataDisplay;
+        d.SelectOnly(d.Plots[0]);
+        d.BeginMoveFromPlot(d.Plots[1]);
+        Assert.True(d.Plots[1].IsSelected && !d.Plots[0].IsSelected);   // the canvas shows it at once
+        Assert.Same(d.Plots[0], d.SingleSelectedPlot);                   // the Properties panel waits
+        d.MoveSelected(10, 0);
+        d.EndMoveOperation();
+        Assert.Same(d.Plots[1], d.SingleSelectedPlot);
+    }
+
+    [Fact]
     public async Task HidingAMarkerBox_IsAnUndoStep_AndDirties()
     {
         var w = await OpenAsync(Cdd("box.cdd"));

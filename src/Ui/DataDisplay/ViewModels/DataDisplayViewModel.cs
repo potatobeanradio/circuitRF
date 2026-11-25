@@ -755,6 +755,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     internal void EndMoveOperation()
     {
+        ReleaseHeldSelection();
         if (_moveStartPlots is null && _moveStartInfoBoxes is null && _moveStartControls is null) return;
 
         var startPlots    = _moveStartPlots    ?? new List<(PlotContainerViewModel, double, double)>();
@@ -1645,8 +1646,39 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         return new Rect(p.ViewLeft + l, p.ViewTop, Math.Max(0, r - l), p.ViewHeight);
     }
 
+    // A drag that starts on an unselected item selects it on the canvas at once but tells the Properties panel only
+    // when it ends: building a plot's inspector (a card per trace) at the first step of the drag stalled the drag.
+    private bool _selectionHeld, _selectionPending;
+
+    /// <summary>Selects <paramref name="select"/> for a drag without publishing it until <see cref="EndMoveOperation"/>.</summary>
+    private void SelectHeld(Action select)
+    {
+        _selectionHeld = true;
+        select();
+    }
+
+    private void ReleaseHeldSelection()
+    {
+        if (!_selectionHeld) return;
+        _selectionHeld = false;
+        if (_selectionPending) { _selectionPending = false; RefreshSelection(); }
+    }
+
+    /// <summary>Starts a move from a plot's body: it is selected first when it is not.</summary>
+    internal void BeginMoveFromPlot(PlotContainerViewModel vm)
+    {
+        if (!vm.IsSelected) SelectHeld(() => SelectOnly(vm));
+        BeginMoveOperation();
+    }
+
     internal void RefreshSelection()
     {
+        if (_selectionHeld)
+        {
+            _selectionPending = true;
+            OnPropertyChanged(nameof(HasAnySelection));
+            return;
+        }
         if (_plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(box => box.IsSelected)
             || _controls.Any(c => c.IsSelected))
             SetAnnotationSelection(-1);

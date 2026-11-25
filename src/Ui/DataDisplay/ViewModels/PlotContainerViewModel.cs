@@ -841,6 +841,9 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// </summary>
     internal void BeginMove() => _parent.BeginMoveOperation();
 
+    /// <summary>A drag on the plot's body starts: selected first when it is not, the Properties panel told at the end.</summary>
+    internal void BeginMoveSelecting() => _parent.BeginMoveFromPlot(this);
+
     /// <summary>
     /// Called when the move drag ends.
     /// Routes to DataDisplayViewModel to push a undo command with start/end positions.

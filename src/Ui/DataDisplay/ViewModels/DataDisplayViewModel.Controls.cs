@@ -315,7 +315,7 @@ public partial class DataDisplayViewModel
     /// <summary>Starts a move from a control's frame: it is selected first when it is not, as a plot is.</summary>
     internal void BeginMoveFromControl(ControlContainerViewModel vm)
     {
-        if (!vm.IsSelected) SelectOnly(vm);
+        if (!vm.IsSelected) SelectHeld(() => SelectOnly(vm));
         BeginMoveOperation();
     }
 
