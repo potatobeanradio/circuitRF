@@ -351,13 +351,18 @@ namespace CircuitRF.Render.DataDisplay
             Func<Trace, string?>? aliasFor        = null,
             bool?                 alwaysShowSource = null,
             Action<SKCanvas, TransformSet>? overlay = null,
-            TrialLayerCache?      trialCache      = null)
+            TrialLayerCache?      trialCache      = null,
+            bool                  drawCard        = true)
         {
             // The card (Plot.Card): the plot sits on the panel display controls and marker boxes are drawn on, under
-            // everything else, for every plot kind.
-            if (plot.Card && canvasSize.W > 2 && canvasSize.H > 2)
-                CardStyle.Draw(canvas, theme, new SKRect(0, 0, (float)canvasSize.W, (float)canvasSize.H),
-                               (float)Math.Clamp(Math.Min(canvasSize.W, canvasSize.H) * 0.03, 4, 12));
+            // everything else, for every plot kind — fitted to what the plot draws (PlotCanvasGeometry.CardSpan). A host
+            // that draws label strips beside the canvas draws the card itself, wide enough for them (drawCard false).
+            if (drawCard && plot.Card && canvasSize.W > 2 && canvasSize.H > 2)
+            {
+                var (cl, cr) = PlotCanvasGeometry.CardSpan(plot, canvasSize.W, canvasSize.H);
+                CardStyle.Draw(canvas, theme, new SKRect((float)cl, 0, (float)cr, (float)canvasSize.H),
+                               PlotCanvasGeometry.CardRadius(canvasSize.W, canvasSize.H));
+            }
 
             // ANT-10: the 3D pattern surface has no world window, so it leaves BEFORE
             // BuildTransforms — the same seam, and for the same reason, as the Table above it

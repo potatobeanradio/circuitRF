@@ -127,6 +127,7 @@ public static partial class ControlRenderer
     {
         SliderControl s => Layout(s, w, h).Face.Contains(p),
         KnobControl k   => KnobFaceContains(k, w, h, p),
+        ButtonControl { IsSwitch: true } sw => SwitchFaceContains(sw, w, h, p),
         ButtonControl b => ButtonFaceContains(b, w, h, p),
         _ => false,
     };
@@ -144,7 +145,9 @@ public static partial class ControlRenderer
     }
 
     /// <summary>Draws <paramref name="c"/> into <paramref name="bounds"/> on <paramref name="canvas"/>.</summary>
-    public static void Draw(SKCanvas canvas, DisplayControl c, RenderTheme theme, SKRect bounds)
+    /// <param name="motion">The window's animation of a button between off and on; null (every export) draws it at
+    /// rest.</param>
+    public static void Draw(SKCanvas canvas, DisplayControl c, RenderTheme theme, SKRect bounds, ControlMotion? motion = null)
     {
         canvas.Save();
         canvas.Translate(bounds.Left, bounds.Top);
@@ -152,8 +155,10 @@ public static partial class ControlRenderer
         {
             case SliderControl s:  DrawSlider(canvas, s, theme, bounds.Width, bounds.Height); break;
             case KnobControl k:    DrawKnob(canvas, k, theme, bounds.Width, bounds.Height); break;
-            case ButtonControl b:  DrawButton(canvas, b, theme, bounds.Width, bounds.Height); break;
+            case ButtonControl { IsSwitch: true } sw: DrawSwitch(canvas, sw, theme, bounds.Width, bounds.Height, motion); break;
+            case ButtonControl b:  DrawButton(canvas, b, theme, bounds.Width, bounds.Height, motion); break;
             case ReadoutControl r: DrawReadout(canvas, r, theme, bounds.Width, bounds.Height); break;
+            case PanelControl p:   DrawPanel(canvas, p, theme, bounds.Width, bounds.Height); break;
         }
         canvas.Restore();
     }
@@ -164,7 +169,7 @@ public static partial class ControlRenderer
         float u = l.U;
         var accent = AccentOf(c);
 
-        DrawFrame(canvas, theme, w, h, u);
+        DrawFrame(canvas, c, theme, w, h, u);
 
         using var font     = new SKFont(SkiaFonts.PlexRegular, 12 * u);
         using var fallback = new SKFont(SkiaFonts.DejaVuRegular, 12 * u);
@@ -281,9 +286,16 @@ public static partial class ControlRenderer
         return (At(lo, x, l.TrackStart.Y + size * 0.35f, loW), At(hi, x, l.TrackEnd.Y + size * 0.35f, hiW));
     }
 
-    /// <summary>The frame: the display's card (<see cref="CardStyle"/>), which marker info boxes and carded plots share.</summary>
-    private static void DrawFrame(SKCanvas canvas, RenderTheme theme, float w, float h, float u)
-        => CardStyle.Draw(canvas, theme, new SKRect(0, 0, w, h), 5 * u);
+    /// <summary>The frame: the display's card (<see cref="CardStyle"/>), which marker info boxes and carded plots share —
+    /// nothing when the control's card is turned off.</summary>
+    private static void DrawFrame(SKCanvas canvas, DisplayControl c, RenderTheme theme, float w, float h, float u)
+    {
+        if (c.ShowCard) CardStyle.Draw(canvas, theme, new SKRect(0, 0, w, h), 5 * u);
+    }
+
+    /// <summary>A panel is its card and nothing else; its corners are the Medium controls', at any size.</summary>
+    private static void DrawPanel(SKCanvas canvas, PanelControl c, RenderTheme theme, float w, float h)
+        => CardStyle.Draw(canvas, theme, new SKRect(0, 0, w, h), 5);
 
     /// <summary>The gripper's corner triangle: points whose distance in from the bottom-right corner, along both edges
     /// together, is under this many pixels resize. A triangle rather than a square, so it stays off the end label.</summary>
@@ -360,6 +372,9 @@ public static partial class ControlRenderer
             return unit.Length > 0 ? $"{num} {unit}" : num;
         }
         var (scale, baseUnit) = SiUnit.Split(unit);
+        // A frequency reads in the unit the control was placed with — the application's preferred one.
+        if (baseUnit == "Hz" && c.FrequencyUnit is { Length: > 0 } fu && SiUnit.Split(fu) is (var fs, "Hz") && fs > 0)
+            return $"{Significant(v * scale / fs)} {fu}";
         return LinkMatch.Format(v * scale, baseUnit);
     }
 

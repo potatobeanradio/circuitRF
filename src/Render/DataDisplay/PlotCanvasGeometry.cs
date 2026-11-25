@@ -258,4 +258,42 @@ public static class PlotCanvasGeometry
     /// <summary>The right-hand counterpart of <see cref="LeftLabelExtraLogical"/>, for the secondary axis's columns.</summary>
     public static double RightLabelExtraLogical(Plot plot, double width)
         => plot is null ? 0 : plot.RightLabelExtraFraction * width;
+
+    /// <summary>
+    /// Where a carded plot's card spans horizontally, in the plot canvas's own coordinates — the selection outline wraps
+    /// the same span. A rectangular plot's card is fitted to what it draws (<c>AxesRenderer.RectContentSpan</c>), not to
+    /// the canvas, whose margin is sized for labels often far narrower. A Smith or Polar plot's reaches past the canvas
+    /// over its Y label strips (<paramref name="leftStrips"/> and <paramref name="rightStrips"/> of
+    /// <paramref name="stripWidth"/> each, drawn against the disc as <see cref="ChartInset"/> places them), so the labels
+    /// sit on the card. Anything else spans the canvas.
+    /// </summary>
+    public static (double Left, double Right) CardSpan(Plot plot, double width, double height,
+                                                       int leftStrips = 0, int rightStrips = 0, double stripWidth = 0)
+    {
+        if (width <= 0 || height <= 0) return (0, width);
+        if (plot.PlotType == PlotType.Rect)
+        {
+            var (l, r) = AxesRenderer.RectContentSpan(plot, (width, height));
+            if (LegendRenderer.DockedBounds((width, height), plot, PlotRenderer.BuildTransforms(plot, (width, height)),
+                                            null, null) is { } legend)
+            {
+                l = Math.Min(l, legend.Left);
+                r = Math.Max(r, legend.Right);
+            }
+            double pad = Math.Max(4, 4 * Math.Min(width, height) / 200.0);
+            return (Math.Max(0, l - pad), Math.Min(width, r + pad));
+        }
+        if (plot.PlotType.IsComplex() && leftStrips + rightStrips > 0 && stripWidth > 0)
+        {
+            double inset = ChartInset(plot, width, height), gap = StripGap(stripWidth), pad = stripWidth * 0.3;
+            double l = inset - gap - leftStrips * stripWidth - pad;
+            double r = width - inset + gap + rightStrips * stripWidth + pad;
+            return (Math.Min(0, l), Math.Max(width, r));
+        }
+        return (0, width);
+    }
+
+    /// <summary>The card's corner radius for a canvas of <paramref name="width"/> × <paramref name="height"/>.</summary>
+    public static float CardRadius(double width, double height)
+        => (float)Math.Clamp(Math.Min(width, height) * 0.03, 4, 12);
 }

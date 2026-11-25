@@ -330,6 +330,8 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         foreach (var tab in Tabs)
         {
             var full = tab.DataDisplay.BuildTabConfig(tab.Name, configDir: "");
+            // Stacking changes with every click that brings a plot forward, which is not an edit.
+            foreach (var pc in full.Plots) pc.ZIndex = 0;
             // Create a copy with ZoomLevel/ViewOffset zeroed so those changes
             // do not count as "unsaved".
             config.Tabs.Add(new TabConfig
@@ -749,6 +751,9 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     [RelayCommand] private void AddKnob() => DataDisplay?.AddKnob();
     [RelayCommand] private void AddButton() => DataDisplay?.AddButton();
     [RelayCommand] private void AddReadout() => DataDisplay?.AddReadout();
+
+    /// <summary><b>Controls ▸ Panel</b>: a blank card under the plots and controls.</summary>
+    [RelayCommand] private void AddPanel() => DataDisplay?.AddPanel();
 
     /// <summary>The statistics table of the selected Monte Carlo result (brief-yield-8 R-ya8-5). Disabled, rather than
     /// pressed to no effect, while the selected source carries no statistics — its tooltip says what it needs.</summary>

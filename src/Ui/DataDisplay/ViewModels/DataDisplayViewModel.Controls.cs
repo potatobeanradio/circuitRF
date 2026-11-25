@@ -24,6 +24,42 @@ public partial class DataDisplayViewModel
     /// <summary>This tab's controls, in the order they were added (later ones draw on top).</summary>
     public ObservableCollection<ControlContainerViewModel> Controls => _controls;
 
+    /// <summary>The panels among <see cref="Controls"/>: the canvas puts them in a layer UNDER the plots.</summary>
+    public ObservableCollection<ControlContainerViewModel> PanelControls { get; } = new();
+
+    /// <summary>Every other control: the layer over the plots.</summary>
+    public ObservableCollection<ControlContainerViewModel> ForegroundControls { get; } = new();
+
+    /// <summary>Keeps the two layers in step with <see cref="Controls"/> — a panel is drawn under every plot whatever
+    /// its stacking, so it cannot share the plots' or the controls' layer.</summary>
+    private void SyncControlLayers()
+    {
+        Sync(PanelControls, _controls.Where(c => c.Model.IsPanel).ToList());
+        Sync(ForegroundControls, _controls.Where(c => !c.Model.IsPanel).ToList());
+
+        static void Sync(ObservableCollection<ControlContainerViewModel> layer, List<ControlContainerViewModel> want)
+        {
+            // Only what changed is removed or inserted, so a view that is already there keeps its state (focus, an open
+            // editor) when another control comes or goes.
+            for (int i = layer.Count - 1; i >= 0; i--)
+                if (!want.Contains(layer[i])) layer.RemoveAt(i);
+            for (int i = 0; i < want.Count; i++)
+                if (i >= layer.Count || !ReferenceEquals(layer[i], want[i]))
+                {
+                    layer.Remove(want[i]);
+                    layer.Insert(i, want[i]);
+                }
+        }
+    }
+
+    // ---- Properties… --------------------------------------------------------------------------------
+
+    /// <summary>Set by the shell: brings the Properties panel forward, floating it when it was closed.</summary>
+    public static Action? PropertiesPanelRequested { get; set; }
+
+    /// <summary>A context menu's <b>Properties…</b>: the Properties panel, which edits the selection.</summary>
+    internal static void RequestPropertiesPanel() => PropertiesPanelRequested?.Invoke();
+
     /// <summary>Set by the owning window: every control of the document, for document-wide names (R-ddl5-1).</summary>
     internal Func<IEnumerable<DisplayControl>>? DocumentControlsProvider { get; set; }
 
@@ -55,6 +91,9 @@ public partial class DataDisplayViewModel
     /// <summary><b>Controls ▸ Button</b> (R-ddl6-2): a toggle, dark.</summary>
     public ControlContainerViewModel AddButton() => AddControl(new ButtonControl());
 
+    /// <summary><b>Controls ▸ Panel</b>: a blank card, drawn under every plot and control.</summary>
+    public ControlContainerViewModel AddPanel() => AddControl(new PanelControl());
+
     /// <summary><b>Controls ▸ Readout</b> (R-ddl6-3): showing the selected marker when there is one, else the first
     /// marker or control of the document, so it reads something at once.</summary>
     public ControlContainerViewModel AddReadout()
@@ -85,6 +124,8 @@ public partial class DataDisplayViewModel
     {
         var all = DocumentControlsProvider?.Invoke() ?? _controls.Select(c => c.Model);
         model.Name = DisplayControl.NextName(model.KindName, all);
+        // A frequency reads in the application's preferred unit (Settings ▸ Units), fixed when the control is placed.
+        if (model is SteppedControl stepped) stepped.FrequencyUnit = CircuitRF.Ui.Theming.PreferredUnits.Frequency;
         model.ApplySize(ControlSize.Medium);
         (model.Left, model.Top) = ComputeNewControlPosition(model.Width, model.Height);
         var vm = new ControlContainerViewModel(model, this);
@@ -121,6 +162,7 @@ public partial class DataDisplayViewModel
     internal void InsertControl(int index, ControlContainerViewModel vm)
     {
         _controls.Insert(Math.Clamp(index, 0, _controls.Count), vm);
+        SyncControlLayers();
         RequestLinkFollow(released: true);
     }
 
@@ -128,6 +170,7 @@ public partial class DataDisplayViewModel
     {
         vm.IsSelected = false;
         _controls.Remove(vm);
+        SyncControlLayers();
         RefreshSelection();
         // Its dependents freeze where it last put them, and are said to (brief-ddl-2 R-ddl2-8).
         RequestLinkFollow(released: true, announce: true);
@@ -151,8 +194,10 @@ public partial class DataDisplayViewModel
     /// <summary>Adds controls from a paste or a load as they are — ids, names, lock and all.</summary>
     internal ControlContainerViewModel AdoptControl(DisplayControl model)
     {
-        var vm = new ControlContainerViewModel(model, this);
+        var vm = new ControlContainerViewModel(model, this) { ZIndex = model.ZIndex };
+        if (model.ZIndex >= _nextZIndex) _nextZIndex = model.ZIndex + 1;
         _controls.Add(vm);
+        SyncControlLayers();
         return vm;
     }
 
@@ -249,7 +294,12 @@ public partial class DataDisplayViewModel
     // ---- save and load ------------------------------------------------------------------------------
 
     private List<DisplayControl>? ControlsForSave()
-        => _controls.Count > 0 ? _controls.Select(c => c.Model.Clone()).ToList() : null;
+        => _controls.Count > 0 ? _controls.Select(c =>
+        {
+            var m = c.Model.Clone();
+            m.ZIndex = c.ZIndex;   // the stacking as it is now: a control selected last is on top when reopened
+            return m;
+        }).ToList() : null;
 
     /// <summary>
     /// A bound slider's source is loaded as a trace's is, even when no trace reads it, and its stops are read at once —
@@ -272,6 +322,7 @@ public partial class DataDisplayViewModel
     private void LoadControls(IEnumerable<DisplayControl>? controls)
     {
         _controls.Clear();
+        SyncControlLayers();
         foreach (var c in controls ?? []) AdoptControl(c);
     }
 }

@@ -37,6 +37,45 @@ public partial class PlotContainerView : UserControl
 
     private const double DragThreshold = 4.0;
 
+    private readonly CardLayer _cardLayer = null!;
+    private readonly CardLayer _selectionLayer = null!;
+
+    /// <summary>
+    /// The plot's card under the plot and its label strips, or the selection outline over them: both span
+    /// <see cref="CircuitRF.Render.DataDisplay.PlotCanvasGeometry.CardSpan"/> — the export's card, measured on the plot
+    /// canvas as it is laid out now. Redrawn after every frame of the plot, so it follows its labels.
+    /// </summary>
+    private sealed class CardLayer(PlotContainerView owner, bool selection) : Control
+    {
+        public override void Render(Avalonia.Media.DrawingContext context)
+        {
+            if (owner.DataContext is not PlotContainerViewModel vm) return;
+            var plot = vm.PlotVM.Plot;
+            if (selection ? !vm.IsSelected : !plot.Card) return;
+            var pc = owner._plotControl;
+            if (pc.Bounds.Width <= 2 || pc.Bounds.Height <= 2 || pc.TranslatePoint(default, this) is not { } at) return;
+            var (cl, cr) = CircuitRF.Render.DataDisplay.PlotCanvasGeometry.CardSpan(
+                plot, pc.Bounds.Width, pc.Bounds.Height, vm.LeftLabelStrips.Count, vm.RightLabelStrips.Count,
+                vm.LabelStripViewWidth);
+            var rect = new Rect(at.X + cl, at.Y, cr - cl, pc.Bounds.Height);
+            double radius = plot.Card ? CircuitRF.Render.DataDisplay.PlotCanvasGeometry.CardRadius(pc.Bounds.Width, pc.Bounds.Height) : 3;
+            if (selection)
+            {
+                var accent = owner.TryFindResource("SystemAccentColor", owner.ActualThemeVariant, out var c) && c is Avalonia.Media.Color col
+                    ? col : Avalonia.Media.Colors.DodgerBlue;
+                context.DrawRectangle(null, new Avalonia.Media.Pen(new Avalonia.Media.SolidColorBrush(accent), 2),
+                                      rect.Deflate(1), radius, radius);
+                return;
+            }
+            var fill = CircuitRF.Render.DataDisplay.CardStyle.Fill(vm.Theme);
+            var edge = CircuitRF.Render.DataDisplay.CardStyle.Border(vm.Theme);
+            context.DrawRectangle(new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromArgb(fill.Alpha, fill.Red, fill.Green, fill.Blue)),
+                                  new Avalonia.Media.Pen(new Avalonia.Media.SolidColorBrush(
+                                      Avalonia.Media.Color.FromArgb(edge.Alpha, edge.Red, edge.Green, edge.Blue)), 1),
+                                  rect.Deflate(0.5), radius, radius);
+        }
+    }
+
     // ---- Constructor ------------------------------------------------
 
     public PlotContainerView()
@@ -45,6 +84,22 @@ public partial class PlotContainerView : UserControl
 
         _plotControl  = this.FindControl<PlotControl>("MyPlotControl")!;
         _resizeHandle = this.FindControl<Border>("ResizeHandle")!;
+        _plotControl.ShowPositionLock = true;   // a Data Display plot sits on a canvas it can be moved on
+        // The card is drawn here, wide enough for the label strips beside the plot, and the selection outline with it.
+        _plotControl.DrawsCard = false;
+        var grid = this.FindControl<Grid>("RootGrid")!;
+        _cardLayer = new CardLayer(this, selection: false);
+        _selectionLayer = new CardLayer(this, selection: true);
+        Grid.SetColumnSpan(_cardLayer, 3);
+        Grid.SetColumnSpan(_selectionLayer, 3);
+        grid.Children.Insert(0, _cardLayer);
+        grid.Children.Add(_selectionLayer);
+        // After the frame, never inside it: Avalonia refuses a visual invalidated during the render pass.
+        _plotControl.Rendered += () => Dispatcher.UIThread.Post(() =>
+        {
+            _cardLayer.InvalidateVisual();
+            _selectionLayer.InvalidateVisual();
+        }, DispatcherPriority.Render);
 
         // Subscribe to plot events for state refresh
         _plotControl.PlotChanged         += OnPlotControlChanged;
@@ -67,7 +122,7 @@ public partial class PlotContainerView : UserControl
         _resizeHandle.PointerReleased += OnResizeReleased;
 
         // Hide the grip until the cursor hovers over it
-        _resizeHandle.PointerEntered += (_, _) => _resizeHandle.Opacity = 1.0;
+        _resizeHandle.PointerEntered += (_, _) => { if (!IsPositionLocked) _resizeHandle.Opacity = 1.0; };
         _resizeHandle.PointerExited  += (_, _) => { if (!_isResizing) _resizeHandle.Opacity = 0.0; };
 
         // Double-click on resize grip auto-fits Table container width to its column content.
@@ -213,14 +268,21 @@ public partial class PlotContainerView : UserControl
             _plotControl.ContainerProvider            = () => DataContext as PlotContainerViewModel;
             _plotControl.SelectedMarkersProvider      = vm.GetSelectedMarkers;
             _plotControl.StepSelectedMarkersHandler   = vm.StepSelectedMarkers;
+            vm.PropertyChanged += (_, a) =>
+            {
+                if (a.PropertyName == nameof(PlotContainerViewModel.IsSelected)) _selectionLayer.InvalidateVisual();
+            };
         }
     }
 
     // ---- Resize grip double-click: snap Rect to aspect ratio / auto-fit Table ----
 
+    /// <summary>Lock Position is on: the grip neither shows nor resizes.</summary>
+    private bool IsPositionLocked => DataContext is PlotContainerViewModel { IsPositionLocked: true };
+
     private void OnResizeHandleDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (DataContext is not PlotContainerViewModel vm) return;
+        if (DataContext is not PlotContainerViewModel vm || vm.IsPositionLocked) return;
         var plot = vm.PlotVM.Plot;
 
         // ── Rect: snap height to configured aspect ratio (width stays fixed) ──
@@ -378,6 +440,7 @@ public partial class PlotContainerView : UserControl
     private void OnResizePressed(object? sender, PointerPressedEventArgs e)
     {
         if (!e.GetCurrentPoint(_resizeHandle).Properties.IsLeftButtonPressed) return;
+        if (IsPositionLocked) { e.Handled = true; return; }
 
         _isResizing = true;
 

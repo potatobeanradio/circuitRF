@@ -723,6 +723,10 @@ namespace CircuitRF.Render.DataDisplay
         /// (<see cref="CardStyle"/>). Off by default, so a plot looks as it always has.</summary>
         public bool   Card           { get; set; } = false;
 
+        /// <summary>Lock Position: the plot is neither moved nor resized on the canvas; it is still selected, edited,
+        /// panned and zoomed. Off by default.</summary>
+        public bool   PositionLocked { get; set; } = false;
+
         /// <summary>Renders <see cref="Title"/> in bold. Defaults false — every existing plot keeps
         /// its regular-weight title; harmonicaRF's Loadline/Power Sweep/Time Domain plots opt in
         /// (<c>HarmonicaPanelRenderer</c>'s own three <c>Build*Plot</c> methods).</summary>

@@ -35,8 +35,17 @@
                      KeyDown="OnFieldKeyDown" LostFocus="OnFieldLostFocus" PlaceholderText="{Binding NameText}" AutomationProperties.Name="Control label"/>
         </Grid>
 
-        <!-- brief-ddl-6: the button's two choices. -->
+        <!-- brief-ddl-6: the button's two choices, and how it is drawn. -->
         <StackPanel Spacing="4" IsVisible="{Binding IsButton}">
+            <Grid Classes="row" ColumnDefinitions="75,*">
+                <TextBlock Classes="lbl" Text="Style"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Classes="seg-btn" Classes.active="{Binding IsLamp}" Content="Lamp"
+                            Command="{Binding SetLampCommand}" ToolTip.Tip="An illuminated lamp that lights in its colour"/>
+                    <Button Classes="seg-btn" Classes.active="{Binding IsSwitch}" Content="Switch"
+                            Command="{Binding SetSwitchCommand}" ToolTip.Tip="A switch whose thumb slides across to show its colour"/>
+                </StackPanel>
+            </Grid>
             <Grid Classes="row" ColumnDefinitions="75,*">
                 <TextBlock Classes="lbl" Text="Action"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -46,7 +55,8 @@
                             Command="{Binding SetMomentaryCommand}" ToolTip.Tip="On only while it is pressed"/>
                 </StackPanel>
             </Grid>
-            <Grid Classes="row" ColumnDefinitions="75,*">
+            <!-- A switch's label is always under it, so Label at is the lamp's row alone. -->
+            <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding IsLamp}">
                 <TextBlock Classes="lbl" Text="Label at"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button Classes="seg-btn" Classes.active="{Binding IsLabelUnder}" Content="Under"
@@ -158,7 +168,7 @@
         <TextBlock Text="{Binding Problem}" Foreground="{DynamicResource CrfWarningBrush}" FontSize="11"
                    MinHeight="15" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Problem}"/>
 
-        <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding IsSlider}">
+        <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding HasOrientation}">
             <TextBlock Classes="lbl" Text="Orientation"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <Button Classes="seg-btn" Classes.active="{Binding IsHorizontal}" Content="Horizontal"
@@ -193,7 +203,13 @@
                           ToolTip.Tip="The value it is on, as a readout"/>
             </UniformGrid>
         </Grid>
-        <Grid Classes="row" ColumnDefinitions="75,Auto,*">
+        <!-- A button's label can be hidden, as a slider's and a knob's can; the lamp then takes its room. -->
+        <Grid Classes="row" ColumnDefinitions="75,*" IsVisible="{Binding IsButton}">
+            <TextBlock Classes="lbl" Text="Show"/>
+            <CheckBox Grid.Column="1" Classes="show" Content="Label" IsChecked="{Binding ShowLabel, Mode=TwoWay}"
+                      ToolTip.Tip="The name or label, under the lamp or on its face. Off, the lamp takes its room"/>
+        </Grid>
+        <Grid Classes="row" ColumnDefinitions="75,Auto,*" IsVisible="{Binding IsNotPanel}">
             <TextBlock Classes="lbl" Text="{Binding AccentLabel}"/>
             <Button Grid.Column="1" Click="PickAccent" ToolTip.Tip="Choose the accent colour"
                     AutomationProperties.Name="Accent colour" VerticalAlignment="Center">
@@ -222,8 +238,14 @@
             </ItemsControl>
         </Grid>
         <Grid Classes="row" ColumnDefinitions="75,*">
-            <CheckBox Grid.Column="1" Content="Lock Position" IsChecked="{Binding Locked, Mode=TwoWay}"
-                      ToolTip.Tip="Neither moved nor resized; it still operates"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Not on a panel: a panel IS its card. -->
+                <CheckBox Classes="show" Content="Card" IsChecked="{Binding ShowCard, Mode=TwoWay}"
+                          IsVisible="{Binding IsNotPanel}" Margin="0,0,16,0"
+                          ToolTip.Tip="Draw the control on its card; off, straight onto the canvas"/>
+                <CheckBox Content="Lock Position" IsChecked="{Binding Locked, Mode=TwoWay}"
+                          ToolTip.Tip="Neither moved nor resized; it still operates"/>
+            </StackPanel>
         </Grid>
     </StackPanel>
 </UserControl>

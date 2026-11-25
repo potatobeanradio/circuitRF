@@ -19,7 +19,7 @@ namespace CircuitRF.Render.DataDisplay;
 public static class ControlLinkSource
 {
     /// <summary>Whether <paramref name="c"/> is a link source: every control but the readout, which only shows one.</summary>
-    public static bool IsSource(DisplayControl c) => c is not ReadoutControl;
+    public static bool IsSource(DisplayControl c) => c is not (ReadoutControl or PanelControl);
 
     /// <summary>The link value of <paramref name="c"/> as it now stands.</summary>
     public static LinkValue Resolve(DisplayControl c, IPlotDataSources? sources)

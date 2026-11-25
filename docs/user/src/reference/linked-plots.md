@@ -147,8 +147,9 @@ that drive.
 ## Controls on the canvas {#controls}
 
 A control is an input placed on the canvas: something plots follow that is not a marker on a trace. Add
-one from the toolbar's **Add Control** menu: **Slider**, **Knob**, **Button** or **Readout**. It lands
-in free space in view and is selected, and the Properties panel shows its inspector.
+one from the toolbar's **Add Control** menu: **Slider**, **Knob**, **Button**, **Readout** or **Panel**. It
+lands in free space in view and is selected, and the Properties panel shows its inspector. A **Panel** is a blank
+card for grouping: it has no value and is always drawn under every plot and control.
 
 Every control has a name (`slider1`, `knob1`), unique across the display: markers and controls share one
 set of names, and `@slider1` links to it exactly as `@m1` links to a marker. Its label is what it shows;
@@ -165,7 +166,17 @@ with its frame: a Large slider is a bigger slider, not a Small one with more roo
 Small size; a button goes much smaller, to a lamp beside a plot, and leaves its label off once it would be too
 small to read.
 
-**Lock Position.** Right-click a control and choose **Lock Position**. A locked control cannot be moved or
+**Card.** Every control sits on a card. Clear **Card** in the inspector to draw the control straight onto the
+canvas.
+
+**Properties…** in a control's right-click menu brings the Properties panel forward, or opens it floating if
+it was closed. A text on the canvas has the same menu, with **Lock Position**.
+
+**Stacking.** The last plot or control you selected is drawn over the others, and the display saves the
+order. Panels are always at the bottom, then plots, then controls.
+
+**Lock Position.** Right-click a control and choose **Lock Position**. A plot has the same item, above
+**Lock Axes Panning**. A locked control cannot be moved or
 resized, and a drag on its frame works the control instead. It can still be selected, edited, copied and
 deleted. With several selected, the item locks them all, or unlocks them all when every one is locked
 already. A display arranged as a panel can be saved locked, so it opens ready to use.
@@ -186,7 +197,8 @@ them exactly as the canvas does, as vector graphics.
   number with a unit, and an axis it pins takes the sample nearest it. Double-click either end label to
   type a new start or stop where it is drawn.
 
-It can lie horizontally or vertically, and show or hide its label, ticks, end labels and value.
+It can lie horizontally or vertically, and show or hide its label, ticks, end labels and value. Bound to a
+frequency axis, it reads in the frequency unit set in **Settings ▸ Units** when it was placed.
 
 **The knob** has the slider's two domains and value rules, drawn as a dial over a 270° sweep. Drag on it to
 turn it: up or right turns it up, down or left turns it down. Upward, one full sweep is 200 pixels of drag; sideways,
@@ -195,7 +207,9 @@ times finer with Ctrl (Cmd on a Mac). The mouse wheel steps it one stop. On a bo
 
 **The button** is **Toggle** (a click turns it on or off) or **Momentary** (on only while you hold it). Its
 value is 1 when lit and 0 when dark. Choose its colour from eight presets or any colour, and put its label
-under it or on its face. Lit, it glows in its colour. A momentary press is a gesture, not a setting: it is
+under it or on its face, or hide it. Lit, it glows in its colour. Its **Style** is **Lamp** or **Switch**: a
+switch is a rounded track whose thumb slides across to show its colour when it is on, horizontally or vertically.
+A switch turns on or off when you let go of it, and its thumb slides there. A momentary press is a gesture, not a setting: it is
 not an undo step, and the display is not saved lit.
 
 A pinned axis linked to a button takes index 0 or 1, so a button can flip a plot between the two cases of

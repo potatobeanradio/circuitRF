@@ -518,7 +518,7 @@ public partial class MarkerInfoBoxView : UserControl
         FrequencyUnit.FontFamily = FrequencyEditor.FontFamily;
         // Opaque, in the colour the box is drawn in, and together with the editor at least as wide as the value the line
         // drew — so none of the old "2 GHz" shows past the box while it is edited.
-        var fill = AppSettingsViewModel.Instance.MarkerBoxTransparentBackground
+        var fill = vm.DisplayMarker.InfoBoxCard != true && AppSettingsViewModel.Instance.MarkerBoxTransparentBackground
             ? vm.Theme.BackgroundColor : CircuitRF.Render.DataDisplay.CardStyle.Fill(vm.Theme);
         FrequencyUnit.Background = new SolidColorBrush(Color.FromArgb(fill.Alpha, fill.Red, fill.Green, fill.Blue));
         _frequencyValueRight = at.X + at.ValueWidth + 1;

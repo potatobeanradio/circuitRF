@@ -38,6 +38,11 @@ public enum ButtonMode { Toggle, Momentary }
 [JsonConverter(typeof(JsonStringEnumConverter<ButtonLabelPlacement>))]
 public enum ButtonLabelPlacement { Under, OnFace }
 
+/// <summary>How a button is drawn: an illuminated lamp, or a switch — a capsule whose thumb slides across to reveal the
+/// colour under it.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<ButtonStyle>))]
+public enum ButtonStyle { Lamp, Switch }
+
 /// <summary>What a readout shows of its source (brief-ddl-6 R-ddl6-3).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ReadoutShow>))]
 public enum ReadoutShow { Value, Coordinate, Reading }
@@ -47,6 +52,7 @@ public enum ReadoutShow { Value, Coordinate, Reading }
 [JsonDerivedType(typeof(KnobControl), "Knob")]
 [JsonDerivedType(typeof(ButtonControl), "Button")]
 [JsonDerivedType(typeof(ReadoutControl), "Readout")]
+[JsonDerivedType(typeof(PanelControl), "Panel")]
 public abstract class DisplayControl
 {
     /// <summary>The id a link names — persistent, so renaming keeps links (overview D1).</summary>
@@ -75,6 +81,27 @@ public abstract class DisplayControl
     /// locked.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Locked { get; set; }
+
+    /// <summary>The card the control is drawn on: null (not written) is on, the default; false draws the control
+    /// straight onto the canvas.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Card { get; set; }
+
+    /// <summary>Whether the card is drawn — <see cref="Card"/> read with its default.</summary>
+    [JsonIgnore]
+    public bool ShowCard
+    {
+        get => Card ?? true;
+        set => Card = value ? null : false;
+    }
+
+    /// <summary>The stacking order among the tab's controls: a higher one is drawn over a lower one. Saved, so a
+    /// display reopens stacked as it was left; 0 (not written) for a file from before.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int ZIndex { get; set; }
+
+    /// <summary>A panel: a blank card drawn under every plot and every other control.</summary>
+    [JsonIgnore] public bool IsPanel => this is PanelControl;
 
     /// <summary>The kind's word, which new names are numbered from: <c>slider</c>.</summary>
     [JsonIgnore] public abstract string KindName { get; }
@@ -106,7 +133,7 @@ public abstract class DisplayControl
     {
         Id = o.Id; Name = o.Name; Label = o.Label;
         Left = o.Left; Top = o.Top; Width = o.Width; Height = o.Height;
-        Size = o.Size; Accent = o.Accent; Locked = o.Locked;
+        Size = o.Size; Accent = o.Accent; Locked = o.Locked; Card = o.Card; ZIndex = o.ZIndex;
     }
 
     /// <summary>The lowest <c>{kind}{n}</c> no control in <paramref name="existing"/> uses.</summary>
@@ -182,6 +209,14 @@ public abstract class SteppedControl : DisplayControl
     public bool ShowEnds  { get; set; } = true;
     public bool ShowValue { get; set; } = true;
 
+    /// <summary>
+    /// The frequency unit a frequency is written in (<c>MHz</c>): the application's preferred unit when the control was
+    /// placed, so a slider bound to a frequency axis reads in the unit the rest of the application uses. Null — a file
+    /// from before, or Automatic — keeps engineering notation (<c>2.4 GHz</c>).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FrequencyUnit { get; set; }
+
     protected void CopyStepped(SteppedControl o)
     {
         CopyBase(o);
@@ -190,6 +225,7 @@ public abstract class SteppedControl : DisplayControl
         BoundUnit = o.BoundUnit; Index = o.Index;
         Start = o.Start; Stop = o.Stop; Step = o.Step; Points = o.Points; Unit = o.Unit; Log = o.Log; Value = o.Value;
         ShowLabel = o.ShowLabel; ShowTicks = o.ShowTicks; ShowEnds = o.ShowEnds; ShowValue = o.ShowValue;
+        FrequencyUnit = o.FrequencyUnit;
     }
 
     // ---- stops ----
@@ -372,6 +408,22 @@ public sealed class ButtonControl : DisplayControl
 
     public ButtonLabelPlacement LabelPlacement { get; set; } = ButtonLabelPlacement.Under;
 
+    /// <summary>A lamp, or a switch. Not written for a lamp, so a file from before reads and writes as it was.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public ButtonStyle Style { get; set; } = ButtonStyle.Lamp;
+
+    /// <summary>Which way a switch slides: left to right, or bottom to top. A lamp has none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public ControlOrientation Orientation { get; set; } = ControlOrientation.Horizontal;
+
+    [JsonIgnore] public bool IsSwitch => Style == ButtonStyle.Switch;
+
+    /// <summary>Whether the name or label is drawn. Off, the lamp takes the label's room.</summary>
+    public bool ShowLabel { get; set; } = true;
+
+    /// <summary>The caption drawn: the label or name, or nothing with <see cref="ShowLabel"/> off.</summary>
+    [JsonIgnore] public string ShownCaption => ShowLabel ? Caption : "";
+
     /// <summary>Lit. Saved for a toggle, so a display reopens as it was left; a momentary button is never saved lit.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool On { get; set; }
@@ -386,12 +438,17 @@ public sealed class ButtonControl : DisplayControl
     public override (double Width, double Height) PresetSize(ControlSize size)
     {
         double k = size switch { ControlSize.Small => 0.8, ControlSize.Large => 1.35, _ => 1.0 };
-        return LabelPlacement == ButtonLabelPlacement.Under ? (96 * k, 112 * k) : (96 * k, 96 * k);
+        bool label = ShowLabel && Caption.Length > 0;
+        if (IsSwitch)
+            return Orientation == ControlOrientation.Vertical
+                ? (62 * k, (label ? 112 : 92) * k)
+                : (92 * k, (label ? 70 : 50) * k);
+        return LabelPlacement == ButtonLabelPlacement.Under && label ? (96 * k, 112 * k) : (96 * k, 96 * k);
     }
 
     /// <summary>A lamp needs no room for a track or digits, so it goes far below the Small preset: a small indicator
     /// beside a plot. Under that, its label is given up rather than drawn too small to read.</summary>
-    public override (double Width, double Height) MinimumSize() => (24, 24);
+    public override (double Width, double Height) MinimumSize() => (12, 12);
 
     public override DisplayControl Clone()
     {
@@ -404,7 +461,8 @@ public sealed class ButtonControl : DisplayControl
     {
         var o = (ButtonControl)other;
         CopyBase(o);
-        Mode = o.Mode; LabelPlacement = o.LabelPlacement; On = o.On;
+        Mode = o.Mode; LabelPlacement = o.LabelPlacement; On = o.On; ShowLabel = o.ShowLabel;
+        Style = o.Style; Orientation = o.Orientation;
     }
 }
 
@@ -467,6 +525,34 @@ public sealed class ReadoutControl : DisplayControl
         Source = o.Source; SourceName = o.SourceName; Show = o.Show; Axis = o.Axis; ShowName = o.ShowName;
         Text = o.Text; NameText = o.NameText; Problem = o.Problem;
     }
+}
+
+/// <summary>
+/// A panel: a blank card, to group controls and plots on. It has no value and is no link source. Whatever its stacking,
+/// it is drawn under every plot, marker box and other control — on the canvas, in a copy and in <c>render</c>.
+/// </summary>
+public sealed class PanelControl : DisplayControl
+{
+    public override string KindName => "panel";
+
+    public override (double Width, double Height) PresetSize(ControlSize size) => size switch
+    {
+        ControlSize.Small => (240.0, 160.0),
+        ControlSize.Large => (560.0, 380.0),
+        _                 => (400.0, 270.0),
+    };
+
+    /// <summary>A panel is only a card, so it can be made very small.</summary>
+    public override (double Width, double Height) MinimumSize() => (24, 24);
+
+    public override DisplayControl Clone()
+    {
+        var c = new PanelControl();
+        c.CopyFrom(this);
+        return c;
+    }
+
+    public override void CopyFrom(DisplayControl other) => CopyBase((PanelControl)other);
 }
 
 /// <summary>An SI prefix split off a unit: <c>MHz</c> → (1e6, <c>Hz</c>).</summary>

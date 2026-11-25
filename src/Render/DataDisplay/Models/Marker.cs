@@ -87,6 +87,12 @@ namespace CircuitRF.Render.DataDisplay
         public MarkerFunction Function               { get; set; } = MarkerFunction.Normal;
         public bool           Unavailable            { get; set; }
         public bool           ShowInfoBox            { get; set; } = true;
+
+        /// <summary>
+        /// The info box sits on the display's card: true draws the card, false the text alone. Null — a marker from a
+        /// file written before — keeps the application's Marker Box setting (a border, filled or not).
+        /// </summary>
+        public bool?          InfoBoxCard            { get; set; }
         public bool           ContourSnapped         { get; set; }
         public bool           VswrEnabled            { get; set; }
         public double         VswrValue              { get; set; } = 2.0;
@@ -207,6 +213,7 @@ namespace CircuitRF.Render.DataDisplay
             Function               = src.Function;
             Unavailable            = src.Unavailable;
             ShowInfoBox            = src.ShowInfoBox;
+            InfoBoxCard            = src.InfoBoxCard;
             ContourSnapped         = src.ContourSnapped;
             VswrEnabled            = src.VswrEnabled;
             VswrValue              = src.VswrValue;

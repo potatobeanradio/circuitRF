@@ -68,6 +68,9 @@ public partial class PlotContainerViewModel : ViewModelBase
 
     [ObservableProperty] private int _zIndex;
 
+    /// <summary>Lock Position: the plot is neither moved nor resized on the canvas.</summary>
+    public bool IsPositionLocked => PlotVM.Plot.PositionLocked;
+
     // ---- Selection --------------------------------------------------
 
     [ObservableProperty] private bool _isSelected;
@@ -852,6 +855,8 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// </summary>
     public void OnMarkerAdded(Marker marker, Trace trace)
     {
+        // A new marker's box takes its plot's look: on a card when the plot is on one, the text alone when it is not.
+        marker.InfoBoxCard ??= PlotVM.Plot.Card;
         _parent.RecordMarkerAdded(marker, trace, this);
         if (FindMarkerInfoBoxVm(marker) is { } box) _parent.SelectOnly(box);
     }

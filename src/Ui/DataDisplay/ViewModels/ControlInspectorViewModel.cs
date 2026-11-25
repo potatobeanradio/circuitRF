@@ -148,8 +148,10 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         nameof(IsSmall), nameof(IsMedium), nameof(IsLarge), nameof(IsCustom),
         nameof(ShowLabel), nameof(ShowTicks), nameof(ShowEnds), nameof(ShowValue),
         nameof(AccentSwatch), nameof(IsDefaultAccent), nameof(Locked),
-        nameof(IsStepped), nameof(IsSlider), nameof(IsButton), nameof(IsReadout),
+        nameof(IsStepped), nameof(IsSlider), nameof(IsButton), nameof(IsReadout), nameof(IsPanel), nameof(IsNotPanel),
+        nameof(ShowCard),
         nameof(IsToggle), nameof(IsMomentary), nameof(IsLabelUnder), nameof(IsLabelOnFace),
+        nameof(IsLamp), nameof(IsSwitch), nameof(HasOrientation),
         nameof(SelectedReadoutSource), nameof(IsShowValue), nameof(IsShowCoordinate), nameof(IsShowReading),
         nameof(SelectedReadoutAxis), nameof(ReadoutAxisEnabled), nameof(ReadoutShowName), nameof(AccentLabel),
     ];
@@ -235,6 +237,9 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
         Edit(c =>
         {
             var s = (SteppedControl)c;
+            // A range taken from a frequency axis is written in the unit the control reads frequencies in.
+            if (s.Unit.Length == 0 && SiUnit.Split(s.DisplayUnit).Base == "Hz" && s.FrequencyUnit is { Length: > 0 } fu)
+                s.Unit = fu;
             double v = Convert(s.CurrentValue, s.DisplayUnit, s.Unit);
             s.Domain = SliderDomain.Range;
             s.Value = v;
@@ -606,8 +611,13 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
 
     // ---- orientation and size --------------------------------------------------------------------------
 
-    public bool IsHorizontal => Model is SliderControl { Orientation: ControlOrientation.Horizontal };
-    public bool IsVertical   => Model is SliderControl { Orientation: ControlOrientation.Vertical };
+    public bool IsHorizontal => Model is SliderControl { Orientation: ControlOrientation.Horizontal }
+                                    or ButtonControl { IsSwitch: true, Orientation: ControlOrientation.Horizontal };
+    public bool IsVertical   => Model is SliderControl { Orientation: ControlOrientation.Vertical }
+                                    or ButtonControl { IsSwitch: true, Orientation: ControlOrientation.Vertical };
+
+    /// <summary>The Orientation row: a slider's, and a switch's.</summary>
+    public bool HasOrientation => Model is SliderControl or ButtonControl { IsSwitch: true };
 
     [RelayCommand] private void SetHorizontal() => SetOrientation(ControlOrientation.Horizontal);
     [RelayCommand] private void SetVertical()   => SetOrientation(ControlOrientation.Vertical);
@@ -615,6 +625,18 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     /// <summary>A preset is re-applied, so the frame turns with the slider; a custom frame swaps its sides.</summary>
     private void SetOrientation(ControlOrientation o)
     {
+        if (Model is ButtonControl { IsSwitch: true } sw)
+        {
+            if (sw.Orientation == o) return;
+            Edit(c =>
+            {
+                var x = (ButtonControl)c;
+                x.Orientation = o;
+                if (x.Size == ControlSize.Custom) (x.Width, x.Height) = (x.Height, x.Width);
+                else x.ApplySize(x.Size);
+            }, "orientation");
+            return;
+        }
         if (Model is not SliderControl slider || slider.Orientation == o) return;
         Edit(c =>
         {
@@ -638,10 +660,28 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
 
     // ---- look ------------------------------------------------------------------------------------------
 
+    /// <summary>The name or label drawn in the control: a slider's, a knob's or a button's.</summary>
     public bool ShowLabel
     {
-        get => Slider?.ShowLabel ?? false;
-        set { if (Slider is not null) Edit(c => ((SteppedControl)c).ShowLabel = value, "label shown"); }
+        get => Model switch { SteppedControl s => s.ShowLabel, ButtonControl b => b.ShowLabel, _ => false };
+        set
+        {
+            if (Model is SteppedControl) Edit(c => ((SteppedControl)c).ShowLabel = value, "label shown");
+            else if (Model is ButtonControl) Edit(c =>
+            {
+                var b = (ButtonControl)c;
+                // A preset button gives the label's strip back, or takes it, as the label is hidden or shown.
+                b.ShowLabel = value;
+                if (b.Size != ControlSize.Custom) b.ApplySize(b.Size);
+            }, "label shown");
+        }
+    }
+
+    /// <summary>The card the control is drawn on (every kind but a panel, which IS a card).</summary>
+    public bool ShowCard
+    {
+        get => Model?.ShowCard ?? true;
+        set { if (Model is not null) Edit(c => c.ShowCard = value, value ? "card shown" : "card hidden"); }
     }
 
     public bool ShowTicks
@@ -696,6 +736,9 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
     public bool IsSlider  => Model is SliderControl;
     public bool IsButton  => Model is ButtonControl;
     public bool IsReadout => Model is ReadoutControl;
+    public bool IsPanel   => Model is PanelControl;
+    /// <summary>Everything but a panel has an accent and a card to turn off.</summary>
+    public bool IsNotPanel => Model is not null and not PanelControl;
 
     /// <summary>A button's colour is the light it gives; every other control's is its accent.</summary>
     public string AccentLabel => IsButton ? "Colour" : "Accent";
@@ -728,6 +771,24 @@ public sealed partial class ControlInspectorViewModel : ObservableObject
             x.Mode = mode;
             if (mode == ButtonMode.Momentary) x.On = false;
         }, "mode");
+    }
+
+    public bool IsLamp   => Model is ButtonControl { Style: ButtonStyle.Lamp };
+    public bool IsSwitch => Model is ButtonControl { Style: ButtonStyle.Switch };
+
+    [RelayCommand] private void SetLamp()   => SetStyle(ButtonStyle.Lamp);
+    [RelayCommand] private void SetSwitch() => SetStyle(ButtonStyle.Switch);
+
+    /// <summary>A lamp or a switch; a preset frame takes the new style's shape.</summary>
+    private void SetStyle(ButtonStyle style)
+    {
+        if (Model is not ButtonControl b || b.Style == style) return;
+        Edit(c =>
+        {
+            var x = (ButtonControl)c;
+            x.Style = style;
+            if (x.Size != ControlSize.Custom) x.ApplySize(x.Size);
+        }, "style");
     }
 
     public bool IsLabelUnder  => Model is ButtonControl { LabelPlacement: ButtonLabelPlacement.Under };

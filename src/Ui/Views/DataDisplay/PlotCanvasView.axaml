@@ -36,9 +36,37 @@
             Plot canvas.  ItemsControl with Canvas panel positions each
             PlotContainerView at the ViewLeft/ViewTop specified by its VM.
         -->
+        <!-- The canvas ground. Empty canvas is THIS, not the plot layer: the plot layer has no background so a press
+             between plots reaches a panel under them. A press here deselects and starts the rubber band. -->
+        <Border x:Name="CanvasGround" Background="{DynamicResource CrfDataDisplayCanvasBrush}"/>
+
+        <!-- Panels: blank cards under every plot, marker box and control. A layer of their own, below the plots. -->
+        <ItemsControl ItemsSource="{Binding DataDisplay.PanelControls}"
+                      Background="{x:Null}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas Background="{x:Null}"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemContainerTheme>
+                <ControlTheme TargetType="ContentPresenter">
+                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                    <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                    <Setter Property="Width"       Value="{ReflectionBinding ViewWidth}"/>
+                    <Setter Property="Height"      Value="{ReflectionBinding ViewHeight}"/>
+                    <Setter Property="ZIndex"      Value="{ReflectionBinding ZIndex}"/>
+                </ControlTheme>
+            </ItemsControl.ItemContainerTheme>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ControlContainerViewModel">
+                    <v:ControlContainerView/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <ItemsControl x:Name="PlotCanvas"
                       ItemsSource="{Binding DataDisplay.Plots}"
-                      Background="{DynamicResource CrfDataDisplayCanvasBrush}">
+                      Background="{x:Null}">
 
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
@@ -89,7 +117,7 @@
         -->
         <!-- Display controls (brief-ddl-5): a layer above the plots, arranged the way the info boxes below are.
              Background="{x:Null}" so a press on empty canvas still reaches PlotCanvas (pan, rubber band). -->
-        <ItemsControl ItemsSource="{Binding DataDisplay.Controls}"
+        <ItemsControl ItemsSource="{Binding DataDisplay.ForegroundControls}"
                       Background="{x:Null}">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>

@@ -91,8 +91,13 @@ public partial class PlotCanvasView
 
     private void OnAnnotationPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (_contentGrid is not { } grid || Display is not { } display || display.ZoomBoxArmed
-            || e.GetCurrentPoint(grid).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed) return;
+        if (_contentGrid is not { } grid || Display is not { } display || display.ZoomBoxArmed) return;
+        if (e.GetCurrentPoint(grid).Properties.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
+        {
+            OnAnnotationRightPressed(e, grid, display);
+            return;
+        }
+        if (e.GetCurrentPoint(grid).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed) return;
         if (_annotationEditor is not null) return;
 
         var point = e.GetPosition(grid);
@@ -106,7 +111,8 @@ public partial class PlotCanvasView
                 CanvasBox box => HitCorner(point, corner => BoxCornerPoint(display, box, corner)),
                 CanvasOval oval => HitCorner(point, corner => BoxCornerPoint(display,
                     new CanvasBox(oval.X, oval.Y, oval.EndX, oval.EndY), corner)),
-                CanvasText text when !string.IsNullOrEmpty(text.Text) => AnnotationLayer.HitTextCorner(display, text, point),
+                CanvasText text when !string.IsNullOrEmpty(text.Text) && !text.Locked
+                    => AnnotationLayer.HitTextCorner(display, text, point),
                 _ => null,
             };
             int hit = _lineHandle != LineHandle.None || _boxCorner is not null ? display.SelectedAnnotationIndex
@@ -118,6 +124,12 @@ public partial class PlotCanvasView
                 return;
             }
             display.SelectAnnotation(hit);
+            // A locked text is selected, and stays where it is.
+            if (display.Annotations[hit] is CanvasText { Locked: true })
+            {
+                e.Handled = true;
+                return;
+            }
             _moveIndex = hit;
             _moveOriginal = display.Annotations[hit];
             _linePress = point;
@@ -142,6 +154,43 @@ public partial class PlotCanvasView
             e.Pointer.Capture(grid);
         }
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// A right-click on a text: it is selected, and its menu offers Lock Position and Properties… — the two a display
+    /// control's menu offers. Anywhere else the press goes on to whatever is under it.
+    /// </summary>
+    private void OnAnnotationRightPressed(PointerPressedEventArgs e, Grid grid, DataDisplayViewModel display)
+    {
+        if (_annotationEditor is not null || display.DrawingTool != AnnotationTool.None) return;
+        int hit = _annotationLayer?.HitTest(display, e.GetPosition(grid)) ?? -1;
+        if (hit < 0 || display.Annotations[hit] is not CanvasText text) return;
+        display.SelectAnnotation(hit);
+        Focus();
+        e.Handled = true;
+
+        var lockItem = new MenuItem
+        {
+            Header = "Lock Position",
+            Icon = new Material.Icons.Avalonia.MaterialIcon
+            {
+                Kind = text.Locked ? Material.Icons.MaterialIconKind.CheckboxOutline
+                                   : Material.Icons.MaterialIconKind.CheckboxBlankOutline,
+            },
+        };
+        lockItem.Click += (_, _) =>
+        {
+            int index = display.Annotations.IndexOf(text);
+            if (index >= 0) display.EditAnnotation(index, text with { Locked = !text.Locked });
+        };
+        var properties = new MenuItem
+        {
+            Header = "Properties…",
+            Icon = new Material.Icons.Avalonia.MaterialIcon { Kind = Material.Icons.MaterialIconKind.Settings },
+        };
+        properties.Click += (_, _) => DataDisplayViewModel.RequestPropertiesPanel();
+        var menu = new ContextMenu { Items = { properties, new Separator(), lockItem } };
+        menu.Open(grid);
     }
 
     private void OnAnnotationMoved(object? sender, PointerEventArgs e)
@@ -541,6 +590,8 @@ public partial class PlotCanvasView
                             {
                                 var textBounds = TextBounds(formatted);
                                 context.DrawRectangle(null, selection, textBounds.Inflate(3));
+                                // A locked text has no handles: it is not resized.
+                                if (!note.Locked)
                                 foreach (var corner in BoxCorners)
                                     context.DrawRectangle(Brushes.DodgerBlue, null,
                                         new Rect(TextCornerPoint(textBounds, corner), new Size()).Inflate(3));

@@ -689,8 +689,9 @@ the sweep's axis, so a marker on Pout against Pin can drive <code>V[@m1, node, :
 that drive.</p>
 <h2 id="controls">Controls on the canvas</h2>
 <p>A control is an input placed on the canvas: something plots follow that is not a marker on a trace. Add
-one from the toolbar's <strong>Add Control</strong> menu: <strong>Slider</strong>, <strong>Knob</strong>, <strong>Button</strong> or <strong>Readout</strong>. It lands
-in free space in view and is selected, and the Properties panel shows its inspector.</p>
+one from the toolbar's <strong>Add Control</strong> menu: <strong>Slider</strong>, <strong>Knob</strong>, <strong>Button</strong>, <strong>Readout</strong> or <strong>Panel</strong>. It
+lands in free space in view and is selected, and the Properties panel shows its inspector. A <strong>Panel</strong> is a blank
+card for grouping: it has no value and is always drawn under every plot and control.</p>
 <p>Every control has a name (<code>slider1</code>, <code>knob1</code>), unique across the display: markers and controls share one
 set of names, and <code>@slider1</code> links to it exactly as <code>@m1</code> links to a marker. Its label is what it shows;
 the name is shown when there is none.</p>
@@ -703,7 +704,14 @@ resizes freely, and the size reads <em>Custom</em>; picking S, M or L again snap
 with its frame: a Large slider is a bigger slider, not a Small one with more room. Most controls stop at their
 Small size; a button goes much smaller, to a lamp beside a plot, and leaves its label off once it would be too
 small to read.</p>
-<p><strong>Lock Position.</strong> Right-click a control and choose <strong>Lock Position</strong>. A locked control cannot be moved or
+<p><strong>Card.</strong> Every control sits on a card. Clear <strong>Card</strong> in the inspector to draw the control straight onto the
+canvas.</p>
+<p><strong>Properties…</strong> in a control's right-click menu brings the Properties panel forward, or opens it floating if
+it was closed. A text on the canvas has the same menu, with <strong>Lock Position</strong>.</p>
+<p><strong>Stacking.</strong> The last plot or control you selected is drawn over the others, and the display saves the
+order. Panels are always at the bottom, then plots, then controls.</p>
+<p><strong>Lock Position.</strong> Right-click a control and choose <strong>Lock Position</strong>. A plot has the same item, above
+<strong>Lock Axes Panning</strong>. A locked control cannot be moved or
 resized, and a drag on its frame works the control instead. It can still be selected, edited, copied and
 deleted. With several selected, the item locks them all, or unlocks them all when every one is locked
 already. A display arranged as a panel can be saved locked, so it opens ready to use.</p>
@@ -1127,14 +1135,17 @@ the source goes away, it keeps the range it last read and the inspector says so.
 number with a unit, and an axis it pins takes the sample nearest it. Double-click either end label to
 type a new start or stop where it is drawn.</li>
 </ul>
-<p>It can lie horizontally or vertically, and show or hide its label, ticks, end labels and value.</p>
+<p>It can lie horizontally or vertically, and show or hide its label, ticks, end labels and value. Bound to a
+frequency axis, it reads in the frequency unit set in <strong>Settings ▸ Units</strong> when it was placed.</p>
 <p><strong>The knob</strong> has the slider's two domains and value rules, drawn as a dial over a 270° sweep. Drag on it to
 turn it: up or right turns it up, down or left turns it down. Upward, one full sweep is 200 pixels of drag; sideways,
 a drag across the dial's width turns it through its whole arc, so a knob turns as readily sideways as up. Both are ten
 times finer with Ctrl (Cmd on a Mac). The mouse wheel steps it one stop. On a bound knob, clicking a tick sets that stop.</p>
 <p><strong>The button</strong> is <strong>Toggle</strong> (a click turns it on or off) or <strong>Momentary</strong> (on only while you hold it). Its
 value is 1 when lit and 0 when dark. Choose its colour from eight presets or any colour, and put its label
-under it or on its face. Lit, it glows in its colour. A momentary press is a gesture, not a setting: it is
+under it or on its face, or hide it. Lit, it glows in its colour. Its <strong>Style</strong> is <strong>Lamp</strong> or <strong>Switch</strong>: a
+switch is a rounded track whose thumb slides across to show its colour when it is on, horizontally or vertically.
+A switch turns on or off when you let go of it, and its thumb slides there. A momentary press is a gesture, not a setting: it is
 not an undo step, and the display is not saved lit.</p>
 <p>A pinned axis linked to a button takes index 0 or 1, so a button can flip a plot between the two cases of
 a two-element axis, such as two corners or two bias points written as an axis.</p>

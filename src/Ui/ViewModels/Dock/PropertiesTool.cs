@@ -302,6 +302,7 @@ public partial class PropertiesTool : Tool
             KnobControl    => "Knob",
             ButtonControl  => "Button",
             ReadoutControl => "Readout",
+            PanelControl   => "Panel",
             _              => "Control",
         };
 

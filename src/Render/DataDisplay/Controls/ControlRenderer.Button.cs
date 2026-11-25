@@ -34,10 +34,11 @@ public static partial class ControlRenderer
 
     public static ButtonLayoutInfo ButtonLayout(ButtonControl c, float w, float h)
     {
-        bool under = c.LabelPlacement == ButtonLabelPlacement.Under && c.Caption.Length > 0;
+        string caption = c.ShownCaption;
+        bool under = c.LabelPlacement == ButtonLabelPlacement.Under && caption.Length > 0;
         float u = Math.Max(0.2f, Math.Min(w / 96f, h / (under ? 112f : 96f)));
         // A caption that would be drawn too small to read is given up, and the lamp takes its strip.
-        bool shows = c.Caption.Length > 0 && (under ? 12 * u : Math.Min(13 * u, 0.42f * 96 / 2 / GlowReach * u)) >= MinButtonCaption;
+        bool shows = caption.Length > 0 && (under ? 12 * u : Math.Min(13 * u, 0.42f * 96 / 2 / GlowReach * u)) >= MinButtonCaption;
         if (under && !shows)
         {
             under = false;
@@ -58,15 +59,37 @@ public static partial class ControlRenderer
         return dx * dx + dy * dy <= l.Radius * l.Radius;
     }
 
-    private static void DrawButton(SKCanvas canvas, ButtonControl c, RenderTheme theme, float w, float h)
+    private static void DrawButton(SKCanvas canvas, ButtonControl c, RenderTheme theme, float w, float h, ControlMotion? motion = null)
     {
         var l = ButtonLayout(c, w, h);
         float u = l.U, r = l.Radius;
         var col = AccentOf(c);
         var ctr = l.Center;
-        DrawFrame(canvas, theme, w, h, u);
+        DrawFrame(canvas, c, theme, w, h, u);
 
-        if (c.On)
+        // The window's animation: the light fades up or down rather than snapping, and a held press sinks the lamp a
+        // little. At rest (every export) it is simply on or off.
+        float lit = (float)Math.Clamp(motion?.On ?? (c.On ? 1 : 0), 0, 1);
+        float press = (float)Math.Clamp(motion?.Press ?? 0, 0, 1);
+        canvas.Save();
+        if (press > 0)
+        {
+            float k = 1 - 0.05f * press;
+            canvas.Scale(k, k, ctr.X, ctr.Y);
+        }
+        if (lit < 1) DrawDark();
+        if (lit > 0)
+        {
+            if (lit < 1)
+                using (var layer = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(lit * 255)) })
+                    canvas.SaveLayer(layer);
+            DrawLit();
+            if (lit < 1) canvas.Restore();
+        }
+        canvas.Restore();
+        DrawCaption();
+
+        void DrawLit()
         {
             // The halo: the colour at partial alpha fading to nothing, from the face's edge out to the glow's.
             float inner = r / l.GlowRadius;
@@ -80,15 +103,17 @@ public static partial class ControlRenderer
             // The face, lit: the full colour at mid-radius, deeper at the rim, opaque.
             GradedDisc(canvas, ctr, r, 0f, 1f, t => t < 0.55f ? col : Lerp(col, Lerp(col, SKColors.Black, 0.22f), (t - 0.55f) / 0.45f));
 
-            // The bloom: a second, tighter falloff of near-white at the face's heart, a little above its centre.
-            GradedDisc(canvas, new SKPoint(ctr.X, ctr.Y - 0.12f * r), 0.62f * r, 0f, 1f,
-                       t => SKColors.White.WithAlpha((byte)(165 * (1 - t) * (1 - t))));
+            // The reflection: a tighter falloff of near-white up and to the right of the centre, where light from above
+            // and to one side catches a domed lens — at the heart it read as the lamp's filament, not as a reflection.
+            GradedDisc(canvas, new SKPoint(ctr.X + 0.30f * r, ctr.Y - 0.30f * r), 0.46f * r, 0f, 1f,
+                       t => SKColors.White.WithAlpha((byte)(175 * (1 - t) * (1 - t))));
 
             using var rim = new SKPaint { Color = Lerp(col, SKColors.Black, 0.35f), StrokeWidth = 1f * u, IsAntialias = true,
                                           Style = SKPaintStyle.Stroke };
             canvas.DrawCircle(ctr, r, rim);
         }
-        else
+
+        void DrawDark()
         {
             // Dark: the colour at low saturation, dim, with a little light from above so it still reads as a button.
             var grey = theme.DarkMode ? new SKColor(58, 58, 62) : new SKColor(226, 226, 230);
@@ -103,7 +128,9 @@ public static partial class ControlRenderer
             canvas.DrawCircle(ctr, r, rim);
         }
 
-        string caption = c.Caption;
+        void DrawCaption()
+        {
+        string caption = c.ShownCaption;
         if (caption.Length == 0 || !l.ShowsLabel) return;
         if (c.LabelPlacement == ButtonLabelPlacement.Under)
         {
@@ -120,11 +147,12 @@ public static partial class ControlRenderer
             float size = Math.Min(13 * u, r * 0.42f);
             using var font = new SKFont(SkiaFonts.PlexBold, size);
             using var fb   = new SKFont(SkiaFonts.DejaVuBold, size);
-            var ink = c.On ? (Luma(col) > 0.62 ? new SKColor(20, 20, 24) : SKColors.White) : theme.TextColor.WithAlpha(190);
+            var ink = lit >= 0.5f ? (Luma(col) > 0.62 ? new SKColor(20, 20, 24) : SKColors.White) : theme.TextColor.WithAlpha(190);
             using var paint = new SKPaint { Color = ink, IsAntialias = true };
             string t = Fit(caption, 1.6f * r, font, fb);
             float tw = RendererText.MeasureTextWithFallback(t, font, fb);
             RendererText.DrawLeftTextWithFallback(canvas, t, ctr.X - tw / 2, ctr.Y + size * 0.35f, font, fb, paint);
+        }
         }
     }
 
@@ -171,7 +199,7 @@ public static partial class ControlRenderer
     {
         float u = ReadoutU(w, h);
         float pad = 7 * u;
-        DrawFrame(canvas, theme, w, h, u);
+        DrawFrame(canvas, c, theme, w, h, u);
 
         float top = pad;
         string? name = c.ShowName ? (string.IsNullOrWhiteSpace(c.Label) ? c.NameText ?? c.Name : c.Label) : null;

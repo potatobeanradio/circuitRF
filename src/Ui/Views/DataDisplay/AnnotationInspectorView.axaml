@@ -21,6 +21,10 @@
                 <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding RotationLabels}"
                           SelectedIndex="{Binding RotationIndex, Mode=TwoWay}" AutomationProperties.Name="Text rotation"/>
             </Grid>
+            <Grid ColumnDefinitions="75,*">
+                <CheckBox Grid.Column="1" Content="Lock Position" IsChecked="{Binding Locked, Mode=TwoWay}"
+                          ToolTip.Tip="Neither moved nor resized; it can still be edited"/>
+            </Grid>
         </StackPanel>
         <StackPanel IsVisible="{Binding HasStroke}" Spacing="4">
             <TextBlock Text="{Binding ShapeName}" FontWeight="SemiBold"/>

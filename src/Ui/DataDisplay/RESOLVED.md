@@ -2798,3 +2798,29 @@ iterates it. Do not add a third box kind with its own copies of those loops.
   - a tab's name: the label's size (12) and inset (border 1 + padding 3 = the label's 4).
   The shared box is opaque by default now (`SystemControlBackgroundAltHighBrush`, which the schematic already set on its
   own): a see-through box shows the old text under the new.
+
+## Cards, panels, stacking and the switch (2026-11-25)
+
+- **A panel is a layer, not a z-index.** `PanelControl` lives in `Controls` (saved, selected, undone like any
+  control) but the canvas binds two filtered lists, `PanelControls` under the plot layer and `ForegroundControls`
+  over it (`SyncControlLayers`). The plot layer (`PlotCanvas`) therefore has NO background — a press between plots
+  must reach a panel — and the canvas colour and the empty-canvas press handler moved to a `CanvasGround` border
+  under every layer. Export draws panels before plots in `PlotComposer` for the same order.
+- **Stacking is saved, but is not an edit.** `ZIndex` is written by `BuildTabConfig` (save) only, never by
+  `BuildPlotContainerConfig`: the edit recorder snapshots that, and every click that brings a plot forward would
+  otherwise become an undo step. The dirty snapshot zeroes it for the same reason.
+- **A plot's card spans what it draws.** `PlotCanvasGeometry.CardSpan` is the one rectangle for the card and the
+  selection outline: a Rect plot's is fitted to its Y-label columns, tick numbers and title
+  (`AxesRenderer.RectContentSpan`) instead of the canvas, whose margin is a fixed fraction; a Smith or Polar plot's
+  takes in its label strips, which sit OUTSIDE the clipped `PlotControl`. So in the window the container draws the
+  card and outline (`PlotContainerView.CardLayer`, `PlotControl.DrawsCard = false`), and `PlotComposer` draws it
+  before the strips with `drawCard: false`.
+- **Trap: a visual invalidated inside a render pass throws** ("Visual was invalidated during the render pass"). The
+  card layer follows the plot through `PlotControl.Rendered`, which posts its invalidation to the dispatcher.
+- **Smith and Polar grid numbers had a 250-px canvas cutoff**, so a display zoomed far out lost them. Their face
+  already scales with the canvas (`lw`), so the cutoff is gone and they stay in proportion at any size.
+- **The switch toggles on release; the lamp on press.** The button's animation lives in `ControlContainerView`
+  only (`ControlMotion`, passed to `ControlRenderer.Draw`): it follows the model's `On` from wherever the drawing
+  is, so an undo or a link animates too, and every export draws the button at rest.
+- **A marker's box card** (`Marker.InfoBoxCard`) is null in files from before and keeps the Marker Box setting;
+  a marker added in the Data Display takes its plot's `Card`.

@@ -203,6 +203,20 @@ public partial class MarkerEditorViewModel : ViewModelBase
         _parent?.Container.SetMarkerInfoBoxVisibility(_marker, _parent.Trace);
     }
 
+    // ---- The info box's card --------------------------------------------
+
+    /// <summary>The info box drawn on the display's card, or as text alone. A marker that never chose (a file from
+    /// before) reads as on: its box has a border.</summary>
+    [ObservableProperty]
+    private bool _infoBoxCard;
+
+    partial void OnInfoBoxCardChanged(bool value)
+    {
+        if (!MarkerIsLive) return;
+        _marker.InfoBoxCard = value;
+        NotifyParent();
+    }
+
     // ---- VSWR enable + value -------------------------------------------
 
     [ObservableProperty]
@@ -381,6 +395,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 #pragma warning disable MVVMTK0034
         _freqDisplayText = (marker.Freq * marker.FreqUnits.Scale()).ToString("G6");
         _showInfoBox     = marker.ShowInfoBox;
+        _infoBoxCard     = marker.InfoBoxCard ?? true;
         _vswrEnabled     = marker.VswrEnabled;
         _vswrValueText   = marker.VswrValue.ToString("G6");
         _contourSnapped  = marker.ContourSnapped;
@@ -405,6 +420,7 @@ public partial class MarkerEditorViewModel : ViewModelBase
 #pragma warning disable MVVMTK0034
         _freqDisplayText= (_marker.Freq * _marker.FreqUnits.Scale()).ToString("G6");
         _showInfoBox    = _marker.ShowInfoBox;
+        _infoBoxCard    = _marker.InfoBoxCard ?? true;
         _vswrEnabled    = _marker.VswrEnabled;
         _vswrValueText  = _marker.VswrValue.ToString("G6");
         _contourSnapped = _marker.ContourSnapped;

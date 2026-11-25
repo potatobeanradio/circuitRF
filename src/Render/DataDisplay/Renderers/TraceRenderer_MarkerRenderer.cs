@@ -1083,7 +1083,10 @@ namespace CircuitRF.Render.DataDisplay
             // control read as one family. Opaque, so nothing under it — a trace, a carded plot's border — shows through
             // the text; border only when the user asked for transparent boxes.
             float radius = Math.Max(2.5f, ts * 0.4f);
-            CardStyle.Draw(canvas, theme, boxRect, radius, fill: !transparentBackground);
+            // The marker's own choice wins: its card, or the text alone. A marker that never chose keeps the
+            // application's Marker Box setting.
+            if (marker.InfoBoxCard ?? true)
+                CardStyle.Draw(canvas, theme, boxRect, radius, fill: marker.InfoBoxCard == true || !transparentBackground);
 
             if (isSelected)
                 CardStyle.DrawSelection(canvas, boxRect, radius, selectionColor, 3.1f);

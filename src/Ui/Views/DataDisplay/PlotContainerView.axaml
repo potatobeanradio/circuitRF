@@ -17,7 +17,7 @@
         exactly ViewWidth pixels (graph area), keeping the graph region constant
         as traces are added or removed.
     -->
-    <Grid>
+    <Grid x:Name="RootGrid">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto"/>
             <ColumnDefinition Width="*"/>
@@ -109,17 +109,9 @@
 
         </Panel>
 
-        <!-- ── Selection highlight — spans the full container ──────────── -->
-        <!--
-            No margin: the border wraps everything — label strips (left/right),
-            title space (top), X-axis label space (bottom), and the resize grip.
-        -->
-        <Border Grid.Column="0" Grid.ColumnSpan="3"
-                IsVisible="{Binding IsSelected}"
-                BorderBrush="{DynamicResource SystemAccentColor}"
-                BorderThickness="2"
-                CornerRadius="3"
-                IsHitTestVisible="False"/>
+        <!-- The card (Plot.Card) under everything and the selection outline over it are drawn in code
+             (PlotContainerView.CardLayer): both wrap what the plot draws — a Rect plot's labels, a Smith or Polar
+             plot's label strips — rather than the whole container, whose margins are sized for wider labels. -->
 
         <!-- ── Right axis label strips ────────────────────────────────── -->
         <!--

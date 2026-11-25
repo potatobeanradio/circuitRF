@@ -268,14 +268,21 @@
                 </ToggleButton>
             </StackPanel>
 
-            <!-- Show Info Box — locked on for Table plots (no on-canvas way to re-open a hidden box) -->
-            <ToggleButton Classes="seg-btn"
-                          IsChecked="{Binding ShowInfoBox, Mode=TwoWay}"
-                          IsEnabled="{Binding CanToggleInfoBox}"
-                          HorizontalAlignment="Left"
-                          ToolTip.Tip="Show this marker's info box (always on for Table plots)">
-                Info Box
-            </ToggleButton>
+            <!-- Show Info Box — locked on for Table plots (no on-canvas way to re-open a hidden box) — and its card -->
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <ToggleButton Classes="seg-btn"
+                              IsChecked="{Binding ShowInfoBox, Mode=TwoWay}"
+                              IsEnabled="{Binding CanToggleInfoBox}"
+                              ToolTip.Tip="Show this marker's info box (always on for Table plots)">
+                    Info Box
+                </ToggleButton>
+                <ToggleButton Classes="seg-btn"
+                              IsChecked="{Binding InfoBoxCard, Mode=TwoWay}"
+                              IsEnabled="{Binding ShowInfoBox}"
+                              ToolTip.Tip="Draw the info box on a card; off, the text alone">
+                    Card
+                </ToggleButton>
+            </StackPanel>
 
             <!-- Contour mode: snap to grid point vs free/interpolated -->
             <ToggleButton Classes="seg-btn"

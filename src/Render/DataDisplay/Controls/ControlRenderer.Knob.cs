@@ -105,7 +105,7 @@ public static partial class ControlRenderer
         var l = KnobLayout(c, w, h);
         float u = l.U;
         var accent = AccentOf(c);
-        DrawFrame(canvas, theme, w, h, u);
+        DrawFrame(canvas, c, theme, w, h, u);
 
         using var font     = new SKFont(SkiaFonts.PlexRegular, 12 * u);
         using var fallback = new SKFont(SkiaFonts.DejaVuRegular, 12 * u);

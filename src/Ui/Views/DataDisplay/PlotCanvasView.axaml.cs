@@ -57,9 +57,14 @@ public partial class PlotCanvasView : UserControl
         _dragSelectOverlay = this.FindControl<DragSelectOverlay>("DragSelectOverlay");
         InitializeAnnotations();
 
-        // Register canvas-background handlers on PlotCanvas.
-        // Handlers are registered once in the constructor so they never accumulate
-        // even if the control is shown / hidden multiple times by the TabControl.
+        // Register the canvas-background handler on the ground under every layer (the plot layer has no background,
+        // so a press between plots reaches a panel there). Handlers are registered once in the constructor so they
+        // never accumulate even if the control is shown / hidden multiple times by the TabControl.
+        this.FindControl<Border>("CanvasGround")?.AddHandler(
+            PointerPressedEvent,
+            OnCanvasPointerPressed,
+            RoutingStrategies.Bubble);
+        // A press on a plot that nothing handled bubbles to the plot layer, as it always did.
         _plotCanvas?.AddHandler(
             PointerPressedEvent,
             OnCanvasPointerPressed,

@@ -1616,7 +1616,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     public void MoveSelected(double dx, double dy, PlotContainerViewModel? anchor = null)
     {
         (dx, dy) = SnappedMoveStep(dx, dy, anchor);
-        foreach (var p in _plots.Where(p => p.IsSelected))
+        // A plot with Lock Position on stays where it is, and so do its boxes; the rest of the selection moves.
+        foreach (var p in _plots.Where(p => p.IsSelected && !p.IsPositionLocked))
         {
             p.Left += dx;
             p.Top  += dy;
@@ -1632,7 +1633,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// than staying behind on the canvas when it is dragged.
     /// </summary>
     private IEnumerable<CanvasBoxViewModel> MovingBoxes()
-        => Boxes.Where(m => m.IsSelected || m.Container.IsSelected);
+        => Boxes.Where(m => m.IsSelected || m.Container is { IsSelected: true, IsPositionLocked: false });
 
     // ---- InfoBox group drag (absolute window positions) -------------
     //  Called from MarkerInfoBoxView when the user drags a selected InfoBox.
@@ -1942,7 +1943,11 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             Controls    = ControlsForSave(),
         };
         foreach (var c in _plots)
-            tc.Plots.Add(BuildPlotContainerConfig(c, configDir, Library));
+        {
+            var pc = BuildPlotContainerConfig(c, configDir, Library);
+            pc.ZIndex = c.ZIndex;   // the stacking as it is now: the plot selected last is on top when reopened
+            tc.Plots.Add(pc);
+        }
         return tc;
     }
 
@@ -2010,7 +2015,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             Height  = pc.Height,
             Theme   = Theme,
             Library = Library,
+            ZIndex  = pc.ZIndex,
         };
+        if (pc.ZIndex >= _nextZIndex) _nextZIndex = pc.ZIndex + 1;
         _plots.Add(container);
         RebuildMarkerInfoBoxesForContainer(container);
         RebuildLegendBoxForContainer(container);
@@ -2088,6 +2095,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             CustomTitle     = plot.CustomTitle,
             CustomTitleOn   = plot.CustomTitleOn,
             Card            = plot.Card,
+            Locked          = plot.PositionLocked,
             CustomXLabel    = plot.CustomXLabel,
             CustomXLabelOn  = plot.CustomXLabelOn,
             CustomYLabel    = plot.CustomYLabel,
@@ -2372,6 +2380,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 MarkerKind            = m.MarkerKind,
                 Function              = m.Function,
                 ShowInfoBox           = m.ShowInfoBox,
+                InfoBoxCard           = m.InfoBoxCard,
                 ContourSnapped        = m.ContourSnapped,
                 VswrEnabled           = m.VswrEnabled,
                 VswrValue             = Finite(m.VswrValue, fallback: 2.0),

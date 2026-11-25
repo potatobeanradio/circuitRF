@@ -17310,6 +17310,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void RouteDataDisplayProperties(DataDisplayDocument? dd)
     {
+        // A display control's or text's context-menu Properties… brings the Properties panel forward, floating it
+        // when it was closed — the 3D editor's Properties, by the same route.
+        CircuitRF.Ui.DataDisplay.ViewModels.DataDisplayViewModel.PropertiesPanelRequested
+            = () => ShowToolPanel(CircuitRF.Ui.Docking.DockPanelIds.Properties);
         if (_subscribedDisplayWindow is not null && _displayInspectorHandler is not null)
             _subscribedDisplayWindow.PropertyChanged -= _displayInspectorHandler;
         _subscribedDisplayWindow = null;

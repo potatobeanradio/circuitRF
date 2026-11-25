@@ -63,6 +63,11 @@ public sealed record CanvasText(double X, double Y, string Text) : CanvasAnnotat
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public CanvasTextRotation Rotation { get; init; }
+
+    /// <summary>Lock Position, as a display control has: neither moved nor resized on the canvas, still selected and
+    /// edited. Omitted when off.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Locked { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<CanvasTextRotation>))]
@@ -156,6 +161,16 @@ public sealed class PlotContainerConfig
     /// <summary>The plot sits on a rounded card (Plot.Card); omitted when off, so earlier files are unchanged.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool   Card            { get; set; }
+
+    /// <summary>Lock Position (<c>Plot.PositionLocked</c>); omitted when off.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool   Locked          { get; set; }
+
+    /// <summary>The plot's stacking among the tab's plots: a higher one is drawn over a lower one. Written by a save
+    /// only (not by a copy, nor by the undo of an edit — a click that brings a plot forward is not an edit); 0, not
+    /// written, for a file from before.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int    ZIndex          { get; set; }
     public string CustomXLabel    { get; set; } = "";
     public bool   CustomXLabelOn  { get; set; }
     public string CustomYLabel    { get; set; } = "";
@@ -745,6 +760,9 @@ public sealed class MarkerConfig
     public MarkerFunction Function { get; set; } = MarkerFunction.Normal;
 
     public bool   ShowInfoBox    { get; set; } = true;
+    /// <summary>The info box's card (<c>Marker.InfoBoxCard</c>); null, not written, follows the Marker Box setting.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool?  InfoBoxCard    { get; set; }
     public bool   ContourSnapped { get; set; }
     public bool   VswrEnabled    { get; set; }
     public double VswrValue      { get; set; } = 2.0;

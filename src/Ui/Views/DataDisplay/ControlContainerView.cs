@@ -113,13 +113,73 @@ public sealed class ControlContainerView : Panel
     {
         if (Vm is not { } vm) return;
         // Captured here, on the UI thread: the draw runs on the compositor thread.
+        ControlMotion? motion = vm.Model is ButtonControl b ? Motion(b) : null;
         context.Custom(new DrawOperation(
-            new Rect(_surface.Bounds.Size), vm.Model.Clone(), vm.Display.Theme,
+            new Rect(_surface.Bounds.Size), vm.Model.Clone(), motion, vm.Display.Theme,
             vm.IsSelected, vm.Model.Locked, _gripHot || _gesture == Mode.Resize, _thumbHot || _gesture == Mode.Value,
             PlotAccentColor.GetTransparentAccent(RenderTheme.SelectionAlpha)));
     }
 
-    private sealed class DrawOperation(Rect bounds, DisplayControl control, RenderTheme theme,
+    // ---- a button's animation --------------------------------------------------------------------
+    //
+    // What is drawn follows the model rather than being told: whenever a button's On differs from where its last
+    // animation was heading — a press, an undo, a link — a new one starts from where the drawing is now. A switch's
+    // thumb slides and its colour fills; a lamp's light fades up or down. A held press sinks the lamp and stretches the
+    // switch's thumb. Every frame of it is the window's alone: an export draws the button at rest.
+
+    private const double SlideSeconds = 0.32, FadeSeconds = 0.2, PressSeconds = 0.14;
+
+    private double _shownOn = double.NaN, _onFrom, _onTo, _press, _pressFrom, _pressTo;
+    private long _onStart, _pressStart;
+    private bool _frameQueued;
+
+    private static double Seconds(long from, long to) => (to - from) / (double)System.Diagnostics.Stopwatch.Frequency;
+
+    /// <summary>Eases out: quick at first, settling gently — a thumb thrown across and coming to rest.</summary>
+    private static double EaseOut(double f) => 1 - Math.Pow(1 - f, 3);
+
+    private ControlMotion Motion(ButtonControl b)
+    {
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        double target = b.On ? 1 : 0;
+        if (double.IsNaN(_shownOn)) _shownOn = _onFrom = _onTo = target;
+        if (target != _onTo)
+        {
+            _onFrom = _shownOn;
+            _onTo = target;
+            _onStart = now;
+        }
+        double f = _onFrom == _onTo ? 1 : Math.Clamp(Seconds(_onStart, now) / (b.IsSwitch ? SlideSeconds : FadeSeconds), 0, 1);
+        _shownOn = _onFrom + (_onTo - _onFrom) * EaseOut(f);
+        double pf = _pressFrom == _pressTo ? 1 : Math.Clamp(Seconds(_pressStart, now) / PressSeconds, 0, 1);
+        _press = _pressFrom + (_pressTo - _pressFrom) * EaseOut(pf);
+        if (f < 1 || pf < 1) QueueFrame();
+        return new ControlMotion(_shownOn, _press);
+    }
+
+    /// <summary>A press on a button's face begins (true) or ends (false): the press animates in or out.</summary>
+    private void SetPressed(bool pressed)
+    {
+        double to = pressed ? 1 : 0;
+        if (to == _pressTo) return;
+        _pressFrom = _press;
+        _pressTo = to;
+        _pressStart = System.Diagnostics.Stopwatch.GetTimestamp();
+        Redraw();
+    }
+
+    private void QueueFrame()
+    {
+        if (_frameQueued) return;
+        _frameQueued = true;
+        if (TopLevel.GetTopLevel(this) is { } top)
+            top.RequestAnimationFrame(_ => { _frameQueued = false; Redraw(); });
+        else
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => { _frameQueued = false; Redraw(); },
+                                                        Avalonia.Threading.DispatcherPriority.Background);
+    }
+
+    private sealed class DrawOperation(Rect bounds, DisplayControl control, ControlMotion? motion, RenderTheme theme,
                                        bool selected, bool locked, bool grip, bool thumb, SKColor selection) : ICustomDrawOperation
     {
         public bool Equals(ICustomDrawOperation? other) => false;
@@ -135,7 +195,7 @@ public sealed class ControlContainerView : Panel
             if (lease is null) return;
             using var l = lease.Lease();
             float w = (float)bounds.Width, h = (float)bounds.Height;
-            ControlRenderer.Draw(l.SkCanvas, control, theme, new SKRect(0, 0, w, h));
+            ControlRenderer.Draw(l.SkCanvas, control, theme, new SKRect(0, 0, w, h), motion);
             ControlRenderer.DrawChrome(l.SkCanvas, control, w, h, selected, locked, grip, thumb, selection);
         }
 
@@ -193,10 +253,12 @@ public sealed class ControlContainerView : Panel
         }
         else if (!alt && OnFace(vm, p) && vm.Model is ButtonControl)
         {
-            // A button's face: a toggle flips, a momentary one lights until the press ends (R-ddl6-2).
+            // A button's face: a toggle flips, a momentary one lights until the press ends (R-ddl6-2). A switch toggles
+            // when the press is let go, over its face, as a switch does; while it is held its thumb stretches.
             _gesture = Mode.Press;
             _faceFocused = true;
-            vm.PressButton();
+            SetPressed(true);
+            if (vm.Model is not ButtonControl { IsSwitch: true, Mode: ButtonMode.Toggle }) vm.PressButton();
         }
         else if (!alt && OnFace(vm, p))
         {
@@ -304,7 +366,12 @@ public sealed class ControlContainerView : Panel
         switch (gesture)
         {
             case Mode.Value:  vm.EndValueDrag(); break;
-            case Mode.Press:  vm.ReleaseButton(); break;
+            case Mode.Press:
+                SetPressed(false);
+                if (vm.Model is ButtonControl { IsSwitch: true, Mode: ButtonMode.Toggle } && OnFace(vm, e.GetPosition(this)))
+                    vm.PressButton();
+                vm.ReleaseButton();
+                break;
             case Mode.Resize: vm.EndResize(); break;
             case Mode.Move:   vm.Display.EndMoveOperation(); break;
             case Mode.Pending:
@@ -336,7 +403,7 @@ public sealed class ControlContainerView : Panel
             switch (_gesture)
             {
                 case Mode.Value:  vm.EndValueDrag(); break;
-                case Mode.Press:  vm.ReleaseButton(); break;
+                case Mode.Press:  SetPressed(false); vm.ReleaseButton(); break;
                 case Mode.Resize: vm.EndResize(); break;
                 case Mode.Move:   vm.Display.EndMoveOperation(); break;
             }
@@ -465,6 +532,14 @@ public sealed class ControlContainerView : Panel
         };
         lockItem.Click += (_, _) => vm.Display.ToggleLock(vm);
 
+        // Properties…: the Properties panel, which edits the selection — brought forward, or floated when it was closed.
+        var properties = new MenuItem { Header = "Properties…", Icon = new MaterialIcon { Kind = MaterialIconKind.Settings } };
+        properties.Click += (_, _) =>
+        {
+            if (!vm.IsSelected || vm.Display.SelectedControl != vm) vm.RequestSelectOnly();
+            DataDisplayViewModel.RequestPropertiesPanel();
+        };
+
         var delete = new MenuItem { Header = "Delete", Icon = new MaterialIcon { Kind = MaterialIconKind.DeleteOutline } };
         delete.Click += (_, _) =>
         {
@@ -474,7 +549,7 @@ public sealed class ControlContainerView : Panel
 
         // Built fresh each time, so its tick reads the selection as it is now; set as this control's own menu, where
         // anything looking for the open menu finds it.
-        var menu = new ContextMenu { Items = { lockItem, new Separator(), delete } };
+        var menu = new ContextMenu { Items = { properties, new Separator(), lockItem, new Separator(), delete } };
         ContextMenu = menu;
         menu.Open(this);
     }

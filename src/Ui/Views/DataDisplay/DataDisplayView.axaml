@@ -315,6 +315,11 @@
                             <MenuItem Header="Readout" Command="{Binding ViewModel.Window.AddReadoutCommand}">
                                 <MenuItem.Icon><mi:MaterialIcon Kind="Numeric" Width="16" Height="16"/></MenuItem.Icon>
                             </MenuItem>
+                            <Separator/>
+                            <MenuItem Header="Panel" Command="{Binding ViewModel.Window.AddPanelCommand}"
+                                      ToolTip.Tip="A blank card, drawn under the plots and controls">
+                                <MenuItem.Icon><mi:MaterialIcon Kind="SquareRoundedOutline" Width="16" Height="16"/></MenuItem.Icon>
+                            </MenuItem>
                         </MenuFlyout>
                     </Button.Flyout>
                 </Button>

@@ -64,6 +64,7 @@ public static class PlotConfigLoader
         plot.CustomTitle     = pc.CustomTitle;
         plot.CustomTitleOn   = pc.CustomTitleOn;
         plot.Card            = pc.Card;
+        plot.PositionLocked  = pc.Locked;
         plot.CustomXLabel    = pc.CustomXLabel;
         plot.CustomXLabelOn  = pc.CustomXLabelOn;
         plot.CustomYLabel    = pc.CustomYLabel;
@@ -219,6 +220,7 @@ public static class PlotConfigLoader
                     MarkerKind             = mc.MarkerKind,
                     Function               = mc.Function,
                     ShowInfoBox            = mc.ShowInfoBox,
+                    InfoBoxCard            = mc.InfoBoxCard,
                     ContourSnapped         = mc.ContourSnapped,
                     VswrEnabled            = mc.VswrEnabled,
                     VswrValue              = mc.VswrValue,

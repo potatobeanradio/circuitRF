@@ -276,6 +276,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private ContextMenu? _traceHeaderContextMenu;
         private ContextMenu? _tableContextMenu;
         private MaterialIcon _iconAxesLocked = new MaterialIcon();
+        private MaterialIcon _iconPositionLocked = new MaterialIcon();
+        private MenuItem? _positionLockMenuItem;
+
+        /// <summary>Shows the Lock Position row: only where the plot sits on a canvas it can be moved on (the Data
+        /// Display), not in a tool window that lays its plots out itself.</summary>
+        public bool ShowPositionLock { get; set; }
 
         // The admittance grid's own checkbox glyph and its row — the same two-object pattern the
         // lock above uses, and for the same reason: the menu instance is cached for the control's
@@ -633,6 +639,19 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _iconAxesLocked.Kind = _plot?.Axes.LockedPanning ?? false
                 ? MaterialIconKind.CheckboxOutline
                 : MaterialIconKind.CheckboxBlankOutline;
+            // Lock Position, above Lock Axes Panning: the plot stays where it is and keeps its size, as a locked
+            // display control does. A property of the plot, saved with it, so it is a Plot edit like any other.
+            var itemPositionLock = new MenuItem { Header = "Lock Position", Icon = _iconPositionLocked };
+            itemPositionLock.Click += (_, _) =>
+            {
+                if (_plot is null) return;
+                _plot.PositionLocked ^= true;
+                RefreshContextMenuState();
+                InvalidateVisual();
+                PlotChanged?.Invoke(this, EventArgs.Empty);
+            };
+            _positionLockMenuItem = itemPositionLock;
+
             var item5 = new MenuItem { Header = "Lock Axes Panning", Icon = _iconAxesLocked };
             item5.Click += (_, _) =>
             {
@@ -670,6 +689,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(_addAsGoalMenuItem);
             menu.Items.Add(_trialMenuItem);
             menu.Items.Add(itemSelectAll);
+            menu.Items.Add(itemPositionLock);
             menu.Items.Add(item5);
             menu.Items.Add(item6);
             menu.Items.Add(new Separator());
@@ -711,6 +731,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         /// </remarks>
         private void RefreshContextMenuState()
         {
+            _iconPositionLocked.Kind = _plot?.PositionLocked ?? false
+                ? MaterialIconKind.CheckboxOutline
+                : MaterialIconKind.CheckboxBlankOutline;
+            if (_positionLockMenuItem is not null) _positionLockMenuItem.IsVisible = ShowPositionLock;
+
             _iconAxesLocked.Kind = _plot?.Axes.LockedPanning ?? false
                 ? MaterialIconKind.CheckboxOutline
                 : MaterialIconKind.CheckboxBlankOutline;
@@ -1170,6 +1195,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         //  Avalonia render override
         // ============================================================
 
+        /// <summary>Draws the plot's card (Plot.Card) itself. A host that draws label strips beside the plot turns this
+        /// off and draws a card wide enough for them (the Data Display's PlotContainerView).</summary>
+        public bool DrawsCard { get; set; } = true;
+
+        /// <summary>Raised after every frame is recorded, so a host drawing around the plot (its card) follows it.</summary>
+        public event Action? Rendered;
+
         public override void Render(DrawingContext context)
         {
             bool showFilePrefix = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
@@ -1224,7 +1256,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 // The theme stays an argument, so it is the draw op's own.
                 Overlay?.CaptureFrame(),
                 legendSel,
-                _trialCache));
+                _trialCache,
+                DrawsCard));
+            Rendered?.Invoke();
         }
 
         // ============================================================
@@ -1247,6 +1281,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly Action<SKCanvas, TransformSet, RenderTheme>? _overlay;
             private readonly SKColor _legendSelection;
             private readonly TrialLayerCache? _trialCache;
+            private readonly bool _drawCard;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -1262,8 +1297,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 bool alwaysShowSource = false,
                 Action<SKCanvas, TransformSet, RenderTheme>? overlay = null,
                 SKColor legendSelection = default,
-                TrialLayerCache? trialCache = null)
+                TrialLayerCache? trialCache = null,
+                bool drawCard = true)
             {
+                _drawCard        = drawCard;
                 _legendSelection = legendSelection;
                 _trialCache      = trialCache;
                 _bounds          = bounds;
@@ -1318,7 +1355,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     // remembered — ContourRenderer once drew every contour on every Smith plot to
                     // the first target it had been handed.
                     overlay: _overlay is { } ov ? (c, tf) => ov(c, tf, _theme) : null,
-                    trialCache: _trialCache);
+                    trialCache: _trialCache,
+                    drawCard: _drawCard);
                 if (_legendSelection != default
                     && LegendRenderer.DockedBounds(canvasSize, _plot, PlotRenderer.BuildTransforms(_plot, canvasSize),
                                                    _aliasFor, _alwaysShowSource) is { } legendRect)

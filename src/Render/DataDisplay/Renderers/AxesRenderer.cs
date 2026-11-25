@@ -486,7 +486,8 @@ namespace CircuitRF.Render.DataDisplay
             // frame anything much bigger than the unit circle: once autoscale is allowed off that
             // floor (Plot.UnityMinimumApplies), a locus of tens of ohms drew a grid of unlabelled
             // rings and there was nothing on the plot to say what scale it was at.
-            if (canvasSize.W > 250)
+            // At every size: the text scales with the canvas (lw), so a plot made small — or a Data Display zoomed far
+            // out — keeps its numbers in proportion rather than losing them under a fixed pixel width.
             {
                 var (lblFont, lblPaint) = MakeTextObjects(axes.FontSizeTicks * 0.85, lw, theme);
                 using var _lf1 = lblFont;
@@ -1030,7 +1031,8 @@ namespace CircuitRF.Render.DataDisplay
             // fit even then is DROPPED rather than overprinted, because past the scale floor there
             // is no size that makes room. Scaling alone ends in two-pixel mush; thinning alone
             // throws away numbers a smaller face would have fitted.
-            if (canvasSize.W > 250 && unitPxR > 0 && float.IsFinite(unitPxR))
+            // At every canvas size, as the Polar grid's numbers are: the face scales with the canvas (lw).
+            if (unitPxR > 0 && float.IsFinite(unitPxR))
             {
                 // The disc's radius runs as 1/(half-window), so this IS the chart's own zoom, and
                 // it is exactly 1 at the unit window — where nothing about the picture changes. It
@@ -1689,6 +1691,68 @@ namespace CircuitRF.Render.DataDisplay
             float rightTickW = MaxYTickLabelWidth(tickFont, axes, secondary: true);
             return (vpLeft  - lw * 4f - leftTickW  - DescriptionStripPad * lw,
                     vpRight + lw * 4f + rightTickW + DescriptionStripPad * lw);
+        }
+
+        /// <summary>
+        /// The horizontal reach of what a rectangular plot draws, in canvas pixels: from its outermost left Y label (or
+        /// its tick numbers, with none) to its outermost right one — or, with no secondary axis, to the box's right edge —
+        /// widened for the first and last X tick numbers, which are centred on their ticks, and for a title wider than
+        /// that. What a carded plot's card and its selection outline wrap: the canvas keeps a fixed margin for labels
+        /// that are often far narrower.
+        /// </summary>
+        public static (float Left, float Right) RectContentSpan(Plot plot, (double W, double H) canvasSize)
+        {
+            float w = (float)canvasSize.W, h = (float)canvasSize.H;
+            if (w <= 0 || h <= 0) return (0, w);
+            var tf    = PlotRenderer.BuildTransforms(plot, canvasSize);
+            var axes  = plot.Axes;
+            float lw  = LineWidth(canvasSize);
+            float vpLeft  = (float)(tf.Viewport.X * w);
+            float vpRight = (float)((tf.Viewport.X + tf.Viewport.Width) * w);
+
+            using var tickFont = new SKFont(SkiaFonts.PlexRegular, (float)(axes.FontSizeTicks * lw));
+            var (leftAnchor, rightAnchor) = ComputeYLabelAnchors(tickFont, axes, vpLeft, vpRight, lw);
+            float sw = (float)(axes.FontSizeTicks * 0.9f * lw) * 1.5f;   // one rotated Y label's column
+
+            int leftCols = !string.IsNullOrEmpty(plot.YLabel) ? 1
+                         : plot.CustomYLabelOn ? 0
+                         : plot.LeftAxisTraces.Count(t => !t.IsContourTrace);
+            float left = leftCols > 0 ? leftAnchor - sw * leftCols : leftAnchor + DescriptionStripPad * lw;
+
+            float right = vpRight;
+            if (axes.ShowSecondary)
+            {
+                int rightCols = !string.IsNullOrEmpty(plot.Y2Label) ? 1
+                              : plot.CustomY2LabelOn ? 0
+                              : plot.RightAxisTraces.Count(t => !t.IsContourTrace);
+                right = rightCols > 0 ? rightAnchor + sw * rightCols : rightAnchor - DescriptionStripPad * lw;
+            }
+
+            // The X tick numbers, centred on their ticks: the first and last reach past the box's edges.
+            int xGroup  = EngineeringFormat.GroupFor(EngineeringFormat.AxisMagnitude(axes.Window.Left, axes.Window.Right));
+            int xDigits = axes.XScale == AxisScale.Log ? axes.NumDigitsXAxis : EngineeringFormat.DigitsToResolve(
+                axes.Window.Left, axes.Window.Right, axes.XTick, xGroup, axes.NumDigitsXAxis);
+            foreach (var tx in axes.Ticks(minorTicks: false).MajorX)
+            {
+                if (!double.IsFinite(tx)) continue;
+                double v = axes.XScale == AxisScale.Log ? tx : EngineeringFormat.SnapNearZero(tx, axes.XTick);
+                float half = tickFont.MeasureText(EngineeringFormat.Tick(v, xGroup, xDigits)) / 2f;
+                float at = tf.PrimaryToCanvas(tx, axes.Window.Top).X;
+                left  = Math.Min(left, at - half);
+                right = Math.Max(right, at + half);
+            }
+
+            // A title wider than all of that, centred over the box as it is drawn (it shrinks to the canvas first).
+            if (!string.IsNullOrEmpty(plot.Title))
+            {
+                var hit = ComputeLabelHitRects(plot, canvasSize).Title;
+                if (hit.Width > 0)
+                {
+                    left  = Math.Min(left, hit.Left);
+                    right = Math.Max(right, hit.Right);
+                }
+            }
+            return (Math.Max(0, left), Math.Min(w, right));
         }
 
         private static (float Left, float Right) ComputeYLabelAnchors(

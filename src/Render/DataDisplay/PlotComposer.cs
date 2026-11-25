@@ -27,6 +27,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using SkiaSharp;
 
 namespace CircuitRF.Render.DataDisplay;
@@ -243,6 +244,25 @@ public static class PlotComposer
         float padX = (usableW - (float)bndW * S) / 2f;
         float padY = (usableH - (float)bndH * S) / 2f;
 
+        // Panels under everything, then the plots, then every other control — the window's stacking, and within each
+        // layer the saved order (DisplayControl.ZIndex).
+        void DrawControls(bool panels)
+        {
+            if (controls is not { Count: > 0 }) return;
+            var layer = controls.Where(c => c.IsPanel == panels).OrderBy(c => c.ZIndex).ToList();
+            if (layer.Count == 0) return;
+            canvas.Save();
+            canvas.Translate(margin + padX + (float)(annotationOffsetX - bndL) * S,
+                             margin + padY + (float)(annotationOffsetY - bndT) * S);
+            canvas.Scale((float)annotationZoom * S);
+            foreach (var control in layer)
+                ControlRenderer.Draw(canvas, control, theme,
+                    SKRect.Create((float)control.Left, (float)control.Top, (float)control.Width, (float)control.Height));
+            canvas.Restore();
+        }
+
+        DrawControls(panels: true);
+
         // ---- Draw each plot ----------------------------------------
 
         foreach (var c in plots)
@@ -258,6 +278,14 @@ public static class PlotComposer
             float plotW  = (float)c.ViewWidth  * S;
             float plotH  = (float)c.ViewHeight * S;
             float stripW = (float)sw * S;
+
+            // The card, under the strips: over a Smith or Polar plot it reaches past the canvas to take them in.
+            if (plot.Card && plotW > 2 && plotH > 2)
+            {
+                var (cl, cr) = PlotCanvasGeometry.CardSpan(plot, plotW, plotH, nLeft, nRight, stripW);
+                CardStyle.Draw(canvas, theme, new SKRect(plotX + (float)cl, plotY, plotX + (float)cr, plotY + plotH),
+                               PlotCanvasGeometry.CardRadius(plotW, plotH));
+            }
 
             // Label strips (Smith / Polar only)
             if (nLeft + nRight > 0)
@@ -305,7 +333,8 @@ public static class PlotComposer
                 zoomLevel: cTableZoom,
                 aliasFor: c.AliasFor,
                 alwaysShowSource: c.AlwaysShowSource,
-                overlay: c.Overlay is { } ov ? (cv, tf) => ov(cv, tf, theme) : null);
+                overlay: c.Overlay is { } ov ? (cv, tf) => ov(cv, tf, theme) : null,
+                drawCard: false);
             canvas.Restore();
 
             // A floating legend — over its plot, under the marker boxes, as the window stacks them.
@@ -338,17 +367,7 @@ public static class PlotComposer
                 canvas.Restore();
             }
         }
-        if (controls is { Count: > 0 })
-        {
-            canvas.Save();
-            canvas.Translate(margin + padX + (float)(annotationOffsetX - bndL) * S,
-                             margin + padY + (float)(annotationOffsetY - bndT) * S);
-            canvas.Scale((float)annotationZoom * S);
-            foreach (var control in controls)
-                ControlRenderer.Draw(canvas, control, theme,
-                    SKRect.Create((float)control.Left, (float)control.Top, (float)control.Width, (float)control.Height));
-            canvas.Restore();
-        }
+        DrawControls(panels: false);
         if (annotations is not null)
         {
             canvas.Save();

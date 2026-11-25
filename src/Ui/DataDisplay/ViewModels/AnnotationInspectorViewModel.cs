@@ -24,6 +24,7 @@ public sealed class AnnotationInspectorViewModel : ObservableObject
             OnPropertyChanged(nameof(FontSize));
             OnPropertyChanged(nameof(Rotation));
             OnPropertyChanged(nameof(RotationIndex));
+            OnPropertyChanged(nameof(Locked));
             OnPropertyChanged(nameof(LineStyle));
             OnPropertyChanged(nameof(ColorSwatch));
             OnPropertyChanged(nameof(FillSwatch));
@@ -71,6 +72,13 @@ public sealed class AnnotationInspectorViewModel : ObservableObject
     {
         get => Annotation is CanvasText text ? (decimal)Math.Clamp(text.FontSize, 1, 200) : 16;
         set { if (Annotation is CanvasText text) Edit(text with { FontSize = (double)Math.Clamp(value, 1, 200) }); }
+    }
+
+    /// <summary>A text's Lock Position.</summary>
+    public bool Locked
+    {
+        get => (Annotation as CanvasText)?.Locked ?? false;
+        set { if (Annotation is CanvasText text) Edit(text with { Locked = value }); }
     }
 
     public CanvasTextRotation Rotation
