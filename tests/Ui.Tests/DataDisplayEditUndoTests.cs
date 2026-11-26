@@ -166,6 +166,25 @@ public sealed class DataDisplayEditUndoTests : IDisposable
         Assert.True(saved.MarkerTablePositionLocked);
     }
 
+    /// <summary>A copy's page is cropped to what was copied, at the scale a letter page draws it, with a small margin —
+    /// not a whole letter page of empty space around a wide plot or a table.</summary>
+    [Fact]
+    public async Task CopyPage_IsCroppedToTheContent()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var letter = CircuitRF.Render.DataDisplay.PagePlacement.Letter;
+
+        var plot = PlotExporter.Compose([display.Plots[0]]).Page;
+        Assert.Equal(PlotExporter.ClipboardMargin, plot.Margin);
+        Assert.True(plot.Width <= letter.UsableWidth + 2 * plot.Margin + 1 && plot.Height <= letter.UsableHeight + 2 * plot.Margin + 1);
+        Assert.True(plot.Width < letter.Width && plot.Height < letter.Height);
+
+        display.SetMarkerTableVisible(display.Plots[0], true);
+        var table = PlotExporter.Compose([], null, [Assert.Single(display.MarkerTables)]).Page;
+        Assert.True(table.Height < letter.Height / 3);   // a wide, short table is a wide, short picture
+    }
+
     /// <summary>A marker table or marker box selected without its plot is copied as a picture of itself, not skipped.</summary>
     [Fact]
     public async Task CopyingTableOrMarkerBoxAlone_PutsItOnTheClipboard()

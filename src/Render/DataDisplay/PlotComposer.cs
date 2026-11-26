@@ -143,37 +143,15 @@ public sealed class PlacedPlot
 public static class PlotComposer
 {
     /// <summary>
-    /// Draws every plot in <paramref name="plots"/> onto <paramref name="canvas"/>, scaled
-    /// uniformly so their common bounding box — plots, label strips and marker info boxes together
-    /// — fills the page's usable area and is centred on it.
+    /// The common bounding box of everything <see cref="Render"/> would draw — plots with their label strips, floating
+    /// legends, marker tables and boxes, annotations and controls — in display screen pixels; null when there is nothing.
     /// </summary>
-    /// <remarks>
-    /// The background is cleared here, from <paramref name="settings"/>, and the theme is put
-    /// through the export override — both were the exporter's first two statements and both belong
-    /// with the composition rather than with the caller, so the CLI cannot forget one.
-    /// </remarks>
-    public static void Render(
-        SKCanvas                  canvas,
+    public static (double L, double T, double R, double B)? ContentBounds(
         IReadOnlyList<PlacedPlot> plots,
-        RenderTheme               theme,
-        AppSettings               settings,
-        PagePlacement             page,
         IReadOnlyList<CanvasAnnotation>? annotations = null,
         double annotationZoom = 1, double annotationOffsetX = 0, double annotationOffsetY = 0,
         IReadOnlyList<DisplayControl>? controls = null)
     {
-        float usableW = page.UsableWidth;
-        float usableH = page.UsableHeight;
-        float margin  = page.Margin;
-
-        theme = settings.GetExportRenderTheme(theme);
-
-        canvas.Clear(settings.ExportTransparentBackground
-            ? SKColors.Transparent
-            : theme.BackgroundColor);
-        if (plots.Count == 0 && annotations is not { Count: > 0 } && controls is not { Count: > 0 }) return;
-
-        // ---- Bounding box in DataDisplay screen-pixel space --------
 
         double bndL = double.PositiveInfinity;
         double bndT = double.PositiveInfinity;
@@ -264,7 +242,66 @@ public static class PlotComposer
                 bndB = Math.Max(bndB, (control.Top + control.Height) * annotationZoom + annotationOffsetY);
             }
 
-        if (double.IsInfinity(bndL)) return;
+
+        return double.IsInfinity(bndL) ? null : (bndL, bndT, bndR, bndB);
+    }
+
+    /// <summary>
+    /// A page cropped to the content: the scale <paramref name="within"/> would draw it at, with only
+    /// <paramref name="margin"/> around it — for a picture pasted into another application, where a whole page of
+    /// empty space only has to be cropped away again.
+    /// </summary>
+    public static PagePlacement CroppedPage(
+        IReadOnlyList<PlacedPlot> plots, PagePlacement within, float margin,
+        IReadOnlyList<CanvasAnnotation>? annotations = null,
+        double annotationZoom = 1, double annotationOffsetX = 0, double annotationOffsetY = 0,
+        IReadOnlyList<DisplayControl>? controls = null)
+    {
+        if (ContentBounds(plots, annotations, annotationZoom, annotationOffsetX, annotationOffsetY, controls)
+            is not { } content) return within;
+        var (l, t, r, b) = content;
+        if (r - l <= 0 || b - t <= 0) return within;
+        float S = (float)Math.Min(within.UsableWidth / (r - l), within.UsableHeight / (b - t));
+        return new PagePlacement(MathF.Ceiling((float)(r - l) * S + 2 * margin),
+                                 MathF.Ceiling((float)(b - t) * S + 2 * margin), margin);
+    }
+
+    /// <summary>
+    /// Draws every plot in <paramref name="plots"/> onto <paramref name="canvas"/>, scaled
+    /// uniformly so their common bounding box — plots, label strips and marker info boxes together
+    /// — fills the page's usable area and is centred on it.
+    /// </summary>
+    /// <remarks>
+    /// The background is cleared here, from <paramref name="settings"/>, and the theme is put
+    /// through the export override — both were the exporter's first two statements and both belong
+    /// with the composition rather than with the caller, so the CLI cannot forget one.
+    /// </remarks>
+    public static void Render(
+        SKCanvas                  canvas,
+        IReadOnlyList<PlacedPlot> plots,
+        RenderTheme               theme,
+        AppSettings               settings,
+        PagePlacement             page,
+        IReadOnlyList<CanvasAnnotation>? annotations = null,
+        double annotationZoom = 1, double annotationOffsetX = 0, double annotationOffsetY = 0,
+        IReadOnlyList<DisplayControl>? controls = null)
+    {
+        float usableW = page.UsableWidth;
+        float usableH = page.UsableHeight;
+        float margin  = page.Margin;
+
+        theme = settings.GetExportRenderTheme(theme);
+
+        canvas.Clear(settings.ExportTransparentBackground
+            ? SKColors.Transparent
+            : theme.BackgroundColor);
+        if (plots.Count == 0 && annotations is not { Count: > 0 } && controls is not { Count: > 0 }) return;
+
+        // ---- Bounding box in DataDisplay screen-pixel space --------
+
+        if (ContentBounds(plots, annotations, annotationZoom, annotationOffsetX, annotationOffsetY, controls)
+            is not { } content) return;
+        var (bndL, bndT, bndR, bndB) = content;
 
         double bndW = bndR - bndL;
         double bndH = bndB - bndT;

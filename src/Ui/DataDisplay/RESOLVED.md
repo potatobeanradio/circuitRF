@@ -23,6 +23,12 @@ already there. The same held for a marker info box or floating legend. Each one 
 those parts without the plot. The clipboard JSON leaves them out, since none of them can be pasted without its plot.
 A marker box hidden under its plot's table is not offered.
 
+**A copy is cropped to what was copied.** Copy used to compose onto the letter page Export writes, so a wide plot or
+a short table pasted into a slide inside a box of empty space. `PlotComposer.CroppedPage` keeps the scale the letter page
+would give and shrinks the page to the content plus `PlotExporter.ClipboardMargin` (8 pt); the PDF, SVG and bitmap all
+use it, and Windows is told the same page size. `BuildSvgStringForContainers`/`BuildPdfBytesForContainers` stay on
+the letter page: the render tests compare them against the CLI's `render`, which is what Export writes.
+
 ## 2026-11-25 — plot marker table
 
 A marker table is a floating canvas box owned by one plot, not another sweep table or a second set of markers.

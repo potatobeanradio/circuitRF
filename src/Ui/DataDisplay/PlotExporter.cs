@@ -173,11 +173,12 @@ namespace CircuitRF.Ui.DataDisplay
             AnnotationPage? annotations = null,
             IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
         {
-            byte[]  pdf    = BuildPdfBytesForContainers(containers, theme, annotations, partsOnly);
-            string  svg    = BuildSvgStringForContainers(containers, theme, annotations, partsOnly);
-            string  json   = BuildContainersJson(containers, annotations?.Items, annotations?.Controls);
-            Bitmap? bitmap = BuildBitmapForContainers(containers, theme, annotations, partsOnly);
-            await SetClipboardDataAsync(anchor, pdf, svg, json, bitmap);
+            var     picture = Compose(containers, annotations, partsOnly);
+            byte[]  pdf     = BuildPdfBytes(picture, theme);
+            string  svg     = BuildSvgString(picture, theme);
+            string  json    = BuildContainersJson(containers, annotations?.Items, annotations?.Controls);
+            Bitmap? bitmap  = BuildBitmap(picture, theme);
+            await SetClipboardDataAsync(anchor, pdf, svg, json, bitmap, picture.Page.Width, picture.Page.Height);
         }
 
         /// <summary>
@@ -193,41 +194,74 @@ namespace CircuitRF.Ui.DataDisplay
             PlotContainerViewModel? container)
         {
             if (container is null) return;
-
-            var    containers = (IReadOnlyList<PlotContainerViewModel>)new[] { container };
-            byte[] pdf    = BuildPdfBytesForContainers(containers, theme);
-            string svg    = BuildSvgStringForContainers(containers, theme);
-            string json   = BuildContainersJson(containers);
-            Bitmap? bitmap = BuildBitmapForContainers(containers, theme);
-
-            await SetClipboardDataAsync(anchor, pdf, svg, json, bitmap);
+            await CopyContainersToClipboardAsync(anchor, new[] { container }, theme);
         }
 
-        /// <summary>Renders all plots in <paramref name="containers"/> to a PDF byte array.</summary>
+        /// <summary>The clipboard picture's margin, in points, around a page cropped to what was copied.</summary>
+        internal const float ClipboardMargin = 8f;
+
+        /// <summary>What a copy draws, and the page it draws it on.</summary>
+        internal sealed record ClipboardPicture(IReadOnlyList<PlacedPlot> Plots, AnnotationPage? Annotations, PagePlacement Page);
+
+        /// <summary>
+        /// The copy's placements, on a page CROPPED to them (<see cref="PlotComposer.CroppedPage"/>): the scale a letter page
+        /// would draw them at, with <see cref="ClipboardMargin"/> around them. A picture pasted into a slide on a whole letter
+        /// page arrives inside a box of empty space that has to be cropped away by hand. Export to a file keeps the page.
+        /// </summary>
+        internal static ClipboardPicture Compose(IReadOnlyList<PlotContainerViewModel> containers,
+            AnnotationPage? annotations = null, IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
+        {
+            var letter = OnLetterPage(containers, annotations, partsOnly);
+            var page = PlotComposer.CroppedPage(letter.Plots, PagePlacement.Letter, ClipboardMargin, annotations?.Items,
+                                                annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0,
+                                                annotations?.Controls);
+            return letter with { Page = page };
+        }
+
+        /// <summary>The same placements on the letter page Export writes.</summary>
+        private static ClipboardPicture OnLetterPage(IReadOnlyList<PlotContainerViewModel> containers,
+            AnnotationPage? annotations, IReadOnlyList<CanvasBoxViewModel>? partsOnly)
+            => new(containers.Select(Place)
+                             .Concat((partsOnly ?? []).GroupBy(b => b.Container).Select(g => PlaceParts(g.Key, g.ToList())))
+                             .ToList(),
+                   annotations, PagePlacement.Letter);
+
+        private static void Draw(SKCanvas canvas, ClipboardPicture picture, RenderTheme theme)
+            => PlotComposer.Render(canvas, picture.Plots, theme, AppSettings.Current, picture.Page, picture.Annotations?.Items,
+                                   picture.Annotations?.Zoom ?? 1, picture.Annotations?.OffsetX ?? 0,
+                                   picture.Annotations?.OffsetY ?? 0, picture.Annotations?.Controls);
+
+        private static byte[] BuildPdfBytes(ClipboardPicture picture, RenderTheme theme)
+            => PlotDocumentWriter.BuildPdfBytes(canvas => Draw(canvas, picture, theme), picture.Page);
+
+        private static string BuildSvgString(ClipboardPicture picture, RenderTheme theme)
+            => PlotDocumentWriter.BuildSvgString(canvas => Draw(canvas, picture, theme), picture.Page);
+
+        /// <summary>Renders all plots in <paramref name="containers"/> to a PDF byte array, on the letter page Export
+        /// writes.</summary>
         internal static byte[] BuildPdfBytesForContainers(
             IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null,
             IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
-            => BuildPdfBytes(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations, partsOnly));
+            => BuildPdfBytes(OnLetterPage(containers, annotations, partsOnly), theme);
 
-        /// <summary>Renders all plots in <paramref name="containers"/> to an SVG string.</summary>
+        /// <summary>Renders all plots in <paramref name="containers"/> to an SVG string, on the letter page Export
+        /// writes.</summary>
         internal static string BuildSvgStringForContainers(
             IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null,
             IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
-            => BuildSvgString(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations, partsOnly));
+            => BuildSvgString(OnLetterPage(containers, annotations, partsOnly), theme);
 
         /// <summary>
-        /// Renders all plots to a high-resolution raster bitmap (2× page size) suitable
+        /// Renders a copy to a high-resolution raster bitmap (2× page size) suitable
         /// for pasting into apps such as Keynote, Pages, and Word that recognise
         /// <see cref="DataFormat.Bitmap"/> but not the circuitRF application-scoped PDF format.
         /// Returns null if rendering fails.
         /// </summary>
-        internal static Bitmap? BuildBitmapForContainers(
-            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null,
-            IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
+        private static Bitmap? BuildBitmap(ClipboardPicture picture, RenderTheme theme)
         {
             const float Scale = 2.0f;
-            int w = (int)(PageW * Scale);
-            int h = (int)(PageH * Scale);
+            int w = (int)Math.Ceiling(picture.Page.Width  * Scale);
+            int h = (int)Math.Ceiling(picture.Page.Height * Scale);
 
             using var skBitmap = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul);
             using var canvas   = new SKCanvas(skBitmap);
@@ -236,7 +270,7 @@ namespace CircuitRF.Ui.DataDisplay
             // one plot raster this repo builds outside PlotDocumentWriter, so it enters the scope
             // itself rather than drawing a 3D surface to a different standard than Export does.
             using (PlotDocumentScope.Enter())
-                RenderContainersToCanvas(canvas, containers, theme, annotations, partsOnly);
+                Draw(canvas, picture, theme);
 
             using var skData = skBitmap.Encode(SKEncodedImageFormat.Png, 100);
             if (skData is null) return null;
@@ -293,17 +327,6 @@ namespace CircuitRF.Ui.DataDisplay
 
         // ---- Multi-plot renderer ------------------------------------
 
-        private static void RenderContainersToCanvas(
-            SKCanvas                              canvas,
-            IReadOnlyList<PlotContainerViewModel> containers,
-            RenderTheme                           theme, AnnotationPage? annotations = null,
-            IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
-            => PlotComposer.Render(canvas, containers.Select(Place)
-                                       .Concat((partsOnly ?? []).GroupBy(b => b.Container)
-                                                                .Select(g => PlaceParts(g.Key, g.ToList()))).ToList(),
-                                   theme, AppSettings.Current, PagePlacement.Letter, annotations?.Items,
-                                   annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0,
-                                   annotations?.Controls);
 
         internal static async Task ExportDocumentAsync(Control anchor, DisplayWindowViewModel window, string name)
         {
