@@ -278,6 +278,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private MaterialIcon _iconAxesLocked = new MaterialIcon();
         private MaterialIcon _iconPositionLocked = new MaterialIcon();
         private MenuItem? _positionLockMenuItem;
+        private MaterialIcon _iconCard = new MaterialIcon();
+        private MenuItem? _cardMenuItem;
 
         /// <summary>Shows the Lock Position row: only where the plot sits on a canvas it can be moved on (the Data
         /// Display), not in a tool window that lays its plots out itself.</summary>
@@ -646,15 +648,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             // Lock Position, above Lock Axes Panning: the plot stays where it is and keeps its size, as a locked
             // display control does. A property of the plot, saved with it, so it is a Plot edit like any other.
             var itemPositionLock = new MenuItem { Header = "Lock Position", Icon = _iconPositionLocked };
-            itemPositionLock.Click += (_, _) =>
-            {
-                if (_plot is null) return;
-                _plot.PositionLocked ^= true;
-                RefreshContextMenuState();
-                InvalidateVisual();
-                PlotChanged?.Invoke(this, EventArgs.Empty);
-            };
+            itemPositionLock.Click += (_, _) => TogglePositionLock();
             _positionLockMenuItem = itemPositionLock;
+
+            // Card Background, beside Lock Position and shown where it is: the plot's own Card, as the Plot
+            // inspector's Labels section sets it.
+            _cardMenuItem = new MenuItem { Header = "Card Background", Icon = _iconCard };
+            _cardMenuItem.Click += (_, _) => ToggleCard();
 
             var item5 = new MenuItem { Header = "Lock Axes Panning", Icon = _iconAxesLocked };
             item5.Click += (_, _) =>
@@ -695,6 +695,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(_trialMenuItem);
             menu.Items.Add(itemSelectAll);
             menu.Items.Add(itemPositionLock);
+            menu.Items.Add(_cardMenuItem);
             menu.Items.Add(item5);
             menu.Items.Add(item6);
             menu.Items.Add(new Separator());
@@ -740,6 +741,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 ? MaterialIconKind.CheckboxOutline
                 : MaterialIconKind.CheckboxBlankOutline;
             if (_positionLockMenuItem is not null) _positionLockMenuItem.IsVisible = ShowPositionLock;
+            _iconCard.Kind = _plot?.Card ?? false
+                ? MaterialIconKind.CheckboxOutline
+                : MaterialIconKind.CheckboxBlankOutline;
+            if (_cardMenuItem is not null) _cardMenuItem.IsVisible = ShowPositionLock && ContainerProvider?.Invoke() is not null;
 
             if (_markerTableMenuItem is not null)
             {
@@ -1200,6 +1205,27 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             if (_freeMarkerHostTrace is { } host) AddMarkerAtCanvasPoint(host, _lastRightClickPos);
         }
+
+        /// <summary>The menus' Card Background: through the container, so the inspector's Card box follows.</summary>
+        private void ToggleCard()
+        {
+            if (_plot is null || ContainerProvider?.Invoke() is not { } container) return;
+            container.SetCard(!_plot.Card);
+            RefreshContextMenuState();
+            InvalidateVisual();
+        }
+
+        private void TogglePositionLock()
+        {
+            if (_plot is null) return;
+            _plot.PositionLocked ^= true;
+            RefreshContextMenuState();
+            InvalidateVisual();
+            PlotChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private static MaterialIcon CheckboxIcon(bool on)
+            => new() { Kind = on ? MaterialIconKind.CheckboxOutline : MaterialIconKind.CheckboxBlankOutline };
 
         // ============================================================
         //  Avalonia render override
@@ -3041,6 +3067,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             };
             markerTable.Click += (_, _) => ContainerProvider?.Invoke()?.ToggleMarkerTable();
 
+            // A Table plot sits on the canvas as any plot does: the same Lock Position and Card Background rows.
+            bool onCanvas = ShowPositionLock && ContainerProvider?.Invoke() is not null;
+            var tableLock = new MenuItem { Header = "Lock Position", Icon = CheckboxIcon(_plot?.PositionLocked ?? false), IsVisible = onCanvas };
+            tableLock.Click += (_, _) => TogglePositionLock();
+            var tableCard = new MenuItem { Header = "Card Background", Icon = CheckboxIcon(_plot?.Card ?? false), IsVisible = onCanvas };
+            tableCard.Click += (_, _) => ToggleCard();
+
             icon = new MaterialIcon { Kind = MaterialIconKind.Settings };
             var itemProps = new MenuItem { Header = "Table Properties…", Icon = icon };
             itemProps.Click += OnMenuPlotProperties;
@@ -3064,6 +3097,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(itemAddMarker);
             menu.Items.Add(markerTable);
             menu.Items.Add(itemSelectAll);
+            menu.Items.Add(tableLock);
+            menu.Items.Add(tableCard);
             menu.Items.Add(new Separator());
             menu.Items.Add(itemProps);
             menu.Items.Add(new Separator());

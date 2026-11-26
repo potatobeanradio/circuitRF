@@ -132,6 +132,40 @@ public sealed class DataDisplayEditUndoTests : IDisposable
         Assert.Single(reopened.DataDisplay.MarkerTables);
     }
 
+    /// <summary>The table's right-click Card Background follows the plot's card until chosen, and Lock Position keeps it
+    /// in place when its plot is dragged; both are saved.</summary>
+    [Fact]
+    public async Task MarkerTableCardFollowsPlotUntilChosen_LockKeepsItInPlace_BothSaved()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var plot = container.PlotVM.Plot;
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+
+        container.SetCard(!plot.Card);
+        Assert.Equal(plot.Card, plot.MarkerTableOnCard);
+        table.ToggleCard();
+        Assert.Equal(!plot.Card, plot.MarkerTableOnCard);
+
+        table.ToggleLocked();
+        double left = table.LogicalLeft, plotLeft = container.Left;
+        display.SelectOnly(container);
+        display.MoveSelected(40, 0);
+        Assert.Equal(plotLeft + 40, container.Left);
+        Assert.Equal(left, table.LogicalLeft);
+
+        string path = Path.Combine(_dir, "marker-table-card.cdd");
+        await window.SaveAllAsync(path);
+        var reopened = new DisplayWindowViewModel();
+        reopened.DataSourceLibrary.ResultsRootProvider = () => _dir;
+        await reopened.LoadAllAsync(path);
+        var saved = reopened.DataDisplay!.Plots[0].PlotVM.Plot;
+        Assert.Equal(plot.MarkerTableCard, saved.MarkerTableCard);
+        Assert.True(saved.MarkerTablePositionLocked);
+    }
+
     [Fact]
     public async Task MarkerTableHidesBoxesWithoutChangingMarkers_AndDeletingTableKeepsThem()
     {

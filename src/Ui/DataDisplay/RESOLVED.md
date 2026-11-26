@@ -1,5 +1,21 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-25 — marker table Lock Position and Card Background; Background cards on by default
+
+The marker table's right-click menu has **Lock Position** (`Plot.MarkerTablePositionLocked`) and **Card Background**
+(`Plot.MarkerTableCard`, null follows the plot's card, as a new marker box's card does). A locked box is held by
+`CanvasBoxViewModel.IsPositionLocked`: the display never starts its drag and never carries it with its plot, so it stays
+selectable. The plot menus (graph and Table) gained **Card Background** beside Lock Position.
+
+A plot-menu card toggle goes through `PlotContainerViewModel.SetCard`, which rebuilds the inspector's label editor.
+`AxesLabelsViewModel` copies `Plot.Card` once and writes it back on every label edit, so a card changed behind it
+would be reverted by the next title keystroke.
+
+Settings ▸ Appearance ▸ **Background cards** (was Plots as cards) is now on when the preference is unset. A new
+display's first plot takes it, so a test that measures the first SVG path of a fresh display now meets the card's
+hairline, which sits half a device pixel inside its edge at any page size and so does not scale with the page.
+`DoublingThePage_ScalesTheCompositionUniformly` turns the cards off for that reason.
+
 ## 2026-11-25 — plot marker table
 
 A marker table is a floating canvas box owned by one plot, not another sweep table or a second set of markers.

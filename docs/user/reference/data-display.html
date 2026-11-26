@@ -173,8 +173,9 @@ edited. On a rectangular, Smith or polar plot it has three sections: <strong>Tra
 <strong>Labels</strong> (the title and axis labels) and <strong>Axes</strong> (limits, autoscale and limit areas). The plot's
 right-click <strong>Axes Limits</strong> and <strong>Axes Labels…</strong> open it on the matching section.</p>
 <p><strong>Card</strong>, in the Labels section, puts the plot on a card: a panel a shade off the background, with a hairline
-border and rounded corners, as the display's controls and marker boxes are drawn. It is saved with the plot.
-<strong>Settings ▸ General ▸ Appearance ▸ Plots as cards</strong> starts every plot you add on one.</p>
+border and rounded corners, as the display's controls and marker boxes are drawn. The plot's right-click
+<strong>Card Background</strong> does the same. It is saved with the plot. <strong>Settings ▸ General ▸ Appearance ▸ Background cards</strong>,
+on by default, starts every plot you add on one.</p>
 <p>Every edit in a display is one undo step: a trace card, a label, a limit, the plot type, a move, a marker.
 Undoing every edit since the last save leaves the <code>.cdd</code> unmodified again.</p>
 <p><strong>Copy and paste</strong> a plot with Ctrl/Cmd+C and Ctrl/Cmd+V — between tabs, between displays, and between
@@ -666,6 +667,21 @@ dragging, stepping or editing one turns it into a normal marker. A vertical line
 at the same frequency, interpolating between samples when needed; values outside a trace's range are unavailable.
 Click the <code>freq=</code> row of a marker's box to enter a frequency in the displayed unit. The marker moves to
 the nearest available sample; Enter commits and Escape cancels.</p>
+<p><strong>Marker table.</strong> Right-click a plot and choose <strong>Show Marker Table</strong> to collect its markers in a movable table.
+Each row names its marker and shows its X coordinate. When all markers share one coordinate, its name appears in
+the heading instead of being repeated in each cell; mixed or multiple coordinates keep their labels. Each trace has
+its own labeled Y column; an ordinary marker
+leaves the other traces' cells blank, while a multi-marker fills each compatible trace's cell. The column heading
+identifies the trace, so its values omit the repeated trace name; additional readings retain their own labels.
+Markers on different sources keep their own trace and sample; the source is shown when needed to
+distinguish them. Rows follow marker-number order across traces, and a newly added marker is brought into view.
+Click a row to select its marker, use the arrow keys to step it, or double-click the row to edit
+its properties. Drag the table by its header and scroll it when it has more rows than fit. For wide tables, drag
+the horizontal scrollbar or use Shift+wheel to reach the other trace columns.</p>
+<p>The table hides the individual marker boxes by default without changing their own visibility settings. Right-click
+the table to show those boxes or hide the table. <strong>Lock Position</strong> there keeps the table where it is when it or its
+plot is dragged, and <strong>Card Background</strong> draws it on a card; until that is chosen, the table follows its plot's card. The table's placement and box preference are saved with the display;
+deleting the table leaves its markers intact. Display exports include every row and column, not just the scrolled view.</p>
 <p><strong>The arrow keys step a selected marker</strong> from one sample to the next — Right or Up to the next higher
 x, Left or Down to the next lower — on a rectangular, Smith or polar plot. On a Smith or polar plot the
 marker walks along the curve in frequency order. A marker you have just added from the plot's <strong>Add

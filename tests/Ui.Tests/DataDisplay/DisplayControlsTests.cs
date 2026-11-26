@@ -325,8 +325,8 @@ public sealed class DisplayControlsTests : IDisposable
         Assert.True(w2.Tabs[0].DataDisplay.Plots[0].PlotVM.Plot.Card);
     }
 
-    /// <summary>Settings ▸ Appearance ▸ Plots as cards: a plot the toolbar adds starts on a card; a plot restored from a
-    /// file keeps the Card flag it was saved with, whatever the setting.</summary>
+    /// <summary>Settings ▸ Appearance ▸ Background cards (on until the user turns it off): a plot the toolbar adds starts
+    /// on a card; a plot restored from a file keeps the Card flag it was saved with, whatever the setting.</summary>
     [Fact]
     public async Task PlotsAsCards_CardsAPlotTheToolbarAdds_AndNeverOneAFileRestores()
     {
@@ -337,7 +337,8 @@ public sealed class DisplayControlsTests : IDisposable
         CircuitRF.Ui.DataDisplay.PlotCardPreference.TestOverrideActive = true;
         try
         {
-            CircuitRF.Ui.DataDisplay.PlotCardPreference.NewPlots = true;
+            CircuitRF.Ui.DataDisplay.PlotCardPreference.TestOverrideStore = null;   // never set
+            Assert.True(CircuitRF.Ui.DataDisplay.PlotCardPreference.NewPlots);
             var w = await OpenAsync(cdd);
             Assert.False(w.Tabs[0].DataDisplay.Plots[0].PlotVM.Plot.Card);   // as saved
             w.AddSmithPlotCommand.Execute(null);

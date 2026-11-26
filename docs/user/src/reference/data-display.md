@@ -71,8 +71,9 @@ edited. On a rectangular, Smith or polar plot it has three sections: **Traces** 
 right-click **Axes Limits** and **Axes Labels…** open it on the matching section.
 
 **Card**, in the Labels section, puts the plot on a card: a panel a shade off the background, with a hairline
-border and rounded corners, as the display's controls and marker boxes are drawn. It is saved with the plot.
-**Settings ▸ General ▸ Appearance ▸ Plots as cards** starts every plot you add on one.
+border and rounded corners, as the display's controls and marker boxes are drawn. The plot's right-click
+**Card Background** does the same. It is saved with the plot. **Settings ▸ General ▸ Appearance ▸ Background cards**,
+on by default, starts every plot you add on one.
 
 Every edit in a display is one undo step: a trace card, a label, a limit, the plot type, a move, a marker.
 Undoing every edit since the last save leaves the `.cdd` unmodified again.
@@ -398,7 +399,8 @@ its properties. Drag the table by its header and scroll it when it has more rows
 the horizontal scrollbar or use Shift+wheel to reach the other trace columns.
 
 The table hides the individual marker boxes by default without changing their own visibility settings. Right-click
-the table to show those boxes or hide the table. The table's placement and box preference are saved with the display;
+the table to show those boxes or hide the table. **Lock Position** there keeps the table where it is when it or its
+plot is dragged, and **Card Background** draws it on a card; until that is chosen, the table follows its plot's card. The table's placement and box preference are saved with the display;
 deleting the table leaves its markers intact. Display exports include every row and column, not just the scrolled view.
 
 **The arrow keys step a selected marker** from one sample to the next — Right or Up to the next higher

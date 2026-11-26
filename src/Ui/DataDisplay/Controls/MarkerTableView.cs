@@ -10,6 +10,8 @@ using Avalonia.Platform;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Skia;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using Material.Icons;
+using Material.Icons.Avalonia;
 using CircuitRF.Ui.Views.DataDisplay;
 using SkiaSharp;
 
@@ -35,15 +37,26 @@ public sealed class MarkerTableView : UserControl
         {
             menu.Items.Clear();
             if (_vm is not { } vm) return;
-            var boxes = new MenuItem { Header = vm.Plot.MarkerTableShowInfoBoxes ? "Hide marker boxes" : "Show marker boxes" };
+            var boxes = new MenuItem { Header = vm.Plot.MarkerTableShowInfoBoxes ? "Hide Marker Boxes" : "Show Marker Boxes" };
             boxes.Click += (_, _) => vm.ToggleBoxes();
-            var close = new MenuItem { Header = "Hide marker table" };
+            // The two checkbox rows a plot's own menu has, with the same glyphs: the table's place and its card.
+            var locked = new MenuItem { Header = "Lock Position", Icon = CheckIcon(vm.Plot.MarkerTablePositionLocked) };
+            locked.Click += (_, _) => vm.ToggleLocked();
+            var card = new MenuItem { Header = "Card Background", Icon = CheckIcon(vm.Plot.MarkerTableOnCard) };
+            card.Click += (_, _) => vm.ToggleCard();
+            var close = new MenuItem { Header = "Hide Marker Table" };
             close.Click += (_, _) => vm.Close();
             menu.Items.Add(boxes);
+            menu.Items.Add(locked);
+            menu.Items.Add(card);
+            menu.Items.Add(new Separator());
             menu.Items.Add(close);
         };
         ContextMenu = menu;
     }
+
+    private static MaterialIcon CheckIcon(bool on)
+        => new() { Kind = on ? MaterialIconKind.CheckboxOutline : MaterialIconKind.CheckboxBlankOutline };
 
     protected override void OnDataContextChanged(EventArgs e)
     {
@@ -73,12 +86,13 @@ public sealed class MarkerTableView : UserControl
         if (_vm is not { } vm) return;
         context.Custom(new DrawOperation(new Rect(Bounds.Size), vm.Rows, vm.Theme, (float)vm.ScrollOffset,
             vm.Container.GetSelectedMarkers().Select(marker => marker.Id).ToHashSet(),
-            PlotAccentColor.GetTransparentAccent(RenderTheme.SelectionAlpha), vm.IsSelected, (float)vm.HorizontalScrollOffset));
+            PlotAccentColor.GetTransparentAccent(RenderTheme.SelectionAlpha), vm.IsSelected, (float)vm.HorizontalScrollOffset,
+            vm.Plot.MarkerTableOnCard));
     }
 
     private sealed class DrawOperation(Rect bounds, System.Collections.Generic.IReadOnlyList<MarkerTableRow> rows,
         RenderTheme theme, float scroll, System.Collections.Generic.IReadOnlySet<Guid> selected, SKColor selectionColor,
-        bool tableSelected, float horizontalScroll) : ICustomDrawOperation
+        bool tableSelected, float horizontalScroll, bool card) : ICustomDrawOperation
     {
         public Rect Bounds => bounds;
         public bool HitTest(Point point) => bounds.Contains(point);
@@ -94,13 +108,11 @@ public sealed class MarkerTableView : UserControl
             canvas.Save();
             float width = MarkerTableRenderer.Measure(rows).W;
             canvas.Scale((float)(bounds.Width / width));
-            MarkerTableRenderer.Draw(canvas, rows, theme, scroll, selected, selectionColor, horizontalScroll: horizontalScroll);
+            MarkerTableRenderer.Draw(canvas, rows, theme, scroll, selected, selectionColor, horizontalScroll: horizontalScroll,
+                                     card: card);
             if (tableSelected)
-            {
-                using var outline = new SKPaint { Color = selectionColor, Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
-                canvas.DrawRect(1, 1, width - 2,
-                    (float)(bounds.Height * width / bounds.Width) - 2, outline);
-            }
+                CardStyle.DrawSelection(canvas, new SKRect(0, 0, width, (float)(bounds.Height * width / bounds.Width)),
+                                        card ? MarkerTableRenderer.CardRadius : 0, selectionColor, 2);
             canvas.Restore();
         }
     }

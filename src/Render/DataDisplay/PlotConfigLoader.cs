@@ -98,6 +98,8 @@ public static class PlotConfigLoader
         plot.MarkerTableShowInfoBoxes    = pc.MarkerTableShowInfoBoxes;
         plot.MarkerTablePos              = pc.MarkerTableLeft is { } ml && pc.MarkerTableTop is { } mt
                            ? new PlotPoint(ml, mt) : new PlotPoint(double.NaN, double.NaN);
+        plot.MarkerTableCard             = pc.MarkerTableCard;
+        plot.MarkerTablePositionLocked   = pc.MarkerTableLocked;
         plot.ShowSpecLines               = pc.SpecLines;
         plot.LimitAreas                  = pc.LimitAreas?.Select(a => a.ToArea()).ToList() ?? new();
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);

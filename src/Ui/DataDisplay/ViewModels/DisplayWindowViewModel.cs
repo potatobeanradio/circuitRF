@@ -746,7 +746,7 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     [RelayCommand]
     private void AddPlot() => AddUserPlot(PlotType.Rect);
 
-    /// <summary>A plot from the toolbar: on a card when Settings ▸ Appearance ▸ Plots as cards is on.</summary>
+    /// <summary>A plot from the toolbar: on a card when Settings ▸ Appearance ▸ Background cards is on.</summary>
     private void AddUserPlot(PlotType type) => DataDisplay?.AddPlot(type, card: PlotCardPreference.NewPlots);
 
     [RelayCommand] private void AddSmithPlot() => AddUserPlot(PlotType.Smith);

@@ -389,6 +389,16 @@ namespace CircuitRF.Render.DataDisplay
         public bool MarkerTableShowInfoBoxes { get; set; }
         public PlotPoint MarkerTablePos { get; set; } = new(double.NaN, double.NaN);
 
+        /// <summary>The marker table's own card choice; null follows the plot's <see cref="Card"/>, as a new marker
+        /// box does.</summary>
+        public bool? MarkerTableCard { get; set; }
+
+        /// <summary>Whether the marker table is drawn on a card.</summary>
+        public bool MarkerTableOnCard => MarkerTableCard ?? Card;
+
+        /// <summary>The marker table stays where it is: a drag of the table, or of its plot, leaves it in place.</summary>
+        public bool MarkerTablePositionLocked { get; set; }
+
         /// <summary>
         /// Draw the limits of the goals this plot's traces draw (brief-yield-8 R-ya8-3). <b>Null is the default:
         /// on</b> — a spec line exists only where a trace's source records its goals, which is a yield result — so
@@ -979,6 +989,8 @@ namespace CircuitRF.Render.DataDisplay
             ShowMarkerTable = src.ShowMarkerTable;
             MarkerTableShowInfoBoxes = src.MarkerTableShowInfoBoxes;
             MarkerTablePos = src.MarkerTablePos;
+            MarkerTableCard = src.MarkerTableCard;
+            MarkerTablePositionLocked = src.MarkerTablePositionLocked;
 
             if (initNewTraces)
             {

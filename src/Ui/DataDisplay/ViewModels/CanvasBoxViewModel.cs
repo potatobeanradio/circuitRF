@@ -94,6 +94,10 @@ public abstract partial class CanvasBoxViewModel : ViewModelBase
     private double _logicalLeftAtDragStart;
     private double _logicalTopAtDragStart;
 
+    /// <summary>The box stays where it is: a drag of it, or of its plot, leaves it in place (a marker table's Lock
+    /// Position). It can still be selected.</summary>
+    public virtual bool IsPositionLocked => false;
+
     public void StartDrag(Point windowPt)
     {
         _isDragging             = true;

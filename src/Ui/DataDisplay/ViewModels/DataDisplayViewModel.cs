@@ -614,6 +614,24 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         container.RequestPlotRedraw();
     }
 
+    /// <summary>The marker table's Lock Position: it stays where it is when it, or its plot, is dragged.</summary>
+    public void SetMarkerTableLocked(PlotContainerViewModel container, bool locked)
+    {
+        if (container.PlotVM.Plot.MarkerTablePositionLocked == locked) return;
+        container.PlotVM.Plot.MarkerTablePositionLocked = locked;
+        container.RequestPlotRedraw();   // a saved property: the edit recorder makes it an undo step
+    }
+
+    /// <summary>The marker table's Card Background, its own choice from now on rather than its plot's.</summary>
+    public void SetMarkerTableCard(PlotContainerViewModel container, bool card)
+    {
+        var plot = container.PlotVM.Plot;
+        if (plot.MarkerTableCard == card) return;
+        plot.MarkerTableCard = card;
+        RefreshMarkerTable(container);
+        container.RequestPlotRedraw();
+    }
+
     internal void SelectMarkerFromTable(PlotContainerViewModel container, Trace trace, Marker marker)
     {
         if (!trace.Markers.Contains(marker)) return;
@@ -1791,7 +1809,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// than staying behind on the canvas when it is dragged.
     /// </summary>
     private IEnumerable<CanvasBoxViewModel> MovingBoxes()
-        => Boxes.Where(m => m.IsSelected || m.Container is { IsSelected: true, IsPositionLocked: false });
+        => Boxes.Where(m => !m.IsPositionLocked && (m.IsSelected || m.Container is { IsSelected: true, IsPositionLocked: false }));
 
     // ---- InfoBox group drag (absolute window positions) -------------
     //  Called from MarkerInfoBoxView when the user drags a selected InfoBox.
@@ -1806,12 +1824,13 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         _boxDragAnchor = grabbed ?? Boxes.FirstOrDefault(m => m.IsSelected);
         // Capture pre-drag logical positions for undo before the drag starts.
         _moveStartInfoBoxes = Boxes
-            .Where(m => m.IsSelected)
+            .Where(m => m.IsSelected && !m.IsPositionLocked)
             .Select(m => (m, m.LogicalLeft, m.LogicalTop))
             .ToList();
 
+        // A box with Lock Position on (a marker table) stays selected and stays put.
         foreach (var m in Boxes)
-            if (m.IsSelected) m.StartDrag(windowPt);
+            if (m.IsSelected && !m.IsPositionLocked) m.StartDrag(windowPt);
     }
 
     internal void UpdateInfoBoxGroupDrag(Point windowPt)
@@ -2289,6 +2308,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             MarkerTableShowInfoBoxes    = plot.MarkerTableShowInfoBoxes,
             MarkerTableLeft             = double.IsFinite(plot.MarkerTablePos.X) ? plot.MarkerTablePos.X : null,
             MarkerTableTop              = double.IsFinite(plot.MarkerTablePos.Y) ? plot.MarkerTablePos.Y : null,
+            MarkerTableCard             = plot.MarkerTableCard,
+            MarkerTableLocked           = plot.MarkerTablePositionLocked,
             SpecLines                   = plot.ShowSpecLines,
             LimitAreas                  = plot.LimitAreas.Count > 0
                                           ? plot.LimitAreas.Select(LimitAreaConfig.From).ToList()

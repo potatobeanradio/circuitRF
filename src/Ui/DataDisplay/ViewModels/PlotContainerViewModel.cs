@@ -772,6 +772,17 @@ public partial class PlotContainerViewModel : ViewModelBase
 
     public void ToggleMarkerTable() => _parent.SetMarkerTableVisible(this, !PlotVM.Plot.ShowMarkerTable);
 
+    /// <summary>The plot's card (Plot.Card) from its right-click menu: the inspector's Card box and a marker table that
+    /// follows the plot's card come along, and the edit recorder makes it one undo step.</summary>
+    public void SetCard(bool on)
+    {
+        if (PlotVM.Plot.Card == on) return;
+        PlotVM.Plot.Card = on;
+        Inspector.RefreshAxesEditors();
+        _parent.RefreshMarkerTable(this);
+        RequestPlotRedraw();
+    }
+
     /// <summary>
     /// Fires PlotNeedsRedraw so PlotContainerView calls InvalidateVisual
     /// on its PlotControl without going through the full PlotChanged pipeline.

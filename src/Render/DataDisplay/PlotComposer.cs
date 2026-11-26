@@ -366,7 +366,7 @@ public static class PlotComposer
                                  margin + padY + (float)(markerTable.ViewTop - bndT) * S);
                 var rows = MarkerTable.Rows(plot, c.AlwaysShowSource);
                 canvas.Scale((float)(markerTable.BoxWidth * S / MarkerTableRenderer.MeasureAll(rows).W));
-                MarkerTableRenderer.Draw(canvas, rows, theme, showAll: true);
+                MarkerTableRenderer.Draw(canvas, rows, theme, showAll: true, card: plot.MarkerTableOnCard);
                 canvas.Restore();
             }
 

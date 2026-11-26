@@ -463,9 +463,9 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? View3DRealisticOnOpen { get; set; }
 
-    // Whether a plot ADDED to a Data Display starts as a card (Settings ▸ Appearance ▸ Plots as cards). Per USER: a look
+    // Whether a plot ADDED to a Data Display starts as a card (Settings ▸ Appearance ▸ Background cards). Per USER: a look
     // the person prefers, applied to what they add; a plot's own Card flag is what the .cdd saves. Null means the shipped
-    // default (off). See PlotCardPreference.
+    // default (on). See PlotCardPreference.
     [JsonPropertyName("data_display_plots_as_cards")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? DataDisplayPlotsAsCards { get; set; }

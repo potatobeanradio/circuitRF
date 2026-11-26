@@ -181,9 +181,9 @@
                                           ToolTip.Tip="How each line in the Messages panel is stamped with the time it was written."/>
                                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Data Display:" FontSize="12" VerticalAlignment="Center"/>
                                     <CheckBox Grid.Row="2" Grid.Column="1" Name="PlotsAsCardsCheck" FontSize="12"
-                                              Content="Plots as cards"
+                                              Content="Background cards"
                                               IsCheckedChanged="OnPlotsAsCardsChanged"
-                                              ToolTip.Tip="A plot you add to a Data Display sits on a card: a panel a shade off the background with a hairline border and rounded corners, as controls and marker boxes do. Each plot keeps its own Card setting in the Plot inspector's Labels section, which is what a saved display remembers."/>
+                                              ToolTip.Tip="A plot you add to a Data Display sits on a card: a panel a shade off the background with a hairline border and rounded corners, and its marker boxes and marker table do too. Each plot keeps its own Card Background setting, which is what a saved display remembers."/>
                                 </Grid>
                             </StackPanel>
                         </Border>

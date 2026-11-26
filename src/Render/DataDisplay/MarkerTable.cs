@@ -134,6 +134,8 @@ public static class MarkerTableRenderer
     internal const float CoordinateColumn = 120;
     internal const float ValueColumn = 200;
     internal const float FixedWidth = MarkerColumn + CoordinateColumn;
+    /// <summary>The card's corner radius, small enough that the grid's lines meet its edge clear of the corners.</summary>
+    public const float CardRadius = 4;
 
     public static float RowHeight(MarkerTableRow row)
         => Math.Max(row.MarkerLines.Count, Math.Max(row.CoordinateLines.Count,
@@ -227,7 +229,8 @@ public static class MarkerTableRenderer
     }
 
     public static void Draw(SKCanvas canvas, IReadOnlyList<MarkerTableRow> rows, RenderTheme theme, float scroll = 0,
-        IReadOnlySet<Guid>? selected = null, SKColor selectionColor = default, bool showAll = false, float horizontalScroll = 0)
+        IReadOnlySet<Guid>? selected = null, SKColor selectionColor = default, bool showAll = false, float horizontalScroll = 0,
+        bool card = false)
     {
         var (width, height) = showAll ? MeasureAll(rows) : Measure(rows);
         var columns = MarkerTable.Columns(rows);
@@ -236,13 +239,17 @@ public static class MarkerTableRenderer
         float offset = Math.Clamp(horizontalScroll, 0, maxHorizontal);
         float bottom = height - (maxHorizontal > 0 ? ScrollbarHeight : 0);
         using var fill = new SKPaint { Color = theme.BackgroundColor, Style = SKPaintStyle.Fill };
-        using var border = new SKPaint { Color = theme.BorderColor, Style = SKPaintStyle.Stroke, StrokeWidth = 0 };
+        // On a card the grid takes the card's hairline colour, so the table reads as one panel.
+        using var border = new SKPaint { Color = card ? CardStyle.Border(theme) : theme.BorderColor, Style = SKPaintStyle.Stroke, StrokeWidth = 0 };
         using var text = new SKPaint { Color = theme.TextColor, IsAntialias = true };
         using var font = new SKFont(SkiaFonts.PlexRegular, 12);
         using var bold = new SKFont(SkiaFonts.PlexBold, 12);
         using var fallback = new SKFont(SkiaFonts.DejaVuRegular, 12);
         using var fallbackBold = new SKFont(SkiaFonts.DejaVuBold, 12);
-        canvas.DrawRect(0, 0, width, height, fill);
+        // On a card (Plot.MarkerTableOnCard) the table sits on the panel plots, controls and marker boxes are drawn on;
+        // otherwise on the plot background with a square border.
+        if (card) CardStyle.Draw(canvas, theme, new SKRect(0, 0, width, height), CardRadius);
+        else canvas.DrawRect(0, 0, width, height, fill);
         RendererText.DrawLeftTextWithFallback(canvas, "Marker", 5, 16, bold, fallbackBold, text);
         var coordinateHeader = WrapText(MarkerTable.CoordinateName(rows) ?? "X", CoordinateColumn - 10);
         for (int line = 0; line < coordinateHeader.Count; line++)
@@ -297,7 +304,7 @@ public static class MarkerTableRenderer
         var matrix = canvas.TotalMatrix;
         float insetX = matrix.ScaleX != 0 ? 0.5f / Math.Abs(matrix.ScaleX) : 0;
         float insetY = matrix.ScaleY != 0 ? 0.5f / Math.Abs(matrix.ScaleY) : 0;
-        canvas.DrawRect(insetX, insetY, width - 2 * insetX, height - 2 * insetY, border);
+        if (!card) canvas.DrawRect(insetX, insetY, width - 2 * insetX, height - 2 * insetY, border);
         canvas.DrawLine(insetX, header, width - insetX, header, border);
         canvas.DrawLine(MarkerColumn, insetY, MarkerColumn, bottom, border);
         canvas.DrawLine(FixedWidth, insetY, FixedWidth, bottom, border);

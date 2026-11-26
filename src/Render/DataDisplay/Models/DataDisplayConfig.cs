@@ -247,6 +247,11 @@ public sealed class PlotContainerConfig
     public double? MarkerTableLeft { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? MarkerTableTop { get; set; }
+    /// <summary>The marker table's card (<c>Plot.MarkerTableCard</c>); null, not written, follows the plot's card.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MarkerTableCard { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool MarkerTableLocked { get; set; }
 
     // ---- The 3D pattern surface (ANT-10 §2) ---------------------------------
     //

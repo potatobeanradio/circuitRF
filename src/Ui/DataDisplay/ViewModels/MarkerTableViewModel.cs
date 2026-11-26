@@ -94,5 +94,8 @@ public sealed class MarkerTableViewModel : CanvasBoxViewModel
     public void SelectMarker(MarkerTableRow row) => _parent.SelectMarkerFromTable(Container, row.Trace, row.Marker);
     public MarkerInfoBoxViewModel MarkerEditor(MarkerTableRow row) => _parent.GetOrCreateInfoBoxVm(row.Marker, row.Trace, Container);
     public void ToggleBoxes() => _parent.SetMarkerTableBoxes(Container, !Plot.MarkerTableShowInfoBoxes);
+    public override bool IsPositionLocked => Plot.MarkerTablePositionLocked;
+    public void ToggleLocked() => _parent.SetMarkerTableLocked(Container, !Plot.MarkerTablePositionLocked);
+    public void ToggleCard() => _parent.SetMarkerTableCard(Container, !Plot.MarkerTableOnCard);
     public void Close() => _parent.SetMarkerTableVisible(Container, false);
 }

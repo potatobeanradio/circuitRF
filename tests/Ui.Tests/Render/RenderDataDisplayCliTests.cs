@@ -550,6 +550,10 @@ public sealed class RenderDataDisplayCliTests(ITestOutputHelper output) : IDispo
     public async Task DoublingThePage_ScalesTheCompositionUniformly()
     {
         var f = await BuildFixtureAsync();
+        // Cards off: a card's hairline sits half a device pixel inside its edge at any page size, so its path's first
+        // point does not double, and with Background cards on (the default) the card is the first path drawn.
+        foreach (var c in f.Window.DataDisplay!.Plots) c.PlotVM.Plot.Card = false;
+        await f.Window.SaveAllAsync(f.Cdd);
 
         var placed = PlotConfigLoader.LoadPlot(FirstPlotConfig(f.Cdd), new NullSources(f.Npy));
         _ = placed;
