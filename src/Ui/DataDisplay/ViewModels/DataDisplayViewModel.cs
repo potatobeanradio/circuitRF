@@ -220,6 +220,12 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         || _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected)
         || _controls.Any(c => c.IsSelected);
 
+    /// <summary>The selected marker tables, marker boxes and floating legends whose plot is not selected: what a copy
+    /// carries on its own. A marker box hidden under its plot's table is not on the canvas to copy.</summary>
+    internal IReadOnlyList<CanvasBoxViewModel> SelectedPartsWithoutTheirPlot()
+        => Boxes.Where(b => b.IsSelected && !b.Container.IsSelected && b is not MarkerInfoBoxViewModel { IsBoxVisible: false })
+                .ToList();
+
     /// <summary>True when at least one marker InfoBox is selected.</summary>
     public bool HasSelectedInfoBoxes => _markerInfoBoxes.Any(m => m.IsSelected);
 

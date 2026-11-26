@@ -166,6 +166,38 @@ public sealed class DataDisplayEditUndoTests : IDisposable
         Assert.True(saved.MarkerTablePositionLocked);
     }
 
+    /// <summary>A marker table or marker box selected without its plot is copied as a picture of itself, not skipped.</summary>
+    [Fact]
+    public async Task CopyingTableOrMarkerBoxAlone_PutsItOnTheClipboard()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var trace = container.PlotVM.Plot.Traces[0];
+        display.InternalAddMarker(new Marker(trace, 0, false, false, 1, FreqUnit.GHz), trace, container);
+        var markerBox = Assert.Single(display.MarkerInfoBoxes);
+        IReadOnlyList<CanvasBoxViewModel>? parts = null;
+        window.SetAnnotationCopyAction((plots, theme, annotations, partsOnly) =>
+        {
+            Assert.Empty(plots);
+            parts = partsOnly;
+            return Task.CompletedTask;
+        });
+        string empty = PlotExporter.BuildSvgStringForContainers([], display.Theme);
+
+        display.SelectOnly(markerBox);
+        await window.InvokeCopyAsync();
+        Assert.Same(markerBox, Assert.Single(parts!));
+        Assert.NotEqual(empty, PlotExporter.BuildSvgStringForContainers([], display.Theme, null, parts));
+
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        display.SelectOnly(table);
+        await window.InvokeCopyAsync();
+        Assert.Same(table, Assert.Single(parts!));
+        Assert.NotEqual(empty, PlotExporter.BuildSvgStringForContainers([], display.Theme, null, parts));
+    }
+
     [Fact]
     public async Task MarkerTableHidesBoxesWithoutChangingMarkers_AndDeletingTableKeepsThem()
     {

@@ -16,6 +16,13 @@ display's first plot takes it, so a test that measures the first SVG path of a f
 hairline, which sits half a device pixel inside its edge at any page size and so does not scale with the page.
 `DoublingThePage_ScalesTheCompositionUniformly` turns the cards off for that reason.
 
+**Copying a marker table selected without its plot copied nothing.** Copy collected selected plots, annotations and
+controls only, found none, and returned before touching the clipboard, so the receiving application pasted whatever was
+already there. The same held for a marker info box or floating legend. Each one selected alone now goes to the copy
+(`DataDisplayViewModel.SelectedPartsWithoutTheirPlot`), and `PlacedPlot.PartsOnly` makes the composer measure and draw
+those parts without the plot. The clipboard JSON leaves them out, since none of them can be pasted without its plot.
+A marker box hidden under its plot's table is not offered.
+
 ## 2026-11-25 — plot marker table
 
 A marker table is a floating canvas box owned by one plot, not another sweep table or a second set of markers.

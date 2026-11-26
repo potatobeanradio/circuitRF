@@ -164,16 +164,19 @@ namespace CircuitRF.Ui.DataDisplay
         /// Pages, Word, PowerPoint) can paste the richest representation it understands.
         /// Plain-text JSON is always present as the circuitRF Paste fallback.
         /// </summary>
+        /// <remarks><paramref name="partsOnly"/>: marker tables, marker boxes and floating legends selected without their
+        /// plot — the picture carries them alone. The JSON does not: none of them can be pasted without its plot.</remarks>
         internal static async Task CopyContainersToClipboardAsync(
             Control                               anchor,
             IReadOnlyList<PlotContainerViewModel> containers,
             RenderTheme                           theme,
-            AnnotationPage? annotations = null)
+            AnnotationPage? annotations = null,
+            IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
         {
-            byte[]  pdf    = BuildPdfBytesForContainers(containers, theme, annotations);
-            string  svg    = BuildSvgStringForContainers(containers, theme, annotations);
+            byte[]  pdf    = BuildPdfBytesForContainers(containers, theme, annotations, partsOnly);
+            string  svg    = BuildSvgStringForContainers(containers, theme, annotations, partsOnly);
             string  json   = BuildContainersJson(containers, annotations?.Items, annotations?.Controls);
-            Bitmap? bitmap = BuildBitmapForContainers(containers, theme, annotations);
+            Bitmap? bitmap = BuildBitmapForContainers(containers, theme, annotations, partsOnly);
             await SetClipboardDataAsync(anchor, pdf, svg, json, bitmap);
         }
 
@@ -202,13 +205,15 @@ namespace CircuitRF.Ui.DataDisplay
 
         /// <summary>Renders all plots in <paramref name="containers"/> to a PDF byte array.</summary>
         internal static byte[] BuildPdfBytesForContainers(
-            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null)
-            => BuildPdfBytes(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations));
+            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null,
+            IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
+            => BuildPdfBytes(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations, partsOnly));
 
         /// <summary>Renders all plots in <paramref name="containers"/> to an SVG string.</summary>
         internal static string BuildSvgStringForContainers(
-            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null)
-            => BuildSvgString(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations));
+            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null,
+            IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
+            => BuildSvgString(canvas => RenderContainersToCanvas(canvas, containers, theme, annotations, partsOnly));
 
         /// <summary>
         /// Renders all plots to a high-resolution raster bitmap (2× page size) suitable
@@ -217,7 +222,8 @@ namespace CircuitRF.Ui.DataDisplay
         /// Returns null if rendering fails.
         /// </summary>
         internal static Bitmap? BuildBitmapForContainers(
-            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null)
+            IReadOnlyList<PlotContainerViewModel> containers, RenderTheme theme, AnnotationPage? annotations = null,
+            IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
         {
             const float Scale = 2.0f;
             int w = (int)(PageW * Scale);
@@ -230,7 +236,7 @@ namespace CircuitRF.Ui.DataDisplay
             // one plot raster this repo builds outside PlotDocumentWriter, so it enters the scope
             // itself rather than drawing a 3D surface to a different standard than Export does.
             using (PlotDocumentScope.Enter())
-                RenderContainersToCanvas(canvas, containers, theme, annotations);
+                RenderContainersToCanvas(canvas, containers, theme, annotations, partsOnly);
 
             using var skData = skBitmap.Encode(SKEncodedImageFormat.Png, 100);
             if (skData is null) return null;
@@ -290,8 +296,11 @@ namespace CircuitRF.Ui.DataDisplay
         private static void RenderContainersToCanvas(
             SKCanvas                              canvas,
             IReadOnlyList<PlotContainerViewModel> containers,
-            RenderTheme                           theme, AnnotationPage? annotations = null)
-            => PlotComposer.Render(canvas, containers.Select(Place).ToList(),
+            RenderTheme                           theme, AnnotationPage? annotations = null,
+            IReadOnlyList<CanvasBoxViewModel>? partsOnly = null)
+            => PlotComposer.Render(canvas, containers.Select(Place)
+                                       .Concat((partsOnly ?? []).GroupBy(b => b.Container)
+                                                                .Select(g => PlaceParts(g.Key, g.ToList()))).ToList(),
                                    theme, AppSettings.Current, PagePlacement.Letter, annotations?.Items,
                                    annotations?.Zoom ?? 1, annotations?.OffsetX ?? 0, annotations?.OffsetY ?? 0,
                                    annotations?.Controls);
@@ -339,6 +348,24 @@ namespace CircuitRF.Ui.DataDisplay
         /// R-rnd4-2 boundary in one method. Everything the composition needs is READ here, on the
         /// UI thread, and nothing view-model-shaped crosses.
         /// </summary>
+        /// <summary>Some of a plot's floating parts on their own — its legend, marker table or marker boxes — for a copy
+        /// of them selected without their plot.</summary>
+        internal static PlacedPlot PlaceParts(PlotContainerViewModel c, IReadOnlyCollection<CanvasBoxViewModel> parts)
+        {
+            var placed = Place(c);
+            var markers = parts.OfType<MarkerInfoBoxViewModel>().Select(b => b.Marker).ToHashSet();
+            return new PlacedPlot
+            {
+                Plot = placed.Plot, ViewLeft = placed.ViewLeft, ViewTop = placed.ViewTop, ViewWidth = placed.ViewWidth,
+                ViewHeight = placed.ViewHeight, LogicalWidth = placed.LogicalWidth,
+                Legend      = c.GetLegendBox() is { } legend && parts.Contains(legend) ? placed.Legend : null,
+                MarkerTable = c.GetMarkerTable() is { } table && parts.Contains(table) ? placed.MarkerTable : null,
+                MarkerBoxes = placed.MarkerBoxes.Where(b => markers.Contains(b.Marker)).ToList(),
+                ShowFilePrefix = placed.ShowFilePrefix, AlwaysShowSource = placed.AlwaysShowSource,
+                AliasFor = placed.AliasFor, PartsOnly = true,
+            };
+        }
+
         internal static PlacedPlot Place(PlotContainerViewModel c)
         {
             var    lib            = c.Library;

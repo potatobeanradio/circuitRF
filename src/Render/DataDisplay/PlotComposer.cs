@@ -109,6 +109,10 @@ public sealed class PlacedPlot
     public PlacedLegend?                   Legend           { get; init; }
     public PlacedMarkerTable?              MarkerTable      { get; init; }
 
+    /// <summary>Only the floating parts this placement carries — its legend, marker table and marker boxes — are drawn
+    /// and measured, not the plot: parts selected and copied without their plot.</summary>
+    public bool PartsOnly { get; init; }
+
     /// <summary>Whether a trace label carries its source's name — the library-count heuristic, already resolved.</summary>
     public bool ShowFilePrefix   { get; init; }
     public bool AlwaysShowSource { get; init; }
@@ -176,8 +180,24 @@ public static class PlotComposer
         double bndR = double.NegativeInfinity;
         double bndB = double.NegativeInfinity;
 
+        void Include(double left, double top, double width, double height)
+        {
+            bndL = Math.Min(bndL, left);
+            bndT = Math.Min(bndT, top);
+            bndR = Math.Max(bndR, left + width);
+            bndB = Math.Max(bndB, top + height);
+        }
+
         foreach (var c in plots)
         {
+            if (c.PartsOnly)
+            {
+                if (c.Legend is { } lgOnly) Include(lgOnly.ViewLeft, lgOnly.ViewTop, lgOnly.BoxWidth, lgOnly.BoxHeight);
+                if (c.MarkerTable is { } tableOnly) Include(tableOnly.ViewLeft, tableOnly.ViewTop, tableOnly.BoxWidth, tableOnly.BoxHeight);
+                foreach (var boxOnly in c.MarkerBoxes) Include(boxOnly.ViewLeft, boxOnly.ViewTop, boxOnly.BoxWidth, boxOnly.BoxHeight);
+                continue;
+            }
+
             double sw     = c.LabelStripViewWidth;
             int    nLeft  = c.LeftLabelStrips.Count;
             int    nRight = c.RightLabelStrips.Count;
@@ -274,10 +294,55 @@ public static class PlotComposer
 
         DrawControls(panels: true);
 
+        // A plot's floating legend, marker table and marker boxes — over the plot, in the order the window stacks them.
+        void DrawFloatingParts(PlacedPlot c)
+        {
+            var plot = c.Plot;
+            if (c.Legend is { } legend)
+            {
+                canvas.Save();
+                canvas.Translate(margin + padX + (float)(legend.ViewLeft - bndL) * S,
+                                 margin + padY + (float)(legend.ViewTop  - bndT) * S);
+                LegendRenderer.DrawFloating(canvas, (legend.BoxWidth * S, legend.BoxHeight * S), plot, legend.Lw, theme,
+                    c.AliasFor, c.AlwaysShowSource, settings.MarkerBoxTransparentBackground);
+                canvas.Restore();
+            }
+
+            if (c.MarkerTable is { } markerTable)
+            {
+                canvas.Save();
+                canvas.Translate(margin + padX + (float)(markerTable.ViewLeft - bndL) * S,
+                                 margin + padY + (float)(markerTable.ViewTop - bndT) * S);
+                var rows = MarkerTable.Rows(plot, c.AlwaysShowSource);
+                canvas.Scale((float)(markerTable.BoxWidth * S / MarkerTableRenderer.MeasureAll(rows).W));
+                MarkerTableRenderer.Draw(canvas, rows, theme, showAll: true, card: plot.MarkerTableOnCard);
+                canvas.Restore();
+            }
+
+            foreach (var box in c.MarkerBoxes)
+            {
+                float bx = margin + padX + (float)(box.ViewLeft - bndL) * S;
+                float by = margin + padY + (float)(box.ViewTop  - bndT) * S;
+                float bw = (float)box.BoxWidth  * S;
+                float bh = (float)box.BoxHeight * S;
+
+                canvas.Save();
+                canvas.Translate(bx, by);
+                MarkerRenderer.DrawInfoBox(
+                    canvas, (bw, bh),
+                    plot.ResolveMarker(box.Trace, box.Marker), box.Trace, box.FreqUnit,
+                    theme, c.ShowFilePrefix,
+                    transparentBackground: settings.MarkerBoxTransparentBackground,
+                    plotTraces: box.PlotTraces);
+                canvas.Restore();
+            }
+        }
+
         // ---- Draw each plot ----------------------------------------
 
         foreach (var c in plots)
         {
+            if (c.PartsOnly) { DrawFloatingParts(c); continue; }
             var plot = c.Plot;
 
             double sw     = c.LabelStripViewWidth;
@@ -348,46 +413,7 @@ public static class PlotComposer
                 drawCard: false);
             canvas.Restore();
 
-            // A floating legend — over its plot, under the marker boxes, as the window stacks them.
-            if (c.Legend is { } legend)
-            {
-                canvas.Save();
-                canvas.Translate(margin + padX + (float)(legend.ViewLeft - bndL) * S,
-                                 margin + padY + (float)(legend.ViewTop  - bndT) * S);
-                LegendRenderer.DrawFloating(canvas, (legend.BoxWidth * S, legend.BoxHeight * S), plot, legend.Lw, theme,
-                    c.AliasFor, c.AlwaysShowSource, settings.MarkerBoxTransparentBackground);
-                canvas.Restore();
-            }
-
-            if (c.MarkerTable is { } markerTable)
-            {
-                canvas.Save();
-                canvas.Translate(margin + padX + (float)(markerTable.ViewLeft - bndL) * S,
-                                 margin + padY + (float)(markerTable.ViewTop - bndT) * S);
-                var rows = MarkerTable.Rows(plot, c.AlwaysShowSource);
-                canvas.Scale((float)(markerTable.BoxWidth * S / MarkerTableRenderer.MeasureAll(rows).W));
-                MarkerTableRenderer.Draw(canvas, rows, theme, showAll: true, card: plot.MarkerTableOnCard);
-                canvas.Restore();
-            }
-
-            // Marker info boxes
-            foreach (var box in c.MarkerBoxes)
-            {
-                float bx = margin + padX + (float)(box.ViewLeft - bndL) * S;
-                float by = margin + padY + (float)(box.ViewTop  - bndT) * S;
-                float bw = (float)box.BoxWidth  * S;
-                float bh = (float)box.BoxHeight * S;
-
-                canvas.Save();
-                canvas.Translate(bx, by);
-                MarkerRenderer.DrawInfoBox(
-                    canvas, (bw, bh),
-                    plot.ResolveMarker(box.Trace, box.Marker), box.Trace, box.FreqUnit,
-                    theme, c.ShowFilePrefix,
-                    transparentBackground: settings.MarkerBoxTransparentBackground,
-                    plotTraces: box.PlotTraces);
-                canvas.Restore();
-            }
+            DrawFloatingParts(c);
         }
         DrawControls(panels: false);
         if (annotations is not null)

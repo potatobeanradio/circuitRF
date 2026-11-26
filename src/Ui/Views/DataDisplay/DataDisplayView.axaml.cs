@@ -188,8 +188,8 @@ public partial class DataDisplayView : UserControl
 
         win.SetRichCopyAction((containers, theme) =>
             PlotExporter.CopyContainersToClipboardAsync(this, containers, theme));
-        win.SetAnnotationCopyAction((containers, theme, annotations) =>
-            PlotExporter.CopyContainersToClipboardAsync(this, containers, theme, annotations));
+        win.SetAnnotationCopyAction((containers, theme, annotations, partsOnly) =>
+            PlotExporter.CopyContainersToClipboardAsync(this, containers, theme, annotations, partsOnly));
         win.SetGetClipboardTextAction(() => ClipboardRead.TextAsync(TopLevel.GetTopLevel(this)?.Clipboard));
 
         win.DataSourceLibrary.FindMissingFileAsync = path => FindMissingSnpFileAsync(path);

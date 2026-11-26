@@ -404,8 +404,11 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     private Func<(double L, double T, double W, double H)>?    _getWindowGeometryAction;
     private Func<Task<string?>>?                               _getClipboardTextAction;
     private Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, Task>? _richCopyAction;
-    private Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, AnnotationPage, Task>? _annotationCopyAction;
+    private Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, AnnotationPage, IReadOnlyList<CanvasBoxViewModel>, Task>? _annotationCopyAction;
     public void SetAnnotationCopyAction(Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, AnnotationPage, Task> action)
+        => _annotationCopyAction = (plots, theme, page, _) => action(plots, theme, page);
+    /// <summary>The copy, with the floating parts selected without their plot (the picture carries them alone).</summary>
+    public void SetAnnotationCopyAction(Func<IReadOnlyList<PlotContainerViewModel>, RenderTheme, AnnotationPage, IReadOnlyList<CanvasBoxViewModel>, Task> action)
         => _annotationCopyAction = action;
     // Injected by WorkspaceViewModel: opens the given file as a new document tab.
     private Func<string, Stream, Task>?                        _openFileAsNewDisplayAction;
@@ -1008,11 +1011,14 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         // Display controls go with the plots (brief-ddl-5 R-ddl5-4), lock state and all.
         var controls = (selectedOnly ? display.Controls.Where(c => c.IsSelected) : display.Controls)
                        .Select(c => c.Model.Clone()).ToArray();
-        if (containers.Count == 0 && annotations.Length == 0 && controls.Length == 0) return;
+        // A marker table, marker box or floating legend selected without its plot is copied on its own; with its plot it
+        // is already in the picture.
+        var partsOnly = selectedOnly ? display.SelectedPartsWithoutTheirPlot() : [];
+        if (containers.Count == 0 && annotations.Length == 0 && controls.Length == 0 && partsOnly.Count == 0) return;
 
         if (_annotationCopyAction is { } copy)
             await copy(containers, CurrentTheme, new AnnotationPage(annotations, display.ZoomLevel, display.ViewOffsetX, display.ViewOffsetY,
-                                                                    controls));
+                                                                    controls), partsOnly);
         else if (_richCopyAction is { } legacy) await legacy(containers, CurrentTheme);
     }
 
