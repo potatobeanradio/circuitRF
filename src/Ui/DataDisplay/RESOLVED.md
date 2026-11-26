@@ -1,5 +1,23 @@
 # DataDisplay — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## 2026-11-25 — plot marker table
+
+A marker table is a floating canvas box owned by one plot, not another sweep table or a second set of markers.
+Each row reads its own marker and trace through the marker readout builder; multi-marker lines name their source
+when a plot mixes files. The plot saves the table's position, visibility and box preference. Hiding individual
+boxes while the table is shown leaves each marker's own visibility setting untouched. Row selection uses the
+existing marker selection and arrow-key path, including for a marker whose individual box was already hidden.
+The shared plot composer draws the table for GUI and headless exports.
+
+The table's grid uses device-pixel hairlines, with the outer border inset and the final row boundary drawn only
+once; scaled logical-width strokes otherwise disappear or become uneven at fractional zoom. Marker formatting
+identifies coordinate lines at their source, so X and Y remain separate even for swept axes, harmonic and contour
+markers. Each trace now has its own column in plot order, shared across marker rows; the Marker and X columns
+stay fixed while overflowing trace columns scroll horizontally. Ordinary markers leave unrelated cells empty.
+Exports measure and draw the complete table, including columns outside the on-screen viewport.
+Rows are sorted by numeric marker index across traces. Adding a marker also reveals its row and owning trace
+column, including on redo, because either can otherwise be outside the scrollable viewport.
+
 ## 2026-11-23 — Escape never reached the display; crosshair over plots; toolbar wraps
 
 **Escape.** The workspace window binds Escape at Window level (`DisarmPlacement`), and a Window KeyBinding claims the

@@ -767,7 +767,10 @@ public partial class PlotContainerViewModel : ViewModelBase
     public void RefreshMarkerReadouts()
     {
         foreach (var box in GetMarkerInfoBoxes()) box.RefreshForViewport();
+        _parent.RefreshMarkerTable(this);
     }
+
+    public void ToggleMarkerTable() => _parent.SetMarkerTableVisible(this, !PlotVM.Plot.ShowMarkerTable);
 
     /// <summary>
     /// Fires PlotNeedsRedraw so PlotContainerView calls InvalidateVisual
@@ -862,6 +865,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         marker.InfoBoxCard ??= PlotVM.Plot.Card;
         _parent.RecordMarkerAdded(marker, trace, this);
         if (FindMarkerInfoBoxVm(marker) is { } box) _parent.SelectOnly(box);
+        GetMarkerTable()?.RevealMarker(marker, trace);
     }
 
     /// <summary>
@@ -896,6 +900,7 @@ public partial class PlotContainerViewModel : ViewModelBase
 
     /// <summary>This plot's floating legend box, or null — for PlotExporter, which draws it as it draws the info boxes.</summary>
     public LegendBoxViewModel? GetLegendBox() => _parent.LegendBoxes.FirstOrDefault(b => b.Container == this);
+    public MarkerTableViewModel? GetMarkerTable() => _parent.MarkerTables.FirstOrDefault(table => table.Container == this);
 
     /// <summary>
     /// Returns the markers belonging to this container whose InfoBoxes are selected.

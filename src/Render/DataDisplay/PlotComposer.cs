@@ -81,6 +81,8 @@ public sealed record PlacedMarkerBox(
 /// <paramref name="Lw"/> is its plot canvas's line-width unit in LOGICAL units, which its text is measured at.</summary>
 public sealed record PlacedLegend(double ViewLeft, double ViewTop, double BoxWidth, double BoxHeight, double Lw);
 
+public sealed record PlacedMarkerTable(double ViewLeft, double ViewTop, double BoxWidth, double BoxHeight);
+
 public sealed class PlacedPlot
 {
     public required Plot   Plot         { get; init; }
@@ -105,6 +107,7 @@ public sealed class PlacedPlot
 
     /// <summary>This plot's legend when it floats on the canvas; null when it is docked in the plot or off.</summary>
     public PlacedLegend?                   Legend           { get; init; }
+    public PlacedMarkerTable?              MarkerTable      { get; init; }
 
     /// <summary>Whether a trace label carries its source's name — the library-count heuristic, already resolved.</summary>
     public bool ShowFilePrefix   { get; init; }
@@ -202,6 +205,14 @@ public static class PlotComposer
                 bndT = Math.Min(bndT, lg.ViewTop);
                 bndR = Math.Max(bndR, lg.ViewLeft + lg.BoxWidth);
                 bndB = Math.Max(bndB, lg.ViewTop  + lg.BoxHeight);
+            }
+
+            if (c.MarkerTable is { } table)
+            {
+                bndL = Math.Min(bndL, table.ViewLeft);
+                bndT = Math.Min(bndT, table.ViewTop);
+                bndR = Math.Max(bndR, table.ViewLeft + table.BoxWidth);
+                bndB = Math.Max(bndB, table.ViewTop + table.BoxHeight);
             }
 
             foreach (var box in c.MarkerBoxes)
@@ -345,6 +356,17 @@ public static class PlotComposer
                                  margin + padY + (float)(legend.ViewTop  - bndT) * S);
                 LegendRenderer.DrawFloating(canvas, (legend.BoxWidth * S, legend.BoxHeight * S), plot, legend.Lw, theme,
                     c.AliasFor, c.AlwaysShowSource, settings.MarkerBoxTransparentBackground);
+                canvas.Restore();
+            }
+
+            if (c.MarkerTable is { } markerTable)
+            {
+                canvas.Save();
+                canvas.Translate(margin + padX + (float)(markerTable.ViewLeft - bndL) * S,
+                                 margin + padY + (float)(markerTable.ViewTop - bndT) * S);
+                var rows = MarkerTable.Rows(plot, c.AlwaysShowSource);
+                canvas.Scale((float)(markerTable.BoxWidth * S / MarkerTableRenderer.MeasureAll(rows).W));
+                MarkerTableRenderer.Draw(canvas, rows, theme, showAll: true);
                 canvas.Restore();
             }
 

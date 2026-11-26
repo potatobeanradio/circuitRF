@@ -24,6 +24,10 @@ public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
     public Marker                  Marker    { get; }
     public Trace                   Trace     { get; }
     public Marker DisplayMarker => Container.PlotVM.Plot.ResolveMarker(Trace, Marker);
+    public bool IsBoxVisible => Marker.ShowInfoBox &&
+        (!Container.PlotVM.Plot.ShowMarkerTable || Container.PlotVM.Plot.MarkerTableShowInfoBoxes);
+
+    public void RefreshVisibility() => OnPropertyChanged(nameof(IsBoxVisible));
 
     private readonly Func<FreqUnit>       _getFreqUnit;
     private readonly Func<RenderTheme>    _getTheme;

@@ -239,6 +239,15 @@ public sealed class PlotContainerConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double?              LegendTop             { get; set; }
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ShowMarkerTable { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool MarkerTableShowInfoBoxes { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? MarkerTableLeft { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? MarkerTableTop { get; set; }
+
     // ---- The 3D pattern surface (ANT-10 §2) ---------------------------------
     //
     //  Two angles and a zoom, not a matrix — see PatternCamera for why. Defaults are

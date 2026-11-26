@@ -113,6 +113,187 @@ public sealed class DataDisplayEditUndoTests : IDisposable
     }
 
     [Fact]
+    public async Task MarkerTableState_SurvivesSaveAndReload()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var plot = window.DataDisplay!.Plots[0].PlotVM.Plot;
+        plot.ShowMarkerTable = true;
+        plot.MarkerTableShowInfoBoxes = true;
+        plot.MarkerTablePos = new PlotPoint(120, 80);
+        string path = Path.Combine(_dir, "marker-table.cdd");
+        await window.SaveAllAsync(path);
+        var reopened = new DisplayWindowViewModel();
+        reopened.DataSourceLibrary.ResultsRootProvider = () => _dir;
+        await reopened.LoadAllAsync(path);
+        var saved = reopened.DataDisplay!.Plots[0].PlotVM.Plot;
+        Assert.True(saved.ShowMarkerTable);
+        Assert.True(saved.MarkerTableShowInfoBoxes);
+        Assert.Equal(new PlotPoint(120, 80), saved.MarkerTablePos);
+        Assert.Single(reopened.DataDisplay.MarkerTables);
+    }
+
+    [Fact]
+    public async Task MarkerTableHidesBoxesWithoutChangingMarkers_AndDeletingTableKeepsThem()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var trace = container.PlotVM.Plot.Traces[0];
+        var marker = new Marker(trace, 0, false, false, 1, FreqUnit.GHz);
+        display.InternalAddMarker(marker, trace, container);
+        var markerBox = Assert.Single(display.MarkerInfoBoxes);
+        Assert.True(markerBox.IsBoxVisible);
+
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        Assert.False(markerBox.IsBoxVisible);
+        Assert.True(marker.ShowInfoBox);
+        display.SelectItemsInRect(new Avalonia.Rect(markerBox.ViewLeft, markerBox.ViewTop, markerBox.BoxWidth, markerBox.BoxHeight), false);
+        Assert.False(markerBox.IsSelected);
+        var headless = PlotPlacement.Place(container.PlotVM.Plot, container.Left, container.Top, container.Width,
+            container.Height, container.PlotVM.Plot.FreqUnits, false, null);
+        Assert.NotNull(headless.MarkerTable);
+        Assert.Empty(headless.MarkerBoxes);
+        display.SetMarkerTableBoxes(container, true);
+        Assert.True(markerBox.IsBoxVisible);
+        display.SetMarkerTableBoxes(container, false);
+        table.SelectMarker(Assert.Single(table.Rows));
+        Assert.Contains(marker, container.GetSelectedMarkers());
+
+        display.SelectOnly(table);
+        display.DeleteSelected();
+        Assert.Empty(display.MarkerTables);
+        Assert.Contains(marker, trace.Markers);
+        Assert.True(markerBox.IsBoxVisible);
+        display.UndoRedo.Undo();
+        Assert.Single(display.MarkerTables);
+        Assert.Contains(marker, trace.Markers);
+    }
+
+    [Fact]
+    public async Task MarkerTableCanSelectAndStepAnIndividuallyHiddenMarker()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var trace = container.PlotVM.Plot.Traces[0];
+        var marker = new Marker(trace, 0, false, false, 1, FreqUnit.GHz) { ShowInfoBox = false };
+        Assert.True(trace.TrySetMarkerFrequency(marker, 1e9, out _));
+        display.InternalAddMarker(marker, trace, container);
+        Assert.Empty(display.MarkerInfoBoxes);
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        table.SelectMarker(Assert.Single(table.Rows));
+        Assert.Contains(marker, container.GetSelectedMarkers());
+        Assert.False(Assert.Single(display.MarkerInfoBoxes).IsBoxVisible);
+        Assert.True(container.StepSelectedMarkers(1));
+        Assert.True(trace.TryGetMarkerFrequency(marker, out double frequency));
+        Assert.Equal(2e9, frequency);
+        Assert.False(marker.ShowInfoBox);
+    }
+
+    [Fact]
+    public async Task MarkerTableRevealsNewMarkerOnLaterTrace()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var plot = container.PlotVM.Plot;
+        var first = plot.Traces[0];
+        for (int index = 1; index < 5; index++)
+            container.Inspector.AddTraceCommand.Execute(null);
+        for (int index = 1; index <= 15; index++)
+            first.Markers.Add(new Marker(first, 0, index == 1, false, index, FreqUnit.GHz)
+            {
+                Function = index == 1 ? MarkerFunction.Vertical : MarkerFunction.Normal,
+            });
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        var later = plot.Traces[^1];
+        var marker = new Marker(later, 0, false, false, 16, FreqUnit.GHz);
+        later.Markers.Add(marker);
+        container.OnPlotChanged(null, EventArgs.Empty);
+        container.OnMarkerAdded(marker, later);
+
+        Assert.Contains(table.Rows, row => ReferenceEquals(row.Marker, marker));
+        Assert.True(table.ScrollOffset > 0);
+        Assert.True(table.HorizontalScrollOffset > 0);
+        float bottom = MarkerTableRenderer.Measure(table.Rows).H - MarkerTableRenderer.ScrollbarHeight;
+        Assert.Same(marker, MarkerTableRenderer.RowAt(table.Rows, bottom - 2, table.ScrollOffset)!.Marker);
+        display.UndoRedo.Undo();
+        Assert.DoesNotContain(table.Rows, row => ReferenceEquals(row.Marker, marker));
+        table.Scroll(-10000);
+        table.ScrollHorizontal(-10000);
+        display.UndoRedo.Redo();
+        Assert.Contains(table.Rows, row => ReferenceEquals(row.Marker, marker));
+        Assert.True(table.ScrollOffset > 0);
+        Assert.True(table.HorizontalScrollOffset > 0);
+        Assert.Same(marker, MarkerTableRenderer.RowAt(table.Rows, bottom - 2, table.ScrollOffset)!.Marker);
+    }
+
+    [Fact]
+    public async Task MarkerTableUpdatesWhenMarkerIsAddedToSecondTrace()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        var plot = container.PlotVM.Plot;
+        container.Inspector.AddTraceCommand.Execute(null);
+        var first = plot.Traces[0];
+        var second = plot.Traces[1];
+        first.Markers.Add(new Marker(first, 0, false, false, 1, FreqUnit.GHz));
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        var marker = new Marker(second, 0, false, false, 2, FreqUnit.GHz);
+        second.Markers.Add(marker);
+        container.OnPlotChanged(null, EventArgs.Empty);
+        container.OnMarkerAdded(marker, second);
+
+        Assert.Equal(2, table.Rows.Count);
+        Assert.Same(second, table.Rows[1].Trace);
+        Assert.Same(marker, table.Rows[1].Marker);
+        Assert.Equal(MarkerTableRenderer.Measure(table.Rows).W * display.ZoomLevel, table.BoxWidth);
+        Assert.Equal(MarkerTableRenderer.Measure(table.Rows).H * display.ZoomLevel, table.BoxHeight);
+    }
+
+    [Fact]
+    public async Task MarkerTableMoveIsUndoable()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        display.SetMarkerTableVisible(container, true);
+        var table = Assert.Single(display.MarkerTables);
+        var before = container.PlotVM.Plot.MarkerTablePos;
+        table.SelectOnly();
+        table.StartGroupDrag(new Avalonia.Point(0, 0));
+        table.UpdateGroupDrag(new Avalonia.Point(30, 40));
+        table.EndGroupDrag();
+        var moved = container.PlotVM.Plot.MarkerTablePos;
+        Assert.NotEqual(before, moved);
+        display.UndoRedo.Undo();
+        Assert.Equal(before, container.PlotVM.Plot.MarkerTablePos);
+        display.UndoRedo.Redo();
+        Assert.Equal(moved, container.PlotVM.Plot.MarkerTablePos);
+    }
+
+    [Fact]
+    public async Task ShowingMarkerTableIsUndoable()
+    {
+        var window = await OpenSavedDisplayAsync();
+        var display = window.DataDisplay!;
+        var container = display.Plots[0];
+        display.SetMarkerTableVisible(container, true);
+        Assert.Single(display.MarkerTables);
+        display.UndoRedo.Undo();
+        Assert.Empty(display.MarkerTables);
+        Assert.False(container.PlotVM.Plot.ShowMarkerTable);
+        display.UndoRedo.Redo();
+        Assert.Single(display.MarkerTables);
+        Assert.True(container.PlotVM.Plot.ShowMarkerTable);
+    }
+
+    [Fact]
     public void TabAnnotations_RoundTripInOrder_AndAreOptional()
     {
         var options = DataDisplayJson.Options;

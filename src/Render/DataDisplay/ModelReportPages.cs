@@ -138,6 +138,11 @@ internal static class ModelReportPages
         LeftLabelStrips = p.LeftLabelStrips, RightLabelStrips = p.RightLabelStrips,
         MarkerBoxes = [.. p.MarkerBoxes.Select(b => b with { ViewLeft = left + (b.ViewLeft - p.ViewLeft) * width / p.ViewWidth,
                                                              ViewTop = top + (b.ViewTop - p.ViewTop) * height / p.ViewHeight })],
+        MarkerTable = p.MarkerTable is { } table ? table with
+        {
+            ViewLeft = left + (table.ViewLeft - p.ViewLeft) * width / p.ViewWidth,
+            ViewTop = top + (table.ViewTop - p.ViewTop) * height / p.ViewHeight,
+        } : null,
         ShowFilePrefix = p.ShowFilePrefix, AlwaysShowSource = p.AlwaysShowSource, AliasFor = p.AliasFor, Overlay = p.Overlay,
     };
 

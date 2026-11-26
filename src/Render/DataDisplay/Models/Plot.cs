@@ -385,6 +385,10 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public PlotPoint LegendPos { get; set; } = new(double.NaN, double.NaN);
 
+        public bool ShowMarkerTable { get; set; }
+        public bool MarkerTableShowInfoBoxes { get; set; }
+        public PlotPoint MarkerTablePos { get; set; } = new(double.NaN, double.NaN);
+
         /// <summary>
         /// Draw the limits of the goals this plot's traces draw (brief-yield-8 R-ya8-3). <b>Null is the default:
         /// on</b> — a spec line exists only where a trace's source records its goals, which is a yield result — so
@@ -972,6 +976,9 @@ namespace CircuitRF.Render.DataDisplay
             _axesStorage     = src._axesStorage;
             ShowWatermark    = src.ShowWatermark;
             ColumnWidth      = src.ColumnWidth;
+            ShowMarkerTable = src.ShowMarkerTable;
+            MarkerTableShowInfoBoxes = src.MarkerTableShowInfoBoxes;
+            MarkerTablePos = src.MarkerTablePos;
 
             if (initNewTraces)
             {

@@ -84,6 +84,23 @@ public class MarkerImpedanceFormatTests
         Assert.Contains("j", readout, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void MarkerTableKeepsTheAdditionalImpedanceLabel()
+    {
+        var trace = ReflectionTrace(DependentVarFormat.Complex);
+        var plot = new Plot(PlotType.Smith, FreqUnit.GHz);
+        trace.BuildPath(plot.PlotType, plot.FreqUnits);
+        plot.Traces.Add(trace);
+        var marker = new Marker(trace, F, false, false, 1, plot.FreqUnits) { UseNormalizedImpedance = false };
+        trace.Markers.Add(marker);
+
+        var reading = Assert.Single(Assert.Single(MarkerTable.Rows(plot)).TraceReadings);
+        Assert.Equal(2, reading.DisplayValues.Count);
+        Assert.DoesNotContain(trace.ReadoutDescription(false), reading.DisplayValues[0]);
+        Assert.Equal(trace.GetMarkerImpedanceString(marker), reading.DisplayValues[1]);
+        Assert.StartsWith("impedance=", reading.DisplayValues[1]);
+    }
+
     /// <summary>The impedance format is honoured, not merely hard-coded to RI — a user who asks for
     /// magnitude/angle gets it.</summary>
     [Fact]

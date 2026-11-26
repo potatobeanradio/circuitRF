@@ -193,6 +193,7 @@ public partial class DataDisplayViewModel
 
             RebuildMarkerInfoBoxesForContainer(c);
             RebuildLegendBoxForContainer(c);
+            RebuildMarkerTable(c);
             c.UpdateLabelStrips();
             c.NotifyViewProperties();
             c.RequestPlotRedraw();

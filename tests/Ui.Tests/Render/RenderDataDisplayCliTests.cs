@@ -95,6 +95,78 @@ public sealed class RenderDataDisplayCliTests(ITestOutputHelper output) : IDispo
     }
 
     [Fact]
+    public async Task MarkerTableExport_MatchesTheApplication()
+    {
+        var fixture = await BuildFixtureAsync(markerTable: true);
+        Assert.Single(fixture.Window.DataDisplay!.MarkerTables);
+        string fromApp = PlotExporter.BuildSvgStringForContainers(
+            fixture.Window.DataDisplay.Plots.ToList(), fixture.Window.DataDisplay.Theme);
+        Assert.DoesNotContain("freq=", fromApp);
+        string path = Path.Combine(_root, "marker-table.svg");
+        var (exit, stdout, stderr) = RunCli("render", fixture.Cdd, "-o", path);
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+        Assert.Equal(StripSkiaIds(fromApp), StripSkiaIds(File.ReadAllText(path)));
+    }
+
+    [Fact]
+    public async Task MarkerTableExport_IncludesRowsBeyondTheScreenViewport()
+    {
+        var fixture = await BuildFixtureAsync(markerTable: true);
+        var display = fixture.Window.DataDisplay!;
+        var container = display.Plots[0];
+        var trace = container.PlotVM.Plot.Traces[0];
+        for (int index = 2; index <= 20; index++)
+            trace.Markers.Add(new Marker(trace, 0, false, false, index, container.PlotVM.Plot.FreqUnits));
+        container.OnPlotChanged(null, EventArgs.Empty);
+        await fixture.Window.SaveAllAsync(fixture.Cdd);
+
+        var placed = PlotExporter.Place(container);
+        Assert.NotNull(placed.MarkerTable);
+        Assert.True(placed.MarkerTable.BoxHeight > MarkerTableRenderer.MaxHeight);
+        string fromApp = PlotExporter.BuildSvgStringForContainers(display.Plots.ToList(), display.Theme);
+        string path = Path.Combine(_root, "marker-table-all.svg");
+        var (exit, stdout, stderr) = RunCli("render", fixture.Cdd, "-o", path);
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+        Assert.Equal(StripSkiaIds(fromApp), StripSkiaIds(File.ReadAllText(path)));
+    }
+
+    [Fact]
+    public async Task MarkerTableExport_IncludesColumnsBeyondTheScreenViewport()
+    {
+        var fixture = await BuildFixtureAsync(markerTable: true);
+        var display = fixture.Window.DataDisplay!;
+        var container = display.Plots[0];
+        var plot = container.PlotVM.Plot;
+        var marker = plot.Traces[0].Markers[0];
+        marker.IsMulti = true;
+        marker.Function = MarkerFunction.Vertical;
+        for (int index = 1; index < 5; index++)
+        {
+            container.Inspector.AddTraceCommand.Execute(null);
+            plot.Traces[^1].Label = $"Trace {index}";
+        }
+        container.OnPlotChanged(null, EventArgs.Empty);
+        var table = Assert.Single(display.MarkerTables);
+        Assert.True(MarkerTableRenderer.MaxHorizontalScroll(table.Rows) > 0);
+        table.ScrollHorizontalTo(MarkerTableRenderer.Measure(table.Rows).W);
+        Assert.Equal(MarkerTableRenderer.MaxHorizontalScroll(table.Rows), table.HorizontalScrollOffset);
+        await fixture.Window.SaveAllAsync(fixture.Cdd);
+
+        var placed = PlotExporter.Place(container);
+        Assert.NotNull(placed.MarkerTable);
+        Assert.True(placed.MarkerTable.BoxWidth > table.BoxWidth);
+        string fromApp = PlotExporter.BuildSvgStringForContainers(display.Plots.ToList(), display.Theme);
+        string path = Path.Combine(_root, "marker-table-wide.svg");
+        var (exit, stdout, stderr) = RunCli("render", fixture.Cdd, "-o", path);
+        output.WriteLine(stdout + stderr);
+        Assert.Equal(0, exit);
+        Assert.Contains("Trace 4", fromApp);
+        Assert.Equal(StripSkiaIds(fromApp), StripSkiaIds(File.ReadAllText(path)));
+    }
+
+    [Fact]
     public async Task RenderingACddToPdf_WritesTheBytesTheApplicationsExportWrites()
     {
         var f = await BuildFixtureAsync();
@@ -510,7 +582,7 @@ public sealed class RenderDataDisplayCliTests(ITestOutputHelper output) : IDispo
     /// writer — so the `.cdd` under test is the file the application produces, not one this test
     /// composed by hand.
     /// </summary>
-    private async Task<Fixture> BuildFixtureAsync(int tabs = 1, TraceKind kind = TraceKind.Cube)
+    private async Task<Fixture> BuildFixtureAsync(int tabs = 1, TraceKind kind = TraceKind.Cube, bool markerTable = false)
     {
         Directory.CreateDirectory(_root);
 
@@ -557,6 +629,8 @@ public sealed class RenderDataDisplayCliTests(ITestOutputHelper output) : IDispo
         // silently skipped it would leave that untested and the gate would still be green.
         if (kind is not (TraceKind.Contour or TraceKind.SummaryTable))
             Assert.Contains(first.PlotVM.Plot.Traces, t => t.Markers.Any(m => m.ShowInfoBox));
+
+        if (markerTable) window.DataDisplay.SetMarkerTableVisible(first, true);
 
         string cdd = Path.Combine(_root, "display.cdd");
         await window.SaveAllAsync(cdd);

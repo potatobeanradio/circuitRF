@@ -51,6 +51,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         // New data for the same traces is not an edit: take it as the plot's checkpoint.
         if (e is DataRefreshEventArgs && s is PlotContainerViewModel c && _editCheckpoint.ContainsKey(c))
             _editCheckpoint[c] = SavedFormOf(c);
+        if (s is PlotContainerViewModel container) RefreshMarkerTable(container);
         RaiseContentChanged();
     }
 
@@ -194,8 +195,11 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     private readonly ObservableCollection<LegendBoxViewModel> _legendBoxes = new();
     public  ObservableCollection<LegendBoxViewModel> LegendBoxes => _legendBoxes;
 
+    private readonly ObservableCollection<MarkerTableViewModel> _markerTables = new();
+    public ObservableCollection<MarkerTableViewModel> MarkerTables => _markerTables;
+
     /// <summary>Every box on the canvas: the info boxes and the floating legends.</summary>
-    private IEnumerable<CanvasBoxViewModel> Boxes => _markerInfoBoxes.Concat<CanvasBoxViewModel>(_legendBoxes);
+    private IEnumerable<CanvasBoxViewModel> Boxes => _markerInfoBoxes.Concat<CanvasBoxViewModel>(_legendBoxes).Concat(_markerTables);
 
     // ---- Selection --------------------------------------------------
 
@@ -269,6 +273,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     public void OnContainerPlotChanged(PlotContainerViewModel container)
     {
         RebuildMarkerInfoBoxesForContainer(container);
+        RebuildMarkerTable(container);
         // A marker added, removed, re-pointed or dropped after a drag: its dependents follow (brief-ddl-2).
         RequestLinkFollow(released: true);
     }
@@ -354,6 +359,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 if (resolved.Contains(vm.Trace)) vm.OnLinksFollowed();
             c.UpdateLabelStrips();
             RebuildLegendBoxForContainer(c);
+            RefreshMarkerTable(c);
             // A followed trace's label changes ("Pout @ m1 (gridPoint 17)"), and a marker box sized for the old one
             // would cut the new one off: each is measured again, in place, so a focused box keeps its focus.
             foreach (var box in _markerInfoBoxes.Where(b => b.Container == c)) box.RefreshAfterMove();
@@ -415,7 +421,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
         if (marker.ShowInfoBox)
         {
-            if (existing is not null) return;   // already shown
+            if (existing is not null) { existing.RefreshVisibility(); return; }
             var plot = container.PlotVM.Plot;
             if (double.IsNaN(marker.InfoBoxPos.X))
                 PlaceInfoBoxInLogicalCoords(marker, trace, plot, container);
@@ -426,6 +432,10 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 this,
                 marker.InfoBoxPos.X,
                 marker.InfoBoxPos.Y));
+        }
+        else if (existing is { IsSelected: true })
+        {
+            existing.RefreshVisibility();
         }
         else if (existing is not null)
         {
@@ -444,6 +454,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         foreach (var vm in _markerInfoBoxes)
             if (vm.Container == container)
                 vm.RefreshAfterMove();
+        RefreshMarkerTable(container);
         // Mid-drag: dependents follow on the next frame, a slow one on release (R-ddl2-3).
         RequestLinkFollow(released: false);
     }
@@ -505,7 +516,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         {
             foreach (var marker in trace.Markers)
             {
-                if (!marker.ShowInfoBox) continue;   // glyph still drawn by PlotRenderer
+                if (!marker.ShowInfoBox && !previouslySelected.Contains(marker)) continue;
 
                 var vm = new MarkerInfoBoxViewModel(
                     marker, trace, container,
@@ -553,6 +564,63 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         for (int i = _legendBoxes.Count - 1; i >= 0; i--)
             if (_legendBoxes[i].Container == container)
                 _legendBoxes.RemoveAt(i);
+        for (int i = _markerTables.Count - 1; i >= 0; i--)
+            if (_markerTables[i].Container == container)
+                _markerTables.RemoveAt(i);
+    }
+
+    internal void RebuildMarkerTable(PlotContainerViewModel container)
+    {
+        var plot = container.PlotVM.Plot;
+        var existing = _markerTables.FirstOrDefault(table => table.Container == container);
+        if (!plot.ShowMarkerTable)
+        {
+            if (existing is not null) _markerTables.Remove(existing);
+        }
+        else
+        {
+            if (!double.IsFinite(plot.MarkerTablePos.X) || !double.IsFinite(plot.MarkerTablePos.Y))
+                plot.MarkerTablePos = new PlotPoint(container.Left, container.Top + container.Height + 24);
+            if (existing is null || existing.LogicalLeft != plot.MarkerTablePos.X || existing.LogicalTop != plot.MarkerTablePos.Y)
+            {
+                if (existing is not null) _markerTables.Remove(existing);
+                existing = new MarkerTableViewModel(container, this, plot.MarkerTablePos.X, plot.MarkerTablePos.Y);
+                _markerTables.Add(existing);
+            }
+            existing.Refresh();
+        }
+        foreach (var box in _markerInfoBoxes.Where(box => box.Container == container)) box.RefreshVisibility();
+    }
+
+    internal void RefreshMarkerTable(PlotContainerViewModel container)
+    {
+        foreach (var table in _markerTables.Where(table => table.Container == container)) table.Refresh();
+    }
+
+    public void SetMarkerTableVisible(PlotContainerViewModel container, bool visible)
+    {
+        if (container.PlotVM.Plot.ShowMarkerTable == visible) return;
+        container.PlotVM.Plot.ShowMarkerTable = visible;
+        RebuildMarkerTable(container);
+        RefreshSelection();
+        container.RequestPlotRedraw();
+    }
+
+    public void SetMarkerTableBoxes(PlotContainerViewModel container, bool visible)
+    {
+        if (container.PlotVM.Plot.MarkerTableShowInfoBoxes == visible) return;
+        container.PlotVM.Plot.MarkerTableShowInfoBoxes = visible;
+        RebuildMarkerTable(container);
+        container.RequestPlotRedraw();
+    }
+
+    internal void SelectMarkerFromTable(PlotContainerViewModel container, Trace trace, Marker marker)
+    {
+        if (!trace.Markers.Contains(marker)) return;
+        var box = GetOrCreateInfoBoxVm(marker, trace, container);
+        if (!_markerInfoBoxes.Contains(box)) _markerInfoBoxes.Add(box);
+        SelectOnly(box);
+        RefreshMarkerTable(container);
     }
 
     // ---- Floating legends -------------------------------------------
@@ -667,6 +735,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             {
                 foreach (var p in _plots)           p.Theme = value;
                 foreach (var m in _markerInfoBoxes) m.RequestRedraw();
+                foreach (var table in _markerTables) table.Refresh();
                 foreach (var c in _controls)        c.NotifyViewProperties();
             }
         }
@@ -696,6 +765,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         _plots.Add(container);
         RebuildMarkerInfoBoxesForContainer(container);
         RebuildLegendBoxForContainer(container);
+        RebuildMarkerTable(container);
         if (selectIt) SelectOnly(container);
         else          RefreshSelection();
         RequestLinkFollow(released: true);   // an undone delete brings its sources back, live (R-ddl2-6)
@@ -716,6 +786,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         trace.Markers.Add(marker);
         container.OnPlotChanged(null, EventArgs.Empty);
+        container.GetMarkerTable()?.RevealMarker(marker, trace);
         container.RequestPlotRedraw();
     }
 
@@ -1386,6 +1457,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             cmds.Add(new SetLegendCommand(c, c.PlotVM.Plot.Legend, c.PlotVM.Plot.LegendPos,
                                           LegendPlacement.Off, new PlotPoint(double.NaN, double.NaN)));
 
+        foreach (var table in _markerTables.Where(table => table.IsSelected && !table.Container.IsSelected))
+            cmds.Add(new SetMarkerTableCommand(this, table.Container, false));
+
         // Collect plot-remove commands (one per selected container).
         var toRemove = _plots.Where(p => p.IsSelected).ToList();
         if (toRemove.Count > 0)
@@ -1555,6 +1629,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
         foreach (var b in _legendBoxes) b.IsSelected = false;
+        foreach (var table in _markerTables) table.IsSelected = false;
         foreach (var m in _markerInfoBoxes) m.IsSelected = m.Container == container;
         RefreshSelection();
     }
@@ -1624,7 +1699,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         _marquee = new Marquee(
             kept,
             _plots.Select(p => (p, PlotHitRect(p))).ToList(),
-            Boxes.Select(b => (b, new Rect(b.ViewLeft, b.ViewTop, b.BoxWidth, b.BoxHeight))).ToList(),
+            Boxes.Where(b => b is not MarkerInfoBoxViewModel mb || mb.IsBoxVisible)   // a hidden info box is not there to select
+                 .Select(b => (b, new Rect(b.ViewLeft, b.ViewTop, b.BoxWidth, b.BoxHeight))).ToList(),
             _controls.Select(c => (c, new Rect(c.ViewLeft, c.ViewTop, c.ViewWidth, c.ViewHeight))).ToList());
     }
 
@@ -2043,6 +2119,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         _plots.Clear();
         _markerInfoBoxes.Clear();
         _legendBoxes.Clear();
+        _markerTables.Clear();
         SetAnnotationSelection(-1);
         _annotations.Clear();
         if (tabConfig.Annotations is { } annotations)
@@ -2103,6 +2180,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         _plots.Add(container);
         RebuildMarkerInfoBoxesForContainer(container);
         RebuildLegendBoxForContainer(container);
+        RebuildMarkerTable(container);
         return container;
     }
 
@@ -2207,6 +2285,10 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             Legend                      = plot.Legend,
             LegendLeft                  = FloatingLegendCoord(plot, plot.LegendPos.X),
             LegendTop                   = FloatingLegendCoord(plot, plot.LegendPos.Y),
+            ShowMarkerTable             = plot.ShowMarkerTable,
+            MarkerTableShowInfoBoxes    = plot.MarkerTableShowInfoBoxes,
+            MarkerTableLeft             = double.IsFinite(plot.MarkerTablePos.X) ? plot.MarkerTablePos.X : null,
+            MarkerTableTop              = double.IsFinite(plot.MarkerTablePos.Y) ? plot.MarkerTablePos.Y : null,
             SpecLines                   = plot.ShowSpecLines,
             LimitAreas                  = plot.LimitAreas.Count > 0
                                           ? plot.LimitAreas.Select(LimitAreaConfig.From).ToList()
@@ -2541,6 +2623,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 }
             if (pc.LegendLeft is { } ll) pc.LegendLeft = ll + PasteOffset;
             if (pc.LegendTop  is { } lt) pc.LegendTop  = lt + PasteOffset;
+            if (pc.MarkerTableLeft is { } ml) pc.MarkerTableLeft = ml + PasteOffset;
+            if (pc.MarkerTableTop is { } mt) pc.MarkerTableTop = mt + PasteOffset;
 
             // The copy names each source by its file (PlotExporter.BuildContainersJson). Here it becomes
             // the reference THIS display would save it under, so the pasted plot shows the data it showed
