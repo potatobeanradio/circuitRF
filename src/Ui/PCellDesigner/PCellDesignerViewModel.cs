@@ -1,0 +1,711 @@
+// Owner: PCD-6 (brief-pcd-6). The PCell Designer's view model: everything a test touches (D1).
+
+using System.Collections.ObjectModel;
+using System.Globalization;
+using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Layout.Em.ParametricEm;
+using CircuitRF.Design.Optimization;
+using CircuitRF.Design.PCellDesigner;
+using CircuitRF.Engine;
+using CircuitRF.Ui.DataDisplay.ViewModels;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using RfCore;
+using FreqUnit = CircuitRF.Render.DataDisplay.FreqUnit;
+
+namespace CircuitRF.Ui.PCellDesigner;
+
+/// <summary>One row of the parameter table (R-pcd6-3): the <c>.ccell</c> parameter, and a Value that is never saved.</summary>
+public sealed partial class PCellParameterRow(Action changed) : ObservableObject
+{
+    [ObservableProperty] private string _name = "";
+    [ObservableProperty] private string _default = "";
+    [ObservableProperty] private string _unit = "";
+    [ObservableProperty] private string _minimum = "";
+    [ObservableProperty] private string _maximum = "";
+    [ObservableProperty] private string _description = "";
+    [ObservableProperty] private string _value = "";
+
+    public UnitDimension Dimension { get; set; } = UnitDimension.Length;
+
+    partial void OnValueChanged(string value) => changed();
+    partial void OnNameChanged(string value) => changed();
+    partial void OnUnitChanged(string value) => changed();
+
+    // A value still at the default follows it.
+    partial void OnDefaultChanged(string? oldValue, string newValue)
+    {
+        if (Value == (oldValue ?? "")) Value = newValue;
+    }
+
+    /// <summary>The value as an expression and its unit (brief-pcd-6 D4): <c>200 um</c>, or <c>200</c> in the row's unit.</summary>
+    internal (string Expression, string Unit) Split()
+    {
+        var (e, u) = TunableValue.Split(Value, Unit);
+        return (e, u ?? "");
+    }
+}
+
+/// <summary>One window per cell folder (R-pcd6-1), as <c>LcFilterDesignerWindows</c> keeps one per Filter.</summary>
+public sealed class PCellDesignerWindows<TWindow> where TWindow : class
+{
+    private readonly Dictionary<string, TWindow> _open = new(StringComparer.Ordinal);
+
+    private static string Key(string cellDir) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(cellDir));
+
+    /// <summary>The window already open on <paramref name="cellDir"/>, activated; otherwise a new one.</summary>
+    public (TWindow Window, bool Created) Show(string cellDir, Func<TWindow> create, Action<TWindow> activate)
+    {
+        if (_open.TryGetValue(Key(cellDir), out var existing))
+        {
+            activate(existing);
+            return (existing, false);
+        }
+        var window = create();
+        _open[Key(cellDir)] = window;
+        return (window, true);
+    }
+
+    public void Closed(string cellDir, TWindow window)
+    {
+        if (_open.TryGetValue(Key(cellDir), out var w) && ReferenceEquals(w, window)) _open.Remove(Key(cellDir));
+    }
+
+    public bool IsOpen(string cellDir) => _open.ContainsKey(Key(cellDir));
+}
+
+/// <summary>
+/// brief-pcd-6: a designed cell in the designer. The schematic, the values, the undo stack and every gesture live here;
+/// the window turns pointer events into these calls.
+/// </summary>
+public sealed partial class PCellDesignerViewModel : ObservableObject
+{
+    /// <summary>The VAR row the values ride on in the copy the planner reads; never saved.</summary>
+    internal const string ValuesRow = "__PCDVALUES";
+
+    /// <summary>The debounce before a re-plan and response start, as the LC Filter Designer's.</summary>
+    internal const int DesignDebounceMs = 80;
+
+    private readonly string _schematicDir;
+    private readonly string _layoutDir;
+    private readonly Stack<string> _undo = new();
+    private readonly Stack<string> _redo = new();
+    private readonly PlotContainerViewModel _container;
+
+    public string CellDir { get; }
+    public string CellName { get; }
+    public string WorkspaceRoot { get; }
+    public string SchematicPath { get; }
+    public string ClayPath { get; }
+    public Technology? Technology { get; }
+    public string? TechIdentity { get; }
+
+    /// <summary>The designer's schematic. Replaced, never mutated, by a gesture (one undo step each).</summary>
+    public SchematicEditModel Schematic { get; private set; }
+
+    public ObservableCollection<PCellParameterRow> Parameters { get; } = [];
+
+    /// <summary>Opens a schematic in the workspace and shows its Optimizer (R-pcd6-7); the workspace sets it.</summary>
+    public Action<string>? OpenOptimizer { get; set; }
+
+    public string Title => $"PCell Designer — {CellName}";
+
+    /// <summary>The planned layout at the current values (R-pcd6-2), or null when it could not be planned.</summary>
+    [ObservableProperty] private LayoutView? _layout;
+
+    /// <summary>What the plan reported: its refusal, or its warnings.</summary>
+    [ObservableProperty] private string _layoutNote = "";
+
+    /// <summary>The cell's <c>.cnl</c>, live (R-pcd6-4). An edit is merged by Apply.</summary>
+    [ObservableProperty] private string _cnlText = "";
+
+    [ObservableProperty] private string _status = "";
+
+    /// <summary>The circuit response at the current values (R-pcd6-5).</summary>
+    [ObservableProperty] private SNP? _response;
+
+    /// <summary>The last Run EM result at the current values (R-pcd6-6), overlaid on <see cref="Response"/>.</summary>
+    [ObservableProperty] private SNP? _em;
+
+    [ObservableProperty] private bool _busy;
+
+    /// <summary>True when the schematic or the table changed since the last Save.</summary>
+    [ObservableProperty] private bool _dirty;
+
+    /// <summary>The Data Display the response is drawn on, as the Filter Designer's.</summary>
+    public DataDisplayViewModel PlotHost { get; } = new(new DataSourceLibraryViewModel(), addEmptyPlot: false, selectEmptyPlot: false);
+
+    public Plot Plot => _container.PlotVM.Plot;
+
+    public PCellDesignerViewModel(string cellDir, string workspaceRoot)
+    {
+        CellDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(cellDir));
+        CellName = Path.GetFileName(CellDir);
+        WorkspaceRoot = Path.GetFullPath(workspaceRoot);
+        _schematicDir = CellFolder.SubFolderPath(CellDir, ViewType.Schematic);
+        _layoutDir = CellFolder.SubFolderPath(CellDir, ViewType.Layout);
+        SchematicPath = Path.Combine(_schematicDir,
+            CellFolder.ResolvePrimary(CellDir, ViewType.Schematic).ResolvedName ?? CellName + CellFolder.ViewExtension(ViewType.Schematic));
+        ClayPath = Path.Combine(_layoutDir,
+            CellFolder.ResolvePrimary(CellDir, ViewType.Layout).ResolvedName ?? CellName + CellFolder.ViewExtension(ViewType.Layout));
+
+        Schematic = File.Exists(SchematicPath) ? SchematicPersistence.LoadFromFile(SchematicPath).model : new SchematicEditModel();
+        Schematic.SchematicDirectory = _schematicDir;
+
+        string? techRef = File.Exists(ClayPath) ? LayoutPersistence.LoadFromFile(ClayPath).TechRef : null;
+        var (tech, _) = TechnologyResolver.ResolveForDocument(techRef, ClayPath, Path.Combine(WorkspaceRoot, ".cws"), new TechnologyCache());
+        (Technology, TechIdentity) = (tech.Tech, tech.ResolvedPath);
+
+        foreach (var p in CellFolder.ReadCcell(CellDir)?.Parameters ?? [])
+            Parameters.Add(new PCellParameterRow(OnTableChanged)
+            {
+                Name = p.Name, Default = p.DefaultExpression, Unit = p.Unit, Dimension = p.Dimension,
+                Minimum = SiText(p.Minimum, p.Unit), Maximum = SiText(p.Maximum, p.Unit), Description = p.Description ?? "",
+                Value = p.DefaultExpression,
+            });
+        Parameters.CollectionChanged += (_, _) => OnTableChanged();
+        _container = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 0, width: 640, height: 400);
+        CnlText = CnlOf(Schematic);
+        _ready = true;
+    }
+
+    private bool _ready;
+
+    private void OnTableChanged()
+    {
+        if (!_ready) return;
+        Dirty = true;
+        Refresh();
+    }
+
+    // ══ Entry points (R-pcd6-1) ═══════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>The designed cell <paramref name="schematicPath"/> is the schematic of, or null.</summary>
+    public static string? DesignedCellOf(string? schematicPath) =>
+        schematicPath is not null && EmCapability.CellDirOfSchematic(schematicPath) is { } cell && PCellDesign.IsDesigned(cell) ? cell : null;
+
+    /// <summary>The designed cell a placed component references, or null.</summary>
+    public static string? DesignedCellOf(EditableComponent? component, string? schematicDir) =>
+        component?.CellRef is { Length: > 0 } cellRef && ExternalCellRef.ResolveCellDir(cellRef, schematicDir) is { } cell
+        && PCellDesign.IsDesigned(cell) ? cell : null;
+
+    /// <summary>The designed cell a placed layout instance was generated from (<c>cpcell:&lt;Name&gt;</c>), or null.</summary>
+    public static string? DesignedCellOf(LayoutInstance instance, string baseDir, Technology? technology) =>
+        CellLayoutResolver.Resolve(instance, baseDir, technology).View?.PCellOrigin?.GeneratorId is { } id
+        && id.StartsWith(PCellDesign.GeneratorPrefix, StringComparison.Ordinal) ? DesignedPCellResolver.CellDirOf(id) : null;
+
+    /// <summary>A new designed cell <c>PCell1</c> (<c>PCell2</c>, … when taken) in the workspace (D3).</summary>
+    public static CellCreateResult NewCell(string workspaceRoot)
+    {
+        int k = 1;
+        while (Directory.Exists(Path.Combine(workspaceRoot, $"PCell{k}"))) k++;
+        return PCellDesign.Create(workspaceRoot, $"PCell{k}");
+    }
+
+    /// <summary>File ▸ Import ▸ PCell Package… (R-pcd6-8): the package into <paramref name="libraryDir"/>; the status line.</summary>
+    public static (string? CellDir, string Status) Import(string packagePath, string libraryDir)
+    {
+        PCellPackageOutcome o;
+        try { o = PCellPackage.Import(packagePath, libraryDir); }
+        catch (Exception e) when (e is not OutOfMemoryException) { return (null, $"{Path.GetFileName(packagePath)} was not imported: {e.Message}"); }
+        string findings = string.Join(" ", o.Findings.Select(f => f.Render()));
+        return o.Path is { } dir
+            ? (dir, $"Imported {Path.GetFileName(dir)} into {libraryDir}." + (findings.Length > 0 ? " " + findings : ""))
+            : (null, $"{Path.GetFileName(packagePath)} was not imported: {findings}");
+    }
+
+    // ══ The live design loop (R-pcd6-2, R-pcd6-5) ═════════════════════════════════════════════════════════════════
+
+    private CancellationTokenSource? _designCts;
+    private int _designGeneration;
+
+    /// <summary>Re-plans the canvas and re-runs the response, debounced; only the latest request's result is shown.</summary>
+    [RelayCommand]
+    public void Refresh() => _ = DesignAsync();
+
+    public async Task DesignAsync(int debounceMs = DesignDebounceMs)
+    {
+        _designCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _designCts = cts;
+        int generation = ++_designGeneration;
+        if (debounceMs > 0)
+        {
+            try { await Task.Delay(debounceMs, cts.Token); }
+            catch (OperationCanceledException) { return; }
+        }
+        if (generation != _designGeneration) return;
+
+        // Read on this (UI) thread; the pool thread works on its own copies.
+        string text = SchematicPersistence.Serialize(Schematic, CellName);
+        var sets = Parameters.Where(p => p.Name.Length > 0 && p.Value.Length > 0)
+                             .Select(p => { var (e, u) = p.Split(); return (p.Name, TunableValue.Text(e, u)); }).ToList();
+        var values = ValuesRowOf();
+        string? sweep = CellFolder.ReadCcell(CellDir)?.PCellDesign?.Sweep;
+        var (tech, techId) = (Technology, TechIdentity);
+        DesignedCellLayoutResult? plan;
+        PCellDesignResponseResult response;
+        try
+        {
+            (plan, response) = await Task.Run(() =>
+            {
+                DesignedCellLayoutResult? p = null;
+                if (tech is not null)
+                {
+                    var copy = Copy(text);
+                    if (values.Parameters.Count > 0) copy.Components.Add(values);
+                    p = DesignedCellLayout.At(CellDir, new Dictionary<string, Value>(), WorkspaceRoot, tech, techId, copy);
+                }
+                cts.Token.ThrowIfCancellationRequested();
+                return (p, PCellDesignResponse.Run(Copy(text), sets, sweep, WorkspaceRoot, cts.Token));
+            }, cts.Token);
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            (plan, response) = (null, new PCellDesignResponseResult(null, e.Message));
+        }
+        if (generation != _designGeneration) return;
+
+        Layout = plan?.Layout;
+        LayoutNote = tech is null ? "The cell's layout resolves no technology, so it cannot be planned."
+            : plan?.Refusal ?? string.Join("\n", plan!.Lines.Where(l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning)
+                                                            .Select(l => l.Text));
+        Response = response.S;
+        Em = null;   // the EM result was for the values before this change
+        if (response.Refusal is { } why) Status = "Response: " + why;
+        BuildPlot();
+    }
+
+    private SchematicEditModel Copy(string text)
+    {
+        var copy = SchematicPersistence.Deserialize(text, _schematicDir).model;
+        copy.SchematicDirectory = _schematicDir;
+        return copy;
+    }
+
+    /// <summary>The values as one VAR row, so the planner's copy carries a parameter the saved <c>.ccell</c> has not got yet.</summary>
+    private EditableComponent ValuesRowOf()
+    {
+        var row = new EditableComponent { InstanceName = ValuesRow, Symbol = SymbolKind.Var };
+        foreach (var p in Parameters.Where(p => p.Name.Length > 0 && p.Value.Length > 0))
+        {
+            var (e, u) = p.Split();
+            row.Parameters.Add(new EditableParameter { Name = p.Name, Expression = e, Unit = u, Dimension = p.Dimension });
+        }
+        return row;
+    }
+
+    /// <summary>The cell's scope at the current values: its VARs and parameters, each value bound with its unit.</summary>
+    internal Scope ScopeAtValues()
+    {
+        var model = Copy(SchematicPersistence.Serialize(Schematic, CellName));
+        var row = ValuesRowOf();
+        if (row.Parameters.Count > 0) model.Components.Add(row);
+        var scope = new Scope("global");
+        foreach (var v in NetExtractor.Extract(model, "tb", DiskCellResolver.Instance).TestBench.GlobalVariables)
+            scope.Bind(v.Name, v.Expression, v.Unit);
+        return scope;
+    }
+
+    /// <summary>The values in base SI, by parameter name, for EM (only those that evaluate).</summary>
+    internal Dictionary<string, Value> SiValues()
+    {
+        var scope = ScopeAtValues();
+        var evaluator = new Evaluator();
+        var values = new Dictionary<string, Value>(StringComparer.Ordinal);
+        foreach (var p in Parameters.Where(p => p.Name.Length > 0))
+            try { if (evaluator.Eval(p.Name, scope) is { Kind: ValueKind.Real } v) values[p.Name] = v; }
+            catch (Exception) { /* not evaluable: EM keeps the saved default */ }
+        return values;
+    }
+
+    private void BuildPlot()
+    {
+        Plot.Traces.Clear();
+        void Add(SNP? snp, int row, int colour, string label)
+        {
+            if (snp is null) return;
+            int index = TraceProperties.LineColorOrder[colour % TraceProperties.LineColorOrder.Length];
+            var t = new Trace(snp, MatrixType.S, row, 0, DependentVarFormat.Db, false,
+                new TraceProperties { LineColorIndex = index, MarkerColorIndex = index, FillColorIndex = index, Custom = false })
+                { Label = label };
+            t.BuildPath(PlotType.Rect, Plot.FreqUnits);
+            Plot.Traces.Add(t);
+        }
+        for (int i = 0; i < (Response?.Ports ?? 0); i++) Add(Response, i, i, $"S{i + 1}1");
+        for (int i = 0; i < (Em?.Ports ?? 0); i++) Add(Em, i, i + 4, $"EM S{i + 1}1");
+        Plot.CustomTitleOn = true;
+        Plot.CustomTitle = "Response";
+        if (Plot.Traces.Count > 0) Plot.Autoscale(force: true);
+        _container.OnPlotChanged(this, EventArgs.Empty);
+        OnPropertyChanged(nameof(Plot));
+        _container.RequestPlotRedraw();
+    }
+
+    // ══ Undo, and the gestures (R-pcd6-2, R-pcd6-4) ═══════════════════════════════════════════════════════════════
+
+    public bool CanUndo => _undo.Count > 0;
+    public bool CanRedo => _redo.Count > 0;
+
+    /// <summary>One undo step: the current schematic onto the stack, <paramref name="next"/> in its place.</summary>
+    private void Commit(SchematicEditModel next, string status)
+    {
+        _undo.Push(SchematicPersistence.Serialize(Schematic, CellName));
+        _redo.Clear();
+        Show(next);
+        Status = status;
+    }
+
+    private void Show(SchematicEditModel next)
+    {
+        Schematic = next;
+        Schematic.SchematicDirectory = _schematicDir;
+        CnlText = CnlOf(Schematic);
+        Dirty = true;
+        OnPropertyChanged(nameof(Schematic));
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(CanRedo));
+        Refresh();
+    }
+
+    private string CnlOf(SchematicEditModel model)
+    {
+        try { return SchematicCircuit.CnlTextOf(model, CellName); }
+        catch (Exception e) when (e is not OutOfMemoryException) { return $"// the netlist could not be extracted: {e.Message}"; }
+    }
+
+    [RelayCommand]
+    public void Undo()
+    {
+        if (_undo.Count == 0) return;
+        _redo.Push(SchematicPersistence.Serialize(Schematic, CellName));
+        Show(Copy(_undo.Pop()));
+    }
+
+    [RelayCommand]
+    public void Redo()
+    {
+        if (_redo.Count == 0) return;
+        _undo.Push(SchematicPersistence.Serialize(Schematic, CellName));
+        Show(Copy(_redo.Pop()));
+    }
+
+    /// <summary>A gesture's call into another lane's function: its refusal, or its exception, is the status line and
+    /// nothing changes.</summary>
+    private bool Gesture(string what, Func<(SchematicEditModel? Next, string Status)> make)
+    {
+        (SchematicEditModel? Next, string Status) r;
+        try { r = make(); }
+        catch (Exception e) when (e is not OutOfMemoryException) { r = (null, e.Message); }
+        if (r.Next is null)
+        {
+            Status = $"{what}: {r.Status}";
+            return false;
+        }
+        Commit(r.Next, r.Status);
+        return true;
+    }
+
+    [RelayCommand]
+    private void ApplyEdit() => ApplyText();
+
+    /// <summary>R-pcd6-4: the text merged into the schematic by designator.</summary>
+    public bool ApplyText() => Gesture("Apply", () =>
+    {
+        var m = CellNetlistMerge.Merge(Schematic, CnlText);
+        return (m.Schematic, m.Schematic is null ? string.Join(" ", m.Refusals) : string.Join(" ", m.Notes.Prepend("Text applied.")));
+    });
+
+    /// <summary>A Library part dropped on a pin: <see cref="PinDrop.Apply"/>.</summary>
+    public bool DropPart(EditableComponent part, int partPin, string targetInstance, int targetPin) => Gesture("Drop", () =>
+    {
+        var r = PinDrop.Apply(Schematic, part, partPin, targetInstance, targetPin);
+        return (r.Schematic, r.Schematic is null ? r.Refusal ?? "refused" : $"{r.InstanceName} pin {partPin} joined to {targetInstance} pin {targetPin}.");
+    });
+
+    /// <summary>A part as a Library palette tile places it: its registry defaults, the next free designator.</summary>
+    public EditableComponent PartFor(SymbolKind kind, int portCount)
+    {
+        var comp = new EditableComponent
+        {
+            Symbol = kind,
+            InstanceName = SchematicEditModel.NextAvailableName(Schematic.Components.Select(c => c.InstanceName),
+                                                                ComponentTypeRegistry.InstancePrefix(kind)),
+        };
+        int ports = portCount > 0 ? portCount : SymbolPortDefs.For(kind).Length;
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, ports))
+            comp.Parameters.Add(new EditableParameter
+                { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
+        return comp;
+    }
+
+    /// <summary>An offset part dragged so its offset pin lands at (<paramref name="toX"/>, <paramref name="toY"/>), DBU:
+    /// <see cref="OffsetPlacer.Drag"/> writes the change into its expressions.</summary>
+    public bool DragOffset(string instance, long toX, long toY) => Gesture("Drag", () =>
+    {
+        if (Schematic.Components.FirstOrDefault(c => c.InstanceName == instance)?.Offset is not { } offset)
+            return (null, $"{instance} has no offset placement.");
+        int dot = offset.Anchor.LastIndexOf('.');
+        if (dot <= 0 || !int.TryParse(offset.Anchor[(dot + 1)..], out int anchorPin)
+            || PinPoseOf(offset.Anchor[..dot], anchorPin) is not { } anchor || PinPoseOf(instance, offset.Pin) is not { } now)
+            return (null, $"{instance}'s anchor {offset.Anchor} is not placed.");
+        var next = Copy(SchematicPersistence.Serialize(Schematic, CellName));
+        next.Components.First(c => c.InstanceName == instance).Offset =
+            OffsetPlacer.Drag(offset, anchor, now, toX, toY, Layout!.DbuPerMicron);
+        return (next, $"{instance} moved: Dx and Dy now hold the change.");
+    });
+
+    /// <summary>Stretch by Parameter…: the <c>MSHAPE</c>'s <paramref name="moving"/> vertices follow
+    /// <paramref name="parameter"/> along <paramref name="axisDeg"/> (<see cref="DrawnMetal.Stretch"/>); the anchor is the
+    /// first vertex not moving.</summary>
+    public bool StretchByParameter(string instance, IReadOnlyList<int> moving, string parameter, double axisDeg) => Gesture("Stretch", () =>
+    {
+        int at = Schematic.Components.FindIndex(c => c.InstanceName == instance);
+        if (at < 0 || !DrawnMetal.Is(Schematic.Components[at])) return (null, $"{instance} is not drawn metal.");
+        var shape = Schematic.Components[at];
+        int count = Enumerable.Range(1, int.MaxValue - 1).TakeWhile(i => shape.Parameters.Any(p => p.Name == DrawnMetal.X(i))).Count();
+        int anchor = Enumerable.Range(1, count).FirstOrDefault(i => !moving.Contains(i));
+        if (moving.Count == 0 || anchor == 0) return (null, "select the vertices that move, and leave at least one that stays.");
+        var binding = new StretchBinding { Parameter = parameter, Anchor = anchor, Moving = [.. moving], AxisDeg = axisDeg };
+        var stretched = DrawnMetal.Stretch(shape, binding, ScopeAtValues(), new Evaluator());
+        var next = Copy(SchematicPersistence.Serialize(Schematic, CellName));
+        next.Components[at] = stretched;
+        return (next, $"{instance}: vertices {string.Join(", ", moving)} follow {parameter}.");
+    });
+
+    /// <summary>An <c>MSHAPE</c> vertex dragged from one world point to another (DBU): the change, in the part's own frame,
+    /// is added to <c>X[i]</c> and <c>Y[i]</c> as a literal in each row's unit, so a parameter term stays.</summary>
+    public bool DragVertex(string instance, int vertex, long fromX, long fromY, long toX, long toY) => Gesture("Drag vertex", () =>
+    {
+        int at = Schematic.Components.FindIndex(c => c.InstanceName == instance);
+        if (at < 0 || !DrawnMetal.Is(Schematic.Components[at])) return (null, $"{instance} is not drawn metal.");
+        if (Layout?.Instances.FirstOrDefault(i => i.SchematicId == instance) is not { } placed) return (null, $"{instance} is not placed.");
+        var (ax, ay) = LayoutInstanceTransform.InverseTransformPoint(fromX, fromY, placed, 0, 0);
+        var (bx, by) = LayoutInstanceTransform.InverseTransformPoint(toX, toY, placed, 0, 0);
+        double metresPerDbu = 1e-6 / Layout.DbuPerMicron;
+        var next = Copy(SchematicPersistence.Serialize(Schematic, CellName));
+        var comp = next.Components[at];
+        foreach (var (name, delta) in new[] { (DrawnMetal.X(vertex), (bx - ax) * metresPerDbu), (DrawnMetal.Y(vertex), (by - ay) * metresPerDbu) })
+            if (comp.Parameters.FirstOrDefault(p => p.Name == name) is { } row)
+                row.Expression = PlusLiteral(row.Expression, delta / (Units.Scale(UnitNormalizer.ToEngineUnit(row.Unit)) ?? 1.0));
+        return (next, $"{instance} vertex {vertex} moved.");
+    });
+
+    /// <summary><paramref name="expression"/> plus <paramref name="delta"/>: a plain number becomes the sum, anything else
+    /// gains a trailing literal. Six significant figures, the precision of a drag.</summary>
+    internal static string PlusLiteral(string expression, double delta)
+    {
+        string d = Math.Abs(delta).ToString("G6", CultureInfo.InvariantCulture);
+        if (Math.Abs(delta) < 1e-12) return expression;
+        if (double.TryParse(expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+            return (v + delta).ToString("G6", CultureInfo.InvariantCulture);
+        return $"{expression.Trim()} {(delta < 0 ? "-" : "+")} {d}";
+    }
+
+    // ══ Reading the plan (D6) ═════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>Every placed pin: its part, its number and its pose, from the generated cells' pins.</summary>
+    public IEnumerable<(string Instance, int Pin, PinPose Pose)> Pins()
+    {
+        if (Layout is null) yield break;
+        foreach (var inst in Layout.Instances)
+        {
+            if (inst.SchematicId is not { Length: > 0 } id) continue;
+            var pins = CellLayoutResolver.Resolve(inst, _layoutDir, Technology).View?.Pins ?? [];
+            for (int k = 0; k < pins.Count; k++)
+                yield return (id, int.TryParse(pins[k].Name, out int n) ? n : k + 1, Pose(pins[k], inst));
+        }
+    }
+
+    public PinPose? PinPoseOf(string instance, int pin) =>
+        Pins().Where(p => p.Instance == instance && p.Pin == pin).Select(p => (PinPose?)p.Pose).FirstOrDefault();
+
+    /// <summary>The pin nearest (<paramref name="x"/>, <paramref name="y"/>) within <paramref name="tolerance"/> DBU.</summary>
+    public (string Instance, int Pin)? PinAt(long x, long y, long tolerance) =>
+        Pins().Select(p => (p.Instance, p.Pin, D: Math.Max(Math.Abs(p.Pose.X - x), Math.Abs(p.Pose.Y - y))))
+              .Where(p => p.D <= tolerance).OrderBy(p => p.D).Select(p => ((string, int)?)(p.Instance, p.Pin)).FirstOrDefault();
+
+    /// <summary>An <c>MSHAPE</c>'s vertices where the plan put them (DBU), from its <c>X[i]</c>/<c>Y[i]</c> at the values.</summary>
+    public IReadOnlyList<(int Vertex, long X, long Y)> VerticesOf(string instance)
+    {
+        var comp = Schematic.Components.FirstOrDefault(c => c.InstanceName == instance);
+        if (comp is null || !DrawnMetal.Is(comp) || Layout?.Instances.FirstOrDefault(i => i.SchematicId == instance) is not { } placed) return [];
+        var scope = ScopeAtValues();
+        var evaluator = new Evaluator();
+        double dbuPerMetre = Layout.DbuPerMicron * 1e6;
+        var list = new List<(int, long, long)>();
+        for (int i = 1; comp.Parameters.FirstOrDefault(p => p.Name == DrawnMetal.X(i)) is { } xr
+                        && comp.Parameters.FirstOrDefault(p => p.Name == DrawnMetal.Y(i)) is { } yr; i++)
+        {
+            try
+            {
+                double x = evaluator.Eval(xr.Expression, scope, UnitNormalizer.ToEngineUnit(xr.Unit)).AsReal();
+                double y = evaluator.Eval(yr.Expression, scope, UnitNormalizer.ToEngineUnit(yr.Unit)).AsReal();
+                var (wx, wy) = LayoutInstanceTransform.TransformPoint((long)Math.Round(x * dbuPerMetre), (long)Math.Round(y * dbuPerMetre), placed, 0, 0);
+                list.Add((i, wx, wy));
+            }
+            catch (Exception) { /* a vertex that does not evaluate is not drawn either */ }
+        }
+        return list;
+    }
+
+    private static PinPose Pose(LayoutPin pin, LayoutInstance inst)
+    {
+        var (x, y) = LayoutInstanceTransform.TransformPoint(pin.X, pin.Y, inst, 0, 0);
+        double rad = pin.OutwardDeg * Math.PI / 180;
+        var (tx, ty) = LayoutInstanceTransform.TransformPoint(pin.X + (long)Math.Round(1e6 * Math.Cos(rad)),
+                                                              pin.Y + (long)Math.Round(1e6 * Math.Sin(rad)), inst, 0, 0);
+        double deg = Math.Atan2(ty - y, tx - x) * 180 / Math.PI;
+        return new PinPose(x, y, Math.Round(deg < 0 ? deg + 360 : deg, 9));
+    }
+
+    // ══ Parameters (R-pcd6-3) ═════════════════════════════════════════════════════════════════════════════════════
+
+    [RelayCommand]
+    public void AddParameter()
+    {
+        int k = 1;
+        while (Parameters.Any(p => p.Name == $"P{k}")) k++;
+        Parameters.Add(new PCellParameterRow(OnTableChanged) { Name = $"P{k}", Default = "100", Unit = "um", Value = "100" });
+    }
+
+    [RelayCommand]
+    public void RemoveParameter(PCellParameterRow? row)
+    {
+        if (row is not null) Parameters.Remove(row);
+    }
+
+    private static string SiText(double? si, string unit) =>
+        si is not { } v ? "" : (v / (Units.Scale(UnitNormalizer.ToEngineUnit(unit)) ?? 1.0)).ToString("G6", CultureInfo.InvariantCulture);
+
+    private static double? TextSi(string text, string unit, out bool bad)
+    {
+        bad = false;
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var (e, u) = TunableValue.Split(text, unit);
+        if (TunableValue.TryParse(TunableValue.Text(e, u), out _, out _, out double si)) return si;
+        bad = true;
+        return null;
+    }
+
+    // ══ Save, Run EM, Optimise, Export (R-pcd6-6 to -9) ═══════════════════════════════════════════════════════════
+
+    /// <summary>R-pcd6-9: the <c>.ccell</c>, the <c>.csch</c>, and the cell's <c>.clay</c> as planned at the defaults.
+    /// Null when saved, else why not.</summary>
+    [RelayCommand]
+    private void SaveCell() => Save();
+
+    public string? Save()
+    {
+        string? why = SaveCore();
+        Status = why ?? $"Saved {CellName}: its schematic, its parameters, and its layout at the defaults.";
+        return why;
+    }
+
+    private string? SaveCore()
+    {
+        var cell = CellFolder.ReadCcell(CellDir) ?? new CcellFile();
+        var old = cell.Parameters.ToDictionary(p => p.Name, StringComparer.Ordinal);
+        var parameters = new List<CcellParameter>();
+        foreach (var row in Parameters.Where(r => r.Name.Length > 0))
+        {
+            var p = old.TryGetValue(row.Name, out var known) ? known.Clone() : new CcellParameter { Name = row.Name };
+            p.DefaultExpression = row.Default;
+            p.Unit = row.Unit;
+            p.Dimension = row.Dimension;
+            p.Description = row.Description.Length > 0 ? row.Description : null;
+            p.Minimum = TextSi(row.Minimum, row.Unit, out bool badMin);
+            p.Maximum = TextSi(row.Maximum, row.Unit, out bool badMax);
+            if (badMin || badMax) return $"{row.Name}'s range is not a number with a unit; nothing was saved.";
+            parameters.Add(p);
+        }
+        cell.Parameters = parameters;
+        cell.PCellDesign ??= new CcellPCellDesign();
+        cell.LayoutGenerator = PCellDesign.GeneratorIdFor(CellName);
+        cell.EmCopper = true;
+        cell.PrimarySchematic ??= Path.GetFileName(SchematicPath);
+        cell.PrimaryLayout ??= Path.GetFileName(ClayPath);
+        try
+        {
+            CellPersistence.SaveToFile(Path.Combine(CellDir, CellFolder.CcellFileName), cell);
+            Directory.CreateDirectory(_schematicDir);
+            SchematicPersistence.SaveToFile(SchematicPath, Schematic, CellName);
+            Dirty = false;
+            if (Technology is null) return "Saved the schematic and parameters; the layout resolves no technology, so it was not written.";
+            // S1: the saved layout is the planner's output at the defaults, never the values column.
+            var at = DesignedCellLayout.At(CellDir, new Dictionary<string, Value>(), WorkspaceRoot, Technology, TechIdentity, Schematic);
+            if (at.Layout is null) return $"Saved the schematic and parameters; the layout was not written: {at.Refusal}";
+            Directory.CreateDirectory(_layoutDir);
+            LayoutPersistence.SaveToFile(ClayPath, at.Layout);
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return $"{CellName} could not be saved: {e.Message}";
+        }
+    }
+
+    /// <summary>The latest Run EM: done once shown, cancelled or failed. A test awaits it; the window never does.</summary>
+    public Task Work { get; private set; } = Task.CompletedTask;
+
+    private CancellationTokenSource _work = new();
+
+    /// <summary>R-pcd6-6: Save, the cell's <c>.cem</c> made when it has none, then EM at the current values on a worker.</summary>
+    [RelayCommand]
+    public void RunEm()
+    {
+        if (Busy) return;
+        Work = RunWork("Run EM", async token =>
+        {
+            if (SaveCore() is { } why) return why;
+            string cws = Path.Combine(WorkspaceRoot, ".cws");
+            if (EmSetupResolver.FindSetupsForLayout(cws, ClayPath).Count == 0)
+                EmSetupFromSchematic.Run(Schematic, cws, ClayPath, CellName);
+            if (EmCapability.Resolve(CellDir, null, null, out string? refusal) is not { } target) return refusal ?? "the cell cannot be solved.";
+            var values = SiValues();
+            var result = await Task.Run(() => EmEvaluation.Evaluate(target, values, control: new RunControl { Token = token }), token);
+            if (result.SnpPath is not { } snp) return result.Refusal ?? "no result.";
+            Em = TouchstoneIO.ReadFile(snp);
+            BuildPlot();
+            return $"{Em.FrequencyCount} points" + (result.Cached ? ", from the EM cache." : ".");
+        });
+    }
+
+    [RelayCommand]
+    public void CancelWork() => _work.Cancel();
+
+    private async Task RunWork(string what, Func<CancellationToken, Task<string>> work)
+    {
+        _work = new CancellationTokenSource();
+        Busy = true;
+        Status = $"{what}…";
+        try { Status = $"{what}: " + await work(_work.Token); }
+        catch (OperationCanceledException) { Status = $"{what} cancelled."; }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Status = $"{what} failed: {ex.Message}"; }
+        finally { Busy = false; }
+    }
+
+    /// <summary>R-pcd6-7: Save, then the cell's schematic and the Optimizer on it.</summary>
+    [RelayCommand]
+    public void Optimise()
+    {
+        if (Save() is { } why) { Status = "Optimise: " + why; return; }
+        if (OpenOptimizer is null) { Status = "Optimise needs the workspace window: open the designer from it."; return; }
+        OpenOptimizer(SchematicPath);
+        Status = $"Optimise: {CellName}'s schematic is open with the Optimizer.";
+    }
+
+    /// <summary>R-pcd6-8: Save, then <see cref="PCellPackage.Export"/> (it runs the design check).</summary>
+    public string Export(string packagePath)
+    {
+        if (Save() is { } why) return Status = "Export: " + why;
+        PCellPackageOutcome o;
+        try { o = PCellPackage.Export(CellDir, packagePath); }
+        catch (Exception e) when (e is not OutOfMemoryException) { return Status = "Export: " + e.Message; }
+        string findings = string.Join(" ", o.Findings.Select(f => f.Render()));
+        return Status = o.Path is { } p
+            ? $"Exported {Path.GetFileName(p)}." + (findings.Length > 0 ? " " + findings : "")
+            : $"Export refused: {findings}";
+    }
+}

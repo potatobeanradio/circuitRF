@@ -637,6 +637,14 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- brief-pcd-6 R-pcd6-1: the PCell Designer on a placed designed cell. Hidden for every other
+                             component, as Synthesise… is. -->
+                        <MenuItem x:Name="CtxEditInPCellDesigner"
+                                  Header="Edit in PCell Designer"
+                                  IsVisible="False"
+                                  ToolTip.Tip="Opens the PCell Designer on this part's designed cell"
+                                  Click="OnCtxEditInPCellDesigner"/>
+
                         <Separator x:Name="CtxSep1"/>
 
                         <MenuItem Header="Rotate 90°"

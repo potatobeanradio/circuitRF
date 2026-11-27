@@ -151,6 +151,7 @@
                                     <NativeMenuItem Header="Voxel Model…" ToolTip="{Binding ThreeDImportAnatomyTip}" Command="{Binding ImportVoxelModelCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Surface Meshes…" ToolTip="{Binding ThreeDImportAnatomyTip}" Command="{Binding ImportSurfaceMeshesCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Component…" Command="{Binding ImportComponentCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="PCell Package…" Command="{Binding ImportPCellPackageCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="PDK…"   Command="{Binding ImportPdkCommand}"          CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Model or Subcircuit…" Command="{Binding ImportModelCardCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Technology…" Command="{Binding ImportTechnologyCommand}" CommandParameter="{Binding $parent[Window]}"/>
@@ -561,6 +562,8 @@
                         <NativeMenuItem Header="Filter Designer…" Command="{Binding NewFilterDesignerCommand}"/>
                         <!-- The lumped LC ladder designer: mirrored below. -->
                         <NativeMenuItem Header="LC Filter Designer" Command="{Binding NewLcFilterDesignerCommand}"/>
+                        <!-- brief-pcd-6 R-pcd6-1: the PCell Designer. Mirrored below. -->
+                        <NativeMenuItem Header="PCell Designer…" Command="{Binding OpenPCellDesignerCommand}"/>
                         <!-- The Signal Designer on no MOD_Source: design or read a signal, export it. Mirrored below. -->
                         <NativeMenuItem Header="Signal Designer" Command="{Binding NewSignalDesignerCommand}"/>
                         <!-- railRF (railrf.md §11.4). Needs NO workspace to open, for harmonicaRF's
@@ -1085,6 +1088,10 @@
                               Command="{Binding ImportComponentCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="Import a component — its symbol, its land pattern(s) and the pin-to-pad map between them — as one cell. Point at a file or a folder; the folder is scanned for files that can be imported, and the formats read are .kicad_sym, .kicad_mod, .lib and .lbr."/>
+                    <MenuItem Header="PCell P_ackage…"
+                              Command="{Binding ImportPCellPackageCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="Import a PCell package (.cpcell) into the workspace as a designed cell: its Library tile, its parameters and its generated layout, like any other PCell. Requires an open workspace."/>
                     <MenuItem Header="_PDK…"
                               Command="{Binding ImportPdkCommand}"
                               CommandParameter="{Binding $parent[Window]}"/>
@@ -1730,6 +1737,12 @@
                           Command="{Binding NewLcFilterDesignerCommand}"
                           ToolTip.Tip="Synthesise a lumped LC ladder — lowpass, highpass, bandpass or bandstop — snapped to standard part values, and see it on the Data Display plots. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="Ladder" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- brief-pcd-6 R-pcd6-1: the PCell Designer — hand-mirrored with the macOS NativeMenu above. -->
+                <MenuItem Header="_PCell Designer…"
+                          Command="{Binding OpenPCellDesignerCommand}"
+                          ToolTip.Tip="Design a parameterised cell from the circuit primitives: its layout at the current values, its parameters, its netlist and its response, then export it as a PCell package. Opens on the active schematic's cell when it is designed, else on a new one. Requires an open workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="VectorPolygon" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- The Signal Designer on no MOD_Source — hand-mirrored with the macOS NativeMenu above. -->
                 <MenuItem Header="Si_gnal Designer"

@@ -1,0 +1,160 @@
+<!-- Owner: PCD-6 (brief-pcd-6 §3). The PCell Designer: the cell's layout at the current values on the left (the layout
+     canvas, read-only; the gestures are the window's), the parameter table and the response on the right, the netlist
+     text below. Laid out as the Filter Designer is: panes that resize by their gaps. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.PCellDesigner"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        x:Class="CircuitRF.Ui.Views.PCellDesigner.PCellDesignerWindow"
+        x:DataType="vm:PCellDesignerViewModel"
+        Title="{Binding Title}"
+        Width="1200" Height="820" MinWidth="900" MinHeight="600"
+        CanResize="True">
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="ClipToBounds"    Value="True"/>
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="StackPanel.bar > Button">
+            <Setter Property="Margin" Value="0,0,4,0"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Classes="bar" Margin="8,6">
+            <Button Content="Save" Command="{Binding SaveCellCommand}"
+                    ToolTip.Tip="Write the schematic, the parameters, and the cell's layout planned at the defaults"/>
+            <Button Content="Undo" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}"/>
+            <Button Content="Redo" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}"/>
+            <Button Content="Run EM" Command="{Binding RunEmCommand}" IsEnabled="{Binding !Busy}"
+                    ToolTip.Tip="Save, then solve the cell's layout at the current values on EM; the result joins the response"/>
+            <Button Content="Cancel" Command="{Binding CancelWorkCommand}" IsEnabled="{Binding Busy}"/>
+            <Button Content="Optimise" Command="{Binding OptimiseCommand}"
+                    ToolTip.Tip="Save, then open the cell's schematic with the Optimizer"/>
+            <Button Name="ExportButton" Content="Export…" Click="OnExport"
+                    ToolTip.Tip="Save, check the design, and write it as a PCell package (.cpcell)"/>
+            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding Status}"/>
+        </StackPanel>
+
+        <Grid Margin="4,0,4,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" MinWidth="300"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="2*" MinWidth="320"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="3*" MinHeight="200"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="100"/>
+            </Grid.RowDefinitions>
+
+            <!-- The canvas (R-pcd6-2) -->
+            <Border Classes="pane" Grid.Row="0" Grid.Column="0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                        <TextBlock Name="SelectionText" Classes="note" VerticalAlignment="Center"
+                                   Text="Shift-click MSHAPE vertices to select them."/>
+                        <ComboBox Name="StretchParameter" MinWidth="90" ItemsSource="{Binding Parameters}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PCellParameterRow">
+                                    <TextBlock Text="{Binding Name}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="axis" VerticalAlignment="Center"/>
+                        <TextBox Name="StretchAxis" Text="0" Width="50"/>
+                        <Button Content="Stretch by Parameter" Click="OnStretch"
+                                ToolTip.Tip="The selected vertices follow the parameter along the axis (degrees, the part's own frame)"/>
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Bottom" Classes="note" Text="{Binding LayoutNote}"/>
+                    <TextBlock DockPanel.Dock="Top" Classes="note"
+                               Text="Drop a Library part on a pin; drag an offset part by its pin; drag an MSHAPE vertex."/>
+                    <ctl:LayoutCanvas Name="DesignCanvas" ReadOnly="True" ClipToBounds="True"/>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Width="4" Background="Transparent"
+                          ResizeDirection="Columns"/>
+
+            <!-- Parameters (R-pcd6-3) over the response (R-pcd6-5) -->
+            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,*">
+                <Border Classes="pane" Grid.Row="0">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="+" Command="{Binding AddParameterCommand}"
+                                    ToolTip.Tip="Add a parameter"/>
+                            <TextBlock Classes="panelhdr" Text="Parameters"/>
+                        </DockPanel>
+                        <Grid ColumnDefinitions="80,70,45,60,60,*,70,24">
+                            <TextBlock Grid.Column="0" Classes="note" Text="Name"/>
+                            <TextBlock Grid.Column="1" Classes="note" Text="Default"/>
+                            <TextBlock Grid.Column="2" Classes="note" Text="Unit"/>
+                            <TextBlock Grid.Column="3" Classes="note" Text="Minimum"/>
+                            <TextBlock Grid.Column="4" Classes="note" Text="Maximum"/>
+                            <TextBlock Grid.Column="5" Classes="note" Text="Description"/>
+                            <TextBlock Grid.Column="6" Classes="note" Text="Value"
+                                       ToolTip.Tip="What the canvas and the response are drawn at; not saved"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Parameters}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PCellParameterRow">
+                                    <Grid ColumnDefinitions="80,70,45,60,60,*,70,24">
+                                        <TextBox Grid.Column="0" Text="{Binding Name}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Default}"/>
+                                        <TextBox Grid.Column="2" Text="{Binding Unit}"/>
+                                        <TextBox Grid.Column="3" Text="{Binding Minimum}"/>
+                                        <TextBox Grid.Column="4" Text="{Binding Maximum}"/>
+                                        <TextBox Grid.Column="5" Text="{Binding Description}"/>
+                                        <TextBox Grid.Column="6" Text="{Binding Value}"/>
+                                        <Button Grid.Column="7" Content="−" Click="OnRemoveParameter"
+                                                ToolTip.Tip="Remove this parameter"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+                <Border Classes="pane" Grid.Row="1">
+                    <ctl:AspectRatioPanel>
+                        <ddc:PlotControl Name="ResponsePlotControl"
+                                         Plot="{Binding Plot}"
+                                         Library="{Binding PlotHost.Library}"
+                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                    </ctl:AspectRatioPanel>
+                </Border>
+            </Grid>
+
+            <GridSplitter Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Height="4" Background="Transparent"
+                          ResizeDirection="Rows"/>
+
+            <!-- The text view (R-pcd6-4) -->
+            <Border Classes="pane" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" VerticalAlignment="Top" Margin="6,0,0,0" Content="Apply"
+                            Command="{Binding ApplyEditCommand}"
+                            ToolTip.Tip="Merge the text into the schematic by designator, as one undo step"/>
+                    <TextBox Text="{Binding CnlText}" AcceptsReturn="True" TextWrapping="NoWrap"
+                             FontFamily="{DynamicResource IBMPlexMono}" FontSize="12"/>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>
