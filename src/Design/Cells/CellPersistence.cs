@@ -422,6 +422,30 @@ public sealed class CcellPCellDesign
     /// <summary>The live response's sweep in the <c>.cnl</c> analysis spelling (<c>start=1 stop=20 npts=201 Unit=GHz</c>);
     /// null is the designer's default.</summary>
     public string? Sweep { get; set; }
+
+    /// <summary>brief-pcd-12 R-pcd12-3: the filter specification a cell made by the Filter Designer's Make PCell… was
+    /// realised to, which its metrics are checked against; null for any other designed cell.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CcellFilter? Filter { get; set; }
+}
+
+/// <summary>brief-pcd-12 D7: a designed filter cell's specification, as <c>FilterSpec</c> holds it (frequencies in Hz),
+/// and the realiser that built it.</summary>
+public sealed class CcellFilter
+{
+    public CircuitRF.Core.Systems.FilterResponse Response { get; set; }
+    public CircuitRF.Core.Synthesis.Filters.FilterBand Band { get; set; }
+    public int Order { get; set; }
+    public double F1Hz { get; set; }
+    public double F2Hz { get; set; }
+    public double RippleDb { get; set; }
+    public double StopAttenuationDb { get; set; }
+    public double Z0 { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<double>? TransmissionZerosHz { get; set; }
+
+    public string Realiser { get; set; } = "";
 }
 
 /// <summary>

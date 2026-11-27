@@ -54,10 +54,12 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
     public static FilterDesignerWindow Show(ViewModels.SchematicViewModel? schematicVm, SymbolKind? family, Window? owner,
         Technology? technology = null, Func<ViewModels.SchematicViewModel?>? placeTarget = null)
     {
-        var window = new FilterDesignerWindow
-        {
-            DataContext = new FilterDesignerViewModel(schematicVm, family, technology: technology, placeTarget: placeTarget),
-        };
+        var vm = new FilterDesignerViewModel(schematicVm, family, technology: technology, placeTarget: placeTarget);
+        var window = new FilterDesignerWindow { DataContext = vm };
+        // Make PCell… (brief-pcd-12): the open workspace is the owner's, and the new cell opens in the PCell Designer.
+        vm.WorkspaceRoot = () => (owner?.DataContext as ViewModels.WorkspaceViewModel)?.CurrentWorkspacePath is { } cws
+            ? System.IO.Path.GetDirectoryName(cws) : null;
+        vm.OpenDesigner = (cell, root) => PCellDesigner.PCellDesignerWindow.Show(cell, root, window);
         if (owner is null) window.Show();
         else
         {

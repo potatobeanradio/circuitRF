@@ -6,6 +6,9 @@ using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Matching;
+using CircuitRF.Design.PCellDesigner;
+using CircuitRF.Design.Workspace;
+using CircuitRF.Diagnostics;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Engine;
 using RfCore;
@@ -13,7 +16,7 @@ using RfCore;
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf filter --band B --order N --f1 F [--f2 F] [spec…] [--tech T] [--realiser R -o f.cnl [--to-schematic] [--em]]</c>
+/// <c>circuitrf filter --band B --order N --f1 F [--f2 F] [spec…] [--tech T] [--realiser R [-o f.cnl [--to-schematic] [--em]] [--pcell Name]]</c>
 /// or <c>[--extract f.s2p]</c> —
 /// the Filter Designer, headless (docs/design/filter-synthesis.md §6).
 ///
@@ -22,7 +25,8 @@ namespace CircuitRF.Cli;
 /// lists every realiser and whether it can build the specification; with one it writes the bench as a <c>.cnl</c>, and with
 /// <c>--to-schematic</c> draws it through <c>netlist --to-schematic</c>'s own path, and with <c>--em</c> solves the part on Planar
 /// MoM (<see cref="FilterEmService"/>, §6d) into <c>&lt;name&gt;.em.s2p</c> beside it. <c>--extract</c> reads any two-port
-/// Touchstone file's filter metrics against the specification (<see cref="FilterExtraction"/>, §6c).</para>
+/// Touchstone file's filter metrics against the specification (<see cref="FilterExtraction"/>, §6c). <c>--pcell</c> makes the
+/// realisation a designed cell in the workspace (<see cref="PCellFilter.Make"/>, brief-pcd-12).</para>
 /// </summary>
 internal static class FilterVerb
 {
@@ -31,7 +35,7 @@ internal static class FilterVerb
     /// <summary>The verb over <paramref name="realisers"/>; a test hands its own.</summary>
     internal static int Run(string[] args, IReadOnlyList<IFilterRealiser> realisers)
     {
-        string? tech = null, signal = null, ground = null, realiser = null, output = null, extract = null;
+        string? tech = null, signal = null, ground = null, realiser = null, output = null, extract = null, pcell = null;
         string? response = null, band = null, order = null, f1 = null, f2 = null, ripple = null, stop = null, z0 = null, zeros = null, points = null;
         bool toSchematic = false, em = false;
         for (int i = 0; i < args.Length; i++)
@@ -58,6 +62,7 @@ internal static class FilterVerb
                 case "--realiser": realiser = v; break;
                 case "--points": points = v; break;
                 case "--extract": extract = v; break;
+                case "--pcell": pcell = v; break;
                 case "-o" or "--output": output = v; break;
                 default: return JsonRun.Fail(CliDiagnostics.FilterUnknownOption(a));
             }
@@ -96,11 +101,17 @@ internal static class FilterVerb
         var spec = new FilterSpec(fr, fb, n, lo, hi, rippleDb, stopDb, zRef, tz.Count > 0 ? tz : null);
         if (extract is not null) return Extract(spec, extract);
 
-        // ── the technology: --tech, else the workspace the CLI was given, else the one the output lands in ──
+        // ── the technology: --tech, else the workspace the CLI was given, else the one the output (or --pcell's cell) lands in ──
+        // --pcell: a bare name goes into the --workspace root, else the current folder; a path into its own folder.
+        string? cellParent = pcell is null ? null
+            : Path.GetDirectoryName(pcell) is { Length: > 0 } folder ? Path.GetFullPath(folder)
+            : CliEntry.HostWorkspace ?? Directory.GetCurrentDirectory();
+        string? cellRoot = WorkspaceRootFinder.WorkspaceDirOf(cellParent);
         Technology? technology;
         if (tech is not null) { if ((technology = Technology(tech)) is null) return 1; }
         else technology = CliEntry.HostWorkspace is { } host ? MicrostripSubstrateInjection.ResolveWorkspaceTechnology(host)
             : output is not null ? MicrostripSubstrateInjection.ResolveWorkspaceTechnology(Path.GetDirectoryName(Path.GetFullPath(output)))
+            : cellRoot is not null ? MicrostripSubstrateInjection.ResolveWorkspaceTechnology(cellRoot)
             : null;
         MicrostripSubstrate? substrate = null;
         if (technology is not null && (substrate = FilterSynthesisService.Substrate(technology, signal, ground, out string? why)) is null)
@@ -129,13 +140,14 @@ internal static class FilterVerb
             return JsonRun.Fail(CliDiagnostics.FilterRealiserUnknown(realiser, string.Join("; ", realisers.Select(r => r.Name))));
         if (!chosen.Supports(spec, out string? refusal))
             return JsonRun.Fail(CliDiagnostics.FilterRealiserRefused(chosen.Name, refusal ?? "it does not say why"));
-        if (output is null) return JsonRun.Fail(CliDiagnostics.FilterOutputRequired());
+        if (output is null && (pcell is null || toSchematic || em)) return JsonRun.Fail(CliDiagnostics.FilterOutputRequired());
 
         FilterRealisation realisation;
         try { realisation = chosen.Realise(spec, substrate); }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         { return JsonRun.Fail(CliDiagnostics.FilterRealiserRefused(chosen.Name, ex.Message)); }
 
+        if (output is null) return PCell(spec, realisation, chosen.Name, pcell!, cellParent!, cellRoot);
         var notes = new List<string>(realisation.Notes);
         string cnl = FilterSynthesisService.Cnl(spec, realisation, chosen.Name, substrate, technology, np, notes);
         string path = Path.GetFullPath(output);
@@ -147,6 +159,7 @@ internal static class FilterVerb
 
         if (toSchematic && NetlistToSchematic.Run(path, DocumentKind.Netlist, Path.ChangeExtension(path, ".csch")) is var drawn and not 0)
             return drawn;
+        if (pcell is not null && PCell(spec, realisation, chosen.Name, pcell, cellParent!, cellRoot) is var made and not 0) return made;
         return em ? Em(spec, realisation, substrate, cnl, path, points is null ? 8 * spec.Order + 4 * (spec.TransmissionZerosHz?.Count ?? 0) + 1 : np, np) : 0;
     }
 
@@ -183,6 +196,25 @@ internal static class FilterVerb
         if (spec.Band == FilterBand.Bandpass)
             Metrics(spec, ("EM", run.S), ("circuit", FilterSynthesisService.Response(cnl, FilterSynthesisService.Frequencies(spec, benchPoints), spec.Z0)));
         return 0;
+    }
+
+    /// <summary><c>--pcell</c>: the realisation as the designed cell <paramref name="pcell"/> (its name, or a path ending in
+    /// it) in <paramref name="parent"/> (<see cref="PCellFilter.Make"/>, what the window's Make PCell… calls), the design
+    /// check's findings forwarded; exit 1 on a refusal or a check error.</summary>
+    private static int PCell(FilterSpec spec, FilterRealisation realisation, string realiser, string pcell, string parent, string? root)
+    {
+        if (root is null)
+            return JsonRun.Fail(Diagnostic.Create("filter.pcell.no-workspace", DiagnosticSeverity.Error,
+                "filter --pcell makes a designed cell in a workspace, and {parent} is in none: give --workspace, or a path in one.",
+                ("parent", parent)));
+        var made = PCellFilter.Make(parent, Path.GetFileName(pcell), spec, realisation, realiser);
+        if (made.Refusal is { } why)
+            return JsonRun.Fail(Diagnostic.Create("filter.pcell.refused", DiagnosticSeverity.Error, "filter --pcell: {why}", ("why", why)));
+        foreach (var finding in made.Findings) JsonRun.Report(finding);
+        Console.WriteLine($"Made {made.CellDir}: a designed cell with {made.Parameters.Count} parameters ("
+                          + string.Join(", ", made.Parameters.Select(p => p.Name)) + ")");
+        JsonRun.AddOutput("pcell", made.CellDir!);
+        return made.Findings.Any(f => f.Severity == DiagnosticSeverity.Error) ? 1 : 0;
     }
 
     /// <summary><c>--extract</c>: a two-port Touchstone file's filter metrics against the specification.</summary>

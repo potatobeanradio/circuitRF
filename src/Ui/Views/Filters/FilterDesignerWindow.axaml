@@ -210,12 +210,14 @@
             </Border>
         </Grid>
 
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="8,4,8,8">
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="8,4,8,8">
             <TextBlock Classes="note" Text="{Binding Status}" VerticalAlignment="Center"/>
             <Button Grid.Column="1" Content="Help" Margin="4,0" Click="OnHelp"/>
-            <Button Grid.Column="2" Content="Place" Margin="4,0" Command="{Binding PlaceCommand}"
+            <Button Grid.Column="2" Content="Make PCell…" Margin="4,0" Command="{Binding MakePCellCommand}"
+                    ToolTip.Tip="{Binding MakePCellTip}" ToolTip.ShowOnDisabled="True"/>
+            <Button Grid.Column="3" Content="Place" Margin="4,0" Command="{Binding PlaceCommand}"
                     ToolTip.Tip="{Binding PlaceTip}" ToolTip.ShowOnDisabled="True"/>
-            <Button Grid.Column="3" Content="Close" Margin="4,0" Click="OnClose"/>
+            <Button Grid.Column="4" Content="Close" Margin="4,0" Click="OnClose"/>
         </Grid>
     </Grid>
 </Window>
