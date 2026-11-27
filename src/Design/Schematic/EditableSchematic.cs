@@ -61,8 +61,12 @@ public static class SymbolPortDefs
     /// its default; MCLA's default array's (interdigital, tapped, three strips: 1, 2, E1-E3), since a count of 2 is a real
     /// array of its own (a via-less pseudo-interdigital one), so the default part, its catalogue symbol and its
     /// generator's default artwork agree.</summary>
-    public static int DefaultPortCount(SymbolKind kind)
-        => kind == SymbolKind.Mcla ? CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount : 2;
+    public static int DefaultPortCount(SymbolKind kind) => kind switch
+    {
+        SymbolKind.Mcla   => CircuitRF.Core.Devices.Microstrip.CoupledArrayPlan.DefaultPinCount,
+        SymbolKind.MShape => 1,   // drawn metal's default part: one pin (brief-pcd-0 §4.3)
+        _                 => 2,
+    };
 
     /// <summary>
     /// Returns port definitions for the given kind and (for variadic types) port count.
@@ -274,6 +278,9 @@ public static class SymbolPortDefs
             case SymbolKind.MGap:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             // MRadial: MLIN's left pin, the sector fanning out to the right; turned, it hangs off a tee's branch.
             case SymbolKind.MRadial: return [("1", -200f, 0f)];
+            // MSHAPE: its pins down the left, k on the row (2k − n − 1)·100, as many as its PinX[k] rows (PortCount).
+            case SymbolKind.MShape:
+                return [.. Enumerable.Range(1, Math.Max(0, portCount)).Select(k => ($"{k}", -200f, (2f * k - portCount - 1) * 100f))];
             // MTee: through line left/right (pins 1/2), branch on the bottom (pin 3) — R-pc-3's own
             // "pin 1 origin, through +X to pin 2, branch +Y to pin 3" convention, mapped onto the
             // schematic canvas with the branch drawn downward (+Y is down in this codebase).
@@ -1375,6 +1382,10 @@ public sealed class EditableComponent
                 var pins = Parameters.FirstOrDefault(q => q.Name == "Pins");
                 return pins is not null && int.TryParse(pins.Expression, out int np) && np >= 1 ? np : 2;
             }
+
+            // Drawn metal draws one pin per PinX[k] row, k = 1, 2, … to the first missing one (brief-pcd-3 D2).
+            if (Symbol is SymbolKind.MShape)
+                return CircuitRF.Core.Devices.MShapeModel.PinCountOf(Parameters.Select(q => q.Name));
 
             // A Phased Antenna Array in Elements mode draws one pin per element, Rows × Cols of them.
             if (Symbol is SymbolKind.PhasedArray) return ArrayGlyph().PinCount;

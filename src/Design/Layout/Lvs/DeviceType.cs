@@ -162,6 +162,7 @@ public static class DeviceTypes
             ["MTAPER"] = SymbolKind.Mtaper,
             ["MKLOPF"] = SymbolKind.Mklopf,
             ["MRADIAL"] = SymbolKind.MRadial,
+            ["MSHAPE"]  = SymbolKind.MShape,
             ["CPWG"]   = SymbolKind.Cpwg,
             ["SLIN"]   = SymbolKind.Slin,
             ["VIA"]    = SymbolKind.Via,
@@ -321,6 +322,8 @@ public static class DeviceTypes
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MCurve or SymbolKind.MMiter or SymbolKind.MGap or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf or SymbolKind.GsgPad or SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc
             or SymbolKind.Mclc or SymbolKind.Midc or SymbolKind.Mcbl or SymbolKind.MRadial
+            // Drawn metal is a conductor on a layer, as a line is; its terminal count tells one from another.
+            or SymbolKind.MShape
             or SymbolKind.Mgpd or SymbolKind.Mbpd or SymbolKind.Mtpd
             or SymbolKind.Mcrc
             or SymbolKind.Mlad

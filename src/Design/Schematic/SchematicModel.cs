@@ -783,6 +783,10 @@ public enum SymbolKind
     /// 2, 3 for a T, bridged-T or splitter, then each series resistor's two ends. Appended so no existing kind's ordinal
     /// moves.</summary>
     Mrpad,
+    /// <summary>Drawn metal (engine "MSHAPE", brief-pcd-0 §4.3): a polygon or a path of width W through the vertices
+    /// X[i]/Y[i], and one pin per PinX[k] row at PinX/PinY, PinW wide, facing PinDir. No circuit model unless Model is
+    /// open, which leaves its pins open. Appended so no existing kind's ordinal moves.</summary>
+    MShape,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

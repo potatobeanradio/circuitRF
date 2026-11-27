@@ -58,6 +58,8 @@ public static class GroundPourPlanner
         MCurvePCell.GeneratorId,
         MMiterPCell.GeneratorId, MTeePCell.GeneratorId,
         MCrossPCell.GeneratorId, MTaperPCell.GeneratorId, MKlopfPCell.GeneratorId, MRadialPCell.GeneratorId,
+        // Drawn metal is copper on the signal layer over the same plane (brief-pcd-3).
+        MShapePCell.GeneratorId,
         // The planned passives (docs/design/rf-passives.md) are microstrip too: without them a ring reaching past its
         // lines, as the rat-race's half-turns do, was left off the plane.
         PassivePlanPCells.WilkinsonId, PassivePlanPCells.BranchLineId, PassivePlanPCells.RatRaceId,

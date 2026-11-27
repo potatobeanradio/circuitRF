@@ -13,6 +13,7 @@
 using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices.External;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Layout.SchematicSync;
 using CircuitRF.Design.Schematic;
 
@@ -133,22 +134,30 @@ public static class EmModelSwitch
     }
 
     /// <summary>
-    /// brief-sdl-10 D2 — the instances of EM cells that have no circuit model (a 3D-parametric cell with no schematic, whose
-    /// definition has ports and nothing in it), as <c>X1</c> or <c>cell:X1</c>. Such a part is simulated by EM only:
-    /// <c>em=correct</c> has nothing to search on, and a run by circuit models would leave it open.
+    /// brief-sdl-10 D2 — the instances that have no circuit model, as <c>X1</c> or <c>cell:X1</c>: an EM cell with none (a
+    /// 3D-parametric cell with no schematic, whose definition has ports and nothing in it), and drawn metal (MSHAPE, PCD-3)
+    /// whose <c>Model</c> is not <c>open</c>. Such a part is simulated by EM only: <c>em=correct</c> has nothing to search on,
+    /// and a run by circuit models would leave it open.
     /// </summary>
     public static IReadOnlyList<string> WithoutCircuitModel(TestBench tb, Library lib)
     {
-        bool Empty(Instance i) => NamesEmCell(i) && lib.Find(i.Reference) is { Instances.Count: 0 };
+        bool Empty(Instance i) => (NamesEmCell(i) && lib.Find(i.Reference) is { Instances.Count: 0 }) || DrawnWithoutModel(i);
         return tb.Instances.Where(Empty).Select(i => i.InstanceName)
             .Concat(lib.Cells.SelectMany(c => c.Instances.Where(Empty).Select(i => $"{c.Name}:{i.InstanceName}")))
             .ToList();
     }
 
+    /// <summary>An MSHAPE whose <c>Model</c> is absent or anything but <c>open</c>, quoted or not (brief-pcd-0 §4.3).</summary>
+    private static bool DrawnWithoutModel(Instance i) =>
+        i.Reference.Equals(DrawnMetal.GeneratorId, StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(i.Overrides.LastOrDefault(o => o.Name.Equals(DrawnMetal.Model, StringComparison.OrdinalIgnoreCase))
+                              ?.Expression.Trim().Trim('"').Trim(), DrawnMetal.ModelOpen, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>The refusal of a run by circuit models of <paramref name="names"/> (<see cref="WithoutCircuitModel"/>).</summary>
     public static string NoCircuitModelSentence(IReadOnlyList<string> names) =>
-        $"{string.Join(", ", names)} {(names.Count == 1 ? "has" : "have")} no circuit model (a 3D-parametric cell with no " +
-        "schematic), so it cannot be run by circuit models; it is simulated by EM only.";
+        $"{string.Join(", ", names)} {(names.Count == 1 ? "has" : "have")} no circuit model, so " +
+        $"{(names.Count == 1 ? "it" : "they")} cannot be run by circuit models and {(names.Count == 1 ? "is" : "are")} " +
+        "simulated by EM only. Run it with em=direct, or give it a circuit model.";
 
     /// <summary><c>--em off</c>: every instance back on its circuit model, whatever it states.</summary>
     public static (TestBench Tb, Library Lib) CircuitOnly(TestBench tb, Library lib)

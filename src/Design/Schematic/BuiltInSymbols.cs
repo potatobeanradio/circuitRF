@@ -187,6 +187,8 @@ public static class BuiltInSymbols
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mbpdCache = new();
     // MLAD per via-pin count, keyed by that count; Primitives takes its PIN count (2 + the shorted stub arms).
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mladCache = new();
+    // MSHAPE per pin count.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mshapeCache = new();
     // MCLA per pin count (1, 2 and its end pins).
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Symbol> _mclaCache = new();
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<CircuitRF.Core.Devices.Microstrip.LumpedTopology, Symbol>
@@ -293,6 +295,7 @@ public static class BuiltInSymbols
             case SymbolKind.MMiter:     return _mmiter;
             case SymbolKind.MGap:       return _mgap;
             case SymbolKind.MRadial:    return PrimitivesForRadialStub(RadialStubGlyph.Default);
+            case SymbolKind.MShape:     return _mshapeCache.GetOrAdd(Math.Max(0, portCount), BuildMShape);
             case SymbolKind.MTee:       return _mtee;
             case SymbolKind.MCross:     return _mcross;
             case SymbolKind.Mtaper:     return _mtaper;
@@ -3279,6 +3282,25 @@ public static class BuiltInSymbols
         Txt("1", -350, -125, fontSize: MixerPortFontSize),
         Txt("2",  350,  130, fontSize: MixerPortFontSize),
     ], SymbolKind.Mcrc);
+
+    // MSHAPE — drawn metal: an irregular outline, hatched across, and a lead from each pin down the left
+    // (SymbolPortDefs.For). VARIADIC on the pin count, cached per count; the body grows with the pins.
+    private static Symbol BuildMShape(int pins)
+    {
+        double h = 100 * Math.Max(1, pins);
+        var prims = new List<SymbolPrimitive>
+        {
+            Poly(false, -100, -h, 60, -h, 150, -h + 90, 150, h, -100, h, -100, -h),
+            L(-100, h - 60, -40, h), L(-100, 0, 0, h),
+        };
+        for (int k = 1; k <= pins; k++)
+        {
+            double y = (2 * k - pins - 1) * 100.0;
+            prims.Add(L(-200, y, -100, y));
+            if (pins > 1) prims.Add(Txt($"{k}", -150, y - 10, fontSize: 22, vAlign: SymbolTextVAlign.Bottom));
+        }
+        return Sym(prims, SymbolKind.MShape, defs: SymbolPortDefs.For(SymbolKind.MShape, pins));
+    }
 
     // MLAD — a ladder as a filter on the board: a narrow, a wide and a narrow line in a row with an open stub up from the
     // wide one, and a line down to each via pin G1… along the bottom (SymbolPortDefs.For), the ends moving out past them.

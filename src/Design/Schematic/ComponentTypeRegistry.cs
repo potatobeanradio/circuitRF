@@ -965,6 +965,11 @@ public static class ComponentTypeRegistry
             SearchTerms: ["MRPAD", "attenuator", "resistive attenuator", "pad", "resistive pad", "pi attenuator",
                           "T attenuator", "tee attenuator", "bridged-T", "bridged T", "resistive splitter",
                           "resistive divider", "star splitter", "wye", "delta", "dB pad", "matched pad"]),
+        // Drawn metal (brief-pcd-0 §4.3): an outline or a path whose vertices and pins are its own parameters.
+        [SymbolKind.MShape]       = new(ComponentModelFactory.MShapeTypeName, "SH",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["MSHAPE", "drawn metal", "shape", "polygon", "path", "pad", "bond pad", "launch", "flag",
+                          "copper", "metal", "outline", "PCell Designer"]),
         // The two vias (brief-via-component.md). Microstrip, because that is where they are used: a
         // line changing layers, and the return of a shunt part on a board. Not transmission lines.
         [SymbolKind.Via]          = new("VIA", "VIA",
@@ -1293,6 +1298,10 @@ public static class ComponentTypeRegistry
           + "Realization = Lumped, the lattice: an inductor across L1a-L1b (1 to 2), a capacitor across C1a-C1b (1 to 3), a "
           + "capacitor to ground on G2 and an inductor to ground on G3.",
 
+        SymbolKind.MShape =>
+            "One terminal per PinX[k] row, numbered by k: pin k sits at PinX[k], PinY[k] on the outline, PinW[k] wide, facing "
+          + "PinDir[k]. With Model = none it has no circuit model; with Model = open its terminals are left open.",
+
         SymbolKind.Mrpad =>
             "1 and 2 are the attenuator's ports; 3 is a splitter's third port, or the middle node a T's or bridged-T's "
           + "shunt resistor goes to ground from. Put each series resistor across its R pins (R1a-R1b, …) and each shunt "
@@ -1544,6 +1553,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mdly          => ComponentModelFactory.DelayLineTypeName,
         SymbolKind.Mcla          => ComponentModelFactory.CoupledArrayTypeName,
         SymbolKind.Mrpad         => ComponentModelFactory.ResistivePadTypeName,
+        SymbolKind.MShape        => ComponentModelFactory.MShapeTypeName,
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1781,6 +1791,26 @@ public static class ComponentTypeRegistry
     /// ZPort is one, whatever it looks like.</summary>
     private static readonly Regex RxZMatrixEntry = new(@"^Z\[\d+,\d+\]$", RegexOptions.Compiled);
 
+    /// <summary>MSHAPE's rows (brief-pcd-0 §4.3), an indexed row by its stem.</summary>
+    private static string DrawnMetalParameterDescription(string parameterName) =>
+        (parameterName.IndexOf('[') is var b and > 0 ? parameterName[..b] : parameterName) switch
+        {
+            "Form" => "\"polygon\": a closed outline through the vertices. \"path\": a centreline through them, W wide.",
+            "W" => "The path's width. A polygon ignores it.",
+            "X" => "Vertex i's x, in the part's own frame: the origin is where the layout places the part.",
+            "Y" => "Vertex i's y, in the part's own frame.",
+            "PinX" => "Pin k's x: where a line joining pin k meets the outline.",
+            "PinY" => "Pin k's y.",
+            "PinW" => "Pin k's width: the width of the line it joins, and of the EM port there.",
+            "PinDir" => "Pin k's outward direction, degrees: 180 faces -X, so a line joins it from the left.",
+            "Model" => "\"none\": no circuit model, simulated by EM only. \"open\": its terminals are left open in a circuit "
+                     + "simulation.",
+            "SignalLayer" => "The conductor the metal is on. Empty: the technology's top conductor.",
+            "GroundReference" => "The plane under it, for EM. Empty: the nearest ground-designated conductor below the signal "
+                               + "layer.",
+            _ => "",
+        };
+
     /// <summary>A source's phase-noise rows (brief NZ-7), on every CW and modulated source.</summary>
     private static string PhaseNoiseParameterDescription(SymbolKind kind, string parameterName) =>
         kind is not (SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource or SymbolKind.ToneSource
@@ -1797,6 +1827,7 @@ public static class ComponentTypeRegistry
 
     public static string ParameterDescription(SymbolKind kind, string parameterName)
         => kind is SymbolKind.Mixer or SymbolKind.MixerD ? MixerParameterDescription(parameterName)
+         : kind is SymbolKind.MShape ? DrawnMetalParameterDescription(parameterName)
          : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
          : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
          : ControlledSourceParameterDescription(kind, parameterName) is { Length: > 0 } csDesc ? csDesc
@@ -2316,6 +2347,10 @@ public static class ComponentTypeRegistry
           + "widths is not modelled, nor the coupling between neighbouring stubs. MTEE's and MCROSS's closed forms are "
           + "calibrated at er 9.9 and say so on any other board. A radial or butterfly end is MRADIAL. A site is open in "
           + "the model: its part, a via or an R, L or C on the G pins, is an ordinary one.",
+        SymbolKind.MShape =>
+            "None: drawn metal has no closed form. Model = none makes the part, and the cell that holds it, EM only: a run "
+          + "by circuit models is refused and an optimisation uses em=direct. Model = open stamps nothing, so its terminals "
+          + "are open in a circuit simulation. EM solves its copper either way.",
         SymbolKind.Mrpad =>
             "MTEE, MLIN and MBEND, the interconnect the layout draws, stamped together; the resistors are the parts on its "
           + "sites. MTEE's closed forms are calibrated at εr 9.9 and say so on any other board. The site values are the "
@@ -4900,6 +4935,21 @@ public static class ComponentTypeRegistry
                         new("Gap", "1",    "mm",  true, UnitDimension.Length),
                         new("Realization", nameof(PlanRealization.Distributed), "", false, UnitDimension.None),
                         .. SignalGroundLayerParams];
+            // MSHAPE (brief-pcd-0 §4.3): a 100 um square from the origin to the right, pin 1 at its left edge's middle as
+            // wide as that edge, facing -X. The two words are placed quoted, so the elaborator reads them as text.
+            case SymbolKind.MShape:
+                return [new(CircuitRF.Design.Layout.PCells.DrawnMetal.Form,  "\"polygon\"", "", false, UnitDimension.None),
+                        new(CircuitRF.Design.Layout.PCells.DrawnMetal.Width, "0", "um", false, UnitDimension.Length),
+                        new("X[1]", "0",   "um", false, UnitDimension.Length), new("Y[1]", "-50", "um", false, UnitDimension.Length),
+                        new("X[2]", "100", "um", false, UnitDimension.Length), new("Y[2]", "-50", "um", false, UnitDimension.Length),
+                        new("X[3]", "100", "um", false, UnitDimension.Length), new("Y[3]", "50",  "um", false, UnitDimension.Length),
+                        new("X[4]", "0",   "um", false, UnitDimension.Length), new("Y[4]", "50",  "um", false, UnitDimension.Length),
+                        new("PinX[1]", "0",   "um",  false, UnitDimension.Length),
+                        new("PinY[1]", "0",   "um",  false, UnitDimension.Length),
+                        new("PinW[1]", "100", "um",  false, UnitDimension.Length),
+                        new("PinDir[1]", "180", "deg", false, UnitDimension.Angle),
+                        new(CircuitRF.Design.Layout.PCells.DrawnMetal.Model, "\"none\"", "", true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
             // MRPAD: the form, Z0, the attenuator's loss and the series sites' span; the resistors are a readout.
             case SymbolKind.Mrpad:
                 return [new("Form",        nameof(ResistivePadForm.Pi), "", true, UnitDimension.None),
@@ -5150,6 +5200,8 @@ public static class ComponentTypeRegistry
             case "CLA":      kind = SymbolKind.Mcla;         return true;
             case "MRPAD":
             case "RPD":      kind = SymbolKind.Mrpad;        return true;
+            case "MSHAPE":
+            case "SH":       kind = SymbolKind.MShape;       return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -5346,6 +5398,16 @@ public static class ComponentTypeRegistry
             Dimensions:      [UnitDimension.None],
             FirstAddIndex:   1,
             SkipIndices:     null),
+
+        // MSHAPE: its vertices, X[i]/Y[i] in um; "+" adds the next one. The first two stay, as a path needs them.
+        SymbolKind.MShape => new IndexedParamGroup(
+            NameFormats:     ["X[{0}]", "Y[{0}]"],
+            DefaultUnits:    ["um"],
+            ShowOnSchematic: [false, false],
+            Dimensions:      [UnitDimension.Length, UnitDimension.Length],
+            FirstAddIndex:   3,
+            SkipIndices:     null,
+            DefaultExpressions: ["0", "0"]),
 
         // MEAS: user-authored measurement equation rows — adds Meas{n} placeholder names.
         SymbolKind.Meas => new IndexedParamGroup(
