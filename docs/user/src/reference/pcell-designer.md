@@ -13,6 +13,7 @@ keywords: PCell Designer, designed cell, PCell, parameterised cell, parametric c
 <li><a href="#what">What it is</a></li>
 <li><a href="#open">Opening it</a></li>
 <li><a href="#window">The window</a></li>
+<li><a href="#markers">Markers and dimensions</a></li>
 <li><a href="#placement">Where each part goes</a></li>
 <li><a href="#mshape">Drawn metal and Stretch by Parameter</a></li>
 <li><a href="#em">Run EM and Optimise</a></li>
@@ -80,6 +81,33 @@ Gestures on the canvas, each one undo step:
   ground puts the new pin on ground.
 - **Drag an offset part by its pin** to move its offset (see [below](#placement)).
 - **Drag a corner of an MSHAPE**, or select corners and use **Stretch by Parameter** (see [below](#mshape)).
+
+## Markers and dimensions {#markers}
+
+**Markers.** The response is a [Data Display](data-display.html) plot, and its markers work as they do there: add one
+from the plot's menu, drag it along a trace or step it with the arrow keys, and read its values in its box. Every edit
+recomputes the response, and each marker moves to the new trace of the same name (`S21`, `EM S21`) at the same
+frequency. A marker on the EM curve waits while an edit has cleared that curve, and comes back with the next
+**Run EM**.
+
+**Dimensions.** With **Dimensions** on (the toolbar; it is on until you turn it off, and the setting is kept), each
+parameter is drawn on the canvas as a dimension: a line between the two points it sets, in the style of the layout
+editor's rulers, with the measured length and a label such as `Lpad = 300 µm`. The lines are redrawn with the canvas,
+so changing a **Value** moves them and their labels. They come from what the cell already holds:
+
+| Where a parameter is used | The dimension |
+|---|---|
+| A Stretch by Parameter binding on an `MSHAPE` | From the corner that stays to the first corner that moves, along the stretch's axis. |
+| An offset whose **Dx**, **Dy** or **Angle** names a parameter | From the anchor pin to the part's own pin. |
+| A part's parameter that names one (`TL1.L = L1`, `W = W`) | The span of that part's own drag handle for the parameter, once per expression. |
+
+When the expression combines terms, the label is the expression and its value (`Lstub/2 = 2 mm`). The unit is the
+parameter's own.
+
+<figure class="figure">
+<img src="../../images/pcell-designer/dimensions.png" alt="The PCell Designer on the PadTee cell with Dimensions on: rulers over the layout labelled W = 1.1 mm, L1 = 3 mm, Lstub = 4 mm and Lpad = 300 µm." style="width:100%;height:auto">
+<figcaption>The <b>PadTee</b> cell with <b>Dimensions</b> on: each parameter drawn where it acts on the copper.</figcaption>
+</figure>
 
 ## Where each part goes {#placement}
 

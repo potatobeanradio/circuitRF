@@ -143,10 +143,15 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
         public void Draw(SkiaSharp.SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme)
         {
             if (Layout is null || Dimensions.Count == 0) return;
-            var view = new LayoutView { DbuPerMicron = Layout.DbuPerMicron, DisplayUnit = Layout.DisplayUnit };
-            foreach (var d in Dimensions)
-                view.Rulers.Add(new RulerAnnotation { X1 = d.FromX, Y1 = d.FromY, X2 = d.ToX, Y2 = d.ToY, Caption = d.Label });
-            LayoutRenderer.DrawRulersOnTop(canvas, view, viewport, new LayoutRenderOptions { Theme = theme, ShowRulers = true });
+            // One view per unit, so each ruler reads its length in its label's own unit, not the layout's.
+            foreach (var group in Dimensions.GroupBy(d => d.Unit))
+            {
+                var unit = Enum.TryParse<LayoutUnit>(group.Key, ignoreCase: true, out var u) ? u : Layout.DisplayUnit;
+                var view = new LayoutView { DbuPerMicron = Layout.DbuPerMicron, DisplayUnit = unit };
+                foreach (var d in group)
+                    view.Rulers.Add(new RulerAnnotation { X1 = d.FromX, Y1 = d.FromY, X2 = d.ToX, Y2 = d.ToY, Caption = d.Label });
+                LayoutRenderer.DrawRulersOnTop(canvas, view, viewport, new LayoutRenderOptions { Theme = theme, ShowRulers = true });
+            }
         }
 
         public Bbox ContentBounds() => Bbox.Empty;

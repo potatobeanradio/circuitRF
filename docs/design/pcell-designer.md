@@ -109,6 +109,8 @@ output at the instance's values, whose circuit model is its own schematic, and w
 - The Value column reaches the planner as an unsaved VAR row (`__PCDVALUES`), so unsaved values drive the canvas.
 - Selected corners are listed in a text line, and Stretch by Parameter takes inline fields; there is no canvas overlay.
 - Save writes the `.csch`, the `.ccell` (parameters, `PCellDesign`, `Terminals`) and the `.clay` at the defaults.
+- PCD-10: the response keeps its markers across a re-run by trace name and x, and **Dimensions** draws each parameter as
+  a ruler over the canvas (`PCellDimensions.Of`: stretch bindings, offsets, and the primitives' own handles).
 
 ### PCD-7 — `circuitrf pcell` and the MCP tool
 
@@ -164,8 +166,6 @@ The real Planar runs on the example are recorded in §5.
 
 - **Offset and flip in the text view.** Every showcase cell needed its `.csch` edited for them. Carrying them in the
   `.cnl` would let a designed cell be authored as text alone.
-- **The live response of an EM-only cell.** It draws the open circuit rather than a refusal. Saying "no circuit model:
-  Run EM" would avoid a flat −250 dB S21 that reads like a result.
 - **A cut on `MSHAPE` for the ground pour.** A slot drawn on its own needs the ground drawn around it in two shapes. A
   shape that cuts the pour would make a slot one part, and would keep it open under a pour.
 

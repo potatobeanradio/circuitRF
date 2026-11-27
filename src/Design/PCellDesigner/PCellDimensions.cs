@@ -13,8 +13,8 @@ using CircuitRF.Design.Schematic;
 namespace CircuitRF.Design.PCellDesigner;
 
 /// <summary>One dimension: what it measures (a parameter, or the expression that uses one), its two ends in the plan's
-/// DBU, and its label (<c>Lpad = 300 µm</c>).</summary>
-public sealed record PCellDimensionLine(string Subject, string Label, long FromX, long FromY, long ToX, long ToY);
+/// DBU, its label (<c>Lpad = 300 µm</c>) and the unit the label is in (<c>um</c>), so its length can be read in the same.</summary>
+public sealed record PCellDimensionLine(string Subject, string Label, long FromX, long FromY, long ToX, long ToY, string Unit = "");
 
 /// <summary>brief-pcd-10 R-pcd10-2: the cell parameters as dimensions on a designed cell's planned layout.</summary>
 public static class PCellDimensions
@@ -37,7 +37,7 @@ public static class PCellDimensions
         void Add(string expression, string siteUnit, (long X, long Y) from, (long X, long Y) to)
         {
             if (Label(expression, siteUnit, scope, evaluator, parameters) is { } label)
-                list.Add(new PCellDimensionLine(expression.Trim(), label, from.X, from.Y, to.X, to.Y));
+                list.Add(new PCellDimensionLine(expression.Trim(), label.Text, from.X, from.Y, to.X, to.Y, label.Unit));
         }
 
         foreach (var comp in schematic.Components)
@@ -98,7 +98,7 @@ public static class PCellDimensions
 
     /// <summary><c>name = value unit</c>, or <c>expression = value unit</c>; the unit is the bare parameter's, else that of
     /// the first parameter the expression names, else the site's (brief-pcd-10 D2). Null when it does not evaluate.</summary>
-    private static string? Label(string expression, string siteUnit, Scope scope, Evaluator evaluator,
+    private static (string Text, string Unit)? Label(string expression, string siteUnit, Scope scope, Evaluator evaluator,
                                  IReadOnlyDictionary<string, string> parameters)
     {
         string text = expression.Trim();
@@ -111,7 +111,7 @@ public static class PCellDimensions
         double value = unit == "deg" ? si * 180 / Math.PI : si / (Units.Scale(UnitNormalizer.ToEngineUnit(unit)) ?? 1.0);
         string shown = Math.Round(value, 6).ToString("G6", CultureInfo.InvariantCulture);
         string glyph = unit switch { "um" => "µm", "deg" => "°", _ => unit };
-        return $"{text} = {shown}{(glyph is "°" or "" ? "" : " ")}{glyph}";
+        return ($"{text} = {shown}{(glyph is "°" or "" ? "" : " ")}{glyph}", unit);
     }
 
     /// <summary>The site unit as the evaluator takes it: none for an empty one (it would read "" as an unknown unit).</summary>
