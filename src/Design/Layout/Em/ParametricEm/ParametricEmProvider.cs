@@ -40,6 +40,10 @@ public sealed record EmEvaluationRecord(
     /// <summary>The values that made this geometry differ from the schematic's own, as <c>L90 = 0.005</c>; empty at the
     /// schematic's own values.</summary>
     public string At { get; init; } = "";
+
+    /// <summary>brief-pcd-1 R-pcd1-3 — the evaluated layout's database units per micron; null when nothing was built. The
+    /// EM step floor of a run with no Path A takes the coarsest of these.</summary>
+    public int? DbuPerMicron { get; init; }
 }
 
 /// <summary>
@@ -150,6 +154,7 @@ public sealed class ParametricEmProvider : IParametricModelProvider
             SmallestElementM = result.Geometry?.ThreeD?.SmallestElementM,
             ThreeDNotes = result.Geometry?.ThreeD?.Notes ?? [],
             PlanNotes = result.Geometry?.Notes ?? [],
+            DbuPerMicron = result.Geometry?.Source.DbuPerMicron,
             At = result.Geometry is { } g ? string.Join(", ", g.Applied.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                                                                 .Select(kv => $"{kv.Key} = {EmCellCache.Format(kv.Value)}")) : "",
         });

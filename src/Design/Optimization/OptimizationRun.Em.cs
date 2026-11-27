@@ -418,8 +418,9 @@ public sealed partial class OptimizationRun
 
         // D5 — two database units, as a fraction of each length variable's range. brief-sdl-8 D7 — for a 3D EM view, the
         // larger of that and the smallest element the held mesh makes: a step under one element is meshing noise.
+        // brief-pcd-1 R-pcd1-3 — placed EM cells too (no Path A), on the coarsest unit their layouts are evaluated in.
         _dbuStep = new double[vars.Coordinates.Count];
-        if (start.PathA is { } target && DbuMetres(target) is { } dbu)
+        if (StepFloorDbuMetres(start.PathA, start.Records) is { } dbu)
         {
             double stepM = 2 * dbu;
             if (start.Records.Select(r => r.SmallestElementM).OfType<double>().DefaultIfEmpty(0).Max() is var mesh && mesh > stepM)
@@ -550,9 +551,19 @@ public sealed partial class OptimizationRun
         }
     }
 
+    /// <summary>D5 — one database unit, metres, for the step floor: Path A's own <c>.clay</c>; with no Path A (EM cells placed
+    /// in a parent, SDL-10) the coarsest unit the placed cells' layouts were evaluated in (brief-pcd-1 R-pcd1-3, D3), so no
+    /// cell is stepped below two of its own units. Null when none is known.</summary>
+    internal static double? StepFloorDbuMetres(EmCellTarget? pathA, IEnumerable<EmEvaluationRecord> records)
+    {
+        if (pathA is { } target) return DbuMetres(target);
+        int coarsest = records.Select(r => r.DbuPerMicron ?? 0).Where(d => d > 0).DefaultIfEmpty(0).Min();
+        return coarsest > 0 ? 1e-6 / coarsest : null;
+    }
+
     /// <summary>D5 — two database units as a fraction of <paramref name="c"/>'s box, at <paramref name="u"/>; 0 for a
     /// value with no length unit.</summary>
-    private static double LengthStepFraction(OptimizationCoordinate c, double dbuMetres, double u)
+    internal static double LengthStepFraction(OptimizationCoordinate c, double dbuMetres, double u)
     {
         if (c.Unit.Length == 0) return 0;
         string unit = UnitNormalizer.ToEngineUnit(c.Unit);
