@@ -12,7 +12,7 @@ public static class DrawnMetal
 {
     public const string GeneratorId = "MSHAPE";
     public const string Form = "Form", FormPolygon = "polygon", FormPath = "path", Width = "W";
-    public const string Model = "Model", ModelNone = "none", ModelOpen = "open";
+    public const string Model = "Model", ModelNone = "none", ModelOpen = "open", ModelShort = "short";
     public const string SignalLayer = "SignalLayer", GroundReference = "GroundReference";
     public static string X(int i)      => $"X[{i}]";
     public static string Y(int i)      => $"Y[{i}]";

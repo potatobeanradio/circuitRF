@@ -283,7 +283,9 @@ public static class ComponentModelFactory
         if (typeName.Equals(RadialStubTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateRadialStubModel(parameters);
         if (typeName.Equals(MShapeTypeName, StringComparison.OrdinalIgnoreCase))
-            return new MShapeModel(MShapeModel.PinCountOf(parameters.Keys));
+            return new MShapeModel(MShapeModel.PinCountOf(parameters.Keys),
+                                   parameters.TryGetValue("Model", out var shapeModel) && shapeModel.Kind == ValueKind.String
+                                   && shapeModel.AsString().Trim().Equals("short", StringComparison.OrdinalIgnoreCase));
         if (typeName.Equals("MCROSS", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripCrossModel(parameters);
         if (typeName.Equals("MTAPER", StringComparison.OrdinalIgnoreCase))

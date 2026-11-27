@@ -1804,7 +1804,7 @@ public static class ComponentTypeRegistry
             "PinW" => "Pin k's width: the width of the line it joins, and of the EM port there.",
             "PinDir" => "Pin k's outward direction, degrees: 180 faces -X, so a line joins it from the left.",
             "Model" => "\"none\": no circuit model, simulated by EM only. \"open\": its terminals are left open in a circuit "
-                     + "simulation.",
+                     + "simulation. \"short\": its terminals are one node, an ideal junction.",
             "SignalLayer" => "The conductor the metal is on. Empty: the technology's top conductor.",
             "GroundReference" => "The plane under it, for EM. Empty: the nearest ground-designated conductor below the signal "
                                + "layer.",
