@@ -59,6 +59,13 @@ public sealed class CcellParameter
     /// </summary>
     public string? Description { get; set; }
 
+    /// <summary>The lowest value a designed cell accepts for this parameter, base SI (m, deg); null for no bound
+    /// (brief-pcd-0 §4.1). Omitted when null, so every existing <c>.ccell</c> stays byte-identical.</summary>
+    public double? Minimum { get; set; }
+
+    /// <summary>The highest value a designed cell accepts for this parameter, base SI; null for no bound.</summary>
+    public double? Maximum { get; set; }
+
     public CcellParameter Clone() => new()
     {
         Name               = Name,
@@ -70,6 +77,8 @@ public sealed class CcellParameter
         UnsupportedChoices = UnsupportedChoices is null ? null : [.. UnsupportedChoices],
         IsFilePath         = IsFilePath,
         Description        = Description,
+        Minimum            = Minimum,
+        Maximum            = Maximum,
     };
 }
 
@@ -270,6 +279,20 @@ public sealed class CcellFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LayoutGenerator { get; set; }
 
+    /// <summary>
+    /// brief-pcd-0 §4.1: this cell is a designed cell (PCell Designer). Its presence is the marker; null on every other
+    /// cell, and omitted from the file.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CcellPCellDesign? PCellDesign { get; set; }
+
+    /// <summary>
+    /// brief-pcd-0 §4.1: the layout <see cref="LayoutGenerator"/> draws is metal, so EM solves a placed instance as copper
+    /// rather than as a component port (<c>EmPartKinds</c>). <c>WhenWritingDefault</c>: false is never written.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool EmCopper { get; set; }
+
     /// <summary>Device type within <see cref="ExternalProvider"/>. Meaningless without it.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ExternalType { get; set; }
@@ -391,6 +414,14 @@ public sealed class CcellFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<CcellCorner>? Corners { get; set; }
+}
+
+/// <summary>brief-pcd-0 §4.1: what makes a cell a designed cell, and the designer's own settings for it.</summary>
+public sealed class CcellPCellDesign
+{
+    /// <summary>The live response's sweep in the <c>.cnl</c> analysis spelling (<c>start=1 stop=20 npts=201 Unit=GHz</c>);
+    /// null is the designer's default.</summary>
+    public string? Sweep { get; set; }
 }
 
 /// <summary>

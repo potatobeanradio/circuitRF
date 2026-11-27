@@ -972,6 +972,13 @@ public sealed class EditableComponent
     /// elaborated; empty on anything never swapped.</summary>
     public SortedDictionary<string, RememberedParameter> SwapRemembered { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>brief-pcd-0 §4.2: where this part goes when no net joins it to the rest of a designed cell; null for a part
+    /// the planner places pin to pin. A record: replaced, never mutated in place.</summary>
+    public OffsetPlacement? Offset { get; set; }
+
+    /// <summary>brief-pcd-0 §4.3: the parameters that move this MSHAPE's vertices, for the drag handles; null when none.</summary>
+    public IReadOnlyList<StretchBinding>? Stretch { get; set; }
+
     /// <summary>True when port <paramref name="portIndex"/> is explicitly detached.</summary>
     public bool IsPortDetached(int portIndex) => DetachedPorts.Contains(portIndex);
     /// <summary>Per-label world-offset from default position. Index matches Labels list (0=type,1=name,2+=params).</summary>
@@ -1764,6 +1771,9 @@ public sealed class EditableComponent
             // silently, on an ordinary edit. The clone still names the same cell, so the recorded
             // statement is still about the right thing.
             CellInterfaceHash = CellInterfaceHash,
+            // brief-pcd-0 §4.2: records, shared and never mutated in place.
+            Offset           = Offset,
+            Stretch          = Stretch,
         };
         foreach (var p in Parameters)    c.Parameters.Add(p.Clone());
         foreach (var o in LabelOffsets) c.LabelOffsets.Add(o);

@@ -131,6 +131,7 @@ public static partial class EmEvaluation
         {
             // Connect parts ON whatever the GUI preference says: EM solves copper, and copper the planner did not join is
             // not the circuit the schematic draws.
+            using var designed = CircuitRF.Design.PCellDesigner.DesignedPCellResolver.Register(target.WorkspaceDir); // brief-pcd-0 §5 seam 12
             plan = SchematicLayoutPlanner.Plan(model, layout, model.SchematicDirectory!, target.WorkspaceDir, layoutDir,
                                                tech.Tech, tech.ResolvedPath, DiskCellResolver.Instance,
                                                targetLayoutPath: target.ClayPath, connectParts: true);
@@ -320,7 +321,7 @@ public static partial class EmEvaluation
     /// default. A value equal to the schematic's own is left alone, so the evaluation at the schematic's values is exactly
     /// the layout Update Layout would make. Only real values reach geometry.
     /// </summary>
-    private static Dictionary<string, Value> Apply(SchematicEditModel model, IReadOnlyDictionary<string, Value> values)
+    internal static Dictionary<string, Value> Apply(SchematicEditModel model, IReadOnlyDictionary<string, Value> values)
     {
         var applied = new Dictionary<string, Value>(StringComparer.Ordinal);
         if (values.Count == 0) return applied;

@@ -78,6 +78,7 @@ public static class LayoutFromSchematic
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
 
+        using var designed = CircuitRF.Design.PCellDesigner.DesignedPCellResolver.Register(workspaceDir); // brief-pcd-0 §5 seam 12
         var plan = SchematicLayoutPlanner.Plan(model, layout, schematicDir, workspaceDir, sibling.TargetDir, tech.Tech,
                                                tech.ResolvedPath, DiskCellResolver.Instance, targetLayoutPath: target,
                                                pourMarginHeights: margin, connectParts: connectParts);

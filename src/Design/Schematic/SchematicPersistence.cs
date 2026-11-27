@@ -211,6 +211,12 @@ public sealed class CschComponent
 
     /// <summary>What a line-type swap set aside, name → [expression, unit] (AS-11); absent when empty.</summary>
     public SortedDictionary<string, string[]>? SwapRemembered { get; set; }
+
+    /// <summary>brief-pcd-0 §4.2: a designed cell's offset placement; absent when null.</summary>
+    public OffsetPlacement? Offset { get; set; }
+
+    /// <summary>brief-pcd-0 §4.3: an MSHAPE's stretch bindings; absent when null or empty.</summary>
+    public List<StretchBinding>? Stretch { get; set; }
 }
 
 public sealed class CschParameter
@@ -643,6 +649,8 @@ public static class SchematicPersistence
             if (c.SwapRemembered.Count > 0)
                 cc.SwapRemembered = new(c.SwapRemembered.ToDictionary(kv => kv.Key, kv => new[] { kv.Value.Expression, kv.Value.Unit }),
                                         StringComparer.Ordinal);
+            cc.Offset = c.Offset;
+            if (c.Stretch is { Count: > 0 } stretch) cc.Stretch = [.. stretch];
             file.Components.Add(cc);
         }
 
@@ -744,6 +752,8 @@ public static class SchematicPersistence
             if (cc.SwapRemembered is not null)
                 foreach (var (k, v) in cc.SwapRemembered)
                     if (v is { Length: >= 1 }) c.SwapRemembered[k] = new RememberedParameter(v[0], v.Length >= 2 ? v[1] : "");
+            c.Offset = cc.Offset;
+            if (cc.Stretch is { Count: > 0 } stretch) c.Stretch = stretch;
             m.Components.Add(c);
         }
 
