@@ -208,7 +208,7 @@ Over MCP it is the `pcell` tool, with `what=new|check|render|export|import`.
 
 ## Examples {#examples}
 
-The **PCell Designer** example (File ▸ New ▸ Examples) holds `PadTee`, the cell this page uses, and three showcase
+The **PCell Designer** example (File ▸ New ▸ Examples) holds `PadTee`, the cell this page uses, and four showcase
 cells. Each comes with a bench that places it and a Data Display, and its README gives the closed-form estimates and
 the numbers.
 
@@ -247,4 +247,16 @@ either side of the unperturbed patch's 5.22 GHz.
 <img src="../../images/pcell-designer/dual-mode-patch.png" alt="The PCell Designer on the dual-mode patch: a square patch with its top right corner cut, a feed along its left edge and a feed along its bottom edge." style="width:100%;height:auto">
 <figcaption><code>DualModePatch</code>. The patch and the second feed are placed by offset, the gap <code>s</code> from
 the feeds.</figcaption>
+</figure>
+
+**A slotline divider** (`Slotline`, 5 GHz). A slot is cut in the ground, and three microstrips cross it: the input at
+its middle and two outputs either side, each crossing a quarter-wave microstrip-to-slotline transition. The outputs
+are 180° apart. The ground is drawn copper: two `MSHAPE`s on the ground layer, since a polygon has no hole. Planar's
+ground is an unbroken plane, so the bench solves in its 3D view, which turns the drawn ground into copper with the slot
+in it.
+
+<figure class="figure">
+<img src="../../images/pcell-designer/slotline.png" alt="The PCell Designer on the slotline divider: three microstrips crossing a long slot in the drawn ground, the input in the middle and an output at each side." style="width:100%;height:auto">
+<figcaption><code>Slotline</code>. The slot runs across the cell between the two ground shapes <code>SH1</code> and
+<code>SH2</code>; each microstrip runs on past it to an open end.</figcaption>
 </figure>

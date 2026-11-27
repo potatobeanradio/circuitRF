@@ -1,9 +1,9 @@
 # PCell Designer
 
 Parameterised cells made in the **PCell Designer** from the parts in the Library, placed in benches, laid out, checked
-by LVS and simulated: a pad on a tee placed twice (§1-4), and three showcase cells, a 3-way Wilkinson divider (§5), a
-spurline bandstop (§6) and a dual-mode patch bandpass (§7). The **PCell Designer** reference page describes every
-control.
+by LVS and simulated: a pad on a tee placed twice (§1-4), and four showcase cells, a 3-way Wilkinson divider (§5), a
+spurline bandstop (§6), a dual-mode patch bandpass (§7) and a slotline divider (§8). The **PCell Designer** reference
+page describes every control.
 
 ## The cells
 
