@@ -24,10 +24,17 @@ public sealed class Pcd9ExampleAuthoring
         {
             Pcd9Cells.Workspace(scratch);
             Pcd9Cells.WilkinsonBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Wilkinson));
-            // The two EM-only benches are laid out with their Planar setups, so their SP1 runs by EM as shipped.
+            // The two EM-only benches are laid out with their Planar setups, so their SP1 runs by EM as shipped. An example
+            // keeps each setup in its cell's em/ folder (the path inside it stays relative to the workspace).
             foreach (string bench in new[] { Pcd9Cells.SpurlineBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Spurline)),
                                              Pcd9Cells.PatchBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Patch)) })
-                Assert.Null(LayoutFromSchematic.Run(bench, emSetup: true).Refusal);
+            {
+                var out1 = LayoutFromSchematic.Run(bench, emSetup: true);
+                Assert.Null(out1.Refusal);
+                string emDir = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(bench))!, "em");
+                Directory.CreateDirectory(emDir);
+                foreach (string f in out1.EmSetups) File.Move(f, Path.Combine(emDir, Path.GetFileName(f)));
+            }
 
             // The slotline's ground is drawn, and Planar's is an unbroken plane, so its bench solves in 3D: the setup made
             // for its layout becomes an EMerge one, New 3D View from Layout embeds it, and the .cem goes, leaving one EM view.
@@ -56,12 +63,6 @@ public sealed class Pcd9ExampleAuthoring
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     File.Copy(f, target);
                 }
-            }
-            // Their EM setups live in the workspace's em/ folder.
-            foreach (string f in Directory.EnumerateFiles(EmSetupCreate.DirectoryOf(scratch)))
-            {
-                Directory.CreateDirectory(EmSetupCreate.DirectoryOf(example));
-                File.Copy(f, Path.Combine(EmSetupCreate.DirectoryOf(example), Path.GetFileName(f)), overwrite: true);
             }
         }
         finally
