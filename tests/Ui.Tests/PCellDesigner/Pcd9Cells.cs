@@ -28,7 +28,8 @@ internal static class Pcd9Cells
     // pad with Model="short" (one node). A star of three resistors cannot be planar with all three outputs outside it, so
     // R3 is a 1206 whose body bridges the middle arm. Every closing joint of the two loops lands by expression: the outer
     // tees sit 6.2 mm off the axis and 6.2 mm short of T2 (the fold), and the pad's pins are where R1, R2 and R3 end.
-    // Lengths in metres where a term mixes units; the outer arms' fold keeps their centreline length La.
+    // Lengths in metres where a term mixes units; the outer arms' fold keeps their centreline length La. LQ2 keeps R2's pad
+    // off the bend BR2: a pad on the bend's own pin reads to LVS as one copper piece across the bend's two nets.
     public static readonly Pcd9Spec Wilkinson = new(
         "Wilkinson3",
         """
@@ -50,11 +51,12 @@ internal static class Pcd9Cells
         MLIN:LR1  r1  q1  W=0.8 mm  L=1.4e-3-Sp
         R:R1  q1  s1  R=Riso  Footprint=smt:0603
         MLIN:LR2  r2  u2  W=0.8 mm  L=0.8e-3+Sp/2
-        MBEND:BR2  u2  q2  W=0.8 mm  Angle=90 deg
+        MBEND:BR2  u2  v2  W=0.8 mm  Angle=90 deg
+        MLIN:LQ2  v2  q2  W=0.8 mm  L=0.3 mm
         R:R2  q2  s2  R=Riso  Footprint=smt:0603
         MLIN:LR3  r3  q3  W=0.8 mm  L=3.35 mm
         R:R3  q3  s3  R=Riso  Footprint=smt:1206
-        MSHAPE:SH1  s1  s2  s3  Form="polygon"  W=0  X[1]=-3.4e-3-Sp/2  Y[1]=-Sp/2  X[2]=0  Y[2]=-Sp/2  X[3]=0  Y[3]=Sp/2  X[4]=-3.4e-3-Sp/2  Y[4]=Sp/2  PinX[1]=-3.4e-3  PinY[1]=-Sp/2  PinW[1]=0.8 mm  PinDir[1]=270 deg  PinX[2]=0  PinY[2]=0  PinW[2]=0.8 mm  PinDir[2]=0 deg  PinX[3]=-3.4e-3  PinY[3]=Sp/2  PinW[3]=0.8 mm  PinDir[3]=90 deg  Model="short"
+        MSHAPE:SH1  s1  s2  s3  Form="polygon"  W=0  X[1]=-3.1e-3-Sp/2  Y[1]=-Sp/2  X[2]=0  Y[2]=-Sp/2  X[3]=0  Y[3]=Sp/2  X[4]=-3.1e-3-Sp/2  Y[4]=Sp/2  PinX[1]=-3.1e-3  PinY[1]=-Sp/2  PinW[1]=0.8 mm  PinDir[1]=270 deg  PinX[2]=0  PinY[2]=0  PinW[2]=0.8 mm  PinDir[2]=0 deg  PinX[3]=-3.1e-3  PinY[3]=Sp/2  PinW[3]=0.8 mm  PinDir[3]=90 deg  Model="short"
         Port:P1  n1  0  Num=1  Z=50 Ohm
         Port:P2  p2  0  Num=2  Z=50 Ohm
         Port:P3  p3  0  Num=3  Z=50 Ohm

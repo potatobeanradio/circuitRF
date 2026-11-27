@@ -217,9 +217,9 @@ the numbers.
 with every output outside it, so one resistor is a 1206 whose body bridges the middle arm. Nothing is stretched. The
 cell's two loops close because the pad's pins and the lines to the resistors are expressions of the parameters, and
 the check plans the cell at every parameter's ends. By circuit models:
-- S21, S31 and S41 are −4.81, −4.93 and −5.01 dB;
-- the input match is −33 dB;
-- the isolation between outputs is −29 dB or better.
+- S21, S31 and S41 are −4.81, −4.95 and −5.01 dB;
+- the input match is −32 dB;
+- the isolation between outputs is −30 dB or better.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/wilkinson3.png" alt="The PCell Designer on the 3-way Wilkinson: the cross, three arms, three resistors meeting on a drawn star pad, and its circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">

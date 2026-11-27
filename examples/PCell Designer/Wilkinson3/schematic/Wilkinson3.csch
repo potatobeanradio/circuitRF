@@ -679,10 +679,41 @@
       ]
     },
     {
+      "InstanceName": "LQ2",
+      "Symbol": "Mlin",
+      "X": -1400,
+      "Y": 9200,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "W",
+          "Expression": "0.8",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "0.3",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -361
+        ]
+      ]
+    },
+    {
       "InstanceName": "R2",
       "Symbol": "Resistor",
       "X": -1400,
-      "Y": 9200,
+      "Y": 10400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -796,7 +827,7 @@
         },
         {
           "Name": "X[1]",
-          "Expression": "-3.4e-3-Sp/2",
+          "Expression": "-3.1e-3-Sp/2",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "Length"
@@ -838,7 +869,7 @@
         },
         {
           "Name": "X[4]",
-          "Expression": "-3.4e-3-Sp/2",
+          "Expression": "-3.1e-3-Sp/2",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "Length"
@@ -852,7 +883,7 @@
         },
         {
           "Name": "PinX[1]",
-          "Expression": "-3.4e-3",
+          "Expression": "-3.1e-3",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "Length"
@@ -908,7 +939,7 @@
         },
         {
           "Name": "PinX[3]",
-          "Expression": "-3.4e-3",
+          "Expression": "-3.1e-3",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
@@ -1478,6 +1509,18 @@
     {
       "Points": [
         [
+          -1400,
+          9400
+        ],
+        [
+          -1400,
+          10200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
           2000,
           6400
         ],
@@ -1491,18 +1534,18 @@
       "Points": [
         [
           -1400,
-          9400
+          10600
         ],
         [
           -1400,
-          10000
+          10800
         ],
         [
-          1100,
-          10000
+          500,
+          10800
         ],
         [
-          1100,
+          500,
           10600
         ],
         [
@@ -1618,24 +1661,6 @@
       "OffsetY": 0
     },
     {
-      "X": -1400,
-      "Y": 9000,
-      "Name": "q2",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -1400,
-      "Y": 8000,
-      "Name": "q2",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
       "X": -400,
       "Y": 9000,
       "Name": "r1",
@@ -1720,6 +1745,24 @@
       "X": 2000,
       "Y": 8800,
       "Name": "s3",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -1400,
+      "Y": 9000,
+      "Name": "v2",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -1400,
+      "Y": 8000,
+      "Name": "v2",
       "SegmentIndex": 0,
       "AlongT": 0,
       "OffsetX": 0,
@@ -1879,19 +1922,29 @@
       "X": -1200,
       "Y": 6700,
       "Name": "u2",
-      "OwnerWireIndex": 17,
+      "OwnerWireIndex": 18,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": -200,
-      "Y": 10000,
+      "X": -1400,
+      "Y": 9800,
+      "Name": "q2",
+      "OwnerWireIndex": 15,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -500,
+      "Y": 10800,
       "Name": "s2",
-      "OwnerWireIndex": 16,
+      "OwnerWireIndex": 17,
       "SegmentIndex": 1,
-      "AlongT": 0.48,
+      "AlongT": 0.47368421052631576,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -1899,7 +1952,7 @@
       "X": 2000,
       "Y": 7400,
       "Name": "q3",
-      "OwnerWireIndex": 15,
+      "OwnerWireIndex": 16,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,

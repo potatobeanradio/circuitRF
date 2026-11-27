@@ -17,7 +17,7 @@ public sealed class Pcd5OwnLayoutLvsTests
     [Fact]
     public void PadTeeIsLvsCleanOnItsOwnLayout() => LvsCleanOnItsOwnLayout("PadTee", angleRowWithoutDimension: true);
 
-    [Fact(Skip = "Wilkinson3's planned layout reads a short between u2 and q2 where R2's 0603 pad meets the bend BR2; open")]
+    [Fact]
     public void Wilkinson3IsLvsCleanOnItsOwnLayout() => LvsCleanOnItsOwnLayout("Wilkinson3");
 
     /// <param name="angleRowWithoutDimension">SH1's PinDir[1] row saved with no Dimension, as a pin added after placement

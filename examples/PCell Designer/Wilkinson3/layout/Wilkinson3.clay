@@ -96,6 +96,10 @@
 			"W": 0.0008,
 			"Angle": 90
 		},
+		"LQ2": {
+			"W": 0.0008,
+			"L": 0.0003
+		},
 		"R2": {},
 		"LR3": {
 			"W": 0.0008,
@@ -105,15 +109,15 @@
 		"SH1": {
 			"Form": "polygon",
 			"W": 0,
-			"X[1]": -0.0039,
+			"X[1]": -0.0036,
 			"Y[1]": -0.0005,
 			"X[2]": 0,
 			"Y[2]": -0.0005,
 			"X[3]": 0,
 			"Y[3]": 0.0005,
-			"X[4]": -0.0039,
+			"X[4]": -0.0036,
 			"Y[4]": 0.0005,
-			"PinX[1]": -0.0034,
+			"PinX[1]": -0.0031,
 			"PinY[1]": -0.0005,
 			"PinW[1]": 0.0008,
 			"PinDir[1]": 270,
@@ -121,7 +125,7 @@
 			"PinY[2]": 0,
 			"PinW[2]": 0.0008,
 			"PinDir[2]": 0,
-			"PinX[3]": -0.0034,
+			"PinX[3]": -0.0031,
 			"PinY[3]": 0.0005,
 			"PinW[3]": 0.0008,
 			"PinDir[3]": 90,
@@ -175,6 +179,12 @@
 			"X": 8650000,
 			"Y": -10350000,
 			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"LQ2": {
+			"X": 9050000,
+			"Y": -9950000,
+			"RotationDeg": 90,
 			"Mirror": false
 		},
 		"LR1": {
@@ -249,7 +259,7 @@
 		},
 		"R2": {
 			"X": 9050000,
-			"Y": -8750000,
+			"Y": -8450000,
 			"RotationDeg": 90,
 			"Mirror": false
 		},
@@ -261,7 +271,7 @@
 		},
 		"SH1": {
 			"X": 9050000,
-			"Y": -7550000,
+			"Y": -7250000,
 			"RotationDeg": 90,
 			"Mirror": true
 		},
@@ -405,6 +415,14 @@
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
+		"MLIN_e370ba294b1f": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.0008,
+				"L": 0.0003
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
 		"MLIN_2265d7da7126": {
 			"GeneratorId": "MLIN",
 			"Parameters": {
@@ -418,20 +436,20 @@
 			"Parameters": {},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
-		"MSHAPE_cf9946b09ff9": {
+		"MSHAPE_f1835718bed9": {
 			"GeneratorId": "MSHAPE",
 			"Parameters": {
 				"Form": "polygon",
 				"W": 0,
-				"X[1]": -0.0039,
+				"X[1]": -0.0036,
 				"Y[1]": -0.0005,
 				"X[2]": 0,
 				"Y[2]": -0.0005,
 				"X[3]": 0,
 				"Y[3]": 0.0005,
-				"X[4]": -0.0039,
+				"X[4]": -0.0036,
 				"Y[4]": 0.0005,
-				"PinX[1]": -0.0034,
+				"PinX[1]": -0.0031,
 				"PinY[1]": -0.0005,
 				"PinW[1]": 0.0008,
 				"PinDir[1]": 270,
@@ -439,7 +457,7 @@
 				"PinY[2]": 0,
 				"PinW[2]": 0.0008,
 				"PinDir[2]": 0,
-				"PinX[3]": -0.0034,
+				"PinX[3]": -0.0031,
 				"PinY[3]": 0.0005,
 				"PinW[3]": 0.0008,
 				"PinDir[3]": 90,
@@ -907,9 +925,28 @@
 			}
 		},
 		{
+			"CellRef": "../../.generated-cells/MLIN_e370ba294b1f",
+			"X": 9050000,
+			"Y": -9950000,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "LQ2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
 			"CellRef": "../../.generated-cells/smt-0603@N_3c3a332a83a4",
 			"X": 9050000,
-			"Y": -8750000,
+			"Y": -8450000,
 			"Rot": "R90",
 			"MirrorX": false,
 			"Mag": 1,
@@ -964,9 +1001,9 @@
 			}
 		},
 		{
-			"CellRef": "../../.generated-cells/MSHAPE_cf9946b09ff9",
+			"CellRef": "../../.generated-cells/MSHAPE_f1835718bed9",
 			"X": 9050000,
-			"Y": -7550000,
+			"Y": -7250000,
 			"Rot": "R90",
 			"MirrorX": true,
 			"Mag": 1,

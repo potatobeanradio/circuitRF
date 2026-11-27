@@ -62,7 +62,8 @@ outside it, so `R3` is a 1206 whose body bridges the middle arm.
 
 Nothing is stretched, and the cell's two loops close by expression. The outer tees sit 6.2 mm off the axis and 6.2 mm
 short of `T2`, which is the fold. The lines to the resistors are lengths in `Sp`, and the pad's pins are written where
-`R1`, `R2` and `R3` end. **Check** finds no error at any parameter's minimum or maximum.
+`R1`, `R2` and `R3` end. A 0.3 mm line `LQ2` keeps `R2`'s pad off the bend `BR2`. **Check** finds no error at any
+parameter's minimum or maximum, and **LVS** finds none on the cell's own layout.
 
 `La = 19.5 mm` was found in the designer's live response: it is a little over λg/4 (18.8 mm), because the cross and the
 tees take part of the junction. Simulate `Wilkinson3Bench`; `Wilkinson3Bench.cdd` shows the transmission and the input
@@ -70,7 +71,7 @@ match, and the isolation. At 2.45 GHz:
 
 | S21 | S31 | S41 | S11 | S32 | S42 | S43 | S22, S33, S44 |
 |---|---|---|---|---|---|---|---|
-| −4.81 dB | −4.93 dB | −5.01 dB | −32.9 dB | −29.1 dB | −48.3 dB | −36.4 dB | −47.6, −25.3, −25.2 dB |
+| −4.81 dB | −4.95 dB | −5.01 dB | −32.1 dB | −30.0 dB | −47.4 dB | −34.7 dB | −45.0, −24.6, −25.4 dB |
 
 The three outputs are −4.77 dB plus the board's loss, within 0.2 dB of each other.
 

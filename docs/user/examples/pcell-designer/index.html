@@ -124,7 +124,8 @@ solves (9 min 19 s, coarse Planar).</p>
 outside it, so <code>R3</code> is a 1206 whose body bridges the middle arm.</p>
 <p>Nothing is stretched, and the cell's two loops close by expression. The outer tees sit 6.2 mm off the axis and 6.2 mm
 short of <code>T2</code>, which is the fold. The lines to the resistors are lengths in <code>Sp</code>, and the pad's pins are written where
-<code>R1</code>, <code>R2</code> and <code>R3</code> end. <strong>Check</strong> finds no error at any parameter's minimum or maximum.</p>
+<code>R1</code>, <code>R2</code> and <code>R3</code> end. A 0.3 mm line <code>LQ2</code> keeps <code>R2</code>'s pad off the bend <code>BR2</code>. <strong>Check</strong> finds no error at any
+parameter's minimum or maximum, and <strong>LVS</strong> finds none on the cell's own layout.</p>
 <p><code>La = 19.5 mm</code> was found in the designer's live response: it is a little over λg/4 (18.8 mm), because the cross and the
 tees take part of the junction. Simulate <code>Wilkinson3Bench</code>; <code>Wilkinson3Bench.cdd</code> shows the transmission and the input
 match, and the isolation. At 2.45 GHz:</p>
@@ -144,13 +145,13 @@ match, and the isolation. At 2.45 GHz:</p>
 <tbody>
 <tr>
 <td>−4.81 dB</td>
-<td>−4.93 dB</td>
+<td>−4.95 dB</td>
 <td>−5.01 dB</td>
-<td>−32.9 dB</td>
-<td>−29.1 dB</td>
-<td>−48.3 dB</td>
-<td>−36.4 dB</td>
-<td>−47.6, −25.3, −25.2 dB</td>
+<td>−32.1 dB</td>
+<td>−30.0 dB</td>
+<td>−47.4 dB</td>
+<td>−34.7 dB</td>
+<td>−45.0, −24.6, −25.4 dB</td>
 </tr>
 </tbody>
 </table>
