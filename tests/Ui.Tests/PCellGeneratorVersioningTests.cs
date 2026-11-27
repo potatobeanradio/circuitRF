@@ -140,6 +140,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
             { "MRADIAL",   (1, "31f813cb3d5ecfbf") },
             { "MRPAD",     (1, "cef436b0cae785fa") },
             { "MRRC",      (2, "821330920771af96") },
+            { "MSHAPE",    (1, "475dcdc19c9f9499") },
             { "MSPS",      (2, "7d9b1129b377646e") },
             { "MTAPER",    (1, "c94d21d51b1b12c6") },
             { "MTEE",      (2, "97c5e024b02f10fe") },
