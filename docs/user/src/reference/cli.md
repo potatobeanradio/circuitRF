@@ -140,7 +140,7 @@ convention behind both.</p>
 | `model new`, `import`, `deembed`, `fit`, `check-charge`, `explain`, `export`, `validate`, `report` | a `.cmc` | The [Model Composer](#model)'s steps — the same functions its window calls | The `.cmc`, its cache, a `.cmodel` or a cell, a report folder — as the noun says |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `chain` | `.cchain` | The same budget the [RF Chain Budget](chain-budget.html) window recomputes on every edit, and its Transfer to Schematic | The cascade to stdout; `-o .npy/.mat/.txt` for the budget as a DataSet; `--to-schematic` writes the test benches (and an array's Steering and Combiners benches) and their displays |
-| `filter` | **nothing** — a specification in flags | The [Filter Designer](filter-designer.html)'s realisers, and one of them | Each realiser and whether it can build the filter, to stdout; with `--realiser`, the test bench as a `.cnl` (`-o`), a `.csch` with `--to-schematic`, and a Planar EM `.em.s2p` with `--em` |
+| `filter` | **nothing** — a specification in flags | The [Filter Designer](filter-designer.html)'s realisers, and one of them | Each realiser and whether it can build the filter, to stdout; with `--realiser`, the test bench as a `.cnl` (`-o`), a `.csch` with `--to-schematic`, a Planar EM `.em.s2p` with `--em`, and a designed cell with `--pcell` |
 | `filter lc` | a specification on the command line | The same ladder the LC Filter Designer draws | The element table to stdout; `-o` a `.cnl` of the ladder |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `snp` | a Touchstone `.sNp` | The same reading and plots the [S-Parameter Viewer](sparameter-viewer.html) shows | What the file states, to stdout; `-o .svg/.pdf/.png` for the four plots, `-o .cdd` for a Data Display of them |
@@ -1648,7 +1648,7 @@ transferred), **1** on a refusal.
 ## `filter` — a filter from its specification {#filter}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --band &lt;b&gt; --order &lt;n&gt; --f1 &lt;f&gt; [--f2 &lt;f&gt;] [--response butterworth|chebyshev] [--ripple dB] [--stop dB] [--z0 Ω] [--zeros f,f]
-                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic] [--em]] [--points n]
+                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; [-o &lt;file.cnl&gt; [--to-schematic] [--em]] [--pcell &lt;name|path&gt;]] [--points n]
 <span class="prompt">$ </span>circuitrf filter --extract &lt;file.s2p&gt; --band bandpass --order &lt;n&gt; --f1 &lt;f&gt; --f2 &lt;f&gt; [--response …] [--ripple dB] [--z0 Ω] [--zeros f,f]</code></pre>
 
 `filter` is the [Filter Designer](filter-designer.html) with no window. It takes the specification as flags: the band
@@ -1672,6 +1672,13 @@ the layers; the technology's own defaults apply otherwise.
 The bench runs anywhere: `circuitrf sparam` on it gives the realised response. `--to-schematic` also draws it as a `.csch`
 beside it, through the same path as `netlist --to-schematic`. A realiser that cannot build the filter is a
 `filter.realiser.refused` error with its own reason.
+
+**With `--pcell`** it makes the realisation a [designed cell](pcell-designer.html), as the window's
+[Make PCell…](filter-designer.html#make-pcell) does: the part, its site parts and two Ports, each synthesised length, gap and
+width a parameter with a ±20 % range, the specification kept for its metrics. A bare name goes into the `--workspace` root
+(else the current folder), a path into its own folder; either must be in a workspace, else `filter.pcell.no-workspace`.
+`-o` is then optional. It prints the cell and its parameters and forwards the design check's `pcell.*` findings; a
+refusal (a name taken, a bad name) is `filter.pcell.refused`, and a check error exits **1**.
 
 **With `--em`** it also solves the realised part on Planar MoM, as its layout draws it, on a coarse mesh. Ports 1 and 2
 are on the part's pins 1 and 2, and each site gets a port of its own, closed with the site's value. The sweep is
