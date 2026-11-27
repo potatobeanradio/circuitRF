@@ -78,6 +78,7 @@ Fourteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `plot` | a result file | builds a one-plot data display and draws it | one `.svg` / `.pdf` / `.png`, and the `.cdd` under `--write-cdd` — §15 |
 | `snp` | a Touchstone `.sNp` | reads it through `TouchstoneSource` and composes the S-Parameter Viewer's plots | the file pane on stdout; `-o .svg/.pdf/.png` or `.cdd` — §33 |
 | `find` | a directory | enumerates the workspaces, cells, views and analyses under it | **nothing** — §16 |
+| `pcell` | `new` a workspace + a name; `check`, `render`, `export` a designed cell's folder; `import` a `.cpcell` + `--into` | `PCellDesign.Create`, `PCellDesignCheck.Run`, `DesignedCellLayout.At` drawn by `render`'s layout path, `PCellPackage.Export` / `Import` — the PCell Designer's own calls | the cell folder; nothing (`check`); one picture (`render`); the `.cpcell`; the imported cell folder — §47 |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | compares the artwork against the drawing, through `LvsRun.Run` | **nothing** unless `-o` names a report — §19 |
 | `recognize` | a `.clay`, a cell folder, a workspace + `--cell`, or a picture (§26.8) | reads the artwork — or the picture — as a circuit, through `ArtworkRecognition` / `ImageRecognition` / `SchematicImageRecognition` | **nothing** unless `-o` (a `.cnl`), `--into` (a schematic), `--parts-out` (the parts table) or `--overlay` (the picture, annotated) — §26 |
 | `serve` | `--root <dir>` | a protocol server on stdin/stdout — §11 | whatever the tool it was asked for writes |
@@ -1625,6 +1626,7 @@ be found by its name.
 | `impedance` | `impedance` — a drawn layout's traces, or (`tech`) the line calculator with nothing drawn |
 | `read` | `read` |
 | `history` | `history checkpoint` / `list` / `restore` (RC-5, `revision-control.md` §5.3d) |
+| `pcell` | `pcell new` / `check` / `render` / `export` / `import`, selected by `what` (brief-pcd-7) |
 | `solver` | `solver list` only — which 3D solvers are installed and what each build can do (§22). `install` and `remove` stay off: both download or delete behind a consent that is the person's to give |
 | `reference` | `reference` — the same bytes the resources below serve, for a client that does not surface resources to the model |
 | `batch` | none. Session state this process holds; see §11.6 |
@@ -5280,3 +5282,38 @@ taken without it, none is a refusal.
 Gate: `tests/Ui.Tests/Transient/SpiceDeckWriterTests.cs` (the verb as a process writes the in-process writer's bytes; a refusal exits 1
 and writes nothing; the round trip through circuitRF's own reader; the refusals; names; the TXL/CPL extraction; the discontinuity table;
 a comment-stripped scan finding the dialect written only by `SpiceDeckWriter`).
+
+## 47. `pcell` — the PCell Designer, headless (brief-pcd-7)
+
+`circuitrf pcell new | check | render | export | import` is the PCell Designer with no window
+(`docs/briefs/brief-pcd-0-overview-and-contract.md`). ONE verb with nouns, on `Authoring.cs`' terms, and it **owns no
+designing**: every noun calls the `src/Design/PCellDesigner` (or `SchematicSync`) function the window's own command
+calls, so the two write the same bytes.
+
+| Noun | Calls | stdout | Exit 1 |
+|---|---|---|---|
+| `new <workspace-or-dir> <name>` | `PCellDesign.Create` | the created paths, cell folder first | an invalid name, an existing folder |
+| `check <cell> [--severity warning\|error]` | `PCellDesignCheck.Run` | one summary line; each finding on stderr as `check` prints one | an error, or a warning under `--severity warning` |
+| `render <cell> -o <out> [--set name=value]…` | `DesignedCellLayout.At`, then `Render.RunLayout` | as `render` | as `render` (130 cancelled) |
+| `export <cell> -o <file.cpcell>` | `PCellPackage.Export` (the check first) | the package written | a refusal in its findings |
+| `import <file.cpcell> --into <dir>` | `PCellPackage.Import` | the cell folder written | a refusal (another package by that name) |
+
+- **A designed cell only.** `check`, `render` and `export` refuse a cell whose `.ccell` has no `PCellDesign`
+  (`pcell.cell.not-designed`); `render` and `check` take any cell.
+- **`render` is `render`.** A designed cell's layout at values exists only in memory, so `Render.RunLayout(args,
+  documentPath, view)` runs the `render` verb unchanged on that view as the `.clay` at `documentPath` (the cell's primary
+  `.clay`, else `layout/<Name>.clay`): its instance references, technology walk and generated cells resolve from there,
+  and every viewport, layer and theme flag is `render`'s. Nothing is written but the picture and the planner's generated
+  cells. A `--set` value is an expression evaluated to base SI (`Lpad=200um`); a name the cell does not have is ignored
+  as `EmEvaluation.Apply` ignores it. The planner's report lines arrive as `pcell.render.plan`, a warning as a warning.
+- **The technology** is what `TechnologyResolver.ResolveForDocument` gives that `.clay`; none is `pcell.cell.no-technology`.
+- **Findings pass through.** PCD-5's `pcell.*` ids from the check, export and import reach stderr and `--json`
+  unchanged. The verb's own ids: `pcell.args.noun-required`, `.unknown-noun`, `.unknown-option`, `.required`,
+  `.extra-argument`, `.set-malformed`, `.unknown-severity`; `pcell.cell.not-found`, `.not-designed`, `.invalid-name`,
+  `.exists`, `.no-workspace`, `.no-technology`; `pcell.new.refused`, `pcell.render.refused`, `pcell.render.plan`.
+- **MCP:** the `pcell` tool, `what=` the noun; `render` advertises `render`'s picture options (`ToolCatalog`'s
+  `LayoutPictureOptions`, one list for both tools).
+
+Gate: `tests/Ui.Tests/PCellDesigner/Pcd7PCellVerbTests.cs` (each noun as a process against the in-process call, byte
+for byte; a comment-stripped scan that `PCellVerb.cs` holds no logic), and `ServeProtocolAdapterTests`' tool list and
+argument probe.

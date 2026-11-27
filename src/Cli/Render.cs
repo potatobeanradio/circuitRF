@@ -172,6 +172,20 @@ internal static class Render
 
     // ── entry ────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// brief-pcd-7 D2: <c>pcell render</c> — <paramref name="view"/>, made in memory, drawn exactly as the <c>.clay</c> at
+    /// <paramref name="documentPath"/> would be (its instance references, technology walk and generated cells resolve
+    /// from there), with every flag this verb takes. The file need not exist and is never written.
+    /// </summary>
+    internal static int RunLayout(string[] args, string documentPath, LayoutView view)
+    {
+        _inMemory = (Path.GetFullPath(documentPath), view);
+        try { return Run([documentPath, .. args]); }
+        finally { _inMemory = null; }
+    }
+
+    [ThreadStatic] private static (string Path, LayoutView View)? _inMemory;
+
     public static int Run(string[] args)
     {
         var o = new Options();
@@ -182,7 +196,7 @@ internal static class Render
         if (o.Output is null && !o.ListFields) { JsonRun.Report(CliDiagnostics.RenderOutputRequired()); return Usage(); }
         JsonRun.InputPath = o.Path;
 
-        if (!File.Exists(o.Path) && !Directory.Exists(o.Path))
+        if (!File.Exists(o.Path) && !Directory.Exists(o.Path) && _inMemory is null)
             return JsonRun.Fail(CliDiagnostics.RenderPathNotFound(o.Path));
 
         if (o.Output is not null && ResolveFormat(o) is { } formatRefusal) return formatRefusal;
@@ -740,7 +754,8 @@ internal static class Render
     private static int DrawLayout(Options o, Target t)
     {
         LayoutView view;
-        try { view = LayoutPersistence.LoadFromFile(t.File); }
+        if (_inMemory is { } held && held.Path == Path.GetFullPath(t.File)) view = held.View;
+        else try { view = LayoutPersistence.LoadFromFile(t.File); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderDocumentUnreadable(t.File, ex.Message)); }
 
         // R-gc2-2: the placed PCells, rebuilt IN MEMORY — render writes nothing but its picture.
