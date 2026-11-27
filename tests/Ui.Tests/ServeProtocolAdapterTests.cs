@@ -877,7 +877,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // (brief-review-2) is the Layout Review, a reviewer's checklist over the same artwork.
         // `job` (brief EMB-5) follows a run or check started with async=true — server state, like `batch`.
         Assert.Equal(["run", "check", "explain", "create", "import", "convert", "render", "netlist", "plot",
-                      "find", "lvs", "recognize", "impedance", "review", "read", "model", "history", "solver", "plugin", "reference", "batch",
+                      "find", "lvs", "recognize", "impedance", "review", "read", "model", "pcell", "history", "solver", "plugin", "reference", "batch",
                       "job"],
                      tools);
 
@@ -985,6 +985,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["create/view3d"]     = ["cell"],          // brief-emb-1 R-emb1-1
             ["create/example"]    = ["path", "name"],  // File ▸ New ▸ Examples
             ["create/filter"]     = [],                // filter synthesis: a spec, no positional
+            ["create/lcFilter"]   = [],                // `filter lc`: a spec, no positional
+            ["create/layout"]     = ["cell"],          // `new layout --from-schematic`
             ["create/libraryPart"] = ["cell"],         // brief vendorlib-10 R-vl10-4 — `export part`
             // `import` and `convert` were one tool with a `what` selector until an export was found
             // filed under "import"; `convert` stays single-mode. brief-sar-11 gave `import` its CLI nouns
@@ -1036,6 +1038,12 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["model/export"]       = ["path"],
             ["model/validate"]     = ["path"],
             ["model/report"]       = ["path"],
+            // brief-pcd-7 R-pcd7-5: the `pcell` verb's nouns. `new` takes a workspace and a name, `import` the package.
+            ["pcell/new"]          = ["workspace", "name"],
+            ["pcell/check"]        = ["cell"],
+            ["pcell/render"]       = ["cell"],
+            ["pcell/export"]       = ["cell"],
+            ["pcell/import"]       = ["path"],
             // brief-plg-5: plugins by id. No allow — permission is granted only in the window.
             ["plugin/list"]        = [],
             ["plugin/describe"]    = ["id"],
