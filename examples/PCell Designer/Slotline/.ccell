@@ -1,0 +1,70 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "Lsl",
+      "DefaultExpression": "10",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "slot length, input to each output",
+      "Minimum": 0.006,
+      "Maximum": 0.016
+    },
+    {
+      "Name": "Ws",
+      "DefaultExpression": "0.3",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "slot width",
+      "Minimum": 0.0002,
+      "Maximum": 0.0008
+    },
+    {
+      "Name": "Lss",
+      "DefaultExpression": "9.8",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "slot stub past each output (a quarter wave)",
+      "Minimum": 0.006,
+      "Maximum": 0.014
+    },
+    {
+      "Name": "Lms",
+      "DefaultExpression": "8.9",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "microstrip stub past the slot (a quarter wave)",
+      "Minimum": 0.006,
+      "Maximum": 0.012
+    }
+  ],
+  "PrimarySchematic": "Slotline.csch",
+  "PrimarySymbol": "Slotline.csym",
+  "PrimaryLayout": "Slotline.clay",
+  "IsTestBench": false,
+  "LayoutGenerator": "cpcell:Slotline",
+  "PCellDesign": {},
+  "EmCopper": true,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "P1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "P2",
+      "LayoutPin": "2"
+    },
+    {
+      "Port": 3,
+      "Name": "P3",
+      "LayoutPin": "3"
+    }
+  ],
+  "NumPorts": 3
+}

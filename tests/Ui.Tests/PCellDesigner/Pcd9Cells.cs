@@ -119,6 +119,45 @@ internal static class Pcd9Cells
         ],
         []);
 
+    // ══ 4. Slotline: an out-of-phase microstrip-slotline divider ══════════════════════════════════════════════════════
+    //
+    // A slot Ws wide cut in the ground (Bottom Copper), fed at its middle by the input microstrip crossing it, and read at
+    // Lsl either side by two output microstrips crossing it. Each crossing is a microstrip-to-slotline transition: the
+    // microstrip runs on Lms (a quarter wave) past the slot to an open end, and the slot runs on Lss (a quarter wave)
+    // past each output crossing to its shorted end. The two slot waves leave the input in opposite senses, so the
+    // outputs are 180° apart. A polygon has no hole, so the ground is two drawn shapes on net 0: SH1, the ground less the
+    // slot and the block below it, and SH2, that block. Both are placed by offset from the input's crossing, and each
+    // output line by offset from SH1's pin at its crossing (Dx, Dy in mm). The ground is drawn copper, so a 3D view of a
+    // bench turns it into solids with the slot open. EM only, in 3D: Planar's ground is an unbroken plane.
+    public static readonly Pcd9Spec Slotline = new(
+        "Slotline",
+        """
+        MLIN:TLI1  n1  ni  W=1.1 mm  L=12 mm
+        MLIN:TLI2  ni  ns1  W=1.1 mm  L=Lms
+        MSHAPE:SH1  0  0  0  Form="polygon"  W=0  X[1]=-(Lsl+Lss+3e-3)  Y[1]=-12e-3  X[2]=-(Lsl+Lss)  Y[2]=-12e-3  X[3]=-(Lsl+Lss)  Y[3]=Ws/2  X[4]=Lsl+Lss  Y[4]=Ws/2  X[5]=Lsl+Lss  Y[5]=-12e-3  X[6]=Lsl+Lss+3e-3  Y[6]=-12e-3  X[7]=Lsl+Lss+3e-3  Y[7]=12e-3  X[8]=-(Lsl+Lss+3e-3)  Y[8]=12e-3  PinX[1]=0  PinY[1]=Ws/2  PinW[1]=1.1 mm  PinDir[1]=90 deg  PinX[2]=Lsl  PinY[2]=Ws/2  PinW[2]=1.1 mm  PinDir[2]=90 deg  PinX[3]=-Lsl  PinY[3]=Ws/2  PinW[3]=1.1 mm  PinDir[3]=90 deg  SignalLayer="Bottom Copper (1 oz)"  Model="none"
+        MSHAPE:SH2  0  Form="polygon"  W=0  X[1]=-(Lsl+Lss)  Y[1]=-12e-3  X[2]=Lsl+Lss  Y[2]=-12e-3  X[3]=Lsl+Lss  Y[3]=-Ws/2  X[4]=-(Lsl+Lss)  Y[4]=-Ws/2  PinX[1]=0  PinY[1]=-Ws/2  PinW[1]=1.1 mm  PinDir[1]=270 deg  SignalLayer="Bottom Copper (1 oz)"  Model="none"
+        MLIN:TLO2  n2  no2  W=1.1 mm  L=12 mm
+        MLIN:TSO2  no2  ns2  W=1.1 mm  L=Lms
+        MLIN:TLO3  n3  no3  W=1.1 mm  L=12 mm
+        MLIN:TSO3  no3  ns3  W=1.1 mm  L=Lms
+        Port:P1  n1  0  Num=1  Z=50 Ohm
+        Port:P2  n2  0  Num=2  Z=50 Ohm
+        Port:P3  n3  0  Num=3  Z=50 Ohm
+        """,
+        [
+            ("Lsl", "10",  "mm", "6",   "16",  "slot length, input to each output"),
+            ("Ws",  "0.3", "mm", "0.2", "0.8", "slot width"),
+            ("Lss", "9.8", "mm", "6",   "14",  "slot stub past each output (a quarter wave)"),
+            ("Lms", "8.9", "mm", "6",   "12",  "microstrip stub past the slot (a quarter wave)"),
+        ],
+        [
+            ("SH1",  new OffsetPlacement { Anchor = "TLI1.2", Pin = 1, Dx = "Ws/2",  Dy = "0", Unit = "mm", Angle = "180" }),
+            ("SH2",  new OffsetPlacement { Anchor = "TLI1.2", Pin = 1, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
+            ("TLO2", new OffsetPlacement { Anchor = "SH1.2",  Pin = 2, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
+            ("TLO3", new OffsetPlacement { Anchor = "SH1.3",  Pin = 2, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
+        ],
+        []);
+
     /// <summary>A bench placing <paramref name="cellDir"/> once as X1 between Ports, wired by <paramref name="text"/>, with
     /// one S-parameter sweep (by EM when the cell has no circuit model).</summary>
     public static string Bench(string workspace, string cellDir, string name, string text, FrequencySpec sweep, bool byEm,
@@ -166,6 +205,13 @@ internal static class Pcd9Cells
                                             Range = new GoalRange { Axis = "freq", Lo = "4.9 GHz", Hi = "5.1 GHz" } }],
             Optimizer = new OptimizerSettings { Algorithm = "pattern", Em = OptimizerEmMode.Direct, EmBudget = 8, Seed = 1 },
         });
+
+    public static string SlotlineBench(string ws, string cell) => Bench(ws, cell, "SlotlineBench", """
+        Port:P1  n1  0  Num=1  Z=50 Ohm
+        Slotline:X1  n1  n2  n3
+        Port:P2  n2  0  Num=2  Z=50 Ohm
+        Port:P3  n3  0  Num=3  Z=50 Ohm
+        """, new FrequencySpec("4", "6", 3, SweepKind.Linear, "GHz", "GHz"), byEm: true);
 
     public static string PatchBench(string ws, string cell) => Bench(ws, cell, "PatchBench", """
         Port:P1  n1  0  Num=1  Z=50 Ohm

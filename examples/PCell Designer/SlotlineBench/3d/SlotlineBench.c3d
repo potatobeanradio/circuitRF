@@ -1,0 +1,160 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"TechRef": "../../tech/microstrip-0508.ctech",
+	"Objects": [],
+	"Instances": [
+		{
+			"Name": "U1",
+			"CellRef": "..",
+			"View": "Layout"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": 0,
+			"Rect": {
+				"Min": [-550000, 35000],
+				"Size": [1100000, 508000]
+			},
+			"Z0": "50",
+			"FromLayout": {
+				"Instance": "U1",
+				"Port": 1,
+				"Taken": {
+					"Plane": "YZ",
+					"Offset": 0,
+					"Min": [-550000, 35000],
+					"Size": [1100000, 508000]
+				}
+			}
+		},
+		{
+			"Number": 2,
+			"Name": "P2",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": 24000000,
+			"Rect": {
+				"Min": [9450000, 35000],
+				"Size": [1100000, 508000]
+			},
+			"Z0": "50",
+			"FromLayout": {
+				"Instance": "U1",
+				"Port": 2,
+				"Taken": {
+					"Plane": "YZ",
+					"Offset": 24000000,
+					"Min": [9450000, 35000],
+					"Size": [1100000, 508000]
+				}
+			}
+		},
+		{
+			"Number": 3,
+			"Name": "P3",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": 24000000,
+			"Rect": {
+				"Min": [-10550000, 35000],
+				"Size": [1100000, 508000]
+			},
+			"Z0": "50",
+			"FromLayout": {
+				"Instance": "U1",
+				"Port": 3,
+				"Taken": {
+					"Plane": "YZ",
+					"Offset": 24000000,
+					"Min": [-10550000, 35000],
+					"Size": [1100000, 508000]
+				}
+			}
+		}
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	},
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "SlotlineBench",
+			"Frequency": {
+				"StartExpr": "4",
+				"StopExpr": "6",
+				"StepExpr": "",
+				"NumPoints": 3,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"PortZ0s": [
+				50,
+				0,
+				50,
+				0,
+				50,
+				0
+			],
+			"SchematicPortZ0s": [
+				{
+					"Port": 1,
+					"Real": 50,
+					"Imag": 0
+				},
+				{
+					"Port": 2,
+					"Real": 50,
+					"Imag": 0
+				},
+				{
+					"Port": 3,
+					"Real": 50,
+					"Imag": 0
+				}
+			],
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"ConductorThicknessCorrection": true,
+			"AnalysisKind": "Planar",
+			"Solver3D": "Emerge",
+			"Palace": {
+				"Quality": "Draft",
+				"SaveFieldsGHz": []
+			},
+			"OpenEms": {
+				"SaveFieldsGHz": []
+			},
+			"EMerge": {
+				"Quality": "Draft",
+				"SaveFieldsGHz": []
+			}
+		}
+	]
+}

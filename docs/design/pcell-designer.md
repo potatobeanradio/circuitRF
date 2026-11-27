@@ -13,7 +13,7 @@ output at the instance's values, whose circuit model is its own schematic, and w
 | Rule | What it says | Where it holds |
 |---|---|---|
 | **S1 — Everything is a function of the parameters** | Parts joined by a net are placed pin to pin; a part no net joins carries an offset placement; a drawn shape's outline and pins are expressions; a drag writes an expression. The saved `.clay` is the planner's output at the defaults. SDL's "never distort to close" and "no auto-routing" stand | `SchematicLayoutPlanner.Offsets.cs`, `OffsetPlacer`, `MShapePCell`, the designer's Save |
-| **S2 — One model** | The cell's schematic is its circuit model, extracted as a `define` like any hierarchical cell. Nothing is fitted or stored beside it. `MSHAPE` has no circuit model unless `Model="open"` | `SchematicCircuit.CnlTextOf`, `EmModelSwitch.WithoutCircuitModel` |
+| **S2 — One model** | The cell's schematic is its circuit model, extracted as a `define` like any hierarchical cell. Nothing is fitted or stored beside it. `MSHAPE` has no circuit model unless `Model="open"` (pins open) or `Model="short"` (pins one node) | `SchematicCircuit.CnlTextOf`, `EmModelSwitch.WithoutCircuitModel` |
 | **S3 — The same interface as any PCell** | Placed through `IPCellGeneratorResolver` and the `.ccell` `LayoutGenerator` path, so the Library tile, parameters, handles, regeneration, LVS and EM need no designer branch. The PCell contract is unchanged | `DesignedPCellResolver` |
 | **S4 — Existing files read and save unchanged** | Every new field is additive and omitted when unset; no `FormatVersion` bump | `CellPersistence`, `SchematicPersistence`, `Pcd1SeamsTests` |
 | **S5 — Deterministic** | Same cell, values and technology: same layout, same generated cell, same `.cpcell` bytes | `DesignedCellLayout.At`, `PCellPackage.Export` |
@@ -140,6 +140,13 @@ contract:
 The real Planar runs on the example are recorded in §5.
 
 ## 4. Possible enhancements
+
+- **Offset and flip in the text view.** Every showcase cell needed its `.csch` edited for them. Carrying them in the
+  `.cnl` would let a designed cell be authored as text alone.
+- **The live response of an EM-only cell.** It draws the open circuit rather than a refusal. Saying "no circuit model:
+  Run EM" would avoid a flat −250 dB S21 that reads like a result.
+- **A cut on `MSHAPE` for the ground pour.** A slot drawn on its own needs the ground drawn around it in two shapes. A
+  shape that cuts the pour would make a slot one part, and would keep it open under a pour.
 
 - **Repetition and conditional shapes** (finger arrays, an optional stub). A Python PCell placed inside the designed cell
   covers them today. Built in, they would make the part count a function of a parameter, so the netlist, the port count

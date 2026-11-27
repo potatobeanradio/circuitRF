@@ -1355,7 +1355,8 @@ There is one terminal per `PinX[k]` row, numbered by k, and pin k is port k. In 
 `SignalLayer` (empty: the technology's top conductor) with a pin of `PinW[k]` at each pin.
 
 `Model` says what a circuit simulation does with it. `Model = "open"` leaves its terminals open, which is what a pad at
-the end of a line is to a first approximation. `Model = "none"` gives it no circuit model at all: a schematic that holds
+the end of a line is to a first approximation. `Model = "short"` makes its terminals one node, an ideal junction or the
+star pad where several parts meet. `Model = "none"` gives it no circuit model at all: a schematic that holds
 one can only be simulated by EM, so a run by circuit models is refused naming it and an optimisation uses `em=direct`.
 Write the two words quoted in a netlist, as `Form="polygon"` and `Model="open"`.
 

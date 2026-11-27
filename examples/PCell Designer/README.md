@@ -17,6 +17,8 @@ control.
 | **SpurlineBench** | `Spurline` between two Ports, swept 3.5–7 GHz by Planar EM, with the optimisation that moves its notch to 5 GHz |
 | **DualModePatch** | A square patch with one corner cut, fed along two adjacent edges across a gap, EM only. Parameters `a`, `d` (corner cut) and `s` (gap) |
 | **PatchBench** | `DualModePatch` between two Ports, swept 4.9–5.4 GHz by Planar EM |
+| **Slotline** | An out-of-phase microstrip-slotline divider: a slot in a drawn ground (two `MSHAPE`s on Bottom Copper), crossed by an input and two output microstrips, EM only. Parameters `Lsl`, `Ws`, `Lss` and `Lms` |
+| **SlotlineBench** | `Slotline` between three Ports, solved at 4, 5 and 6 GHz in its 3D view (EMerge) |
 
 ## 1. The designed cell
 
@@ -109,5 +111,26 @@ the two split modes either side of it: S11 dips at **5.10 GHz** and **5.32 GHz**
 The passband is 5.05-5.33 GHz, with steep skirts down to −20 dB at 4.9 and 5.4 GHz. Across a 0.2 mm gap the feeds are
 under-coupled, which is where the insertion loss comes from. A smaller gap or a longer coupled edge raises the
 coupling, and a larger `d` widens the split.
+
+## 8. A slotline divider
+
+`Slotline` splits 5 GHz into two outputs 180° apart. A slot `Ws` wide is cut in the ground, and three microstrips on top
+cross it: the input at the slot's middle, and the two outputs `Lsl` either side of it. Each crossing is a
+microstrip-to-slotline transition:
+- the microstrip runs on `Lms` past the slot to an open end;
+- the slot runs on `Lss` past each output crossing to its shorted end.
+
+Each is a quarter wave, so the open microstrip end becomes a short at the slot and the shorted slot end becomes an open
+at the microstrip. The two slot waves leave the input in opposite senses, so the outputs are out of phase.
+
+With the quasi-static estimate εs ≈ (εr + 1)/2 = 2.33 for a slot on this thin substrate, λs/4 at 5 GHz is
+c / (4 · 5 GHz · √2.33) ≈ 9.8 mm (`Lss`). The 50 Ω line's εeff = 2.86 gives λm/4 ≈ 8.9 mm (`Lms`).
+
+A polygon has no hole, so the ground is two drawn shapes on net 0: `SH1`, the ground less the slot and the block below
+it, and `SH2`, that block. Both are placed by offset from the input's crossing, and each output line is placed by
+offset from `SH1`'s pin at its crossing. A bench that places only the designed cell draws no ground pour, so the slot
+stays open. Planar cannot solve it, because Planar's ground is an unbroken plane. The bench's EM view is its 3D view
+(`3d/SlotlineBench.c3d`, made by **New 3D View from Layout**), which turns the drawn ground into copper with the slot cut
+in it, with an EMerge setup.
 
 No results ship with this example.

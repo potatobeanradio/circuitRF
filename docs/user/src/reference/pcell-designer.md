@@ -20,6 +20,7 @@ keywords: PCell Designer, designed cell, PCell, parameterised cell, parametric c
 <li><a href="#package">Export and import: the PCell package</a></li>
 <li><a href="#placed">A designed cell placed in a schematic</a></li>
 <li><a href="#headless">Running it headless</a></li>
+<li><a href="#examples">Examples</a></li>
 </ol>
 </nav>
 
@@ -115,6 +116,8 @@ directions is reported, and that offset is not applied. Nothing is moved to hide
 `Model` says what a circuit simulation does with it:
 
 - `Model = "open"`: its pins are left open. A pad at a line's end simulates as an open end.
+- `Model = "short"`: its pins are one node, an ideal junction. A star pad where several resistors meet simulates as
+  their common node.
 - `Model = "none"`: it has no circuit model. A cell that holds one can only be simulated by EM: a run by circuit models
   is refused naming the shape, and an optimisation uses `em=direct`.
 
@@ -145,7 +148,7 @@ and `em=direct` work there as for any [cell simulated by EM](em-cells.html#optim
 | `pcell.parameter-is-var` | A parameter that is also a VAR of the schematic |
 | `pcell.range` | A Minimum above its Maximum |
 | `pcell.no-ports`, `pcell.port-num` | No Port, or Ports not numbered 1, 2, … |
-| `pcell.mshape-pins`, `pcell.mshape-model` | A drawn shape with no pin, or a `Model` other than `none` and `open` |
+| `pcell.mshape-pins`, `pcell.mshape-model` | A drawn shape with no pin, or a `Model` other than `none`, `open` and `short` |
 | `pcell.no-circuit-model` | A drawn shape with `Model = "none"`: the cell is EM only |
 
 An error stops the export. The check plans the cell at each parameter's ends because a layout that holds together at the
@@ -202,3 +205,46 @@ the same files (see the [command line](cli.html#pcell)):
 <span class="prompt">$ </span>circuitrf pcell import PadTee.cpcell --into ../other-workspace</code></pre>
 
 Over MCP it is the `pcell` tool, with `what=new|check|render|export|import`.
+
+## Examples {#examples}
+
+The **PCell Designer** example (File ▸ New ▸ Examples) holds `PadTee`, the cell this page uses, and three showcase
+cells. Each comes with a bench that places it and a Data Display, and its README gives the closed-form estimates and
+the numbers.
+
+**A 3-way Wilkinson divider** (`Wilkinson3`, 2.45 GHz). Three quarter-wave arms of 86.6 Ω leave a cross, and three
+50 Ω resistors join their ends at a drawn star pad with `Model = "short"`. A star of three resistors cannot be planar
+with every output outside it, so one resistor is a 1206 whose body bridges the middle arm. Nothing is stretched. The
+cell's two loops close because the pad's pins and the lines to the resistors are expressions of the parameters, and
+the check plans the cell at every parameter's ends. By circuit models:
+- S21, S31 and S41 are −4.81, −4.93 and −5.01 dB;
+- the input match is −33 dB;
+- the isolation between outputs is −29 dB or better.
+
+<figure class="figure">
+<img src="../../images/pcell-designer/wilkinson3.png" alt="The PCell Designer on the 3-way Wilkinson: the cross, three arms, three resistors meeting on a drawn star pad, and its circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">
+<figcaption><code>Wilkinson3</code> in the designer. The resistor <code>R3</code> bridges the middle arm to reach the
+star pad <code>SH1</code>. The response shows the three outputs near −4.8 dB and the input match at 2.45 GHz.</figcaption>
+</figure>
+
+**A spurline bandstop** (`Spurline`). A 50 Ω line with an L-shaped slit, drawn as one polygon with `Model = "none"`,
+so it is simulated by EM only. The slit's far end follows `Ls` by Stretch by Parameter, so `Ls` is a drag handle
+wherever the cell is placed. A coarse Planar sweep puts the notch at 5.39 GHz, against a quarter-wave estimate of
+5.45 GHz. The bench's `em=direct` optimisation of `X1.Ls` moved it to 4.97 GHz in 8 solves.
+
+<figure class="figure">
+<img src="../../images/pcell-designer/spurline.png" alt="The PCell Designer on the spurline: a straight line with a long slit along its axis that turns out through one edge." style="width:100%;height:auto">
+<figcaption><code>Spurline</code>: one drawn polygon between two feed lines. The slit's far end is tied to
+<code>Ls</code>.</figcaption>
+</figure>
+
+**A dual-mode patch bandpass** (`DualModePatch`). A square patch with one corner cut, fed along two adjacent edges
+across a gap. No net joins the feeds and the patch, so they are placed by offset: the patch from the first feed's end,
+the second feed from the patch's pin. A coarse Planar sweep shows the two modes the cut splits, at 5.10 and 5.32 GHz,
+either side of the unperturbed patch's 5.22 GHz.
+
+<figure class="figure">
+<img src="../../images/pcell-designer/dual-mode-patch.png" alt="The PCell Designer on the dual-mode patch: a square patch with its top right corner cut, a feed along its left edge and a feed along its bottom edge." style="width:100%;height:auto">
+<figcaption><code>DualModePatch</code>. The patch and the second feed are placed by offset, the gap <code>s</code> from
+the feeds.</figcaption>
+</figure>

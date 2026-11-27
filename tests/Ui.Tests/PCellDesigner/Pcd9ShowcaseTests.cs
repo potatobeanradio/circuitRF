@@ -68,4 +68,18 @@ public sealed class Pcd9ShowcaseTests : IDisposable
     /// <summary>The dual-mode patch: the patch and the second feed placed by offset, the gap s from the feeds.</summary>
     [Fact]
     public void DualModePatch_PlacedByOffsets_EmOnly() => DesignedAndPlaced(Pcd9Cells.Patch, Pcd9Cells.PatchBench);
+
+    /// <summary>The slotline divider: its slotted ground drawn on Bottom Copper and carried by the generator, with no pour.</summary>
+    [Fact]
+    public void Slotline_GroundIsDrawnWithItsSlot()
+    {
+        DesignedAndPlaced(Pcd9Cells.Slotline, Pcd9Cells.SlotlineBench);
+        using (DesignedPCellResolver.Register(_ws))
+        {
+            Assert.True(PCellRegistry.TryGet("cpcell:Slotline", out var generator));
+            var tech = TechPersistence.LoadFromFile(Path.Combine(_ws, "tech", Pcd8PadTee.Tech));
+            var shapes = generator(new Dictionary<string, PCellValue>(), tech, PCellLayerSelection.Default).Shapes;
+            Assert.Equal(2, shapes.Count(s => s.Layer == new LayerKey(2, 0)));   // SH1 and SH2
+        }
+    }
 }

@@ -28,7 +28,25 @@ public sealed class Pcd9ExampleAuthoring
             foreach (string bench in new[] { Pcd9Cells.SpurlineBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Spurline)),
                                              Pcd9Cells.PatchBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Patch)) })
                 Assert.Null(LayoutFromSchematic.Run(bench, emSetup: true).Refusal);
-            foreach (string cell in new[] { "Wilkinson3", "Wilkinson3Bench", "Spurline", "SpurlineBench", "DualModePatch", "PatchBench" })
+
+            // The slotline's ground is drawn, and Planar's is an unbroken plane, so its bench solves in 3D: the setup made
+            // for its layout becomes an EMerge one, New 3D View from Layout embeds it, and the .cem goes, leaving one EM view.
+            string slot = Pcd9Cells.SlotlineBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Slotline));
+            var laid = LayoutFromSchematic.Run(slot, emSetup: true);
+            Assert.Null(laid.Refusal);
+            string cem = Assert.Single(laid.EmSetups);
+            var setup = EmSetupPersistence.LoadFromFile(cem);
+            setup.Solver3D = Em3dSolverId.Emerge;
+            EmSetupPersistence.SaveToFile(cem, setup);
+            string benchDir = Path.GetDirectoryName(Path.GetDirectoryName(slot))!;
+            string c3d = Path.Combine(CellFolder.SubFolderPath(benchDir, ViewType.ThreeD), "SlotlineBench" + CircuitRF.Design.ThreeD.C3dPersistence.Extension);
+            var made = CircuitRF.Design.ThreeD.C3dHierarchy.NewFromLayout(benchDir, c3d, Path.Combine(scratch, ".cws"));
+            Assert.True(made.Document is not null, made.Refusal);
+            CellCreate.WriteThreeDView(benchDir, "SlotlineBench", made.Document!);
+            File.Delete(cem);
+
+            foreach (string cell in new[] { "Wilkinson3", "Wilkinson3Bench", "Spurline", "SpurlineBench", "DualModePatch", "PatchBench",
+                                            "Slotline", "SlotlineBench" })
             {
                 string from = Path.Combine(scratch, cell), to = Path.Combine(example, cell);
                 if (Directory.Exists(to)) Directory.Delete(to, true);

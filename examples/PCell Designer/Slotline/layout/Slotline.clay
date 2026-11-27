@@ -1,0 +1,465 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 0,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"TLI1": {
+			"W": 0.0011,
+			"L": 0.012
+		},
+		"TLI2": {
+			"W": 0.0011,
+			"L": 0.0089
+		},
+		"SH1": {
+			"Form": "polygon",
+			"W": 0,
+			"X[1]": -0.0228,
+			"Y[1]": -0.012,
+			"X[2]": -0.0198,
+			"Y[2]": -0.012,
+			"X[3]": -0.0198,
+			"Y[3]": 0.00015,
+			"X[4]": 0.0198,
+			"Y[4]": 0.00015,
+			"X[5]": 0.0198,
+			"Y[5]": -0.012,
+			"X[6]": 0.0228,
+			"Y[6]": -0.012,
+			"X[7]": 0.0228,
+			"Y[7]": 0.012,
+			"X[8]": -0.0228,
+			"Y[8]": 0.012,
+			"PinX[1]": 0,
+			"PinY[1]": 0.00015,
+			"PinW[1]": 0.0011,
+			"PinDir[1]": 90,
+			"PinX[2]": 0.01,
+			"PinY[2]": 0.00015,
+			"PinW[2]": 0.0011,
+			"PinDir[2]": 90,
+			"PinX[3]": -0.01,
+			"PinY[3]": 0.00015,
+			"PinW[3]": 0.0011,
+			"PinDir[3]": 90,
+			"Model": "none"
+		},
+		"SH2": {
+			"Form": "polygon",
+			"W": 0,
+			"X[1]": -0.0198,
+			"Y[1]": -0.012,
+			"X[2]": 0.0198,
+			"Y[2]": -0.012,
+			"X[3]": 0.0198,
+			"Y[3]": -0.00015,
+			"X[4]": -0.0198,
+			"Y[4]": -0.00015,
+			"PinX[1]": 0,
+			"PinY[1]": -0.00015,
+			"PinW[1]": 0.0011,
+			"PinDir[1]": 270,
+			"Model": "none"
+		},
+		"TLO2": {
+			"W": 0.0011,
+			"L": 0.012
+		},
+		"TSO2": {
+			"W": 0.0011,
+			"L": 0.0089
+		},
+		"TLO3": {
+			"W": 0.0011,
+			"L": 0.012
+		},
+		"TSO3": {
+			"W": 0.0011,
+			"L": 0.0089
+		}
+	},
+	"GeneratedPlacements": {
+		"P1": {
+			"X": 22800000,
+			"Y": 12000000,
+			"RotationDeg": 270,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 32800000,
+			"Y": -12000000,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"P3": {
+			"X": 12800000,
+			"Y": -12000000,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"Text": "3"
+		},
+		"SH1": {
+			"X": 22800000,
+			"Y": 0,
+			"RotationDeg": 180,
+			"Mirror": true
+		},
+		"SH2": {
+			"X": 22800000,
+			"Y": 0,
+			"RotationDeg": 180,
+			"Mirror": false
+		},
+		"TLI1": {
+			"X": 22800000,
+			"Y": 12000000,
+			"RotationDeg": 270,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"TLI2": {
+			"X": 22800000,
+			"Y": 0,
+			"RotationDeg": 270,
+			"Mirror": false
+		},
+		"TLO2": {
+			"X": 32800000,
+			"Y": -12000000,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"TLO3": {
+			"X": 12800000,
+			"Y": -12000000,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"TSO2": {
+			"X": 32800000,
+			"Y": 0,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"TSO3": {
+			"X": 12800000,
+			"Y": 0,
+			"RotationDeg": 90,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"MLIN_aba038c8b911": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.0011,
+				"L": 0.012
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"MLIN_24d07a4cbc03": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.0011,
+				"L": 0.0089
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"MSHAPE_ed63e0991c4b": {
+			"GeneratorId": "MSHAPE",
+			"Parameters": {
+				"Form": "polygon",
+				"W": 0,
+				"X[1]": -0.0228,
+				"Y[1]": -0.012,
+				"X[2]": -0.0198,
+				"Y[2]": -0.012,
+				"X[3]": -0.0198,
+				"Y[3]": 0.00015,
+				"X[4]": 0.0198,
+				"Y[4]": 0.00015,
+				"X[5]": 0.0198,
+				"Y[5]": -0.012,
+				"X[6]": 0.0228,
+				"Y[6]": -0.012,
+				"X[7]": 0.0228,
+				"Y[7]": 0.012,
+				"X[8]": -0.0228,
+				"Y[8]": 0.012,
+				"PinX[1]": 0,
+				"PinY[1]": 0.00015,
+				"PinW[1]": 0.0011,
+				"PinDir[1]": 90,
+				"PinX[2]": 0.01,
+				"PinY[2]": 0.00015,
+				"PinW[2]": 0.0011,
+				"PinDir[2]": 90,
+				"PinX[3]": -0.01,
+				"PinY[3]": 0.00015,
+				"PinW[3]": 0.0011,
+				"PinDir[3]": 90,
+				"Model": "none"
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech",
+			"SignalLayerNameOverride": "Bottom Copper (1 oz)"
+		},
+		"MSHAPE_17eddfb628b3": {
+			"GeneratorId": "MSHAPE",
+			"Parameters": {
+				"Form": "polygon",
+				"W": 0,
+				"X[1]": -0.0198,
+				"Y[1]": -0.012,
+				"X[2]": 0.0198,
+				"Y[2]": -0.012,
+				"X[3]": 0.0198,
+				"Y[3]": -0.00015,
+				"X[4]": -0.0198,
+				"Y[4]": -0.00015,
+				"PinX[1]": 0,
+				"PinY[1]": -0.00015,
+				"PinW[1]": 0.0011,
+				"PinDir[1]": 270,
+				"Model": "none"
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech",
+			"SignalLayerNameOverride": "Bottom Copper (1 oz)"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Label",
+			"X": 22800000,
+			"Y": 12000000,
+			"Text": "1",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R270",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 32800000,
+			"Y": -12000000,
+			"Text": "2",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R90",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 12800000,
+			"Y": -12000000,
+			"Text": "3",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P3",
+			"PortDirection": "R90",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				35890000, 14540000,
+				9710000, 14540000,
+				9710000, -14540000,
+				35890000, -14540000
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/MLIN_aba038c8b911",
+			"X": 22800000,
+			"Y": 12000000,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TLI1",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_24d07a4cbc03",
+			"X": 22800000,
+			"Y": 0,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TLI2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MSHAPE_ed63e0991c4b",
+			"X": 22800000,
+			"Y": 0,
+			"Rot": "R180",
+			"MirrorX": true,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "SH1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": true
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MSHAPE_17eddfb628b3",
+			"X": 22800000,
+			"Y": 0,
+			"Rot": "R180",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "SH2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 180,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_aba038c8b911",
+			"X": 32800000,
+			"Y": -12000000,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TLO2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_24d07a4cbc03",
+			"X": 32800000,
+			"Y": 0,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TSO2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_aba038c8b911",
+			"X": 12800000,
+			"Y": -12000000,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TLO3",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MLIN_24d07a4cbc03",
+			"X": 12800000,
+			"Y": 0,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "TSO3",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		}
+	]
+}
