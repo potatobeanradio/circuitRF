@@ -124,6 +124,31 @@ public sealed class Pcd6DesignerTests : IDisposable
         Assert.Contains("L1", File.ReadAllText(vm.SchematicPath));
     }
 
+    /// <summary>R-pcd6-9: Save gives the cell a symbol generated from its Ports, so a bench can place it.</summary>
+    [Fact]
+    public void Save_GivesTheCellASymbolFromItsPorts()
+    {
+        var (vm, _) = Pcd6Fixture.Open(_scratch);
+        Assert.Null(vm.Save());
+        var cell = CellFolder.ReadCcell(vm.CellDir)!;
+        string symbol = Path.Combine(CellFolder.SubFolderPath(vm.CellDir, ViewType.Symbol), cell.PrimarySymbol!);
+        Assert.Equal(2, SymbolPersistence.LoadFromFile(symbol).Pins.Count);
+        Assert.Equal(2, cell.NumPorts);
+    }
+
+    /// <summary>R-pcd6-3: a range is saved as the clean base-SI value its text states, not a float-product's tail.</summary>
+    [Fact]
+    public void Save_WritesARangeAsACleanSiValue()
+    {
+        var (vm, _) = Pcd6Fixture.Open(_scratch);
+        vm.Parameters[0].Minimum = "100 um";
+        vm.Parameters[0].Maximum = "7";
+        Assert.Null(vm.Save());
+        string json = File.ReadAllText(Path.Combine(vm.CellDir, CellFolder.CcellFileName));
+        Assert.Contains("\"Minimum\": 0.0001", json);
+        Assert.Contains("\"Maximum\": 0.007", json);
+    }
+
     /// <summary>R-pcd6-6: Run EM saves, makes the cell's setup, solves at the values and overlays the result.</summary>
     [Fact]
     public async Task RunEm_SolvesTheCellAtTheValues_AndOverlaysIt()

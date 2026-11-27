@@ -584,7 +584,9 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         bad = false;
         if (string.IsNullOrWhiteSpace(text)) return null;
         var (e, u) = TunableValue.Split(text, unit);
-        if (TunableValue.TryParse(TunableValue.Text(e, u), out _, out _, out double si)) return si;
+        // Fifteen digits, as TunableValue.Format writes a value: 100 um is 1E-04, not the 9.999999999999999E-05 of 100 × 1e-6.
+        if (TunableValue.TryParse(TunableValue.Text(e, u), out _, out _, out double si))
+            return double.Parse(TunableValue.Format(si, ""), CultureInfo.InvariantCulture);
         bad = true;
         return null;
     }
@@ -625,10 +627,22 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         cell.LayoutGenerator = PCellDesign.GeneratorIdFor(CellName);
         cell.EmCopper = true;
         cell.Terminals = PCellDesign.TerminalsOf(Schematic);   // LVS pairs each Port with the generator's pin (R-pcd5-4)
+        cell.NumPorts = cell.Terminals.Count;
         cell.PrimarySchematic ??= Path.GetFileName(SchematicPath);
         cell.PrimaryLayout ??= Path.GetFileName(ClayPath);
+        string symbolDir = CellFolder.SubFolderPath(CellDir, ViewType.Symbol);
+        string symbolPath = Path.Combine(symbolDir,
+            CellFolder.ResolvePrimary(CellDir, ViewType.Symbol).ResolvedName ?? CellName + CellFolder.ViewExtension(ViewType.Symbol));
+        cell.PrimarySymbol ??= Path.GetFileName(symbolPath);
         try
         {
+            // A bench places the cell by its symbol: one generated from its Ports (the generator Generate Symbols uses)
+            // whenever the cell has none, or one whose pins no longer match the Ports. A drawn symbol that matches stays.
+            if (!File.Exists(symbolPath) || SymbolPersistence.LoadFromFile(symbolPath).Pins.Count != cell.Terminals.Count)
+            {
+                Directory.CreateDirectory(symbolDir);
+                SymbolPersistence.SaveToFile(symbolPath, AutoSymbolGenerator.Generate(CellName, cell.Terminals.Count));
+            }
             CellPersistence.SaveToFile(Path.Combine(CellDir, CellFolder.CcellFileName), cell);
             Directory.CreateDirectory(_schematicDir);
             SchematicPersistence.SaveToFile(SchematicPath, Schematic, CellName);
