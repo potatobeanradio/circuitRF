@@ -150,6 +150,22 @@ public sealed class Pcd5PCellPackageTests
     }
 
     [Fact]
+    public void R4_AnImportedPackagePlacedInABenchHasItsPinsInLvs()
+    {
+        using var ws = new Pcd5Workspace();
+        string package = Path.Combine(ws.Root, "Lvs4b.cpcell");
+        Assert.NotNull(PCellPackage.Export(ws.Designed("Lvs4b"), package).Path);
+        using var other = new Pcd5Workspace();
+        string cell = PCellPackage.Import(package, other.Root).Path!;
+
+        using var registration = DesignedPCellResolver.Register(other.Root);
+        string bench = other.Bench("Bench4b", cell, "4");
+        Assert.Null(LayoutFromSchematic.Run(bench).Refusal);
+        var lvs = CircuitRF.Design.Layout.Lvs.LvsRun.Run(Path.GetDirectoryName(Path.GetDirectoryName(bench))!);
+        Assert.True(lvs.ErrorCount == 0, string.Join("\n", lvs.Findings.Select(f => f.Diagnostic)));
+    }
+
+    [Fact]
     public void R5_UpdateSchematicFromLayoutCreatesTheDesignedCellsComponent()
     {
         using var ws = new Pcd5Workspace();
