@@ -33,11 +33,12 @@ internal static class Pcd8PadTee
     public const string Tech = "microstrip-0508.ctech";
 
     // Port 1 – TL1 – B1 – T1 – TL3 – Port 2; the tee's branch TL2 ends in the pad SH1, 2 mm wide and Lpad long, open in a
-    // circuit simulation. W = 1.1 mm is 50 Ω on the board.
+    // circuit simulation. W = 1.1 mm is 50 Ω on the board. The tee's pin 1 is on TL3's side, so the stub turns away from
+    // TL1 and port 1's feed stays clear of other copper, as a calibrated EM port needs.
     public const string Text = """
         MLIN:TL1  n1  n2  W=W  L=L1
         MBEND:B1  n2  n3  W=W  Angle=90 deg
-        MTEE:T1  n3  n4  n5  W1=W  W2=W  W3=W
+        MTEE:T1  n4  n3  n5  W1=W  W2=W  W3=W
         MLIN:TL3  n4  n6  W=W  L=3 mm
         MLIN:TL2  n5  n7  W=W  L=Lstub
         MSHAPE:SH1  n7  Form="polygon"  W=0 um  X[1]=0 um  Y[1]=-1000 um  X[2]=300 um  Y[2]=-1000 um  X[3]=300 um  Y[3]=1000 um  X[4]=0 um  Y[4]=1000 um  PinX[1]=0 um  PinY[1]=0 um  PinW[1]=W  PinDir[1]=180 deg  Model="open"

@@ -96,7 +96,7 @@
     {
       "InstanceName": "TL3",
       "Symbol": "Mlin",
-      "X": 2400,
+      "X": 2000,
       "Y": 3200,
       "Rotation": "R90",
       "MirrorX": false,
@@ -316,8 +316,8 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": 2400,
-      "Y": 6200,
+      "X": 2000,
+      "Y": 5600,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -359,8 +359,8 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": 2400,
-      "Y": 6400,
+      "X": 2000,
+      "Y": 5800,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -425,23 +425,23 @@
     {
       "Points": [
         [
-          2400,
+          2000,
           1800
         ],
         [
-          2600,
+          1800,
           1800
         ],
         [
-          2600,
+          1800,
           2800
         ],
         [
-          2400,
+          2000,
           2800
         ],
         [
-          2400,
+          2000,
           3000
         ]
       ]
@@ -449,28 +449,12 @@
     {
       "Points": [
         [
-          2400,
+          2000,
           3400
         ],
         [
-          2400,
-          4200
-        ],
-        [
-          2700,
-          4200
-        ],
-        [
-          2700,
-          5800
-        ],
-        [
-          2400,
-          5800
-        ],
-        [
-          2400,
-          6000
+          2000,
+          5400
         ]
       ]
     },
@@ -493,7 +477,7 @@
   ],
   "NetLabels": [
     {
-      "X": 2000,
+      "X": 2400,
       "Y": 1800,
       "Name": "n3",
       "SegmentIndex": 0,
@@ -549,7 +533,7 @@
       "OffsetY": 0
     },
     {
-      "X": 2500,
+      "X": 1900,
       "Y": 1800,
       "Name": "n4",
       "OwnerWireIndex": 2,
@@ -559,22 +543,22 @@
       "OffsetY": 0
     },
     {
-      "X": 2700,
-      "Y": 5000,
+      "X": 2000,
+      "Y": 4400,
       "Name": "n6",
       "OwnerWireIndex": 3,
-      "SegmentIndex": 2,
+      "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 2600,
+      "X": 2700,
       "Y": 4900,
       "Name": "n7",
       "OwnerWireIndex": 4,
       "SegmentIndex": 1,
-      "AlongT": 0.4,
+      "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     }

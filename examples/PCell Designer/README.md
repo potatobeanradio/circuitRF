@@ -21,7 +21,7 @@ by **Stretch by Parameter**. The pad is `Model="open"`, so in a circuit simulati
 
 Open `Bench` and press **Simulate**: `Bench.cdd` shows |S21| and |S11|. Then **Update Layout from Schematic** draws the
 two placements, each at its own `Lpad`; select one in the layout and drag its `Lpad` handle. **LVS** compares the layout
-with the schematic and finds nothing to report.
+with the schematic and finds no error; its one warning is the ground pour under `TL1`, which no via stitches.
 
 ## 3. Export and import
 
@@ -36,8 +36,9 @@ circuitrf pcell export PadTee -o PadTee.cpcell
 
 ## 4. Optimising by EM
 
-With **Create or update EM setup** on, Update Layout from Schematic also writes the bench's Planar setup. Set `SP1` to
-run by EM, tune `X1.Lpad` and optimise with `em=correct`: the placed cells are solved as copper. Because the pad is open
-in the circuit model, `Lpad`'s whole effect comes from EM.
+With **Create or update EM setup** on, Update Layout from Schematic also writes the bench's Planar setup, and EM solves the
+two placed cells as copper. Set `SP1` to run by EM, give `X1`'s `Lpad` a VAR (`Lp1`) and tune it. The pad is open in the
+circuit model, so `Lpad` moves only the EM response: `em=correct`, which searches on the corrected circuit model, stops at
+its start after one solve, and `em=direct` (algorithm `pattern`) is the mode that moves it.
 
 No results ship with this example.
