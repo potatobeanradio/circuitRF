@@ -412,6 +412,10 @@ public static class TerminalMap
         // ── A cell a generator draws (LayoutGenerator): its map names the generator's pins ─────
         if (ccell?.LayoutGenerator is { Length: > 0 } generator)
         {
+            // A designed cell's generator is offered by its workspace's designed cells (brief-pcd-5), registered here as
+            // the application registers them on open, so the rule asks the registry the same question it does there.
+            using var designed = Workspace.WorkspaceRootFinder.WorkspaceDirOf(cellDir) is { } wsRoot
+                ? PCellDesigner.DesignedPCellResolver.Register(wsRoot) : null;
             if (!PCells.PCellRegistry.TryGet(generator, out _))
                 findings.Add(TerminalDiagnostics.GeneratorNotRegistered(path, generator));
             else if (Lvs.DeviceTypes.TryGetSymbolKind(generator, out var kind) && ccell.Terminals is { Count: > 0 } mapped)

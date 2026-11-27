@@ -166,6 +166,21 @@ public sealed class Pcd5PCellPackageTests
     }
 
     [Fact]
+    public void R2_CheckTakesADesignedGeneratorAsOffered_AndStillWarnsForAnUnknownOne()
+    {
+        using var ws = new Pcd5Workspace();
+        string cell = ws.Designed("Offered2");
+        string unknown = ws.Designed("Unknown2");
+        string ccellPath = Path.Combine(unknown, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.LayoutGenerator = "cpcell:NoSuchCell2";
+        CellPersistence.SaveToFile(ccellPath, ccell);
+
+        Assert.DoesNotContain(TerminalMap.Validate(cell, cell, null, null), f => f.Id == "check.terminals.generator-not-registered");
+        Assert.Contains(TerminalMap.Validate(unknown, unknown, null, null), f => f.Id == "check.terminals.generator-not-registered");
+    }
+
+    [Fact]
     public void R5_UpdateSchematicFromLayoutCreatesTheDesignedCellsComponent()
     {
         using var ws = new Pcd5Workspace();

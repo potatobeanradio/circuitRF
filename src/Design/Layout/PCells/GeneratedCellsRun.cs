@@ -236,7 +236,8 @@ public sealed class GeneratedCellsRun : IDisposable
 
     private string Reason(string generatorId, Exception ex)
     {
-        if (!PCellRegistry.IsBuiltIn(generatorId) && _kitsNotAllowed.Count > 0)
+        if (!PCellRegistry.IsBuiltIn(generatorId) && _kitsNotAllowed.Count > 0
+            && CircuitRF.Design.PCellDesigner.DesignedPCellResolver.CellDirOf(generatorId) is null)   // a designed cell needs no kit
             return $"its generator is not built in, and {Plural(_kitsNotAllowed.Count, "kit")} that could draw it " +
                    $"{(_kitsNotAllowed.Count == 1 ? "has" : "have")} not been allowed to run here: " +
                    string.Join(", ", _kitsNotAllowed.Select(k => $"'{k.Directory}'")) + ".";
