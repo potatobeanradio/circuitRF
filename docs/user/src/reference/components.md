@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, MCLINN, coupled lines, multiconductor, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox, MCRC, coupled-resonator filter, edge-coupled filter, parallel-coupled filter, hairpin filter, zig-zag filter, SIR, open-loop filter, cross-coupled filter, ring resonator filter, bandstop filter, spurline, lumped, Realization, MRPAD, attenuator, resistive pad, resistive splitter, MRADIAL, radial stub, butterfly stub, MGPD, Gysel, MBPD, Bagley, MTPD, tee divider, MBLC, branch-line, MRRC, rat-race, MCLC, directional coupler, MIDC, Lange, MCBL, balun, Marchand, MSPS, Schiffman, phase shifter, MDLY, delay line, meander, MLAD, ladder, stub filter, stepped-impedance filter, MCLA, interdigital filter, combline filter, pseudo-interdigital, sites, Place Site Parts
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, MCLINN, coupled lines, multiconductor, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, Wilkinson, MWPD, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox, MCRC, coupled-resonator filter, edge-coupled filter, parallel-coupled filter, hairpin filter, zig-zag filter, SIR, open-loop filter, cross-coupled filter, ring resonator filter, bandstop filter, spurline, lumped, Realization, MRPAD, attenuator, resistive pad, resistive splitter, MRADIAL, radial stub, butterfly stub, MSHAPE, drawn metal, pad, polygon, MGPD, Gysel, MBPD, Bagley, MTPD, tee divider, MBLC, branch-line, MRRC, rat-race, MCLC, directional coupler, MIDC, Lange, MCBL, balun, Marchand, MSPS, Schiffman, phase shifter, MDLY, delay line, meander, MLAD, ladder, stub filter, stepped-impedance filter, MCLA, interdigital filter, combline filter, pseudo-interdigital, sites, Place Site Parts
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -1339,6 +1339,30 @@ side of the line. `Angle` is in degrees, up to 180°; a `Ro` that does not reach
 > M. Kirschning, R. H. Jansen and N. H. L. Koster, "Accurate model for open end effect of microstrip lines,"
 > *Electronics Letters*, vol. 17, no. 3, pp. 123–125, February 1981.
 > DOI [10.1049/el:19810088](https://doi.org/10.1049/el:19810088). The open-end length the arc is moved out by.
+
+### Drawn Metal (MSHAPE) {#mshape}
+
+{{symbol: mshape}}
+
+Copper you draw: a pad, a launch, a flag, any shape no line model covers. With `Form = "polygon"` it is the closed
+outline through its corners; with `Form = "path"` it is a centreline of width `W` through them. The corners are the rows
+`X[1]`, `Y[1]`, `X[2]`, `Y[2]`, … and the pins the rows `PinX[k]`, `PinY[k]`, `PinW[k]` (the pin's width) and `PinDir[k]`
+(the way it faces, in degrees), all in the part's own frame, the origin where the layout puts the part. Every row is an
+expression, so a corner can follow a parameter (`X[2] = Lpad`). It is placed with a 100 µm square and one pin in the
+middle of its left edge; **+** in the parameter editor adds a corner, and a pin is added as its four rows.
+
+There is one terminal per `PinX[k]` row, numbered by k, and pin k is port k. In the layout the shape is drawn on
+`SignalLayer` (empty: the technology's top conductor) with a pin of `PinW[k]` at each pin.
+
+`Model` says what a circuit simulation does with it. `Model = "open"` leaves its terminals open, which is what a pad at
+the end of a line is to a first approximation. `Model = "none"` gives it no circuit model at all: a schematic that holds
+one can only be simulated by EM, so a run by circuit models is refused naming it and an optimisation uses `em=direct`.
+Write the two words quoted in a netlist, as `Form="polygon"` and `Model="open"`.
+
+It is the drawn copper of the [PCell Designer](pcell-designer.html#mshape), where **Stretch by Parameter** ties corners
+to a parameter and a placed copy of the cell shows a drag handle for it. In LVS it is a conductor, as a line is.
+
+{{table: components/MShape}}
 
 ### Via (VIA) {#via}
 

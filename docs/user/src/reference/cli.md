@@ -149,6 +149,7 @@ convention behind both.</p>
 | `impedance` | a `.clay` or a cell folder | The same analysis the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis) runs | The per-trace report to stdout; `-o report.pdf` |
 | `review` | a `.clay`, a cell folder, or a workspace with `--cell` | The [Layout Review](layout-editor.html#layout-review)'s built-in checks | **Nothing** — the findings, grouped per check and layer, to stdout; `-o` writes the review as a PDF |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
+| `pcell new`, `check`, `render`, `export`, `import` | a workspace and a name, a designed cell, or a `.cpcell` | The [PCell Designer](pcell-designer.html)'s commands — the same functions its window calls | A designed cell, a check report, a picture of the cell at values, or a PCell package — as the noun says |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
 | `import part` | a component file or folder | The same code **Import Component** runs | A cell folder holding the land patterns and the symbol |
@@ -2130,6 +2131,33 @@ references, layers with no mapping in the target format. stdout carries only the
 per line, so a script can consume them directly:
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o fab/ --to gerber 2&gt; convert.log | zip -j fab.zip -@</code></pre>
+
+## `pcell` — the PCell Designer, headless {#pcell}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf pcell render PadTee -o padtee.svg --set Lpad=400um</code></pre>
+
+`pcell` is the [PCell Designer](pcell-designer.html) with no window. Each noun does what the window's own command does, so the
+two write the same files.
+
+| Command | What it does |
+|---|---|
+| `pcell new <workspace> <name>` | Makes a designed cell: a schematic, a symbol, and a `.ccell` that names its generator `cpcell:<name>`. Prints the paths it made. |
+| `pcell check <cell> [--severity warning\|error]` | Runs the design check. Each finding is printed as `check` prints one, with a summary line. |
+| `pcell render <cell> -o <out.svg\|.pdf\|.png> [--set name=value]...` | Draws the cell's layout at those values. Each value is a number with its unit (`Lpad=400um`). Parameters you leave out stay at their defaults. Every option `render` takes for a layout also works here (`--window`, `--size`, `--layers`, `--theme`, ...). Nothing is written except the picture. |
+| `pcell export <cell> -o <file.cpcell>` | Writes the PCell package. The check runs first, and an error stops the export. |
+| `pcell import <file.cpcell> --into <workspace-or-library-folder>` | Unpacks a package as a cell. Importing the same package again is reported as already imported. A different package with the same name is refused; nothing is overwritten. |
+
+`check`, `render` and `export` take a designed cell only. For any other cell, use `circuitrf render` and
+`circuitrf check`.
+
+Exit codes:
+
+- 0: done.
+- 1: refused, or an argument does not parse. For `check`, 1 also means an error was found, or a warning under
+  `--severity warning`.
+- 130: `render` was cancelled.
+
+In an MCP client this is the `pcell` tool, with `what=new|check|render|export|import`.
 
 ## `new` — a workspace or a cell {#new}
 
