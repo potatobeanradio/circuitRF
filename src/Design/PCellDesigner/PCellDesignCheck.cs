@@ -171,7 +171,8 @@ public static class PCellDesignCheck
         var pins = new List<(int Part, double X, double Y)>();
         for (int i = 0; i < parts.Count; i++)
             if (CellLayoutResolver.Resolve(parts[i], layoutDir, technology).View is { } view)
-                foreach (var pin in view.Pins)
+                // A footprint's pin is its pad's centre, but a chain joins it at the pad's outer edge (PadJoint): both count.
+                foreach (var pin in view.Pins.Concat(PadJoint.Of(view, technology).Points.Where(p => p.OnCopper).Select(p => p.Joint)))
                 {
                     var (x, y, _) = ChainPose.Of(parts[i]).Apply(pin);
                     pins.Add((i, x, y));
