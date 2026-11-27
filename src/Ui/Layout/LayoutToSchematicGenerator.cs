@@ -273,6 +273,9 @@ public static class LayoutToSchematicGenerator
             // no push-back onto one already linked.
             bool builtIn = TryGetSymbolKind(origin.GeneratorId, out var kind);
             string? kitRef = builtIn ? null : KitLayoutGenerators.PartRefFor(wsRoot, origin.GeneratorId);
+            // brief-pcd-5 R-pcd5-5: a designed cell's generated cell is that cell's part, as a kit's is, reached by a
+            // CellRef to the cell folder its resolver names; created and pushed back exactly as a kit part is.
+            string? cellRef = kitRef ?? (builtIn ? null : DesignedCellRef(origin.GeneratorId, schematic));
 
             // brief-footprint-6 §2/§4. A generated cell that neither a built-in nor a kit claims is
             // one of three things, and the three answers are genuinely different:
@@ -291,7 +294,7 @@ public static class LayoutToSchematicGenerator
             // was fixed for in 2026-08-17.
             SymbolKind? layoutFirstPart = null;
             string? guessedName = null;
-            if (!builtIn && kitRef is null)
+            if (!builtIn && cellRef is null)
             {
                 if (inst.SchematicId is { Length: > 0 } landSid && bySchematicId.TryGetValue(landSid, out var landComp))
                 {
@@ -360,12 +363,12 @@ public static class LayoutToSchematicGenerator
                 }
                 else
                 {
-                    instanceName = ClaimName(kitRef is not null ? "X" : ComponentTypeRegistry.InstancePrefix(kind));
+                    instanceName = ClaimName(cellRef is not null ? "X" : ComponentTypeRegistry.InstancePrefix(kind));
                 }
 
                 // R-L5-20: create half — writes SchematicId as it goes.
-                comp = kitRef is not null
-                    ? NewCellComponent(kitRef, schematic, instanceName)
+                comp = cellRef is not null
+                    ? NewCellComponent(cellRef, schematic, instanceName)
                     : new EditableComponent
                       {
                           Symbol       = kind,
@@ -375,7 +378,7 @@ public static class LayoutToSchematicGenerator
                 comp.Y = (newSlot / GridCols) * GridPitchSchematic;
                 newSlot++;
                 LinkAtDefaultFacing(comp, inst);
-                if (kitRef is null)
+                if (cellRef is null)
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
                         comp.Parameters.Add(new EditableParameter
                         {
@@ -592,6 +595,15 @@ public static class LayoutToSchematicGenerator
 
         return NewCellComponent(cellRef, schematic, claimName("X"));
     }
+
+    /// <summary>brief-pcd-5 R-pcd5-5: the CellRef, relative to the schematic, of the designed cell a <c>cpcell:</c> generator
+    /// draws — null for any other generator, an unsaved schematic, or a cell its resolver does not name.</summary>
+    private static string? DesignedCellRef(string generatorId, SchematicEditModel schematic)
+        => generatorId.StartsWith(CircuitRF.Design.PCellDesigner.PCellDesign.GeneratorPrefix, StringComparison.OrdinalIgnoreCase)
+           && CircuitRF.Design.PCellDesigner.DesignedPCellResolver.CellDirOf(generatorId) is { } cellDir
+           && schematic.SchematicDirectory is { Length: > 0 } schematicDir
+            ? RefPath.ToStored(Path.GetRelativePath(schematicDir, cellDir))
+            : null;
 
     /// <summary>
     /// A brand-new schematic component for a cell reference — a kit part or an ordinary cell folder —
