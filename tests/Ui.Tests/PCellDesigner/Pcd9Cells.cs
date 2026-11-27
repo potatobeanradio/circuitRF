@@ -16,7 +16,8 @@ internal sealed record Pcd9Spec(
     (string Name, string Default, string Unit, string Min, string Max, string Description)[] Parameters,
     (string Instance, OffsetPlacement Offset)[] Offsets,
     (string Instance, int[] Moving, string Parameter, double AxisDeg)[] Stretches,
-    string[]? Mirrored = null);
+    string[]? Mirrored = null,
+    string? Sweep = null);
 
 internal static class Pcd9Cells
 {
@@ -66,7 +67,8 @@ internal static class Pcd9Cells
             ("Riso", "50",    "Ohm", "20",   "100", "isolation resistor"),
         ],
         [], [],
-        Mirrored: ["B3", "BR2", "SH1"]);
+        Mirrored: ["B3", "BR2", "SH1"],
+        Sweep: "start=1.5 stop=3.5 npts=81 Unit=GHz");
 
     // ══ 2. Spurline: a spurline bandstop, one drawn polygon ═══════════════════════════════════════════════════════════
     //
@@ -202,6 +204,14 @@ internal static class Pcd9Cells
         foreach (var (inst, moving, parameter, axis) in spec.Stretches)
             Assert.True(vm.StretchByParameter(inst, moving, parameter, axis), vm.Status);
         Assert.Null(vm.Save());
+        if (spec.Sweep is not null)
+        {
+            // The live response's sweep, as the cell keeps it (PCD-0 §4.1).
+            string ccell = Path.Combine(created.CellDir, CellFolder.CcellFileName);
+            var cell = CellFolder.ReadCcell(created.CellDir)!;
+            cell.PCellDesign = new CcellPCellDesign { Sweep = spec.Sweep };
+            CellPersistence.SaveToFile(ccell, cell);
+        }
         return created.CellDir;
     }
 

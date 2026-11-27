@@ -47,7 +47,9 @@
   "PrimaryLayout": "Wilkinson3.clay",
   "IsTestBench": false,
   "LayoutGenerator": "cpcell:Wilkinson3",
-  "PCellDesign": {},
+  "PCellDesign": {
+    "Sweep": "start=1.5 stop=3.5 npts=81 Unit=GHz"
+  },
   "EmCopper": true,
   "Terminals": [
     {
