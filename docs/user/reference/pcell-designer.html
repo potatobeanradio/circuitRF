@@ -52,6 +52,7 @@
 <li><a href="#package">Export and import: the PCell package</a></li>
 <li><a href="#placed">A designed cell placed in a schematic</a></li>
 <li><a href="#headless">Running it headless</a></li>
+<li><a href="#examples">Examples</a></li>
 </ol>
 </nav>
 <h2 id="what">What it is</h2>
@@ -187,6 +188,8 @@ directions is reported, and that offset is not applied. Nothing is moved to hide
 <p><code>Model</code> says what a circuit simulation does with it:</p>
 <ul>
 <li><code>Model = &quot;open&quot;</code>: its pins are left open. A pad at a line's end simulates as an open end.</li>
+<li><code>Model = &quot;short&quot;</code>: its pins are one node, an ideal junction. A star pad where several resistors meet simulates as
+their common node.</li>
 <li><code>Model = &quot;none&quot;</code>: it has no circuit model. A cell that holds one can only be simulated by EM: a run by circuit models
 is refused naming the shape, and an optimisation uses <code>em=direct</code>.</li>
 </ul>
@@ -233,7 +236,7 @@ and <code>em=direct</code> work there as for any <a href="em-cells.html#optimise
 </tr>
 <tr>
 <td><code>pcell.mshape-pins</code>, <code>pcell.mshape-model</code></td>
-<td>A drawn shape with no pin, or a <code>Model</code> other than <code>none</code> and <code>open</code></td>
+<td>A drawn shape with no pin, or a <code>Model</code> other than <code>none</code>, <code>open</code> and <code>short</code></td>
 </tr>
 <tr>
 <td><code>pcell.no-circuit-model</code></td>
@@ -285,6 +288,53 @@ the same files (see the <a href="cli.html#pcell">command line</a>):</p>
 <span class="prompt">$ </span>circuitrf pcell export PadTee -o PadTee.cpcell
 <span class="prompt">$ </span>circuitrf pcell import PadTee.cpcell --into ../other-workspace</code></pre>
 <p>Over MCP it is the <code>pcell</code> tool, with <code>what=new|check|render|export|import</code>.</p>
+<h2 id="examples">Examples</h2>
+<p>The <strong>PCell Designer</strong> example (File ▸ New ▸ Examples) holds <code>PadTee</code>, the cell this page uses, and four showcase
+cells. Each comes with a bench that places it and a Data Display, and its README gives the closed-form estimates and
+the numbers.</p>
+<p><strong>A 3-way Wilkinson divider</strong> (<code>Wilkinson3</code>, 2.45 GHz). Three quarter-wave arms of 86.6 Ω leave a cross, and three
+50 Ω resistors join their ends at a drawn star pad with <code>Model = &quot;short&quot;</code>. A star of three resistors cannot be planar
+with every output outside it, so one resistor is a 1206 whose body bridges the middle arm. Nothing is stretched. The
+cell's two loops close because the pad's pins and the lines to the resistors are expressions of the parameters, and
+the check plans the cell at every parameter's ends. By circuit models:</p>
+<ul>
+<li>S21, S31 and S41 are −4.81, −4.93 and −5.01 dB;</li>
+<li>the input match is −33 dB;</li>
+<li>the isolation between outputs is −29 dB or better.</li>
+</ul>
+<figure class="figure">
+<img src="../../images/pcell-designer/wilkinson3.png" alt="The PCell Designer on the 3-way Wilkinson: the cross, three arms, three resistors meeting on a drawn star pad, and its circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">
+<figcaption><code>Wilkinson3</code> in the designer. The resistor <code>R3</code> bridges the middle arm to reach the
+star pad <code>SH1</code>. The response shows the three outputs near −4.8 dB and the input match at 2.45 GHz.</figcaption>
+</figure>
+<p><strong>A spurline bandstop</strong> (<code>Spurline</code>). A 50 Ω line with an L-shaped slit, drawn as one polygon with <code>Model = &quot;none&quot;</code>,
+so it is simulated by EM only. The slit's far end follows <code>Ls</code> by Stretch by Parameter, so <code>Ls</code> is a drag handle
+wherever the cell is placed. A coarse Planar sweep puts the notch at 5.39 GHz, against a quarter-wave estimate of
+5.45 GHz. The bench's <code>em=direct</code> optimisation of <code>X1.Ls</code> moved it to 4.97 GHz in 8 solves.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/spurline.png" alt="The PCell Designer on the spurline: a straight line with a long slit along its axis that turns out through one edge." style="width:100%;height:auto">
+<figcaption><code>Spurline</code>: one drawn polygon between two feed lines. The slit's far end is tied to
+<code>Ls</code>.</figcaption>
+</figure>
+<p><strong>A dual-mode patch bandpass</strong> (<code>DualModePatch</code>). A square patch with one corner cut, fed along two adjacent edges
+across a gap. No net joins the feeds and the patch, so they are placed by offset: the patch from the first feed's end,
+the second feed from the patch's pin. A coarse Planar sweep shows the two modes the cut splits, at 5.10 and 5.32 GHz,
+either side of the unperturbed patch's 5.22 GHz.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/dual-mode-patch.png" alt="The PCell Designer on the dual-mode patch: a square patch with its top right corner cut, a feed along its left edge and a feed along its bottom edge." style="width:100%;height:auto">
+<figcaption><code>DualModePatch</code>. The patch and the second feed are placed by offset, the gap <code>s</code> from
+the feeds.</figcaption>
+</figure>
+<p><strong>A slotline divider</strong> (<code>Slotline</code>, 5 GHz). A slot is cut in the ground, and three microstrips cross it: the input at
+its middle and two outputs either side, each crossing a quarter-wave microstrip-to-slotline transition. The outputs
+are 180° apart. The ground is drawn copper: two <code>MSHAPE</code>s on the ground layer, since a polygon has no hole. Planar's
+ground is an unbroken plane, so the bench solves in its 3D view, which turns the drawn ground into copper with the slot
+in it.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/slotline.png" alt="The PCell Designer on the slotline divider: three microstrips crossing a long slot in the drawn ground, the input in the middle and an output at each side." style="width:100%;height:auto">
+<figcaption><code>Slotline</code>. The slot runs across the cell between the two ground shapes <code>SH1</code> and
+<code>SH2</code>; each microstrip runs on past it to an open end.</figcaption>
+</figure>
 
 <nav class="page-nav">
   <a class="prev" href="pcells.html"><span class="dir">Previous</span><span class="name">PCells</span></a>

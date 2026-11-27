@@ -2615,7 +2615,8 @@ middle of its left edge; <strong>+</strong> in the parameter editor adds a corne
 <p>There is one terminal per <code>PinX[k]</code> row, numbered by k, and pin k is port k. In the layout the shape is drawn on
 <code>SignalLayer</code> (empty: the technology's top conductor) with a pin of <code>PinW[k]</code> at each pin.</p>
 <p><code>Model</code> says what a circuit simulation does with it. <code>Model = &quot;open&quot;</code> leaves its terminals open, which is what a pad at
-the end of a line is to a first approximation. <code>Model = &quot;none&quot;</code> gives it no circuit model at all: a schematic that holds
+the end of a line is to a first approximation. <code>Model = &quot;short&quot;</code> makes its terminals one node, an ideal junction or the
+star pad where several parts meet. <code>Model = &quot;none&quot;</code> gives it no circuit model at all: a schematic that holds
 one can only be simulated by EM, so a run by circuit models is refused naming it and an optimisation uses <code>em=direct</code>.
 Write the two words quoted in a netlist, as <code>Form=&quot;polygon&quot;</code> and <code>Model=&quot;open&quot;</code>.</p>
 <p>It is the drawn copper of the <a href="pcell-designer.html#mshape">PCell Designer</a>, where <strong>Stretch by Parameter</strong> ties corners
@@ -2643,7 +2644,7 @@ to a parameter and a placed copy of the cell shows a drag handle for it. In LVS 
 <tr><td>PinY[1]</td><td><code>0</code></td><td>um</td><td>&mdash;</td><td>Pin k&#39;s y.</td></tr>
 <tr><td>PinW[1]</td><td><code>100</code></td><td>um</td><td>&mdash;</td><td>Pin k&#39;s width: the width of the line it joins, and of the EM port there.</td></tr>
 <tr><td>PinDir[1]</td><td><code>180</code></td><td>deg</td><td>&mdash;</td><td>Pin k&#39;s outward direction, degrees: 180 faces -X, so a line joins it from the left.</td></tr>
-<tr><td>Model</td><td><code>&quot;none&quot;</code></td><td>&mdash;</td><td>shown</td><td>&quot;none&quot;: no circuit model, simulated by EM only. &quot;open&quot;: its terminals are left open in a circuit simulation.</td></tr>
+<tr><td>Model</td><td><code>&quot;none&quot;</code></td><td>&mdash;</td><td>shown</td><td>&quot;none&quot;: no circuit model, simulated by EM only. &quot;open&quot;: its terminals are left open in a circuit simulation. &quot;short&quot;: its terminals are one node, an ideal junction.</td></tr>
 <tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the metal is on. Empty: the technology&#39;s top conductor.</td></tr>
 <tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it, for EM. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
 </tbody></table>
