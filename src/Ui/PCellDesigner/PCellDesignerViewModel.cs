@@ -624,6 +624,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         cell.PCellDesign ??= new CcellPCellDesign();
         cell.LayoutGenerator = PCellDesign.GeneratorIdFor(CellName);
         cell.EmCopper = true;
+        cell.Terminals = PCellDesign.TerminalsOf(Schematic);   // LVS pairs each Port with the generator's pin (R-pcd5-4)
         cell.PrimarySchematic ??= Path.GetFileName(SchematicPath);
         cell.PrimaryLayout ??= Path.GetFileName(ClayPath);
         try

@@ -113,6 +113,7 @@ public sealed class Pcd6DesignerTests : IDisposable
         Assert.NotNull(cell.PCellDesign);
         Assert.True(cell.EmCopper);
         Assert.Equal("cpcell:" + vm.CellName, cell.LayoutGenerator);
+        Assert.Equal(new[] { (1, "P1"), (2, "P2") }, cell.Terminals!.Select(t => (t.Port, t.Name)).OrderBy(t => t.Port));
         var saved = cell.Parameters.Single(x => x.Name == added.Name);
         Assert.Equal(5e-5, saved.Minimum!.Value, 12);
         Assert.Equal(2e-4, saved.Maximum!.Value, 12);
