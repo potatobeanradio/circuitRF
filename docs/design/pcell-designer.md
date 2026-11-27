@@ -62,7 +62,8 @@ output at the instance's values, whose circuit model is its own schematic, and w
 - Pin k exists while the instance has a `PinX[k]` row; the symbol, the line's net count and the generator's pins all read
   this rule. The parameter editor's **+** adds corners; a pin is added as rows.
 - The Core model stamps nothing, so the pins are open. `WithoutCircuitModel` names every `MSHAPE` whose `Model` is absent
-  or not `open`; a run by circuit models is then refused with "SH1 has no circuit model…".
+  or not `open`; a run by circuit models is then refused with "SH1 has no circuit model…". `Model="short"` (added by
+  PCD-9) ties every pin to pin 1 by a 0 V branch, so the pins are one node, and it counts as a circuit model.
 - Stretch is additive: the old expression stays and gains `(P − P0)·cos θ`, `(P − P0)·sin θ`; two bindings on one corner
   add. Corners move, pins stay.
 - LVS kind: a `TransmissionLine`, as every drawn conductor. No substrate is injected. The catalogue now has 33 microstrip
@@ -123,6 +124,26 @@ output at the instance's values, whose circuit model is its own schematic, and w
 - `examples/PCell Designer/` holds `PadTee` and a bench placing it twice. It is built by the functions the window calls
   (`Pcd8ExampleAuthoring`, run only with `CRF_AUTHOR_PCD8=1`), so the files are what a user would get.
 - `Pcd8AcceptanceTests` runs PCD-0 §8's six steps in one test.
+
+### PCD-9 — the showcase cells
+
+- `Wilkinson3`, `Spurline`, `DualModePatch` and `Slotline` are built by `Pcd9Cells.Design`, using the steps of the
+  window: Create, the text applied, the table typed, offsets and flips set on the schematic, the text applied again,
+  Stretch by Parameter, Save. The text view carries no placement, so an offset or a flip is set on the part.
+- A bend's turn and a tee's branch side come from the drawing's chirality, not from the text: the sign of MBEND's
+  `Angle` does not turn it. Flipping a part moves its pins off its wires, so the text is applied again afterwards. That
+  redraws the wires and keeps every part's orientation and offset.
+- An offset's `Dx` or `Dy` that uses a parameter with a unit takes that unit (var-unit-wins), so with `s` in mm,
+  `s+0.55` is `s` + 0.55 mm. A part's own expressions evaluate in SI.
+- The design check found joined parts by coincident pins. A footprint's pin is at its pad's centre, so a footprint
+  looked unjoined. The check now also counts the pad's outer-edge joint (`PadJoint`), which is where the planner joins
+  it.
+- A planar 3-way Wilkinson with a star of resistors cannot keep all three outputs outside the star (K2,3). One resistor
+  is a 1206 whose body bridges the middle arm.
+- A slotted ground is drawn copper: two `MSHAPE`s on the ground layer, on net 0, because a polygon has no hole. A bench
+  placing only a designed cell draws no pour, and the generator leaves the cell's own pour out, so the slot stays open.
+  Planar cannot solve it: its ground is the unbroken plane of the Green's function. A 3D view turns the drawn ground into
+  solids.
 
 ## 3. The acceptance check and the real EM run
 
