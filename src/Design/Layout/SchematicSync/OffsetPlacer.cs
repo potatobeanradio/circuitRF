@@ -87,7 +87,7 @@ public static partial class OffsetPlacer
 
     private static double Snap(double v, double dbu) => Math.Round(v / dbu) * dbu;
 
-    private static string Fmt(double v) => v.ToString("0.############", CultureInfo.InvariantCulture);
+    private static string Fmt(double v) => (v + 0.0).ToString("0.############", CultureInfo.InvariantCulture);
 
     /// <summary>An expression ending in <c>+ n</c> or <c>- n</c> whose head does not end in an operator (so <c>a * -3</c>
     /// and <c>x^-2</c> are not read as one).</summary>

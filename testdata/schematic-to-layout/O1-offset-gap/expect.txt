@@ -1,0 +1,9 @@
+# Two lines no net joins (brief-pcd-2): TL2 is placed by its Offset, straight on from TL1 pin 2 by g = 0.5 mm, so the
+# gap is a function of g and nothing joins across it.
+Info TL1 added
+Info TL2 added
+Info TL2 placed by its offset from TL1 pin 2
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL2 pin 2
+port P1 1
+port P2 2

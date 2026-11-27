@@ -1,0 +1,12 @@
+# A chain TL2 - TL3 no net joins to TL1 (brief-pcd-2): TL2 is placed by its Offset, g = 1 mm on from TL1 pin 2 and
+# turned 90 degrees, and TL3 rides with it as one rigid body.
+Info TL1 added
+Info TL2 added
+Info TL3 added
+Info TL2 placed by its offset from TL1 pin 2
+Info P1 port 1 placed at TL1 pin 1
+Info P2 port 2 placed at TL3 pin 2
+Info - Joined 1 of 1 connection; 0 left as ratsnest
+joinable n3
+port P1 1
+port P2 2
