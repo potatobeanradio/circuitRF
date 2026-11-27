@@ -46,6 +46,7 @@ framework, not the GUI referencing the CLI — and `CircuitRF.Cli.Verbs` has its
 | `fields` | `.cnl` or `.csch` | its `fields` analyses through `CircuitEvaluation` — an EM Field Data block's saved per-port results recombined by the circuit's waves (`FieldCosimulation`); no EM run | stdout notes and scalars; SAR and B1 volumes and records beside a field set; `-o .mat/.npy/.txt` for the cubes, a far field's `F1.farfield.*` and the circuit's `F1.S` among them (under `--json` a pattern stays in that file) — §28 |
 | `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
 | `smith` | `.csmith` | `SmithCascade` + `SmithReadings` + `SmithBand` — the evaluator the Smith Chart window's status strip reads on every edit | stdout reading + the per-node walk; `-o .s1p` for the load Γ and `.svg/.pdf/.png` for the chart — §18 |
+| `filter` | a specification on the flags; `--realiser R` picks one realiser | `FilterSynthesisService` — the realisers and the bench the Filter Designer window places; `PCellFilter.Make` for `--pcell` (brief-pcd-12) | stdout the realisers and whether each can build it; with `--realiser`, `-o` a `.cnl` bench (`--to-schematic` a `.csch`); `--pcell <name>` the realisation as a designed cell, for `pcell check`, `render` and `export` (§47). MCP: `create what=filter`, `pcell=` |
 | `filter lc` | a specification on the flags (`--elliptic-type auto\|a\|b\|c` for elliptic) | `FilterLadder` and `FilterValues` — the synthesis and the snap the LC Filter Designer window calls | stdout element table (exact and snapped); `-o` a `.cnl` of the ladder. Exit 1 when the family has no ladder, 2 when an argument does not parse |
 | `snp` | a Touchstone `.sNp` | `TouchstoneSource` + `SParameterViewerPreset` — the reading and the plots the S-Parameter Viewer shows | stdout file pane; `-o .svg/.pdf/.png` the four plots, `-o .cdd` the Data Display — §33 |
 | `opt` | `.cnl` or `.csch` | `OptimizationRun` — the Optimizer window's run — over the `tune`, `goal` and `optimize` lines | stdout result tables; `-o .npy` the best point's full results plus the `opt` history group; `--history .npy`; `--save-preset` the one write to the design — §24 |
@@ -5311,6 +5312,8 @@ calls, so the two write the same bytes.
   unchanged. The verb's own ids: `pcell.args.noun-required`, `.unknown-noun`, `.unknown-option`, `.required`,
   `.extra-argument`, `.set-malformed`, `.unknown-severity`; `pcell.cell.not-found`, `.not-designed`, `.invalid-name`,
   `.exists`, `.no-workspace`, `.no-technology`; `pcell.new.refused`, `pcell.render.refused`, `pcell.render.plan`.
+- **A filter as a designed cell.** `filter … --realiser R --pcell <name>` (MCP `create what=filter pcell=<name>`) makes one
+  through `PCellFilter.Make` (brief-pcd-12); every noun above then takes it.
 - **MCP:** the `pcell` tool, `what=` the noun; `render` advertises `render`'s picture options (`ToolCatalog`'s
   `LayoutPictureOptions`, one list for both tools).
 

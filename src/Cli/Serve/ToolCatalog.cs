@@ -1051,13 +1051,15 @@ internal static class ToolCatalog
                         new("signal",      "--signal",       OptKind.Str,     "The signal layer, by name. Default: the technology's."),
                         new("ground",      "--ground",       OptKind.Str,     "The ground reference layer, by name. Default: the technology's."),
                         new("realiser",    "--realiser",     OptKind.Str,     "Realise with this one (its name, or a part of it that names one). Without it, every realiser is listed with whether it can build the filter, and why not."),
-                        new("output",      "-o",             OptKind.Path,    "With realiser: the .cnl written. Required then."),
+                        new("output",      "-o",             OptKind.Path,    "With realiser: the .cnl written. Required then, unless pcell alone is asked for."),
                         new("toSchematic", "--to-schematic", OptKind.Flag,    "Also draw the .cnl as a .csch beside it."),
                         new("points",      "--points",       OptKind.Integer, "Points of the bench's S-parameter sweep (401)."),
+                        // brief-pcd-12: the realisation as a designed cell, which pcell check, render and export then take.
+                        new("pcell",       "--pcell",        OptKind.Path,    "With realiser: also make the realisation a designed cell (a PCell) of this name, in the folder the path names, in a workspace. Then pcell render or export it."),
                     ],
                     "A filter from its specification: the realisers that can build it, or, with realiser, one realised as a .cnl: "
                   + "the part with its parameters on the technology's substrate, an R, L, C or via on each of its sites, two ports "
-                  + "and an S-parameter sweep across the band, ready for run analysis=sparam."),
+                  + "and an S-parameter sweep across the band, ready for run analysis=sparam; with pcell, also as a designed cell."),
                 // The LC Filter Designer, headless (`filter lc`): a lumped L/C ladder from a specification, every element at
                 // its exact value and at the nearest preferred-series value. A mode of `create`: what it makes is a netlist.
                 new("lcFilter", ["filter", "lc"],
