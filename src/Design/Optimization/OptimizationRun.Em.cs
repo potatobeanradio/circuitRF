@@ -386,7 +386,9 @@ public sealed partial class OptimizationRun
         foreach (var c in vars.Coordinates)
         {
             string name = c.ValueKey;
-            if (start.PathA is { } a && catalog.FindValue(c.ValueKey) is { } t && t.Kind != TunableKind.Variable)
+            // brief-pcd-1 — a placed generator cell's own value (X1.Lpad) is geometry, as a VAR is.
+            if (start.PathA is { } a && catalog.FindValue(c.ValueKey) is { } t && t.Kind != TunableKind.Variable
+                && !EmEvaluation.IsGeneratorInstanceValue(a, c.ValueKey))
                 return OptimizationDiagnostics.EmNotThroughVariable(c.Key, a.CellName);
             string leaf = name[(Math.Max(name.LastIndexOf('.'), name.LastIndexOf(':')) + 1)..];
             if (start.Records.SelectMany(r => r.Unreached).FirstOrDefault(u => u.StartsWith(leaf + " does not reach", StringComparison.Ordinal)) is { } unreached)

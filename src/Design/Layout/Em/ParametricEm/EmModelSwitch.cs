@@ -268,6 +268,16 @@ public static class EmModelSwitch
             notes.AddRange(closed.Notes);
         }
 
+        // brief-pcd-1 — a generator cell's own values (X1.Lpad) are its geometry. Path A's EM instance is handed the globals
+        // only, so each is carried as one, named for its instance (EmEvaluation.InstanceValueName), and Apply writes it back
+        // onto the instance.
+        if (!target.ThreeDOnly)
+            foreach (var c in model.Components.Where(c => c.InstanceName.Length > 0 && EmPartKinds.IsGeneratorCellInstance(c, schematicDir)))
+                if (tb.Instances.FirstOrDefault(i => i.InstanceName == c.InstanceName) is { } placed)
+                    foreach (var o in placed.Overrides)
+                        if (EmEvaluation.InstanceValueName(placed.InstanceName, o.Name) is { } carried)
+                            bench.GlobalVariables.Add(new Variable(carried, o.Expression, o.Unit));
+
         bench.Instances.Add(new Instance("EM_" + ResultsNameOf(target.CellName), PathAReference, terminals,
         [
             new ParameterAssignment(ParametricModelRegistry.ModelParameter, ParametricModelRegistry.EmValue),

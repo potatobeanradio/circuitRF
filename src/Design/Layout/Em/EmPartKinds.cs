@@ -125,6 +125,12 @@ public static class EmPartKinds
     private static readonly Dictionary<string, bool> _models = new(StringComparer.Ordinal);
     private static readonly Lock _gate = new();
 
+    /// <summary>Whether <paramref name="c"/> places a cell its <c>LayoutGenerator</c> draws: the planner feeds the instance's own
+    /// parameters to the generator, so they are geometry (brief-pcd-1, a designed cell's <c>X1.Lpad</c>).</summary>
+    internal static bool IsGeneratorCellInstance(EditableComponent c, string? schematicDir)
+        => c.CellRef is { Length: > 0 } cellRef && !cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase)
+           && GeneratorCell(cellRef, schematicDir) is not null;
+
     /// <summary>The <c>.ccell</c> of the cell <paramref name="cellRef"/> names when it names a <c>LayoutGenerator</c>, else null.</summary>
     private static CircuitRF.Design.Cells.CcellFile? GeneratorCell(string cellRef, string? schematicDir)
     {
