@@ -37,11 +37,10 @@ any other part's, and Stretch by Parameter writes those expressions for a drag h
 
 ## 2. Decisions
 
-- **D1 — The two words are placed quoted.** `Form` and `Model` are placed as `"polygon"` and `"none"`. That makes the
-  line `Form="polygon" Model="none"`. A string literal passes through the elaborator, which evaluates every
-  other key as an expression. An unquoted `Model=open` also works, because `Model` is a selector the elaborator keeps
-  verbatim. An unquoted `Form=path` does not, until the elaborator reads `MSHAPE`'s `Form` as a word, as it reads
-  MRRC's. Every reader unquotes.
+- **D1 — The two words are written quoted.** `Form` and `Model` are placed as `"polygon"` and `"none"`, so the line
+  reads `Form="polygon" Model="none"`. The elaborator evaluates every key of a primitive as an expression. A string
+  literal passes through it as text, but an unquoted `Model=open` or `Form=path` is an unresolved name. The fix for
+  that is the elaborator reading `MSHAPE`'s two words as words, as it reads MRRC's `Form`. Every reader strips the quotes.
 - **D2 — Pin count by parameter rows.** Pin k exists when the instance has a `PinX[k]` row, for k = 1, 2, … up to the
   first missing one. The symbol, the `.cnl` line's net count and the generator's pins all read this one rule.
 - **D3 — Stretch is additive.** The old expression stays as written, and the stretch term is added to it. Two
