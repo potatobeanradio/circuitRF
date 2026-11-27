@@ -62,7 +62,7 @@
 			"Name": "P3",
 			"Kind": "Lumped",
 			"Plane": "YZ",
-			"Offset": 24000000,
+			"Offset": 0,
 			"Rect": {
 				"Min": [-10550000, 35000],
 				"Size": [1100000, 508000]
@@ -73,7 +73,7 @@
 				"Port": 3,
 				"Taken": {
 					"Plane": "YZ",
-					"Offset": 24000000,
+					"Offset": 0,
 					"Min": [-10550000, 35000],
 					"Size": [1100000, 508000]
 				}

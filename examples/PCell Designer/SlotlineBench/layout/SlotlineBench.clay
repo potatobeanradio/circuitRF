@@ -28,9 +28,9 @@
 			"Text": "2"
 		},
 		"P3": {
-			"X": 24000000,
+			"X": 0,
 			"Y": -10000000,
-			"RotationDeg": 180,
+			"RotationDeg": 0,
 			"Mirror": false,
 			"Text": "3"
 		},
@@ -42,7 +42,7 @@
 		}
 	},
 	"PCellSnapshots": {
-		"cpcell-Slotline_4559285d644a": {
+		"cpcell-Slotline_4c60a230d914": {
 			"GeneratorId": "cpcell:Slotline",
 			"Parameters": {
 				"Lsl": 0.01,
@@ -96,14 +96,14 @@
 		},
 		{
 			"$type": "Label",
-			"X": 24000000,
+			"X": 0,
 			"Y": -10000000,
 			"Text": "3",
 			"Height": 550000,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P3",
-			"PortDirection": "R180",
+			"PortDirection": "R0",
 			"PortLayer": {
 				"Layer": 1,
 				"Datatype": 0
@@ -117,7 +117,7 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/cpcell-Slotline_4559285d644a",
+			"CellRef": "../../.generated-cells/cpcell-Slotline_4c60a230d914",
 			"X": 12000000,
 			"Y": -22800000,
 			"Rot": "R90",

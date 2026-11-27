@@ -250,10 +250,11 @@ the feeds.</figcaption>
 </figure>
 
 **A slotline divider** (`Slotline`, 5 GHz). A slot is cut in the ground, and three microstrips cross it: the input at
-its middle and two outputs either side, each crossing a quarter-wave microstrip-to-slotline transition. The outputs
-are 180° apart. The ground is drawn copper: two `MSHAPE`s on the ground layer, since a polygon has no hole. Planar's
-ground is an unbroken plane, so the bench solves in its 3D view, which turns the drawn ground into copper with the slot
-in it.
+its middle and two outputs either side, each crossing a quarter-wave microstrip-to-slotline transition. One output
+crosses it the other way round, so the outputs are 180° apart. The ground is drawn copper: two `MSHAPE`s on the ground
+layer, since a polygon has no hole. Planar's ground is an unbroken plane, so the bench solves in its 3D view, which
+turns the drawn ground into copper with the slot in it. A coarse EMerge solve (17 s) gives −5.72 and −5.87 dB at
+5 GHz, 179° apart.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/slotline.png" alt="The PCell Designer on the slotline divider: three microstrips crossing a long slot in the drawn ground, the input in the middle and an output at each side." style="width:100%;height:auto">

@@ -191,7 +191,9 @@ microstrip-to-slotline transition:</p>
 <li>the slot runs on <code>Lss</code> past each output crossing to its shorted end.</li>
 </ul>
 <p>Each is a quarter wave, so the open microstrip end becomes a short at the slot and the shorted slot end becomes an open
-at the microstrip. The two slot waves leave the input in opposite senses, so the outputs are out of phase.</p>
+at the microstrip. The slot carries the same voltage both ways from the input, so two outputs that cross it alike are
+in phase. Output 3 crosses it the other way round, with its port on the input's side and its stub on the other, which
+puts the two outputs 180° apart.</p>
 <p>With the quasi-static estimate εs ≈ (εr + 1)/2 = 2.33 for a slot on this thin substrate, λs/4 at 5 GHz is
 c / (4 · 5 GHz · √2.33) ≈ 9.8 mm (<code>Lss</code>). The 50 Ω line's εeff = 2.86 gives λm/4 ≈ 8.9 mm (<code>Lms</code>).</p>
 <p>A polygon has no hole, so the ground is two drawn shapes on net 0: <code>SH1</code>, the ground less the slot and the block below
@@ -200,6 +202,31 @@ offset from <code>SH1</code>'s pin at its crossing. A bench that places only the
 stays open. Planar cannot solve it, because Planar's ground is an unbroken plane. The bench's EM view is its 3D view
 (<code>3d/SlotlineBench.c3d</code>, made by <strong>New 3D View from Layout</strong>), which turns the drawn ground into copper with the slot cut
 in it, with an EMerge setup.</p>
+<p>Simulate <code>SlotlineBench</code>; <code>SlotlineBench.cdd</code> shows the split and the two outputs' phases. The coarse solve (EMerge,
+Draft mesh, about 16,000 tetrahedra, 4, 5 and 6 GHz, 17 s) gives, at 5 GHz:</p>
+<table>
+<thead>
+<tr>
+<th>S21</th>
+<th>S31</th>
+<th>∠S21 − ∠S31</th>
+<th>S11</th>
+<th>S32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−5.72 dB</td>
+<td>−5.87 dB</td>
+<td>179°</td>
+<td>−9.8 dB</td>
+<td>−11.8 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The split is even to 0.15 dB and the outputs are 179° apart across 4-6 GHz. The 2.7 dB beyond −3 dB comes from three
+things: the slot radiates into the open box, the outputs are only 12 dB apart, and the transitions are centred a little
+above 5 GHz (S21 reaches −5.05 dB at 6 GHz). Longer <code>Lss</code> and <code>Lms</code> move the centre down.</p>
 <p>No results ship with this example.</p>
 
 </main>

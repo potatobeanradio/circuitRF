@@ -97,8 +97,8 @@
 		},
 		"P3": {
 			"X": 12800000,
-			"Y": -12000000,
-			"RotationDeg": 90,
+			"Y": 12000000,
+			"RotationDeg": 270,
 			"Mirror": false,
 			"Text": "3"
 		},
@@ -136,8 +136,8 @@
 		},
 		"TLO3": {
 			"X": 12800000,
-			"Y": -12000000,
-			"RotationDeg": 90,
+			"Y": 12000000,
+			"RotationDeg": 270,
 			"Mirror": false,
 			"ChainAnchor": true
 		},
@@ -150,7 +150,7 @@
 		"TSO3": {
 			"X": 12800000,
 			"Y": 0,
-			"RotationDeg": 90,
+			"RotationDeg": 270,
 			"Mirror": false
 		}
 	},
@@ -276,13 +276,13 @@
 		{
 			"$type": "Label",
 			"X": 12800000,
-			"Y": -12000000,
+			"Y": 12000000,
 			"Text": "3",
 			"Height": 550000,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P3",
-			"PortDirection": "R90",
+			"PortDirection": "R270",
 			"PortLayer": {
 				"Layer": 1,
 				"Datatype": 0
@@ -426,8 +426,8 @@
 		{
 			"CellRef": "../../.generated-cells/MLIN_aba038c8b911",
 			"X": 12800000,
-			"Y": -12000000,
-			"Rot": "R90",
+			"Y": 12000000,
+			"Rot": "R270",
 			"MirrorX": false,
 			"Mag": 1,
 			"Rows": 1,
@@ -438,7 +438,7 @@
 			"OrientationLink": {
 				"SchematicDeg": 90,
 				"SchematicMirror": false,
-				"LayoutDeg": 90,
+				"LayoutDeg": 270,
 				"LayoutMirror": false
 			}
 		},
@@ -446,7 +446,7 @@
 			"CellRef": "../../.generated-cells/MLIN_24d07a4cbc03",
 			"X": 12800000,
 			"Y": 0,
-			"Rot": "R90",
+			"Rot": "R270",
 			"MirrorX": false,
 			"Mag": 1,
 			"Rows": 1,
@@ -457,7 +457,7 @@
 			"OrientationLink": {
 				"SchematicDeg": 90,
 				"SchematicMirror": false,
-				"LayoutDeg": 90,
+				"LayoutDeg": 270,
 				"LayoutMirror": false
 			}
 		}

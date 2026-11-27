@@ -124,8 +124,10 @@ internal static class Pcd9Cells
     // A slot Ws wide cut in the ground (Bottom Copper), fed at its middle by the input microstrip crossing it, and read at
     // Lsl either side by two output microstrips crossing it. Each crossing is a microstrip-to-slotline transition: the
     // microstrip runs on Lms (a quarter wave) past the slot to an open end, and the slot runs on Lss (a quarter wave)
-    // past each output crossing to its shorted end. The two slot waves leave the input in opposite senses, so the
-    // outputs are 180° apart. A polygon has no hole, so the ground is two drawn shapes on net 0: SH1, the ground less the
+    // past each output crossing to its shorted end. The slot carries the same voltage both ways from the input, so two
+    // outputs crossing it alike would be in phase; TLO3 crosses it the other way round (Angle 180: its port on the input's
+    // side, its stub on the other), so the outputs are 180° apart. A polygon has no hole, so the ground is two drawn shapes
+    // on net 0: SH1, the ground less the
     // slot and the block below it, and SH2, that block. Both are placed by offset from the input's crossing, and each
     // output line by offset from SH1's pin at its crossing (Dx, Dy in mm). The ground is drawn copper, so a 3D view of a
     // bench turns it into solids with the slot open. EM only, in 3D: Planar's ground is an unbroken plane.
@@ -154,7 +156,7 @@ internal static class Pcd9Cells
             ("SH1",  new OffsetPlacement { Anchor = "TLI1.2", Pin = 1, Dx = "Ws/2",  Dy = "0", Unit = "mm", Angle = "180" }),
             ("SH2",  new OffsetPlacement { Anchor = "TLI1.2", Pin = 1, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
             ("TLO2", new OffsetPlacement { Anchor = "SH1.2",  Pin = 2, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
-            ("TLO3", new OffsetPlacement { Anchor = "SH1.3",  Pin = 2, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
+            ("TLO3", new OffsetPlacement { Anchor = "SH1.3",  Pin = 2, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "180" }),
         ],
         []);
 
