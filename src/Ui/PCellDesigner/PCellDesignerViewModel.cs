@@ -466,6 +466,10 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, ports))
             comp.Parameters.Add(new EditableParameter
                 { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
+        // A port takes the next number (R-pcd11-1).
+        if (comp.Parameters.FirstOrDefault(p => p.Name == "Num") is { } num && kind is SymbolKind.Term or SymbolKind.TermG)
+            num.Expression = (PCellDesign.TerminalsOf(Schematic).Select(t => t.Port).DefaultIfEmpty(0).Max() + 1)
+                             .ToString(CultureInfo.InvariantCulture);
         return comp;
     }
 
@@ -530,6 +534,82 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         if (double.TryParse(expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
             return (v + delta).ToString("G6", CultureInfo.InvariantCulture);
         return $"{expression.Trim()} {(delta < 0 ? "-" : "+")} {d}";
+    }
+
+    // ══ Authoring on the canvas (brief-pcd-11) ════════════════════════════════════════════════════════════════════
+
+    /// <summary>The cell's length unit (brief-pcd-11 D2): the first length parameter's, else the layout's display unit.</summary>
+    public string LengthUnit =>
+        Parameters.FirstOrDefault(p => p.Dimension == UnitDimension.Length && p.Unit.Length > 0)?.Unit
+        ?? (Layout is { } l ? LayoutUnits.Suffix(l.DisplayUnit).Replace("µm", "um") : "um");
+
+    private (string Instance, int Pin, PinPose Pose)? NearestPin(long x, long y) =>
+        Pins().OrderBy(p => Math.Pow(p.Pose.X - x, 2) + Math.Pow(p.Pose.Y - y, 2))
+              .Select(p => ((string, int, PinPose)?)p).FirstOrDefault();
+
+    /// <summary>R-pcd11-2: a part dropped on empty canvas, placed by an offset from the nearest pin so its pin 1 lands
+    /// at (<paramref name="x"/>, <paramref name="y"/>). On a cell with nothing placed yet it joins the first free port
+    /// (R-pcd11-1).</summary>
+    public bool DropPartAt(EditableComponent part, long x, long y)
+    {
+        if (NearestPin(x, y) is not { } near)
+        {
+            if (PCellAuthoring.FreePins(Schematic, ports: true).FirstOrDefault() is { Instance: not null } port)
+                return DropPart(part, 1, port.Instance, port.Pin);
+            Status = "Drop: the cell has no pin to place the part from. Add a Port first.";
+            return false;
+        }
+        return Gesture("Drop", () =>
+        {
+            var (next, name) = PCellAuthoring.OffsetPlaced(Schematic, part, near.Instance, near.Pin, near.Pose, x, y,
+                                                          Layout!.DbuPerMicron, LengthUnit);
+            return (next, $"{name} placed by an offset from {near.Instance} pin {near.Pin}.");
+        });
+    }
+
+    [RelayCommand]
+    private void NewPort() => AddPort();
+
+    /// <summary>+ Port (R-pcd11-1): the next port, grounded, on <paramref name="instance"/>'s pin, or on the last free
+    /// pin when none is named.</summary>
+    public bool AddPort(string? instance = null, int pin = 0)
+    {
+        if (instance is null)
+        {
+            if (PCellAuthoring.FreePins(Schematic).LastOrDefault() is not { Instance: not null } free)
+            {
+                Status = "+ Port: no part has a free pin to put a port on.";
+                return false;
+            }
+            (instance, pin) = free;
+        }
+        return DropPart(PartFor(SymbolKind.Term, 0), 1, instance, pin);
+    }
+
+    /// <summary>R-pcd11-4: an <c>MSHAPE</c> from clicked corners (DBU). Pin 1 is the nearest pin when the first corner is
+    /// within <paramref name="tolerance"/> of it (joined by net), else the first corner, placed by an offset from the
+    /// nearest pin.</summary>
+    public bool DrawShape(IReadOnlyList<(long X, long Y)> corners, long tolerance)
+    {
+        if (corners.Count < 3) { Status = "Draw: a shape needs three corners or more."; return false; }
+        if (NearestPin(corners[0].X, corners[0].Y) is not { } near)
+        {
+            Status = "Draw: the cell has no pin to place the shape from. Drop a part first.";
+            return false;
+        }
+        bool joined = Math.Max(Math.Abs(near.Pose.X - corners[0].X), Math.Abs(near.Pose.Y - corners[0].Y)) <= tolerance;
+        var width = Schematic.Components.FirstOrDefault(c => c.InstanceName == near.Instance)?.Parameters.FirstOrDefault(p => p.Name == "W");
+        var shape = PCellAuthoring.Shape(corners, joined ? (near.Pose.X, near.Pose.Y) : corners[0], near.Pose.OutwardDeg,
+                                         Layout!.DbuPerMicron, LengthUnit, joined ? width : null);
+        shape.InstanceName = SchematicEditModel.NextAvailableName(Schematic.Components.Select(c => c.InstanceName),
+                                                                  ComponentTypeRegistry.InstancePrefix(SymbolKind.MShape));
+        if (joined) return DropPart(shape, 1, near.Instance, near.Pin);
+        return Gesture("Draw", () =>
+        {
+            var (next, name) = PCellAuthoring.OffsetPlaced(Schematic, shape, near.Instance, near.Pin, near.Pose,
+                                                          corners[0].X, corners[0].Y, Layout.DbuPerMicron, LengthUnit);
+            return (next, $"{name} drawn, placed by an offset from {near.Instance} pin {near.Pin}.");
+        });
     }
 
     // ══ Reading the plan (D6) ═════════════════════════════════════════════════════════════════════════════════════

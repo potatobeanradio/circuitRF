@@ -78,7 +78,7 @@ output at the instance's values, whose circuit model is its own schematic, and w
 - Variables and measurements merge by row; analyses, tuning, the technology and the cell's parameters do not, and an
   edited analysis line becomes a note. A designator whose type changes is refused.
 - A pin drop is a merge: the part gets its kind's registry prefix (MLIN → `ML1`), its pin joins the target's net, a drop
-  on a grounded pin puts it on ground, and a pin already joined to another part's pin is refused (no tee is invented).
+  on a grounded pin puts it on ground. A drop on a joint makes the tee (PCD-11).
 - A cell instance cannot be added by typing it in the text; an existing one merges normally.
 
 ### PCD-5 — the generator, the resolver, the package, the check
@@ -109,6 +109,9 @@ output at the instance's values, whose circuit model is its own schematic, and w
 - The Value column reaches the planner as an unsaved VAR row (`__PCDVALUES`), so unsaved values drive the canvas.
 - Selected corners are listed in a text line, and Stretch by Parameter takes inline fields; there is no canvas overlay.
 - Save writes the `.csch`, the `.ccell` (parameters, `PCellDesign`, `Terminals`) and the `.clay` at the defaults.
+- PCD-11: a new cell starts with Port 1; a drop anywhere is an offset from the nearest pin, in literals of the cell's
+  length unit; a drop on a joint makes an `MTEE` (an `MCROSS` on a tee); **Draw MSHAPE** makes drawn metal from clicked
+  corners (`PCellAuthoring`).
 - PCD-10: the response keeps its markers across a re-run by trace name and x, and **Dimensions** draws each parameter as
   a ruler over the canvas (`PCellDimensions.Of`: stretch bindings, offsets, and the primitives' own handles).
 

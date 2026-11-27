@@ -48,6 +48,10 @@
             <Button Content="Cancel" Command="{Binding CancelWorkCommand}" IsEnabled="{Binding Busy}"/>
             <Button Content="Optimise" Command="{Binding OptimiseCommand}"
                     ToolTip.Tip="Save, then open the cell's schematic with the Optimizer"/>
+            <Button Content="+ Port" Command="{Binding NewPortCommand}"
+                    ToolTip.Tip="Add the next port, grounded, on the last free pin (or drop a Port from the Library on a pin)"/>
+            <ToggleButton Name="DrawToggle" Content="Draw MSHAPE" Margin="0,0,4,0" IsCheckedChanged="OnDrawToggled"
+                          ToolTip.Tip="Click the corners of a drawn shape; double-click or Enter finishes, Esc cancels. Its pin 1 joins the nearest pin when you start on one"/>
             <ToggleButton Content="Dimensions" IsChecked="{Binding ShowDimensions}" Margin="0,0,4,0"
                           ToolTip.Tip="Draw each parameter on the canvas as a dimension labelled with its value"/>
             <Button Name="ExportButton" Content="Export…" Click="OnExport"
@@ -88,7 +92,7 @@
                     </StackPanel>
                     <TextBlock DockPanel.Dock="Bottom" Classes="note" Text="{Binding LayoutNote}"/>
                     <TextBlock DockPanel.Dock="Top" Classes="note"
-                               Text="Drop a Library part on a pin; drag an offset part by its pin; drag an MSHAPE vertex."/>
+                               Text="Drop a Library part on a pin (a tee on a joint) or anywhere (placed by an offset); drag an offset part by its pin; drag an MSHAPE vertex."/>
                     <ctl:LayoutCanvas Name="DesignCanvas" ReadOnly="True" ClipToBounds="True"/>
                 </DockPanel>
             </Border>

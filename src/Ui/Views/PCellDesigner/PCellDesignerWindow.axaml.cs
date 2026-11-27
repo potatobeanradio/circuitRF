@@ -105,6 +105,38 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
 
     private readonly DimensionOverlay _dimensions = new();
 
+    // ── The MSHAPE draw tool (brief-pcd-11 R-pcd11-4) ────────────────────────────────────────────────────────────
+
+    private readonly List<(long X, long Y)> _corners = [];
+
+    private void OnDrawToggled(object? sender, RoutedEventArgs e)
+    {
+        _corners.Clear();
+        ShowPending();
+        if (Vm is { } vm && DrawToggle.IsChecked == true)
+            vm.Status = "Draw: click the corners; double-click or Enter finishes, Esc cancels.";
+    }
+
+    private void FinishDrawing()
+    {
+        if (Vm is { } vm && vm.DrawShape([.. _corners], Tolerance)) DrawToggle.IsChecked = false;
+        _corners.Clear();
+        ShowPending();
+    }
+
+    private void ShowPending()
+    {
+        _dimensions.Pending = [.. _corners];
+        DesignCanvas.InvalidateOverlay();
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (DrawToggle.IsChecked == true && e.Key is Key.Enter or Key.Return) { FinishDrawing(); e.Handled = true; }
+        else if (DrawToggle.IsChecked == true && e.Key == Key.Escape) { DrawToggle.IsChecked = false; e.Handled = true; }
+        base.OnKeyDown(e);
+    }
+
     private void SyncDimensions()
     {
         if (Vm is not { } vm) return;
@@ -140,8 +172,18 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
         public IReadOnlyList<PCellDimensionLine> Dimensions { get; set; } = [];
         public LayoutView? Layout { get; set; }
 
+        /// <summary>The corners clicked so far with the draw tool, drawn as an open outline.</summary>
+        public IReadOnlyList<(long X, long Y)> Pending { get; set; } = [];
+
         public void Draw(SkiaSharp.SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme)
         {
+            if (Pending.Count > 0)
+            {
+                using var pen = new SkiaSharp.SKPaint { IsAntialias = true, Style = SkiaSharp.SKPaintStyle.Stroke, StrokeWidth = 1.5f, Color = theme.Selection };
+                var points = Pending.Select(p => new SkiaSharp.SKPoint((float)viewport.WorldToScreenX(p.X), (float)viewport.WorldToScreenY(p.Y))).ToArray();
+                canvas.DrawPoints(points.Length > 1 ? SkiaSharp.SKPointMode.Polygon : SkiaSharp.SKPointMode.Points, points, pen);
+                foreach (var p in points) canvas.DrawRect(p.X - 3, p.Y - 3, 6, 6, pen);
+            }
             if (Layout is null || Dimensions.Count == 0) return;
             // One view per unit, so each ruler reads its length in its label's own unit, not the layout's.
             foreach (var group in Dimensions.GroupBy(d => d.Unit))
@@ -197,6 +239,14 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
     {
         if (Vm is not { } vm || !e.GetCurrentPoint(DesignCanvas).Properties.IsLeftButtonPressed) return;
         var (x, y) = World(e);
+        if (DrawToggle.IsChecked == true)
+        {
+            // The MSHAPE draw tool (brief-pcd-11 R-pcd11-4): a click is a corner, a double-click the last one.
+            if (e.ClickCount < 2 || _corners.Count == 0 || _corners[^1] != (x, y)) _corners.Add((x, y));
+            if (e.ClickCount >= 2) FinishDrawing();
+            else ShowPending();
+            return;
+        }
         if (VertexAt(x, y) is { } v)
         {
             if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
@@ -215,7 +265,7 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
 
     private void OnCanvasReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (Vm is not { } vm) return;
+        if (Vm is not { } vm || DrawToggle.IsChecked == true) return;
         var (x, y) = World(e);
         if (_offsetDrag is { } d) vm.DragOffset(d.Instance, x + d.GrabDx, y + d.GrabDy);
         if (_vertexDrag is { } v && (v.X, v.Y) != (x, y)) vm.DragVertex(v.Instance, v.Vertex, v.X, v.Y, x, y);
@@ -244,12 +294,10 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
         e.Handled = true;
         var p = e.GetPosition(DesignCanvas);
         var (wx, wy) = DesignCanvas.ScreenToWorld(p.X, p.Y);
-        if (vm.PinAt((long)Math.Round(wx), (long)Math.Round(wy), Tolerance) is not { } pin)
-        {
-            vm.Status = "Drop: drop the part on a pin of the layout.";
-            return;
-        }
-        vm.DropPart(vm.PartFor(payload.Kind, payload.PortCount), 1, pin.Instance, pin.Pin);
+        var part = vm.PartFor(payload.Kind, payload.PortCount);
+        // On a pin: joined to it (a tee when the pin is a joint); anywhere else: placed by an offset (R-pcd11-2/3).
+        if (vm.PinAt((long)Math.Round(wx), (long)Math.Round(wy), Tolerance) is { } pin) vm.DropPart(part, 1, pin.Instance, pin.Pin);
+        else vm.DropPartAt(part, (long)Math.Round(wx), (long)Math.Round(wy));
     }
 
     private void ShowSelection()

@@ -50,8 +50,8 @@ stub ending in a drawn pad whose length is the parameter <code>Lpad</code>.</fig
 ## Opening it {#open}
 
 - **Tools ▸ PCell Designer…** opens the designer on the active schematic's cell when that cell is designed. Otherwise it
-  makes a new designed cell in the workspace, `PCell1` (`PCell2`, … when taken), and opens it. Rename it in the project
-  tree.
+  makes a new designed cell in the workspace, `PCell1` (`PCell2`, … when taken), and opens it. A new cell starts with
+  Port 1 and its ground, so the first part you drop has a pin to join. Rename it in the project tree.
 - **Edit in PCell Designer** on the right-click menu of a placed designed cell, in a schematic or a layout, opens the cell
   it places.
 - **File ▸ Import ▸ PCell Package…** imports a `.cpcell` into the workspace (see [below](#package)).
@@ -66,19 +66,30 @@ A designed cell is an ordinary cell folder with a schematic, a symbol and a `.cc
 
 | Part | What it does |
 |---|---|
-| **Canvas** | The cell's layout at the values in the **Value** column, drawn as `circuitrf render` draws a layout. It is redrawn after every change. You cannot draw on it: you change the schematic, and the canvas shows what the schematic places. |
+| **Canvas** | The cell's layout at the values in the **Value** column, drawn as `circuitrf render` draws a layout. It is redrawn after every change. Each gesture on it changes the schematic, and the canvas shows what the schematic places. |
 | **Parameters** | One row per cell parameter: name, default with its unit, **Minimum**, **Maximum** and description. **+** adds a row and **−** removes one. A parameter is a number: a length, an angle or a count. |
 | **Value** | The value the canvas and the response are drawn at, typed as a default is (`400 um`, or `400` in the parameter's unit). It is not saved. Use it to see the cell at the ends of its range. |
 | **Response** | The cell's S-parameters by its circuit model, recomputed a quarter of a second after you stop typing. The sweep is the schematic's first S-parameter analysis, else 1 to 20 GHz. |
 | **Text** | The cell's netlist (`.cnl`), kept up to date. Edit it and press **Apply**: the text is merged into the schematic by designator. A changed value changes the part, a new designator adds a part, and a removed one removes it. A part whose type changes is refused: give it a new designator instead. When the nets are unchanged the wires stay as drawn; otherwise they are redrawn, and every part you kept keeps its place. |
 | **Save** | Writes the schematic, the `.ccell` and the cell's own layout. The saved layout is always the one at the parameters' defaults, never at the **Value** column. |
+| **+ Port** | Adds the next port, grounded, on the last free pin. A Port dropped from the Library on a pin does the same there. |
 | **Undo**, **Redo** | Every gesture and every **Apply** is one step. |
 
 Gestures on the canvas, each one undo step:
 
-- **Drop a Library part on a pin.** The part is added to the schematic with its pin on that pin's net. A pin already
-  joined to another part's pin is refused, because a tee is a part you place, not one the designer invents. A pin on
-  ground puts the new pin on ground.
+- **Drop a Library part on a pin.** The part is added to the schematic with its pin on that pin's net. A pin on ground
+  puts the new pin on ground. On an empty cell the first part joins Port 1.
+- **Drop a part on a joint** (a pin already joined to another part). The joint becomes a tee (`MTEE`): the two parts on
+  its through pins, the new part on its branch, its widths `W1`, `W2` and `W3` those of the three parts. On a pin of a
+  tee the tee becomes a cross (`MCROSS`). A joint with a part that has no width, such as a port or a pad, is refused
+  with a sentence saying so.
+- **Drop a part anywhere else.** It is placed by an offset from the nearest pin: `Dx` and `Dy` are where you dropped it,
+  measured from that pin in its own frame and written as numbers in the cell's length unit (that of its first length
+  parameter), `Angle` 0. Rewrite them in parameters afterwards to make the place follow the cell.
+- **Draw MSHAPE.** Turn on **Draw MSHAPE**, click the corners, and double-click or press Enter to finish (Esc
+  cancels). Start on a pin and the shape's pin 1 joins it, as wide as that part's `W`; start anywhere else and the shape
+  is placed by an offset from the nearest pin. The corners are written relative to pin 1 in the cell's length unit,
+  ready for **Stretch by Parameter**, and `Model` is `"open"`.
 - **Drag an offset part by its pin** to move its offset (see [below](#placement)).
 - **Drag a corner of an MSHAPE**, or select corners and use **Stretch by Parameter** (see [below](#mshape)).
 

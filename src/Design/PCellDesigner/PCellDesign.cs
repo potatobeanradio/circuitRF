@@ -38,6 +38,15 @@ public static class PCellDesign
         ccell.LayoutGenerator = GeneratorIdFor(cellName);
         ccell.EmCopper = true;
         CellPersistence.SaveToFile(ccellPath, ccell);
+
+        // brief-pcd-11 R-pcd11-1: not empty — Port 1 and its ground, so the first part dropped has a pin to join.
+        if (created.SchematicPath is { } csch)
+        {
+            var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+            model.SchematicDirectory = Path.GetDirectoryName(csch);
+            if (CellNetlistMerge.Merge(model, "Port:P1 in 0 Num=1 Z=50 Ohm\n").Schematic is { } seeded)
+                SchematicPersistence.SaveToFile(csch, seeded, cellName);
+        }
         return created;
     }
 
