@@ -87,7 +87,7 @@ public static class PCellDesignCheck
         {
             if (!c.Parameters.Any(p => p.Name == DrawnMetal.PinX(1)))
                 Say("pcell.mshape-pins", DiagnosticSeverity.Error, $"{c.InstanceName} has no pin: a drawn shape joins the cell through its pins.");
-            string model = c.Parameters.FirstOrDefault(p => p.Name == DrawnMetal.Model)?.Expression.Trim() ?? DrawnMetal.ModelNone;
+            string model = c.Parameters.FirstOrDefault(p => p.Name == DrawnMetal.Model)?.Expression.Trim().Trim('"') ?? DrawnMetal.ModelNone;   // MSHAPE writes its words quoted
             if (model.Length == 0) model = DrawnMetal.ModelNone;
             if (model is not (DrawnMetal.ModelNone or DrawnMetal.ModelOpen))
                 Say("pcell.mshape-model", DiagnosticSeverity.Error, $"{c.InstanceName}'s Model is \"{model}\"; it is none or open.");

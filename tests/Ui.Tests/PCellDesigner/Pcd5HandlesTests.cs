@@ -21,7 +21,7 @@ public sealed class Pcd5HandlesTests
             var pad = new EditableComponent { InstanceName = "SH1", Symbol = SymbolKind.MShape, X = 9000, Y = 0 };
             foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.MShape, 0))
                 pad.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, Dimension = dp.Dimension });
-            pad.Parameters.Single(p => p.Name == DrawnMetal.Model).Expression = DrawnMetal.ModelOpen;
+            pad.Parameters.Single(p => p.Name == DrawnMetal.Model).Expression = $"\"{DrawnMetal.ModelOpen}\"";   // quoted, as MSHAPE writes it
             pad.Offset = new OffsetPlacement { Anchor = "TL3.2", Pin = 1, Dx = "1", Unit = "mm" };
             var scope = new Scope("cell");
             scope.Bind("Lpad", "100", "um");
@@ -33,6 +33,7 @@ public sealed class Pcd5HandlesTests
         ccell.Parameters.Add(new CcellParameter { Name = "Lpad", DefaultExpression = "100", Unit = "um", Dimension = UnitDimension.Length,
                                                   Minimum = 5e-5, Maximum = 5e-4 });
         CellPersistence.SaveToFile(ccellPath, ccell);
+        Assert.DoesNotContain(PCellDesignCheck.Run(cell), f => f.Id == "pcell.mshape-model");
         using var registration = DesignedPCellResolver.Register(ws.Root);
         Assert.True(PCellRegistry.TryGet("cpcell:Pad2", out var generator));
 
