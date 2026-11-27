@@ -98,6 +98,29 @@ public sealed class Pcd2OffsetPlacementTests : IDisposable
         Assert.Equal(tl1.MaxX + 2000 * um, (tl2.MinX + tl2.MaxX) / 2);
     }
 
+    /// <summary>Drawn metal's words (Form, Model) reach its generator as text, so a polygon MSHAPE is placed with its shape
+    /// — here offset 200 µm on from TL2 pin 2.</summary>
+    [Fact]
+    public void APolygonMShape_IsPlacedWithItsShape()
+    {
+        var p = SdlChecker.Prepare("O1-offset-gap", _scratch);
+        // Drawn clear of every wire, so its pin is on no net: no net joins it, only its offset places it.
+        var shape = new EditableComponent { Symbol = SymbolKind.MShape, InstanceName = "SH1", X = 3000, Y = 2000,
+                                            Offset = new OffsetPlacement { Anchor = "TL2.2", Dx = "200", Unit = "um" } };
+        foreach (var d in ComponentTypeRegistry.DefaultParameters(SymbolKind.MShape, 1))
+            shape.Parameters.Add(new EditableParameter { Name = d.Name, Expression = d.Expression, Unit = d.Unit });
+        p.Model.Components.Add(shape);
+
+        var plan = p.Plan();
+        Assert.DoesNotContain(plan.NoLayoutWarnings, w => w.StartsWith("SH1"));
+        var layout = p.Applied(plan);
+        long um = layout.DbuPerMicron;
+        var sh1 = Box(layout, p.LayoutDir, "SH1");
+        Assert.Equal((100 * um, 100 * um), (sh1.MaxX - sh1.MinX, sh1.MaxY - sh1.MinY));   // the default 100 µm square
+        Assert.True(Box(layout, p.LayoutDir, "TL2").MaxX + 200 * um == sh1.MinX,       // its pin 1, on its left edge
+                    $"SH1 at {sh1.MinX}, TL2 ends {Box(layout, p.LayoutDir, "TL2").MaxX}:\n" + string.Join("\n", plan.Lines.Select(l => l.Text)));
+    }
+
     /// <summary>R-pcd2-4: both designs pass the checker, and O1's gap is exactly g.</summary>
     [Fact]
     public void BothOffsetDesigns_PassTheChecker()

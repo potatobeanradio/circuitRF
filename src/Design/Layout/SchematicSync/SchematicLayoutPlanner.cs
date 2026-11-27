@@ -1751,6 +1751,13 @@ public static partial class SchematicLayoutPlanner
                 continue;
             }
 
+            // Drawn metal's Form and Model are words for its generator (brief-pcd-0 §4.3).
+            if (DrawnMetal.Is(comp) && DrawnMetal.IsWord(p.Name))
+            {
+                if (p.Expression.Trim().Trim('"').Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                continue;
+            }
+
             // A coupled-resonator filter's Shape, Profile, Feed, Form, Arrangement and Coupling are words for its generator.
             if (comp.Symbol == SymbolKind.Mcrc && p.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement" or "Coupling")
             {
