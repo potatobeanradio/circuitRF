@@ -71,6 +71,11 @@ public static class DesignedCellLayout
             var lines = new List<SchematicLayoutPlanner.ReportLine>(plan.Lines);
             lines.AddRange(plan.NoLayoutWarnings.Select(w => new SchematicLayoutPlanner.ReportLine(
                 "", w, SchematicLayoutPlanner.ReportSeverity.Warning)));
+            // brief-pcd-2 R-pcd2-3: which chain everything else hangs from.
+            if (plan.Root is { } root)
+                lines.Add(new SchematicLayoutPlanner.ReportLine("",
+                    $"Root: {root} — its chain is the one the planner anchors first; every offset is measured from it",
+                    SchematicLayoutPlanner.ReportSeverity.Info) { Ids = [root] });
             return new DesignedCellLayoutResult(layout, lines, null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException

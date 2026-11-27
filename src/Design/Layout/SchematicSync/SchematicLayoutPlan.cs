@@ -82,6 +82,11 @@ public sealed class SchematicLayoutPlan
     /// part's copper.</summary>
     public IReadOnlyList<(string SchematicId, string Parameter)> LayoutKept { get; init; } = [];
 
+    /// <summary>brief-pcd-2 D7: the part whose chain the planner anchors first — the first chain (else lone part), in
+    /// schematic-id order, not placed by an offset; every offset is measured, directly or not, from such a root. Null when
+    /// nothing was chained.</summary>
+    public string? Root { get; init; }
+
     public bool ChangesNothing => Edits.Count == 0 && Ground.IsEmpty;
 
     /// <summary>Writes the bookkeeping into <paramref name="view"/> — the target, or a copy of it.</summary>

@@ -589,7 +589,7 @@ public static partial class SchematicLayoutPlanner
         var chained = connectParts
             ? ConnectChains(extraction, model, physical, newInstances, beside, schematicFacing, target, existingBySchematicId,
                             replacedAt, new HashSet<int>(deleteIndices), schematicDir, targetLayoutBaseDir, technology, lines,
-                            noLayout, resnap, opened)
+                            noLayout, resnap, opened, scope, evaluator)
             : ChainOutcome.None;
         var unplaced = newInstances.Where(n => !beside.ContainsKey(n.Instance) && !chained.Placed.Contains(n.Instance)).ToList();
         var atArtwork = overArtwork ? Bbox.Empty
@@ -668,6 +668,7 @@ public static partial class SchematicLayoutPlanner
             DeletedCount = deleteIndices.Count,
             OrientationLinksRecorded = linksRecorded,
             LayoutKept = layoutKept,
+            Root = chained.Root,
         };
 
         // brief-sdl-3 R-sdl3-1: copper of different nets that overlaps or touches once the plan is applied — read off

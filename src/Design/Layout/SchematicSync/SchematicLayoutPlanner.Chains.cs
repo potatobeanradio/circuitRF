@@ -19,6 +19,9 @@ public static partial class SchematicLayoutPlanner
         Bbox FixedRegion,
         IReadOnlySet<LayoutInstance> Anchors)
     {
+        /// <summary>brief-pcd-2 D7: the anchor of the first unit not placed by an offset.</summary>
+        public string? Root { get; init; }
+
         public static readonly ChainOutcome None = new(
             new HashSet<LayoutInstance>(), [], Bbox.Empty, new HashSet<LayoutInstance>());
     }
@@ -37,7 +40,8 @@ public static partial class SchematicLayoutPlanner
         LayoutView target, Dictionary<string, (int Index, LayoutInstance Instance)> existingBySchematicId,
         Dictionary<int, LayoutInstance> replacedAt, HashSet<int> deleted,
         string schematicDir, string targetLayoutBaseDir, Technology? technology, List<ReportLine> lines,
-        IReadOnlyList<EditableComponent> noLayout, IReadOnlySet<string> resnap, IReadOnlySet<string> opened)
+        IReadOnlyList<EditableComponent> noLayout, IReadOnlySet<string> resnap, IReadOnlySet<string> opened,
+        CircuitRF.Core.Expressions.Scope scope, CircuitRF.Core.Expressions.Evaluator evaluator)
     {
         var compById = new Dictionary<string, EditableComponent>(StringComparer.Ordinal);
         foreach (var c in physical) if (c.InstanceName is { Length: > 0 } n) compById.TryAdd(n, c);
@@ -76,22 +80,37 @@ public static partial class SchematicLayoutPlanner
         int joined = 0;
         var unstatedWidth = new HashSet<JointGraph.Part>(ReferenceEqualityComparer.Instance as IEqualityComparer<JointGraph.Part>);
         var padNoted = new HashSet<JointGraph.Part>(ReferenceEqualityComparer.Instance as IEqualityComparer<JointGraph.Part>);
+        var partCmp = ReferenceEqualityComparer.Instance as IEqualityComparer<JointGraph.Part>;
+        var units = new List<PlacementUnit>();
+        var results = new List<ChainPlacer.Result>();
+        // A new chain's anchor (and a lone part) takes the facing its symbol gives it (the orientation link's, as a lone
+        // part would) at the origin; the row packer then moves the chain as one. Its mirror is the schematic's either way
+        // (D2). A re-snapped chain with nothing fixed in it is placed from where its anchor already is.
+        ChainPose StartPose(JointGraph.Part p) => p.Existing || resnap.Contains(p.SchematicId)
+            ? ChainPose.Of(p.Instance)
+            : new ChainPose(0, 0, p.Instance.RotationDegrees, MirrorOf(p));
         foreach (var chain in graph.Chains)
         {
             var anchor = ChainPlacer.ChooseAnchor(chain, part => LowestPort(part));
-            // A new chain's anchor takes the facing its symbol gives it (the orientation link's, as a lone part would)
-            // at the origin; the row packer then moves the chain as one. Its mirror is the schematic's either way (D2).
-            // A re-snapped chain with nothing fixed in it is placed from where its anchor already is.
-            var anchorPose = anchor.Existing || resnap.Contains(anchor.SchematicId)
-                ? ChainPose.Of(anchor.Instance)
-                : new ChainPose(0, 0, anchor.Instance.RotationDegrees, MirrorOf(anchor));
-            var result = ChainPlacer.Place(chain, anchor, anchorPose, MirrorOf);
-            joined += result.JoinedCount;
+            var result = ChainPlacer.Place(chain, anchor, StartPose(anchor), MirrorOf);
+            results.Add(result);
+            units.Add(new PlacementUnit(chain.Parts, anchor, new Dictionary<JointGraph.Part, ChainPose>(result.Poses, partCmp), true));
+        }
+        // brief-pcd-2 R-pcd2-1: after the chains are joined and before the rows, the offsets (lone parts are units too, D1).
+        var inChain = graph.Chains.SelectMany(c => c.Parts).ToHashSet(partCmp);
+        foreach (var part in graph.Parts.Where(p => !inChain.Contains(p)))
+            units.Add(new PlacementUnit([part], part, new Dictionary<JointGraph.Part, ChainPose>(partCmp) { [part] = StartPose(part) }, false));
+        string? root = PlaceOffsets(units, compById, scope, evaluator, target.DbuPerMicron, lines);
 
+        var buckets = new Dictionary<PlacementUnit, (List<LayoutInstance> Members, bool Fixed)>(ReferenceEqualityComparer.Instance);
+        for (int u = 0; u < units.Count; u++)
+        {
+            var unit = units[u];
+            if (!unit.Involved) continue;
             var members = new List<LayoutInstance>();
-            foreach (var part in chain.Parts)
+            foreach (var part in unit.Parts)
             {
-                if (part.Existing || !result.Poses.TryGetValue(part, out var pose)) continue;
+                if (part.Existing || !unit.Poses.TryGetValue(part, out var pose)) continue;
                 pose.WriteTo(part.Instance);
                 var comp = compById[part.SchematicId];
                 part.Instance.OrientationLink = SchematicLayoutOrientation.Link(
@@ -99,12 +118,27 @@ public static partial class SchematicLayoutPlanner
                 placed.Add(part.Instance);
                 members.Add(part.Instance);
             }
-            if (!anchor.Existing) anchors.Add(anchor.Instance);
-
-            if (chain.Parts.Any(p => p.Existing || resnap.Contains(p.SchematicId)))
+            // D4: an offset unit rides in its root's group, so the rows move both as one.
+            var bucket = buckets.TryGetValue(unit.Root, out var had) ? had : ([], false);
+            bucket.Members.AddRange(members);
+            bucket.Fixed |= unit.Parts.Any(p => p.Existing || resnap.Contains(p.SchematicId));
+            buckets[unit.Root] = bucket;
+        }
+        foreach (var (members, isFixed) in buckets.Values)
+        {
+            if (isFixed)
                 foreach (var inst in members) fixedRegion = fixedRegion.Union(CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir));
             else if (members.Count > 0)
                 groups.Add((members.Min(m => slotOf[m]), members.OrderBy(m => slotOf[m]).ToList()));
+        }
+
+        for (int c = 0; c < graph.Chains.Count; c++)
+        {
+            var chain = graph.Chains[c];
+            var result = results[c];
+            var anchor = units[c].Anchor;
+            joined += result.JoinedCount;
+            if (!anchor.Existing) anchors.Add(anchor.Instance);
 
             foreach (var joint in chain.Joints)
                 foreach (var end in new[] { joint.A, joint.B })
@@ -168,7 +202,7 @@ public static partial class SchematicLayoutPlanner
             lines.Add(new ReportLine("", $"Joined {joined} of {connections} connection{(connections == 1 ? "" : "s")}; " +
                                          $"{connections - joined} left as ratsnest", ReportSeverity.Info));
 
-        return new ChainOutcome(placed, groups, fixedRegion, anchors);
+        return new ChainOutcome(placed, groups, fixedRegion, anchors) { Root = root };
 
         JointGraph.Part? PartOf(LayoutInstance inst, bool existing)
         {
