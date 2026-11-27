@@ -344,6 +344,11 @@ internal static class LvsProperties
                 }
 
                 var dimension = Dimension(s, l, name);
+                // An MSHAPE's PinDir[k] is an angle whatever its row says: a pin added after placement may carry no Dimension,
+                // and compared raw it read "schematic 1.5708, layout 90" (brief-pcd-5).
+                if (dimension == UnitDimension.None && name.StartsWith("PinDir[", StringComparison.Ordinal)
+                    && (l.Generator == nameof(SymbolKind.MShape) || s.Generator == nameof(SymbolKind.MShape)))
+                    dimension = UnitDimension.Angle;
                 // A built-in generator takes an angle in DEGREES (the planner's TryResolveSiValue converts to them, the
                 // one divergence from SI there is), and its snapshot records what it took; the schematic side is SI
                 // radians. Compared raw, every bend read "schematic 1.5708 rad, layout 90 rad" (brief-sdl-1).
