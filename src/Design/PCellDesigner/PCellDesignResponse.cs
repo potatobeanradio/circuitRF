@@ -5,6 +5,7 @@
 
 using System.Text.RegularExpressions;
 using CircuitRF.Design.Circuit;
+using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Engine;
 using RfCore;
@@ -55,6 +56,11 @@ public static partial class PCellDesignResponse
         cancel.ThrowIfCancellationRequested();
 
         var circuit = PreparedCircuit.FromText(text, schematic.SchematicDirectory, workspaceRootDir);
+        // An EM-only cell (an MSHAPE with Model="none") has no circuit response: a run would draw its open pins as a flat
+        // floor that reads like a result, so there is no curve, only the sentence pointing to Run EM.
+        if (circuit is { Tb: { } tb, Lib: { } lib } && EmModelSwitch.WithoutCircuitModel(tb, lib) is { Count: > 0 } emOnly)
+            return new PCellDesignResponseResult(null,
+                $"no circuit model: {string.Join(", ", emOnly)} {(emOnly.Count == 1 ? "is" : "are")} drawn metal simulated by EM only. Run EM for the cell's response.");
         var run = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
         {
             Sets = values,

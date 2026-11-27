@@ -95,6 +95,29 @@ public sealed class Pcd6DesignerTests : IDisposable
         Assert.NotEqual(first.Matrices[100][1, 0], vm.Response!.Matrices[100][1, 0]);   // a longer line, another phase
     }
 
+    /// <summary>R-pcd6-5: an EM-only cell (an MSHAPE with Model "none") draws no circuit curve and says why, pointing to
+    /// Run EM; with Model "open" the shape counts as a model and the response is drawn.</summary>
+    [Theory]
+    [InlineData("\"none\"", false)]
+    [InlineData("\"open\"", true)]
+    public async Task Response_OfAnEmOnlyCell_IsNoCurveButASentence(string model, bool drawn)
+    {
+        var (vm, _) = Pcd6Fixture.Open(_scratch, edit: m =>
+        {
+            m.Components.RemoveAll(c => c.InstanceName is "P2" or "GND2");
+            var pad = new EditableComponent { Symbol = SymbolKind.MShape, InstanceName = "SH1",
+                                              Offset = new OffsetPlacement { Anchor = "TL3.2", Pin = 1 } };
+            foreach (var d in ComponentTypeRegistry.DefaultParameters(SymbolKind.MShape, 1))
+                pad.Parameters.Add(new EditableParameter { Name = d.Name, Expression = d.Expression, Unit = d.Unit, Dimension = d.Dimension });
+            pad.Parameters.Single(q => q.Name == DrawnMetal.Model).Expression = model;
+            m.Components.Add(pad);
+        });
+        await vm.DesignAsync(0);
+        Assert.Equal(drawn, vm.Response is not null);
+        Assert.Equal(drawn, vm.Plot.Traces.Count > 0);
+        if (!drawn) Assert.Matches("no circuit model.*SH1.*Run EM", vm.Status);
+    }
+
     /// <summary>R-pcd6-9 and R-pcd6-3: Save writes the parameters (a range in base SI), the marker, and a layout planned at
     /// the defaults, never at the Value column.</summary>
     [Fact]
