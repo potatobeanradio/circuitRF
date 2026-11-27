@@ -261,13 +261,16 @@ part.</li>
 <li><strong>LVS</strong> knows the placed cell by its generator, <code>cpcell:&lt;cell name&gt;</code>, and pairs its pins with the schematic instance's
 pins by port number.</li>
 <li><strong>EM</strong> solves the placed cell's layout as copper (<code>EmCopper</code>), so a bench placing it can be simulated by EM of its own
-layout and <a href="em-cells.html#optimise">optimised</a>. Tune a placement's value through a VAR of the bench: set <code>Lpad</code> on <code>X1</code>
-to <code>Lp1</code> and tune <code>Lp1</code>, as for any value of a schematic simulated by EM of its own layout.</li>
+layout and <a href="em-cells.html#optimise">optimised</a> with a placement's own value as the variable (<code>tune X1.Lpad</code>): each
+point's layout draws <code>X1</code> at that value.</li>
 </ul>
-<p>A drawn shape with <code>Model = &quot;open&quot;</code> is an open end to the circuit model, so its size has no effect there. <code>em=correct</code>
-corrects the circuit model by EM but searches on the circuit model, so it cannot move a variable that only changes such a
-shape: it stops at the start, saying the next point is the geometry it has already solved. Optimise such a variable with
-<code>em=direct</code>, which searches on EM itself.</p>
+<p>A drawn shape with <code>Model = &quot;open&quot;</code> is an open end to the circuit model, so its size has no effect there: in the
+example, <code>X1</code>'s S21 is the same at every <code>Lpad</code>, while <code>Lstub</code> moves it. <code>em=correct</code> corrects the circuit model by EM but
+searches on the circuit model, so it cannot move a variable that only changes such a shape: it stops at the start, saying
+the next point is the geometry it has already solved. Optimise such a variable with <code>em=direct</code>, which searches on EM
+itself. On the example's bench (Planar, 2,700 unknowns, 6-8 GHz at 3 points), <code>em=correct</code> stopped after one solve with
+<code>X1.Lpad</code> at 200 µm; <code>em=direct</code> with the <code>pattern</code> algorithm and a budget of 8 solves moved it to 600 µm in about nine
+minutes, the worst |S11| from −0.22 dB to −0.13 dB.</p>
 <figure class="figure">
 <img src="../../images/pcell-designer/bench-layout.png" alt="The Bench layout: two PadTee cells joined by a 50 ohm line between two ports, the first with a 200 micrometre pad, the second with a 400 micrometre pad." style="width:100%;height:auto">
 <figcaption>The example's <b>Bench</b> after <b>Update Layout from Schematic</b>: <code>X1</code> with

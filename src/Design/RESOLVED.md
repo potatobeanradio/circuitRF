@@ -32980,10 +32980,9 @@ decisions. What is worth keeping here, because it was found the hard way:
 - **A pad with `Model="open"` gives its length no slope in the circuit model** (S2: its pins are open). `X1.Lpad` changes
   the copper and not the circuit, so an `em=correct` optimisation over it stops at its start after one solve (the
   corrected model's optimum is the start; measured on a real Planar run of the PCell Designer example). Use `em=direct`.
-- **`tune X1.Lpad` on a bench simulated by EM of its own layout is refused** as not reaching the copper: Path A takes
-  only VAR rows, and PCD-1's step floor for an instance's own value applies to Path B (EM cells placed in a parent). Tune
-  a VAR the placement's value is set to (`X1.Lpad = Lp1`). PCD-0 §8 step 6 named `X1.Lpad`; `Pcd8AcceptanceTests` tunes
-  `Lp1`.
-- **`check` warns that a `cpcell:` generator "is not built in, and no kit loaded here offers it"**: its generator test does
-  not register `DesignedPCellResolver` for the workspace, as Update Layout does. Open: the warning is false for every
-  designed cell.
+- **`tune X1.Lpad` on a bench simulated by EM of its own layout was refused** as not reaching the copper: Path A took only
+  VAR rows. A placed generator cell's own parameter now reaches the copper there too, and each point's layout draws the
+  placement at that value; `Pcd8AcceptanceTests` step 6 tunes `X1.Lpad` itself.
+- **`check` warned that a `cpcell:` generator "is not built in, and no kit loaded here offers it"**: its generator test did
+  not register `DesignedPCellResolver` for the workspace, as Update Layout does. It now takes a designed cell's generator
+  as offered.

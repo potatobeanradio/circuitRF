@@ -173,13 +173,16 @@ Place the cell from the Library like any other cell, and set its parameters on t
 - **LVS** knows the placed cell by its generator, `cpcell:<cell name>`, and pairs its pins with the schematic instance's
   pins by port number.
 - **EM** solves the placed cell's layout as copper (`EmCopper`), so a bench placing it can be simulated by EM of its own
-  layout and [optimised](em-cells.html#optimise). Tune a placement's value through a VAR of the bench: set `Lpad` on `X1`
-  to `Lp1` and tune `Lp1`, as for any value of a schematic simulated by EM of its own layout.
+  layout and [optimised](em-cells.html#optimise) with a placement's own value as the variable (`tune X1.Lpad`): each
+  point's layout draws `X1` at that value.
 
-A drawn shape with `Model = "open"` is an open end to the circuit model, so its size has no effect there. `em=correct`
-corrects the circuit model by EM but searches on the circuit model, so it cannot move a variable that only changes such a
-shape: it stops at the start, saying the next point is the geometry it has already solved. Optimise such a variable with
-`em=direct`, which searches on EM itself.
+A drawn shape with `Model = "open"` is an open end to the circuit model, so its size has no effect there: in the
+example, `X1`'s S21 is the same at every `Lpad`, while `Lstub` moves it. `em=correct` corrects the circuit model by EM but
+searches on the circuit model, so it cannot move a variable that only changes such a shape: it stops at the start, saying
+the next point is the geometry it has already solved. Optimise such a variable with `em=direct`, which searches on EM
+itself. On the example's bench (Planar, 2,700 unknowns, 6-8 GHz at 3 points), `em=correct` stopped after one solve with
+`X1.Lpad` at 200 µm; `em=direct` with the `pattern` algorithm and a budget of 8 solves moved it to 600 µm in about nine
+minutes, the worst |S11| from −0.22 dB to −0.13 dB.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/bench-layout.png" alt="The Bench layout: two PadTee cells joined by a 50 ohm line between two ports, the first with a 200 micrometre pad, the second with a 400 micrometre pad." style="width:100%;height:auto">

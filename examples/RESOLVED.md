@@ -1250,8 +1250,10 @@ view model, so the files are what a user's Apply, parameter table, Stretch by Pa
 - **The tee turns its stub away from the feed.** In the first version the stub ran beside `TL1`, 2.16 mm (4.25 substrate
   heights) from port 1, and the bench's Planar solve was refused: a calibrated port's feed needs 5 heights of clear
   copper over the 60 mil the calibration standard reproduces. `T1`'s pin 1 is now on `TL3`'s side.
-- **The cell's symbol is the generated box.** Save leaves a designed cell's symbol view empty, so a bench cannot place
-  the source cell; the authoring writes `AutoSymbolGenerator`'s box, the one Export would package.
+- **The cell's symbol is the one Save writes** from the Ports. Before Save wrote one, the authoring had to.
+- **The authoring replaces only `PadTee/` and `Bench/`**, built in a scratch workspace: its first version rebuilt the
+  whole folder and would have deleted anything else in the example.
 - **LVS on the bench reports one warning**, the unstitched ground pour under `TL1`; no error.
-- **The real Planar run** (em=correct over `Lp1`, `X1.Lpad = Lp1`) stops after one solve, because the open pad gives
-  `Lp1` no slope in the circuit model: `docs/design/pcell-designer.md` §5.
+- **The real Planar runs:** `em=correct` stops after one solve, because the open pad gives `Lpad` no slope in the circuit
+  model; `em=direct` (pattern, 8 solves, about nine minutes) moves `X1.Lpad` from 200 µm to its 600 µm Maximum:
+  `docs/design/pcell-designer.md` §5.
