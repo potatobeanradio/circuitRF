@@ -1,4 +1,5 @@
 using Clipper2Lib;
+using CircuitRF.Design.PCellDesigner;
 
 namespace CircuitRF.Design.Layout.PCells;
 
@@ -126,21 +127,44 @@ public static class GroundPourPlanner
             byGround[ground.Name] = (ground, acc.Region.Union(bb), Math.Max(acc.MaxH, h), acc.Lines + lines);
         }
 
+        // brief-pcd-2: a cell that draws its own ground. Drawn by a part of this layout (an MSHAPE on the ground
+        // conductor), that conductor gets no pour here at all; drawn inside a placed designed cell, the pour leaves the
+        // cell's footprint on it to the cell's own ground (a slot stays a slot).
+        var ownGround = new HashSet<string>(StringComparer.Ordinal);
+        var holes = new Dictionary<string, Paths64>(StringComparer.Ordinal);
         foreach (var inst in instances)
         {
             string cell = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
-            if (!snapshots.TryGetValue(cell, out var snap) || !MicrostripGenerators.Contains(snap.GeneratorId))
-                continue;
-            var selection = new PCellLayerSelection(snap.SignalLayerNameOverride, snap.GroundLayerNameOverride);
-            var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, selection);
-            if (substrate is null) continue;
-            var ground = technology.Stackup.Layers.FirstOrDefault(l =>
-                l.Kind == StackupKind.Conductor && l.Name == substrate.GroundConductorName);
-            if (ground is null || ground.DrawingLayers.Count == 0) continue;
-
+            if (!snapshots.TryGetValue(cell, out var snap)) continue;
+            bool designed = snap.GeneratorId.StartsWith(PCellDesign.GeneratorPrefix, StringComparison.Ordinal);
+            if (!designed && !MicrostripGenerators.Contains(snap.GeneratorId)) continue;
             var bb = CellHierarchy.InstanceBbox(inst, layoutBaseDir);
             if (bb.IsEmpty) continue;
-            Note(ground, bb, substrate.HeightMeters, 1);
+
+            if (designed || snap.GeneratorId == MShapePCell.GeneratorId)
+            {
+                // By its contents: each conductor the cell draws on is a line's signal layer, or a ground it draws itself.
+                var drawn = CopperByConductor(inst, layoutBaseDir, technology);
+                var grounds = drawn.Keys.Select(c => GroundUnder(technology, c.Name, null).Ground).OfType<StackupLayer>()
+                                   .Select(g => g.Name).ToHashSet(StringComparer.Ordinal);
+                bool IsGround(StackupLayer c) => c.IsGroundReference || grounds.Contains(c.Name);
+                foreach (var (conductor, footprint) in drawn.Where(kv => IsGround(kv.Key)))
+                {
+                    if (!designed) ownGround.Add(conductor.Name);
+                    else (holes.TryGetValue(conductor.Name, out var h) ? h : holes[conductor.Name] = []).Add(Rect(footprint));
+                }
+                if (designed)
+                {
+                    foreach (var signal in drawn.Keys.Where(c => !IsGround(c)).OrderBy(c => c.Name, StringComparer.Ordinal))
+                        if (GroundUnder(technology, signal.Name, null) is ({ } g, { } h)) Note(g, bb, h, 1);
+                    continue;
+                }
+                if (drawn.Keys.Any(IsGround)) continue;   // drawn metal on the ground itself is no line over it
+            }
+
+            if (GroundUnder(technology, snap.SignalLayerNameOverride, snap.GroundLayerNameOverride) is not ({ } ground, { } height))
+                continue;
+            Note(ground, bb, height, 1);
         }
         foreach (var r in extra)
             if (r.Ground.DrawingLayers.Count > 0 && !r.Region.IsEmpty) Note(r.Ground, r.Region, r.SubstrateHeightMeters, 0);
@@ -150,6 +174,7 @@ public static class GroundPourPlanner
         var leftAlone = new List<StackupLayer>();
         foreach (string name in order)
         {
+            if (ownGround.Contains(name)) continue;   // the layout draws this ground itself (brief-pcd-2)
             var (ground, region, maxH, lines) = byGround[name];
             if (onlyUndrawn && shapes.Any(s => s is not ViaShape && s.Generated is null && ground.DrawingLayers.Contains(s.Layer)))
             {
@@ -160,6 +185,7 @@ public static class GroundPourPlanner
             long margin = (long)Math.Ceiling(marginHeights * maxH * 1e6 * view.DbuPerMicron);
             var outer = outline ?? new Bbox(region.MinX - margin, region.MinY - margin, region.MaxX + margin, region.MaxY + margin);
             var (clearances, joined, groundVias) = Clearances(view, snapshots, shapes, instances, technology, ground, outer);
+            if (holes.TryGetValue(name, out var cellGround)) clearances.AddRange(cellGround);
 
             var layer = ground.DrawingLayers[0];
             var subject = new Paths64 { Rect(outer) };
@@ -172,6 +198,42 @@ public static class GroundPourPlanner
                                      replaces, groundVias, outline is not null, marginHeights));
         }
         return new(pours, leftAlone);
+    }
+
+    /// <summary>The ground conductor a line on <paramref name="signal"/> returns through, with the substrate height under
+    /// it, or nulls — the one resolution every line here takes.</summary>
+    private static (StackupLayer? Ground, double? HeightMeters) GroundUnder(Technology technology, string? signal, string? groundOverride)
+    {
+        var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, new PCellLayerSelection(signal, groundOverride));
+        if (substrate is null) return (null, null);
+        var ground = technology.Stackup.Layers.FirstOrDefault(l =>
+            l.Kind == StackupKind.Conductor && l.Name == substrate.GroundConductorName);
+        return ground is null || ground.DrawingLayers.Count == 0 ? (null, null) : (ground, substrate.HeightMeters);
+    }
+
+    /// <summary>brief-pcd-2: each conductor a placed cell's own copper is on, with that copper's extent in the parent.</summary>
+    /// <remarks>ponytail: the extent is a box, so a cell's ground that is not rectangular leaves the rest of its box
+    /// unpoured; a cell's nested instances and arrayed placements are not looked into.</remarks>
+    private static Dictionary<StackupLayer, Bbox> CopperByConductor(LayoutInstance inst, string layoutBaseDir, Technology technology)
+    {
+        var result = new Dictionary<StackupLayer, Bbox>(ReferenceEqualityComparer.Instance);
+        if (CellLayoutResolver.Resolve(inst, layoutBaseDir, technology) is not { State: CellLayoutState.Resolved, View: { } cell })
+            return result;
+        foreach (var shape in cell.Shapes)
+        {
+            if (shape is LabelShape or ViaShape) continue;
+            var conductor = technology.Stackup.Layers.FirstOrDefault(l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(shape.Layer));
+            if (conductor is null) continue;
+            var b = LayoutGeometry.BboxOf(shape);
+            var box = Bbox.Empty;
+            foreach (var (x, y) in new[] { (b.MinX, b.MinY), (b.MaxX, b.MinY), (b.MaxX, b.MaxY), (b.MinX, b.MaxY) })
+            {
+                var (px, py) = LayoutInstanceTransform.TransformPoint(x, y, inst, 0, 0);
+                box = box.Union(new Bbox(px, py, px, py));
+            }
+            result[conductor] = result.TryGetValue(conductor, out var had) ? had.Union(box) : box;
+        }
+        return result;
     }
 
     /// <summary>The board outline's extent, pulled back from the edge — or null when the technology names no outline

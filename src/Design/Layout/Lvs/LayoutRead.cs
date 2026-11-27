@@ -531,9 +531,12 @@ public static class LayoutRead
         // R-lvs3-6d. A warning naming the flag, with ground terminals then read as ordinary opens.
         // Not an error: a die with no backside metal, grounded only through bondwires to a package,
         // is a real and correct design.
+        // Asked of the stackup, not of the reading: a layout whose only copper is inside placed devices reads no pieces
+        // at all, and its technology's flagged conductor is still there (brief-pcd-2).
         if (ground.ReferenceName is null
             && tech is not null
-            && tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Conductor))
+            && tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Conductor)
+            && !tech.Stackup.Layers.Any(l => l.Kind == StackupKind.Conductor && l.IsGroundReference && l.Name.Length > 0))
             notes.Add(LvsDiagnostics.NoGroundReferenceConductor());
 
         // R-lvs3-6e, unconditional — including on a perfectly clean run. See the diagnostic.
