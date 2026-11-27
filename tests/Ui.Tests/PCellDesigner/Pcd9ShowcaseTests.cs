@@ -65,7 +65,7 @@ public sealed class Pcd9ShowcaseTests : IDisposable
         }
     }
 
-    /// <summary>The dual-mode patch: the patch and the second feed placed by offset across the gap s.</summary>
+    /// <summary>The dual-mode patch: the patch and the second feed placed by offset, the gap s from the feeds.</summary>
     [Fact]
     public void DualModePatch_PlacedByOffsets_EmOnly() => DesignedAndPlaced(Pcd9Cells.Patch, Pcd9Cells.PatchBench);
 }

@@ -92,32 +92,35 @@ internal static class Pcd9Cells
 
     // ══ 3. DualModePatch: a dual-mode square-patch bandpass ═══════════════════════════════════════════════════════════
     //
-    // A square patch a wide with its far corner cut by d, which splits its two degenerate modes. Two 50 Ω feeds at right
-    // angles couple to it across the gap s: the patch is placed by offset s from the first feed's open end, the second feed
-    // by offset s from the patch's second pin. The patch's pins join nothing; they are where the feeds face it. EM only.
+    // A square patch a wide with its far corner cut by d, which splits its two degenerate modes. Two 50 Ω feeds run along
+    // two adjacent edges, the gap s from them, each coupling to one of the modes; the cut corner is on the diagonal between
+    // them. Nothing joins them: the patch is placed by offset from the first feed's open end, the second feed by offset from
+    // the patch's second pin (Dx, Dy in mm; 0.55 mm is half a feed). The patch's pins join nothing; they are where the feeds
+    // face it. EM only.
     public static readonly Pcd9Spec Patch = new(
         "DualModePatch",
         """
-        MLIN:TL1  n1  f1  W=1.1 mm  L=5 mm
+        MLIN:TL1  n1  f1  W=1.1 mm  L=a+3e-3
         MSHAPE:SH1  q1  q2  Form="polygon"  W=0  X[1]=0  Y[1]=-a/2  X[2]=a  Y[2]=-a/2  X[3]=a  Y[3]=a/2-d  X[4]=a-d  Y[4]=a/2  X[5]=0  Y[5]=a/2  PinX[1]=0  PinY[1]=0  PinW[1]=1.1 mm  PinDir[1]=180 deg  PinX[2]=a/2  PinY[2]=-a/2  PinW[2]=1.1 mm  PinDir[2]=270 deg  Model="none"
-        MLIN:TL2  n2  f2  W=1.1 mm  L=5 mm
+        MLIN:TL2  n2  f2  W=1.1 mm  L=a+3e-3
         Port:P1  n1  0  Num=1  Z=50 Ohm
         Port:P2  n2  0  Num=2  Z=50 Ohm
         """,
         [
             ("a", "15",  "mm", "12",   "18", "patch side"),
-            ("d", "1.5", "mm", "0.5",  "3",  "corner cut"),
-            ("s", "0.3", "mm", "0.15", "1",  "feed gap"),
+            ("d", "3.5", "mm", "0.5",  "5",  "corner cut"),
+            ("s", "0.2", "mm", "0.16", "1",  "feed gap"),
         ],
         [
-            ("SH1", new OffsetPlacement { Anchor = "TL1.2", Pin = 1, Dx = "s", Dy = "0", Angle = "0" }),
-            ("TL2", new OffsetPlacement { Anchor = "SH1.2", Pin = 2, Dx = "s", Dy = "0", Angle = "0" }),
+            ("SH1", new OffsetPlacement { Anchor = "TL1.2", Pin = 1, Dx = "-a/2", Dy = "s+0.55", Unit = "mm", Angle = "90" }),
+            ("TL2", new OffsetPlacement { Anchor = "SH1.2", Pin = 2, Dx = "s+0.55", Dy = "-a/2", Unit = "mm", Angle = "90" }),
         ],
         []);
 
     /// <summary>A bench placing <paramref name="cellDir"/> once as X1 between Ports, wired by <paramref name="text"/>, with
     /// one S-parameter sweep (by EM when the cell has no circuit model).</summary>
-    public static string Bench(string workspace, string cellDir, string name, string text, FrequencySpec sweep, bool byEm)
+    public static string Bench(string workspace, string cellDir, string name, string text, FrequencySpec sweep, bool byEm,
+                               (string Name, string Value, string Unit)[]? x1 = null, TuningSetup? tuning = null)
     {
         var created = CellCreate.Create(workspace, name, CellViews.Schematic);
         string dir = Path.GetDirectoryName(created.SchematicPath!)!;
@@ -128,10 +131,13 @@ internal static class Pcd9Cells
             InstanceName = "X1", Symbol = SymbolKind.Generic, X = 0, Y = 0,
             CellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(dir, cellDir)),
         });
+        foreach (var (n, v, u) in x1 ?? [])
+            model.Components[^1].Parameters.Add(new EditableParameter { Name = n, Expression = v, Unit = u, Dimension = UnitDimension.Length });
         var merged = CellNetlistMerge.Merge(model, text);
         Assert.True(merged.Schematic is not null, string.Join("\n", merged.Refusals));
         var bench = merged.Schematic!;
         bench.Analyses.Add(new SParameterAnalysis("SP1", [sweep]) { Model = byEm ? AnalysisModel.Em : AnalysisModel.Circuit });
+        if (tuning is not null) bench.Tuning = tuning;
         SchematicPersistence.SaveToFile(created.SchematicPath!, bench, name);
         return created.SchematicPath!;
     }
@@ -144,17 +150,26 @@ internal static class Pcd9Cells
         Port:P4  n4  0  Num=4  Z=50 Ohm
         """, new FrequencySpec("1.5", "3.5", 41, SweepKind.Linear, "GHz", "GHz"), byEm: false);
 
+    /// <summary>The spurline's bench also carries the optimisation that moves its notch to 5 GHz: X1.Ls tuned by EM itself
+    /// (em=direct, pattern search, eight solves), S21 at 5 GHz pushed down.</summary>
     public static string SpurlineBench(string ws, string cell) => Bench(ws, cell, "SpurlineBench", """
         Port:P1  n1  0  Num=1  Z=50 Ohm
-        Spurline:X1  n1  n2
+        Spurline:X1  n1  n2  Ls=8.5 mm
         Port:P2  n2  0  Num=2  Z=50 Ohm
-        """, new FrequencySpec("3.5", "7", 15, SweepKind.Linear, "GHz", "GHz"), byEm: true);
+        """, new FrequencySpec("3.5", "7", 15, SweepKind.Linear, "GHz", "GHz"), byEm: true, x1: [("Ls", "8.5", "mm")],
+        tuning: new TuningSetup
+        {
+            Variables = [new TunableEntry { Key = "X1.Ls", Opt = true, Min = "7 mm", Max = "11 mm", Scale = TuneScale.Lin }],
+            Goals = [new OptimizationGoal { Name = "Notch", Expression = "dB(SP1.S(2,1))", Analysis = "SP1", Type = GoalType.Le, Limit = "-30",
+                                            Range = new GoalRange { Axis = "freq", Lo = "4.9 GHz", Hi = "5.1 GHz" } }],
+            Optimizer = new OptimizerSettings { Algorithm = "pattern", Em = OptimizerEmMode.Direct, EmBudget = 8, Seed = 1 },
+        });
 
     public static string PatchBench(string ws, string cell) => Bench(ws, cell, "PatchBench", """
         Port:P1  n1  0  Num=1  Z=50 Ohm
         DualModePatch:X1  n1  n2
         Port:P2  n2  0  Num=2  Z=50 Ohm
-        """, new FrequencySpec("4.6", "5.8", 13, SweepKind.Linear, "GHz", "GHz"), byEm: true);
+        """, new FrequencySpec("4.9", "5.4", 21, SweepKind.Linear, "GHz", "GHz"), byEm: true);
 
     /// <summary>The spec designed under <paramref name="workspace"/>, as in the window; the cell folder.</summary>
     public static string Design(string workspace, Pcd9Spec spec)

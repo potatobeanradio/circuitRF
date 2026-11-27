@@ -1,0 +1,55 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "Ls",
+      "DefaultExpression": "8.5",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "slit (spur) length",
+      "Minimum": 0.006,
+      "Maximum": 0.012
+    },
+    {
+      "Name": "g",
+      "DefaultExpression": "0.2",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "slit gap",
+      "Minimum": 0.00015,
+      "Maximum": 0.0005
+    },
+    {
+      "Name": "W",
+      "DefaultExpression": "1.1",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "line width",
+      "Minimum": 0.0008,
+      "Maximum": 0.0014
+    }
+  ],
+  "PrimarySchematic": "Spurline.csch",
+  "PrimarySymbol": "Spurline.csym",
+  "PrimaryLayout": "Spurline.clay",
+  "IsTestBench": false,
+  "LayoutGenerator": "cpcell:Spurline",
+  "PCellDesign": {},
+  "EmCopper": true,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "P1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "P2",
+      "LayoutPin": "2"
+    }
+  ],
+  "NumPorts": 2
+}

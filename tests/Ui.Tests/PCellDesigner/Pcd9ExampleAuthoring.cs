@@ -1,8 +1,6 @@
 // Owner: PCD-9 (showcase examples). The three showcase cells and their benches, BUILT by the functions the designer's
 // window calls. Skipped unless CRF_AUTHOR_PCD9=1, because it WRITES examples/PCell Designer: the six cell folders are built
-// in a scratch workspace and replace their namesakes there; nothing else in the example is touched. With
-// CRF_PCD9_LAYOUT=<workspace> it instead lays out that workspace's benches with their Planar setups, for a by-hand EM run
-// on a copy of the example (no result is committed).
+// in a scratch workspace and replace their namesakes there; nothing else in the example is touched.
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
@@ -26,8 +24,10 @@ public sealed class Pcd9ExampleAuthoring
         {
             Pcd9Cells.Workspace(scratch);
             Pcd9Cells.WilkinsonBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Wilkinson));
-            Pcd9Cells.SpurlineBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Spurline));
-            Pcd9Cells.PatchBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Patch));
+            // The two EM-only benches are laid out with their Planar setups, so their SP1 runs by EM as shipped.
+            foreach (string bench in new[] { Pcd9Cells.SpurlineBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Spurline)),
+                                             Pcd9Cells.PatchBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Patch)) })
+                Assert.Null(LayoutFromSchematic.Run(bench, emSetup: true).Refusal);
             foreach (string cell in new[] { "Wilkinson3", "Wilkinson3Bench", "Spurline", "SpurlineBench", "DualModePatch", "PatchBench" })
             {
                 string from = Path.Combine(scratch, cell), to = Path.Combine(example, cell);
@@ -39,21 +39,16 @@ public sealed class Pcd9ExampleAuthoring
                     File.Copy(f, target);
                 }
             }
+            // Their EM setups live in the workspace's em/ folder.
+            foreach (string f in Directory.EnumerateFiles(EmSetupCreate.DirectoryOf(scratch)))
+            {
+                Directory.CreateDirectory(EmSetupCreate.DirectoryOf(example));
+                File.Copy(f, Path.Combine(EmSetupCreate.DirectoryOf(example), Path.GetFileName(f)), overwrite: true);
+            }
         }
         finally
         {
             try { Directory.Delete(root, true); } catch (IOException) { }
-        }
-    }
-
-    [AuthorFact("CRF_PCD9_LAYOUT")]
-    public void LayOutTheBenches()
-    {
-        string ws = Environment.GetEnvironmentVariable("CRF_PCD9_LAYOUT")!;
-        foreach (string bench in new[] { "SpurlineBench", "PatchBench" })
-        {
-            var laid = LayoutFromSchematic.Run(Path.Combine(ws, bench, "schematic", bench + ".csch"), emSetup: true);
-            Assert.True(laid.Refusal is null, laid.Refusal);
         }
     }
 }

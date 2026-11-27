@@ -1,0 +1,559 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Spurline",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "TL1",
+      "Symbol": "Mlin",
+      "X": 800,
+      "Y": 200,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "W",
+          "Expression": "W",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "3",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "SH1",
+      "Symbol": "MShape",
+      "X": 1000,
+      "Y": 1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Form",
+          "Expression": "\u0022polygon\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "W",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "X[1]",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Y[1]",
+          "Expression": "-W/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "X[2]",
+          "Expression": "16e-3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Y[2]",
+          "Expression": "-W/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "X[3]",
+          "Expression": "16e-3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Y[3]",
+          "Expression": "W/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "X[4]",
+          "Expression": "(10.5e-3\u002Bg) \u002B (Ls - 0.0085)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "Y[4]",
+          "Expression": "W/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "X[5]",
+          "Expression": "(10.5e-3\u002Bg) \u002B (Ls - 0.0085)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Y[5]",
+          "Expression": "-g/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "X[6]",
+          "Expression": "2e-3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Y[6]",
+          "Expression": "-g/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "X[7]",
+          "Expression": "2e-3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Y[7]",
+          "Expression": "g/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "X[8]",
+          "Expression": "(10.5e-3) \u002B (Ls - 0.0085)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Y[8]",
+          "Expression": "g/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "X[9]",
+          "Expression": "(10.5e-3) \u002B (Ls - 0.0085)",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Y[9]",
+          "Expression": "W/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "X[10]",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Y[10]",
+          "Expression": "W/2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PinX[1]",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "PinY[1]",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "PinW[1]",
+          "Expression": "W",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "PinDir[1]",
+          "Expression": "180",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "PinX[2]",
+          "Expression": "16e-3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PinY[2]",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PinW[2]",
+          "Expression": "W",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PinDir[2]",
+          "Expression": "0",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Model",
+          "Expression": "\u0022none\u0022",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          380,
+          -325
+        ]
+      ],
+      "Stretch": [
+        {
+          "Parameter": "Ls",
+          "Anchor": 1,
+          "Moving": [
+            4,
+            5,
+            8,
+            9
+          ],
+          "AxisDeg": 0
+        }
+      ]
+    },
+    {
+      "InstanceName": "TL2",
+      "Symbol": "Mlin",
+      "X": 800,
+      "Y": 2600,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "W",
+          "Expression": "W",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "3",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P1",
+      "Symbol": "Term",
+      "X": 800,
+      "Y": 3800,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P2",
+      "Symbol": "Term",
+      "X": 800,
+      "Y": 5000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 800,
+      "Y": 4000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 800,
+      "Y": 5200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          800,
+          400
+        ],
+        [
+          800,
+          1000
+        ],
+        [
+          600,
+          1000
+        ],
+        [
+          600,
+          1300
+        ],
+        [
+          800,
+          1300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          1500
+        ],
+        [
+          600,
+          1500
+        ],
+        [
+          600,
+          2200
+        ],
+        [
+          800,
+          2200
+        ],
+        [
+          800,
+          2400
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          800,
+          -200
+        ],
+        [
+          500,
+          -200
+        ],
+        [
+          500,
+          3400
+        ],
+        [
+          800,
+          3400
+        ],
+        [
+          800,
+          3600
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          2800
+        ],
+        [
+          800,
+          3300
+        ],
+        [
+          400,
+          3300
+        ],
+        [
+          400,
+          4600
+        ],
+        [
+          800,
+          4600
+        ],
+        [
+          800,
+          4800
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 500,
+      "Y": 1600,
+      "Name": "n1",
+      "OwnerWireIndex": 2,
+      "SegmentIndex": 2,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 700,
+      "Y": 1000,
+      "Name": "a",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 700,
+      "Y": 1500,
+      "Name": "b",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 600,
+      "Y": 3300,
+      "Name": "n2",
+      "OwnerWireIndex": 3,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  }
+}
