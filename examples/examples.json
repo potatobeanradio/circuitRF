@@ -79,7 +79,7 @@
     {
       "Folder": "PCell Designer",
       "Title": "PCell Designer",
-      "Summary": "A microstrip tee whose stub ends in a drawn pad, made a parameterised cell in the PCell Designer, placed twice at two pad lengths in a bench, laid out with a drag handle on each pad, checked by LVS and exported as a PCell package."
+      "Summary": "Parameterised cells made in the PCell Designer and placed in benches: a tee whose stub ends in a drawn pad, placed twice with a drag handle on each pad, checked by LVS and exported as a PCell package; a 3-way Wilkinson divider whose isolation resistors meet on a drawn star pad; a spurline bandstop drawn as one polygon, its notch moved to 5 GHz by EM; and a dual-mode square-patch bandpass placed by offsets."
     },
     {
       "Folder": "LVS",
