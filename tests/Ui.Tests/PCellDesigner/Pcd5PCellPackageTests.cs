@@ -251,8 +251,12 @@ public sealed class Pcd5PCellPackageTests
     private static string DescribeOf(string root)
     {
         // The registered resolver is the one PCellRegistry asks; Describe is read off it.
-        var field = typeof(PCellRegistry).GetField("_resolvers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-        var resolvers = (System.Collections.IEnumerable)field.GetValue(null)!;
-        return string.Join("\n", resolvers.OfType<DesignedPCellResolver>().Select(r => r.Describe()).Where(d => d.Contains(root)));
+        // Snapshot the list under the registry's own gate: other tests register resolvers in parallel.
+        const System.Reflection.BindingFlags Static = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        var list = (System.Collections.IEnumerable)typeof(PCellRegistry).GetField("_resolvers", Static)!.GetValue(null)!;
+        var gate = (System.Threading.Lock)typeof(PCellRegistry).GetField("_resolverGate", Static)!.GetValue(null)!;
+        DesignedPCellResolver[] resolvers;
+        lock (gate) resolvers = [.. list.OfType<DesignedPCellResolver>()];
+        return string.Join("\n", resolvers.Select(r => r.Describe()).Where(d => d.Contains(root)));
     }
 }
