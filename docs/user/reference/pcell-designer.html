@@ -86,6 +86,7 @@ it places.</li>
 <li><strong>File ▸ Import ▸ PCell Package…</strong> imports a <code>.cpcell</code> into the workspace (see <a href="#package">below</a>).</li>
 </ul>
 <p>One window is open per cell. Asking for a cell that is already open brings its window forward.</p>
+<p>A designed cell can also come from filter synthesis: the Filter Designer's <strong>Make PCell…</strong> (or <code>circuitrf filter … --realiser R --pcell &lt;name&gt;</code>) makes the selected realisation a designed cell. It holds the part <code>F1</code>, its site parts and two Ports, and each synthesised length, gap and width is a parameter with a ±20 % range. Such a cell keeps its filter specification. The <strong>Filter metrics</strong> panel reads its circuit response, or an EM run, back to the prototype and shows each check with pass or fail, as the Filter Designer does. See <a href="filter-designer.html#make-pcell">Make PCell</a>.</p>
 <p>A designed cell is an ordinary cell folder with a schematic, a symbol and a <code>.ccell</code>. What marks it as designed is a
 <code>PCellDesign</code> entry in its <code>.ccell</code>, which also names its layout generator <code>cpcell:&lt;cell name&gt;</code> and sets <code>EmCopper</code> (see
 <a href="file-formats.html#cpcell">File formats</a>).</p>
