@@ -46,8 +46,8 @@ go through one function, so a pin drop is a text edit the user did not have to t
   schematic names is drawn without a label when its wires reach every pin (`ExactPlacement.QuietNets`, now honoured by
   the auto-routed wiring as well). A net name new in the text gets a label.
 - **D6 — Variables and measurements merge by row name** into the existing VAR and MEAS blocks (a new row goes into the
-  first block, a new block is the drawing's). Analyses are the text's. Tuning, the technology and the cell's parameters
-  are not in the merge: they are edited where they live.
+  first block, a new block is the drawing's). Analyses, tuning, the technology and the cell's parameters are not in the
+  merge: they are edited where they live, and a changed analysis line is a note, not a silent drop.
 - **D7 — A pin drop is a merge.** The part is extracted beside the schematic, far from it, so its line is the one the
   extraction writes (substrate and all), with its own pins on nets of their own. Its `partPin` is put on the target's
   net and the text goes through `Merge`; the part's own nets are quiet. Ground (`0`) is a reference, not a joint: a drop
@@ -57,7 +57,7 @@ go through one function, so a pin drop is a text edit the user did not have to t
 
 `tests/Ui.Tests/PCellDesigner/Pcd4*.cs`, one per behaviour: parameters merged with the wires kept; a part added and
 one removed with a redraw that keeps positions and non-netlist fields; a type change refused; a pin drop on an
-unjoined pin and on a joined one; an `MSHAPE` part merged (after PCD-3).
+unjoined pin and on a joined one; an `MSHAPE` dropped on a pin and merged (after PCD-3).
 
 ## 4. Gate
 
