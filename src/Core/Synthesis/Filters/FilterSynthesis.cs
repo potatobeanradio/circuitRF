@@ -43,11 +43,11 @@ public static class LowpassPrototype
         switch (response)
         {
             case FilterResponse.Butterworth:
-                for (int k = 1; k <= order; k++) g[k] = 2.0 * Math.Sin((2 * k - 1) * Math.PI / (2.0 * order));
-                g[order + 1] = 1.0;
-                return g;
+                return ButterworthG(order);
             case FilterResponse.Chebyshev:
             {
+                // Not TableChebyshevG: 40/ln 10 exactly, so the ladder is equiripple to rounding (filter-synthesis.md §1),
+                // and the realisers' numbers are this arithmetic's to the last bit (brief-pcd-12 D1).
                 if (!(rippleDb > 0)) throw new ArgumentOutOfRangeException(nameof(rippleDb), rippleDb, "Ripple must be positive.");
                 double beta = Math.Log(1.0 / Math.Tanh(rippleDb * Math.Log(10.0) / 40.0));   // the tables round 40/ln 10 to 17.37
                 double gamma = Math.Sinh(beta / (2.0 * order));
@@ -64,6 +64,47 @@ public static class LowpassPrototype
             default:
                 throw new NotSupportedException($"No closed-form prototype for {response} yet.");
         }
+    }
+
+    /// <summary><c>g_k = 2 sin((2k−1)π / 2n)</c>, unit terminations: <see cref="GValues"/>' Butterworth, and the LC
+    /// Filter Designer's (<see cref="FilterLadder.ButterworthG"/>), with no order check.</summary>
+    public static double[] ButterworthG(int n)
+    {
+        var g = new double[n + 2];
+        g[0] = 1.0;
+        for (int k = 1; k <= n; k++) g[k] = 2.0 * Math.Sin((2 * k - 1) * Math.PI / (2.0 * n));
+        g[n + 1] = 1.0;
+        return g;
+    }
+
+    /// <summary>
+    /// The equal-ripple g-values as the handbook tables print them, with 40/ln 10 rounded to 17.37 and a ripple of zero or
+    /// less read as 0.1 dB: the LC Filter Designer's (<see cref="FilterLadder.ChebyshevG"/>) and the Match Designer's
+    /// real-to-real prototype (<see cref="Matching.MatchSynthesis.RippleG"/>), whose numbers it keeps bit for bit. The
+    /// realisers take <see cref="GValues"/>' exact form instead (brief-pcd-12 D1).
+    /// </summary>
+    public static double[] TableChebyshevG(int n, double rippleDb)
+    {
+        double lar = rippleDb > 0 ? rippleDb : 0.1;
+        double bb = Math.Log(1.0 / Math.Tanh(lar / 17.37));
+        double gamma = Math.Sinh(bb / (2 * n));
+        double th = Math.PI / (2 * n);
+
+        var a = new double[n + 1];
+        var b = new double[n + 1];
+        for (int k = 1; k <= n; k++)
+        {
+            a[k] = Math.Sin((2 * k - 1) * th);
+            b[k] = gamma * gamma + Math.Sin(k * Math.PI / n) * Math.Sin(k * Math.PI / n);
+        }
+
+        var g = new double[n + 2];
+        g[0] = 1.0;
+        g[1] = 2.0 * a[1] / gamma;
+        for (int k = 2; k <= n; k++) g[k] = 4.0 * a[k - 1] * a[k] / (b[k - 1] * g[k - 1]);
+        double coth = 1.0 / Math.Tanh(bb / 4.0);
+        g[n + 1] = n % 2 == 0 ? coth * coth : 1.0;
+        return g;
     }
 }
 

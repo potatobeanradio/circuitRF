@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using CircuitRF.Core.Synthesis.Filters;
 
 namespace CircuitRF.Core.Matching;
 
@@ -492,29 +493,7 @@ public static class MatchSynthesis
     /// match.md §4.3's real-to-real prototype: the standard equal-ripple table, used when neither end
     /// has a reactance to prescribe and the component is a plain bandpass transformer.
     /// </summary>
-    public static double[] RippleG(int n, double rippleDb)
-    {
-        double lar = rippleDb > 0 ? rippleDb : 0.1;
-        double bb = Math.Log(1.0 / Math.Tanh(lar / 17.37));
-        double gamma = Math.Sinh(bb / (2 * n));
-        double th = Math.PI / (2 * n);
-
-        var a = new double[n + 1];
-        var b = new double[n + 1];
-        for (int k = 1; k <= n; k++)
-        {
-            a[k] = Math.Sin((2 * k - 1) * th);
-            b[k] = gamma * gamma + Math.Sin(k * Math.PI / n) * Math.Sin(k * Math.PI / n);
-        }
-
-        var g = new double[n + 2];
-        g[0] = 1.0;
-        g[1] = 2.0 * a[1] / gamma;
-        for (int k = 2; k <= n; k++) g[k] = 4.0 * a[k - 1] * a[k] / (b[k - 1] * g[k - 1]);
-        double coth = 1.0 / Math.Tanh(bb / 4.0);
-        g[n + 1] = n % 2 == 0 ? coth * coth : 1.0;
-        return g;
-    }
+    public static double[] RippleG(int n, double rippleDb) => LowpassPrototype.TableChebyshevG(n, rippleDb);
 
     /// <summary>
     /// The one validation every form shares: a positive resistance, and a reactance that is a real
