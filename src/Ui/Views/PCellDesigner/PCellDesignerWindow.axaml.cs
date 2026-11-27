@@ -38,7 +38,8 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
             vm.PlotHost.Theme = ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? RenderTheme.Dark : RenderTheme.Light;
             this.FindControl<PlotControl>("ResponsePlotControl")?.SetValue(PlotControl.PlotThemeProperty, vm.PlotHost.Theme);
         }
-        DataContextChanged += (_, _) => { Theme(); Watch(); };
+        DataContextChanged += (_, _) => { Theme(); Watch(); WirePlot(); };
+        DesignCanvas.CanvasOverlay = _dimensions;
         ActualThemeVariantChanged += (_, _) => Theme();
 
         DesignCanvas.AddHandler(PointerPressedEvent, OnCanvasPressed, RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
@@ -97,6 +98,64 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
     {
         if (e.PropertyName == nameof(PCellDesignerViewModel.Layout)) SyncCanvas();
         if (e.PropertyName == nameof(PCellDesignerViewModel.Schematic)) ShowSelection();
+        if (e.PropertyName is nameof(PCellDesignerViewModel.Dimensions) or nameof(PCellDesignerViewModel.ShowDimensions)) SyncDimensions();
+    }
+
+    // ── Dimensions (brief-pcd-10 R-pcd10-2/3) and the plot's markers (R-pcd10-1) ────────────────────────────────
+
+    private readonly DimensionOverlay _dimensions = new();
+
+    private void SyncDimensions()
+    {
+        if (Vm is not { } vm) return;
+        _dimensions.Layout = vm.Layout;
+        _dimensions.Dimensions = vm.ShowDimensions ? vm.Dimensions : [];
+        DesignCanvas.InvalidateOverlay();
+    }
+
+    private bool _plotWired;
+
+    /// <summary>The response plot's marker tools, wired to its Data Display container as the LC Filter Designer wires
+    /// its plots: add, drag and step a marker, with its readout box.</summary>
+    private void WirePlot()
+    {
+        if (_plotWired || Vm is not { } vm || this.FindControl<PlotControl>("ResponsePlotControl") is not { } plot) return;
+        _plotWired = true;
+        var container = vm.ResponseContainer;
+        plot.NextMarkerIndexProvider = container.GetNextMarkerIndex;
+        plot.FindMarkerInfoBoxVmProvider = container.FindMarkerInfoBoxVm;
+        plot.ContainerProvider = () => container;
+        plot.SelectedMarkersProvider = container.GetSelectedMarkers;
+        plot.StepSelectedMarkersHandler = container.StepSelectedMarkers;
+        plot.PlotChanged += container.OnPlotChanged;
+        plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
+        plot.MarkerAdded += container.OnMarkerAdded;
+        container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
+    }
+
+    /// <summary>The dimensions, drawn over the layout as the layout editor draws its rulers: each a ruler whose caption
+    /// is its label (brief-pcd-10 D1). It takes no gesture of its own.</summary>
+    private sealed class DimensionOverlay : ILayoutCanvasOverlay
+    {
+        public IReadOnlyList<PCellDimensionLine> Dimensions { get; set; } = [];
+        public LayoutView? Layout { get; set; }
+
+        public void Draw(SkiaSharp.SKCanvas canvas, LayoutViewport viewport, LayoutRenderTheme theme)
+        {
+            if (Layout is null || Dimensions.Count == 0) return;
+            var view = new LayoutView { DbuPerMicron = Layout.DbuPerMicron, DisplayUnit = Layout.DisplayUnit };
+            foreach (var d in Dimensions)
+                view.Rulers.Add(new RulerAnnotation { X1 = d.FromX, Y1 = d.FromY, X2 = d.ToX, Y2 = d.ToY, Caption = d.Label });
+            LayoutRenderer.DrawRulersOnTop(canvas, view, viewport, new LayoutRenderOptions { Theme = theme, ShowRulers = true });
+        }
+
+        public Bbox ContentBounds() => Bbox.Empty;
+        public bool CompanionPressResolvedNewSelection { get; set; }
+        public bool OnPointerPressed(long worldX, long worldY, long tolDbu, KeyModifiers modifiers, int clickCount) => false;
+        public bool OnPointerMoved(long worldX, long worldY, long tolDbu, bool leftButtonDown, KeyModifiers modifiers) => false;
+        public bool OnPointerReleased(long worldX, long worldY) => false;
+        public bool OnKeyDown(Key key, KeyModifiers modifiers) => false;
+        public void OnKeyUp(Key key, KeyModifiers modifiers) { }
     }
 
     private void SyncCanvas()
@@ -106,6 +165,7 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
         DesignCanvas.ViewModel = vm.Layout is { } layout ? new LayoutEditorViewModel(layout, vm.ClayPath) { Technology = vm.Technology } : null;
         if (viewport is { } kept) DesignCanvas.SetViewport(kept);   // a re-plan keeps the view; the first one fits
         else _fitPending = true;
+        SyncDimensions();
     }
 
     // ── Gestures (R-pcd6-2) ───────────────────────────────────────────────────────────────────────────────────────

@@ -137,6 +137,9 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
 
     public Plot Plot => _container.PlotVM.Plot;
 
+    /// <summary>The response plot's container: what the window wires the plot's marker tools to (R-pcd10-1).</summary>
+    public PlotContainerViewModel ResponseContainer => _container;
+
     public PCellDesignerViewModel(string cellDir, string workspaceRoot)
     {
         CellDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(cellDir));
@@ -271,6 +274,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         LayoutNote = tech is null ? "The cell's layout resolves no technology, so it cannot be planned."
             : plan?.Refusal ?? string.Join("\n", plan!.Lines.Where(l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning)
                                                             .Select(l => l.Text));
+        Dimensions = DimensionsNow();
         Response = response.S;
         Em = null;   // the EM result was for the values before this change
         if (response.Refusal is { } why) Status = "Response: " + why;
@@ -320,8 +324,32 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         return values;
     }
 
+    /// <summary>The cell parameters as dimensions on the planned layout (brief-pcd-10 R-pcd10-2).</summary>
+    [ObservableProperty] private IReadOnlyList<PCellDimensionLine> _dimensions = [];
+
+    /// <summary>Draw <see cref="Dimensions"/> over the canvas; on by default, remembered (R-pcd10-3).</summary>
+    [ObservableProperty] private bool _showDimensions = CircuitRF.Ui.Theming.AppPreferencesIo.Load().PCellDesignerDimensions ?? true;
+
+    partial void OnShowDimensionsChanged(bool value) =>
+        CircuitRF.Ui.Theming.AppPreferencesIo.Update(p => p.PCellDesignerDimensions = value ? null : false);
+
+    private IReadOnlyList<PCellDimensionLine> DimensionsNow()
+    {
+        if (Layout is null) return [];
+        var units = Parameters.Where(p => p.Name.Length > 0).GroupBy(p => p.Name).ToDictionary(g => g.Key, g => g.First().Unit);
+        try { return PCellDimensions.Of(Layout, _layoutDir, Technology, Schematic, ScopeAtValues(), units); }
+        catch (Exception e) when (e is not OutOfMemoryException) { return []; }
+    }
+
+    /// <summary>Markers by trace name, kept across a re-run while their trace is gone (brief-pcd-10 R-pcd10-1, D3).</summary>
+    private readonly Dictionary<string, List<Marker>> _parkedMarkers = new(StringComparer.Ordinal);
+
     private void BuildPlot()
     {
+        // The response is rebuilt on every edit: each marker goes to the new trace of the same name, at its own x.
+        foreach (var old in Plot.Traces)
+            if (old.Markers.Count > 0) _parkedMarkers[old.Label ?? ""] = [.. old.Markers];
+            else _parkedMarkers.Remove(old.Label ?? "");
         Plot.Traces.Clear();
         void Add(SNP? snp, int row, int colour, string label)
         {
@@ -330,6 +358,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
             var t = new Trace(snp, MatrixType.S, row, 0, DependentVarFormat.Db, false,
                 new TraceProperties { LineColorIndex = index, MarkerColorIndex = index, FillColorIndex = index, Custom = false })
                 { Label = label };
+            if (_parkedMarkers.Remove(label, out var kept)) t.Markers.AddRange(kept);
             t.BuildPath(PlotType.Rect, Plot.FreqUnits);
             Plot.Traces.Add(t);
         }
@@ -506,17 +535,8 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     // ══ Reading the plan (D6) ═════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>Every placed pin: its part, its number and its pose, from the generated cells' pins.</summary>
-    public IEnumerable<(string Instance, int Pin, PinPose Pose)> Pins()
-    {
-        if (Layout is null) yield break;
-        foreach (var inst in Layout.Instances)
-        {
-            if (inst.SchematicId is not { Length: > 0 } id) continue;
-            var pins = CellLayoutResolver.Resolve(inst, _layoutDir, Technology).View?.Pins ?? [];
-            for (int k = 0; k < pins.Count; k++)
-                yield return (id, int.TryParse(pins[k].Name, out int n) ? n : k + 1, Pose(pins[k], inst));
-        }
-    }
+    public IEnumerable<(string Instance, int Pin, PinPose Pose)> Pins() =>
+        Layout is null ? [] : PCellDimensions.Pins(Layout, _layoutDir, Technology);
 
     public PinPose? PinPoseOf(string instance, int pin) =>
         Pins().Where(p => p.Instance == instance && p.Pin == pin).Select(p => (PinPose?)p.Pose).FirstOrDefault();
@@ -531,33 +551,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     {
         var comp = Schematic.Components.FirstOrDefault(c => c.InstanceName == instance);
         if (comp is null || !DrawnMetal.Is(comp) || Layout?.Instances.FirstOrDefault(i => i.SchematicId == instance) is not { } placed) return [];
-        var scope = ScopeAtValues();
-        var evaluator = new Evaluator();
-        double dbuPerMetre = Layout.DbuPerMicron * 1e6;
-        var list = new List<(int, long, long)>();
-        for (int i = 1; comp.Parameters.FirstOrDefault(p => p.Name == DrawnMetal.X(i)) is { } xr
-                        && comp.Parameters.FirstOrDefault(p => p.Name == DrawnMetal.Y(i)) is { } yr; i++)
-        {
-            try
-            {
-                double x = evaluator.Eval(xr.Expression, scope, UnitNormalizer.ToEngineUnit(xr.Unit)).AsReal();
-                double y = evaluator.Eval(yr.Expression, scope, UnitNormalizer.ToEngineUnit(yr.Unit)).AsReal();
-                var (wx, wy) = LayoutInstanceTransform.TransformPoint((long)Math.Round(x * dbuPerMetre), (long)Math.Round(y * dbuPerMetre), placed, 0, 0);
-                list.Add((i, wx, wy));
-            }
-            catch (Exception) { /* a vertex that does not evaluate is not drawn either */ }
-        }
-        return list;
-    }
-
-    private static PinPose Pose(LayoutPin pin, LayoutInstance inst)
-    {
-        var (x, y) = LayoutInstanceTransform.TransformPoint(pin.X, pin.Y, inst, 0, 0);
-        double rad = pin.OutwardDeg * Math.PI / 180;
-        var (tx, ty) = LayoutInstanceTransform.TransformPoint(pin.X + (long)Math.Round(1e6 * Math.Cos(rad)),
-                                                              pin.Y + (long)Math.Round(1e6 * Math.Sin(rad)), inst, 0, 0);
-        double deg = Math.Atan2(ty - y, tx - x) * 180 / Math.PI;
-        return new PinPose(x, y, Math.Round(deg < 0 ? deg + 360 : deg, 9));
+        return PCellDimensions.Vertices(comp, placed, Layout.DbuPerMicron, ScopeAtValues());
     }
 
     // ══ Parameters (R-pcd6-3) ═════════════════════════════════════════════════════════════════════════════════════

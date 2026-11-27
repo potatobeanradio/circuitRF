@@ -48,6 +48,8 @@
             <Button Content="Cancel" Command="{Binding CancelWorkCommand}" IsEnabled="{Binding Busy}"/>
             <Button Content="Optimise" Command="{Binding OptimiseCommand}"
                     ToolTip.Tip="Save, then open the cell's schematic with the Optimizer"/>
+            <ToggleButton Content="Dimensions" IsChecked="{Binding ShowDimensions}" Margin="0,0,4,0"
+                          ToolTip.Tip="Draw each parameter on the canvas as a dimension labelled with its value"/>
             <Button Name="ExportButton" Content="Export…" Click="OnExport"
                     ToolTip.Tip="Save, check the design, and write it as a PCell package (.cpcell)"/>
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis"
