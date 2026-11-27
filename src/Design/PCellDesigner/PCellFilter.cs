@@ -204,61 +204,15 @@ public static class PCellFilter
         return new PCellFilterPolishOutcome(history[0].Extraction.ReturnLossDb, best.Extraction.ReturnLossDb, cell.Parameters, null);
     }
 
-    // ── The designer's Save, for a caller with no window (brief-pcd-12 D5; PCellDesignerViewModel.Save) ──────────────
+    // ── The designer's Save, shared with the window (PCellDesignSave, brief-pcd-12 D5) ─────────────────────────────
 
     private static string? Save(string cellDir, string workspaceRoot, SchematicEditModel schematic, CcellFile cell)
-    {
-        string name = Path.GetFileName(cellDir);
-        string schematicPath = SchematicPath(cellDir), clayPath = ClayPath(cellDir);
-        cell.PCellDesign ??= new CcellPCellDesign();
-        cell.LayoutGenerator = PCellDesign.GeneratorIdFor(name);
-        cell.EmCopper = true;
-        cell.Terminals = PCellDesign.TerminalsOf(schematic);
-        cell.NumPorts = cell.Terminals.Count;
-        cell.PrimarySchematic ??= Path.GetFileName(schematicPath);
-        cell.PrimaryLayout ??= Path.GetFileName(clayPath);
-        string symbolDir = CellFolder.SubFolderPath(cellDir, ViewType.Symbol);
-        string symbolPath = Path.Combine(symbolDir,
-            CellFolder.ResolvePrimary(cellDir, ViewType.Symbol).ResolvedName ?? name + CellFolder.ViewExtension(ViewType.Symbol));
-        cell.PrimarySymbol ??= Path.GetFileName(symbolPath);
-        try
-        {
-            if (!File.Exists(symbolPath) || SymbolPersistence.LoadFromFile(symbolPath).Pins.Count != cell.Terminals.Count)
-            {
-                Directory.CreateDirectory(symbolDir);
-                SymbolPersistence.SaveToFile(symbolPath, AutoSymbolGenerator.Generate(name, cell.Terminals.Count));
-            }
-            CellPersistence.SaveToFile(Path.Combine(cellDir, CellFolder.CcellFileName), cell);
-            Directory.CreateDirectory(Path.GetDirectoryName(schematicPath)!);
-            SchematicPersistence.SaveToFile(schematicPath, schematic, name);
-            var (tech, techId) = Technology(cellDir, workspaceRoot);
-            if (tech is null) return $"Saved {name}'s schematic and parameters; the layout resolves no technology, so it was not written.";
-            var at = DesignedCellLayout.At(cellDir, new Dictionary<string, Value>(), workspaceRoot, tech, techId, schematic);
-            if (at.Layout is null) return $"Saved {name}'s schematic and parameters; the layout was not written: {at.Refusal}";
-            Directory.CreateDirectory(Path.GetDirectoryName(clayPath)!);
-            LayoutPersistence.SaveToFile(clayPath, at.Layout);
-            return null;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return $"{name} could not be saved: {e.Message}";
-        }
-    }
+        => PCellDesignSave.Save(cellDir, workspaceRoot, schematic, cell);
 
-    private static string SchematicPath(string cellDir) => Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Schematic),
-        CellFolder.ResolvePrimary(cellDir, ViewType.Schematic).ResolvedName ?? Path.GetFileName(cellDir) + CellFolder.ViewExtension(ViewType.Schematic));
+    private static string SchematicPath(string cellDir) => PCellDesignSave.SchematicPath(cellDir);
 
-    private static string ClayPath(string cellDir) => Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout),
-        CellFolder.ResolvePrimary(cellDir, ViewType.Layout).ResolvedName ?? Path.GetFileName(cellDir) + CellFolder.ViewExtension(ViewType.Layout));
-
-    /// <summary>The cell's technology as the designer resolves it: its layout's reference, else the workspace's.</summary>
     private static (Technology? Tech, string? Identity) Technology(string cellDir, string workspaceRoot)
-    {
-        string clay = ClayPath(cellDir);
-        string? techRef = File.Exists(clay) ? LayoutPersistence.LoadFromFile(clay).TechRef : null;
-        var (tech, _) = TechnologyResolver.ResolveForDocument(techRef, clay, Path.Combine(workspaceRoot, ".cws"), new TechnologyCache());
-        return (tech.Tech, tech.ResolvedPath);
-    }
+        => PCellDesignSave.Technology(cellDir, workspaceRoot);
 
     /// <summary><paramref name="v"/> in <paramref name="unit"/> as base SI, to fifteen digits as the designer writes a range.</summary>
     private static double Si(double v, string unit)

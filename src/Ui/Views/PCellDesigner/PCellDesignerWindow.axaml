@@ -54,6 +54,8 @@
                           ToolTip.Tip="Click the corners of a drawn shape; double-click or Enter finishes, Esc cancels. Its pin 1 joins the nearest pin when you start on one"/>
             <ToggleButton Content="Dimensions" IsChecked="{Binding ShowDimensions}" Margin="0,0,4,0"
                           ToolTip.Tip="Draw each parameter on the canvas as a dimension labelled with its value"/>
+            <Button Content="Polish" Command="{Binding PolishCommand}" IsVisible="{Binding IsFilterCell}" IsEnabled="{Binding !Busy}"
+                    ToolTip.Tip="Save, then correct the filter's dimensions on its circuit model until it extracts to the synthesised matrix; the defaults become the polished dimensions"/>
             <Button Name="ExportButton" Content="Export…" Click="OnExport"
                     ToolTip.Tip="Save, check the design, and write it as a PCell package (.cpcell)"/>
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis"
@@ -101,7 +103,7 @@
                           ResizeDirection="Columns"/>
 
             <!-- Parameters (R-pcd6-3) over the response (R-pcd6-5) -->
-            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,*">
+            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,*,Auto">
                 <Border Classes="pane" Grid.Row="0">
                     <StackPanel>
                         <DockPanel>
@@ -145,6 +147,10 @@
                                          Library="{Binding PlotHost.Library}"
                                          CanDeletePlot="False" CanEditPlotProperties="False"/>
                     </ctl:AspectRatioPanel>
+                </Border>
+                <!-- A cell made from filter synthesis: its metrics (brief-pcd-12), from the response or the last EM run. -->
+                <Border Classes="pane" Grid.Row="2" IsVisible="{Binding IsFilterCell}">
+                    <vm:FilterMetricsPanel Metrics="{Binding FilterMetrics}"/>
                 </Border>
             </Grid>
 

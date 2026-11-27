@@ -58,6 +58,8 @@ stub ending in a drawn pad whose length is the parameter <code>Lpad</code>.</fig
 
 One window is open per cell. Asking for a cell that is already open brings its window forward.
 
+A designed cell can also come from filter synthesis: the Filter Designer's **Make PCell…** (or `circuitrf filter … --realiser R --pcell <name>`) makes the selected realisation a designed cell. It holds the part `F1`, its site parts and two Ports, and each synthesised length, gap and width is a parameter with a ±20 % range. Such a cell keeps its filter specification. The **Filter metrics** panel reads its circuit response, or an EM run, back to the prototype and shows each check with pass or fail, as the Filter Designer does. See [Make PCell](filter-designer.html#make-pcell).
+
 A designed cell is an ordinary cell folder with a schematic, a symbol and a `.ccell`. What marks it as designed is a
 `PCellDesign` entry in its `.ccell`, which also names its layout generator `cpcell:<cell name>` and sets `EmCopper` (see
 [File formats](file-formats.html#cpcell)).

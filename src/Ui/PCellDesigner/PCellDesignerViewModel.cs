@@ -3,6 +3,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Core.Synthesis.Filters;
 using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Design.PCellDesigner;
@@ -147,17 +148,14 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         WorkspaceRoot = Path.GetFullPath(workspaceRoot);
         _schematicDir = CellFolder.SubFolderPath(CellDir, ViewType.Schematic);
         _layoutDir = CellFolder.SubFolderPath(CellDir, ViewType.Layout);
-        SchematicPath = Path.Combine(_schematicDir,
-            CellFolder.ResolvePrimary(CellDir, ViewType.Schematic).ResolvedName ?? CellName + CellFolder.ViewExtension(ViewType.Schematic));
-        ClayPath = Path.Combine(_layoutDir,
-            CellFolder.ResolvePrimary(CellDir, ViewType.Layout).ResolvedName ?? CellName + CellFolder.ViewExtension(ViewType.Layout));
+        SchematicPath = PCellDesignSave.SchematicPath(CellDir);
+        ClayPath = PCellDesignSave.ClayPath(CellDir);
 
         Schematic = File.Exists(SchematicPath) ? SchematicPersistence.LoadFromFile(SchematicPath).model : new SchematicEditModel();
         Schematic.SchematicDirectory = _schematicDir;
 
-        string? techRef = File.Exists(ClayPath) ? LayoutPersistence.LoadFromFile(ClayPath).TechRef : null;
-        var (tech, _) = TechnologyResolver.ResolveForDocument(techRef, ClayPath, Path.Combine(WorkspaceRoot, ".cws"), new TechnologyCache());
-        (Technology, TechIdentity) = (tech.Tech, tech.ResolvedPath);
+        (Technology, TechIdentity) = PCellDesignSave.Technology(CellDir, WorkspaceRoot);
+        _filterSpec = PCellFilter.SpecOf(CellDir);
 
         foreach (var p in CellFolder.ReadCcell(CellDir)?.Parameters ?? [])
             Parameters.Add(new PCellParameterRow(OnTableChanged)
@@ -278,7 +276,43 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         Response = response.S;
         Em = null;   // the EM result was for the values before this change
         if (response.Refusal is { } why) Status = "Response: " + why;
+        // A filter cell's metrics, read off the response just computed (PCellFilter.CircuitMetrics's own two steps, so
+        // the response is not run twice).
+        if (_filterSpec is { } spec)
+            FilterMetrics = response.S is { } s ? PCellFilter.Metrics(spec, s, CircuitSource) : new PCellFilterMetrics(null, CircuitSource, response.Refusal);
         BuildPlot();
+    }
+
+    // ══ A filter cell (brief-pcd-12): its metrics and Polish ═════════════════════════════════════════════════════
+
+    private const string CircuitSource = "Circuit response";
+
+    /// <summary>The filter specification the cell keeps when Make PCell… made it; null for any other cell.</summary>
+    private readonly FilterSpec? _filterSpec;
+
+    /// <summary>True for a cell made from filter synthesis: the window shows its metrics and Polish.</summary>
+    public bool IsFilterCell => _filterSpec is not null;
+
+    /// <summary>The cell's filter metrics: from the circuit response after each run, from the EM result after Run EM.</summary>
+    [ObservableProperty] private PCellFilterMetrics? _filterMetrics;
+
+    /// <summary>Polish (<see cref="PCellFilter.Polish"/>): saves, corrects the cell's dimensions on its circuit model and
+    /// writes them back as the defaults; the table follows.</summary>
+    [RelayCommand]
+    public void Polish()
+    {
+        if (Busy || !IsFilterCell) return;
+        Work = RunWork("Polish", async token =>
+        {
+            if (SaveCore() is { } why) return why;
+            var o = await Task.Run(() => PCellFilter.Polish(CellDir, WorkspaceRoot, 3, token), token);
+            if (o.Refusal is { } refused) return refused;
+            foreach (var p in o.Parameters)
+                if (Parameters.FirstOrDefault(r => r.Name == p.Name) is { } row) row.Default = p.DefaultExpression;
+            Dirty = false;
+            return string.Create(CultureInfo.InvariantCulture,
+                $"worst return loss across the band {o.BeforeDb:0.0} dB before, {o.AfterDb:0.0} dB after; the defaults are the polished dimensions.");
+        });
     }
 
     private SchematicEditModel Copy(string text)
@@ -697,42 +731,10 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
             parameters.Add(p);
         }
         cell.Parameters = parameters;
-        cell.PCellDesign ??= new CcellPCellDesign();
-        cell.LayoutGenerator = PCellDesign.GeneratorIdFor(CellName);
-        cell.EmCopper = true;
-        cell.Terminals = PCellDesign.TerminalsOf(Schematic);   // LVS pairs each Port with the generator's pin (R-pcd5-4)
-        cell.NumPorts = cell.Terminals.Count;
-        cell.PrimarySchematic ??= Path.GetFileName(SchematicPath);
-        cell.PrimaryLayout ??= Path.GetFileName(ClayPath);
-        string symbolDir = CellFolder.SubFolderPath(CellDir, ViewType.Symbol);
-        string symbolPath = Path.Combine(symbolDir,
-            CellFolder.ResolvePrimary(CellDir, ViewType.Symbol).ResolvedName ?? CellName + CellFolder.ViewExtension(ViewType.Symbol));
-        cell.PrimarySymbol ??= Path.GetFileName(symbolPath);
-        try
-        {
-            // A bench places the cell by its symbol: one generated from its Ports (the generator Generate Symbols uses)
-            // whenever the cell has none, or one whose pins no longer match the Ports. A drawn symbol that matches stays.
-            if (!File.Exists(symbolPath) || SymbolPersistence.LoadFromFile(symbolPath).Pins.Count != cell.Terminals.Count)
-            {
-                Directory.CreateDirectory(symbolDir);
-                SymbolPersistence.SaveToFile(symbolPath, AutoSymbolGenerator.Generate(CellName, cell.Terminals.Count));
-            }
-            CellPersistence.SaveToFile(Path.Combine(CellDir, CellFolder.CcellFileName), cell);
-            Directory.CreateDirectory(_schematicDir);
-            SchematicPersistence.SaveToFile(SchematicPath, Schematic, CellName);
-            Dirty = false;
-            if (Technology is null) return "Saved the schematic and parameters; the layout resolves no technology, so it was not written.";
-            // S1: the saved layout is the planner's output at the defaults, never the values column.
-            var at = DesignedCellLayout.At(CellDir, new Dictionary<string, Value>(), WorkspaceRoot, Technology, TechIdentity, Schematic);
-            if (at.Layout is null) return $"Saved the schematic and parameters; the layout was not written: {at.Refusal}";
-            Directory.CreateDirectory(_layoutDir);
-            LayoutPersistence.SaveToFile(ClayPath, at.Layout);
-            return null;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return $"{CellName} could not be saved: {e.Message}";
-        }
+        // S1: the saved layout is the planner's output at the defaults, never the values column (PCellDesignSave).
+        string? why = PCellDesignSave.Save(CellDir, WorkspaceRoot, Schematic, cell, Technology, TechIdentity);
+        if (why is null || why.StartsWith("Saved", StringComparison.Ordinal)) Dirty = false;
+        return why;
     }
 
     /// <summary>The latest Run EM: done once shown, cancelled or failed. A test awaits it; the window never does.</summary>
@@ -756,6 +758,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
             var result = await Task.Run(() => EmEvaluation.Evaluate(target, values, control: new RunControl { Token = token }), token);
             if (result.SnpPath is not { } snp) return result.Refusal ?? "no result.";
             Em = TouchstoneIO.ReadFile(snp);
+            if (_filterSpec is { } spec) FilterMetrics = PCellFilter.Metrics(spec, Em, "Planar EM");
             BuildPlot();
             return $"{Em.FrequencyCount} points" + (result.Cached ? ", from the EM cache." : ".");
         });
