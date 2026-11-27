@@ -126,14 +126,27 @@ output at the instance's values, whose circuit model is its own schematic, and w
 
 ## 3. The acceptance check and the real EM run
 
-The six steps of PCD-0 §8 and their result are in the series' final report. Two findings about the contract:
+`Pcd8AcceptanceTests` runs the six steps of PCD-0 §8 in one test, and all six pass (about 40 s, the EM solver a
+stand-in). Three findings about the contract:
 
 - **`Form` and `Model` are quoted** (PCD-3 above).
 - **A pad with `Model="open"` is invisible to the circuit model.** Its pins are left open, so `Lpad` changes the copper
   and not the circuit: `X1`'s S21 with `X1.Lpad = 200 um` equals the one with `X1.Lpad = X2.Lpad`, which is what S2 says.
   Step 5 checks that, and checks that a parameter of the lines (`Lstub`) does move S21. For the same reason an
-  `em=correct` optimisation over `X1.Lpad` learns everything about `Lpad` from EM: the circuit model gives it no slope,
-  so the correction carries the whole effect.
+  `em=correct` optimisation cannot move `Lpad`: it searches on the corrected circuit model, which gives `Lpad` no slope,
+  so it stops at its start after one solve (§5). `em=direct` is the mode for a variable that only moves such a shape.
+- **`tune X1.Lpad` on the bench's own layout is refused** ("X1.Lpad does not reach the copper: the EM result of Bench's
+  layout is built from the schematic's variables"). Path A (a schematic simulated by EM of its own layout, SDL-7) takes
+  only VAR rows; PCD-1's step floor covers `X1.Lpad` for Path B (EM cells placed in a parent). Step 6 therefore tunes a
+  VAR, `Lp1`, with `X1.Lpad = Lp1`, which is the route the refusal names.
+
+Two gaps the example met, outside this lane's files:
+
+- **Save leaves the cell without a symbol.** `PCellDesign.Create` makes an empty symbol view and the designer's Save does
+  not fill it, so a bench cannot place the source cell ("has no schematic symbol"); only the package carries the generated
+  box. The example writes that box as the cell's symbol.
+- **`circuitrf check` on the example warns** that `cpcell:PadTee` "is not built in, and no kit loaded here offers it": the
+  check's generator test does not register `DesignedPCellResolver` for the workspace, as Update Layout does.
 
 The real Planar run on the example is recorded in §5.
 
@@ -153,8 +166,7 @@ The real Planar run on the example is recorded in §5.
 - **Choice parameters on a designed cell.** `EmEvaluation.Apply` applies real values only (D-numbers); a choice needs
   string values through the planner's scope.
 - **A declared circuit model for `MSHAPE` beyond `open`** (a pad capacitance, a Touchstone file). It would give a pad's
-  length a slope in the circuit model, so `em=correct` would start nearer the EM optimum instead of learning the whole
-  effect from EM (§3).
+  length a slope in the circuit model, so `em=correct` could move it instead of stopping at its start (§3, §5).
 - **Pins that ride a stretch.** A pin on a stretched edge stays where it is; moving its `PinX`/`PinY` with the corners
   would keep a launch's pin on its edge without a second binding.
 - **Arcs in `MSHAPE`.** A bulge per corner, as `MCURVE` draws, would give round pads without many corners.
@@ -167,4 +179,20 @@ The real Planar run on the example is recorded in §5.
 
 ## 5. The real Planar run
 
-Pending: made once on `examples/PCell Designer/Bench` with `circuitrf opt` (`em=correct`, a small budget).
+Made once, on a copy of `examples/PCell Designer`: `circuitrf new layout Bench --from-schematic --em-setup` (the bench's
+layout and its Planar setup, 2,700 unknowns), `SP1` set to `model=em` over 6-8 GHz at 3 points, `X1.Lpad = Lp1`, one goal
+`dB(SP1.S(1,1)) le -15`, `optimize algorithm=simplex em=correct emBudget=3`, then `circuitrf opt`. No result was kept.
+
+| | |
+|---|---|
+| EM solves | 1 of at most 3 (one Planar solve of the whole bench, both placed cells as copper) |
+| Run | 91 s wall, 2 iterations, 9 circuit-model evaluations |
+| Result | `Lp1` stays at 200 µm; worst \|S11\| −0.22 dB against −15 dB; cost 0.896 |
+| Why it stopped | "the next point is the same geometry as the last one solved" |
+
+The run shows the finding of §3 on a real solve: the open pad gives `Lp1` no slope in the circuit model, so the corrected
+model's optimum is the start, the next geometry is the one already solved, and em=correct stops after one solve. EM itself
+sees both pads (the EM S11 is far from the circuit model's, which has no pad), and its note points at em=direct, which
+searches on EM. The geometry also had to be fit for a calibrated port: in the first version of the example the tee's
+stub ran beside the feed, 2.16 mm (4.25 substrate heights) from port 1, and the solve was refused for a feed that is not
+isolated; the example's tee now turns its stub away from `TL1`.

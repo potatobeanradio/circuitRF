@@ -43025,3 +43025,17 @@ whole grid steps, so it carried the offset onto the schematic, where pins then m
 grounds. The step is now 900 (the Match pitch plus two grid steps) and the tank ends a full lead on.
 `FilterLadderGridTests` checks every part, termination, wire end and placed component over 64 ladders
 (four responses, four forms, four orders); with the old step 56 of them fail.
+
+## PCell Designer window (2026-11-27)
+
+- **Unsaved values drive the canvas** through a VAR row (`__PCDVALUES`) added to the in-memory copy the planner reads and
+  never saved, so the Value column reaches the canvas and the response without touching the cell's files.
+- **Save writes the cell's `Terminals`** (`PCellDesign.TerminalsOf`), so the source cell pairs in LVS as its package does.
+- **Save does not give the cell a symbol.** `PCellDesign.Create` makes an empty symbol view and Save leaves it so; a bench
+  that places the source cell cannot draw it ("has no schematic symbol"). Export writes the generated box into the
+  package, so an imported cell has one. The example writes that box as the cell's symbol (`Pcd8PadTee.Design`).
+- **Headless screenshot recipe:** `new PCellDesignerViewModel(cellDir, workspaceRoot)`, pump `vm.DesignAsync(0)` with
+  `Dispatcher.UIThread.RunJobs()` until it completes, then show `PCellDesignerWindow` and capture it
+  (`tools/UiSnapshot --pcell-designer <cell folder>`).
+- The shared build lock was held by orphaned MSBuild reuse nodes for a whole session; the fix was `flock -o`, a fresh lock
+  file and node reuse off.

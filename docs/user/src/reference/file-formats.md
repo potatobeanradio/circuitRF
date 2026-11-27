@@ -385,7 +385,7 @@ and saves exactly as before.
 | `.ccell` | `"LayoutGenerator": "cpcell:PadTee"` | The generator that draws the cell wherever it is placed: its own schematic, planned at the instance's values |
 | `.ccell` | `"EmCopper": true` | The generator's layout is metal: EM solves a placed copy as copper (see [EM cells](em-cells.html#placed)) |
 | `.ccell` | `"Minimum"`, `"Maximum"` on a parameter | Its range, in base SI (m, degrees). The design check plans the cell at both ends, and a drag handle stops there |
-| `.ccell` | `"Terminals"` | One per Port: `{ "Port": 1, "Name": "P1", "LayoutPin": ["1"] }`, so LVS pairs each schematic pin with the generator's pin |
+| `.ccell` | `"Terminals"` | One per Port: `{ "Port": 1, "Name": "P1", "LayoutPin": "1" }`, so LVS pairs each schematic pin with the generator's pin |
 | `.csch` | `"Offset": {"Anchor":"TL1.2","Pin":1,"Dx":"g","Dy":"0","Unit":"um","Angle":"0"}` on a component | An offset placement: this part's pin `Pin` placed from the anchor pin, `Dx` along its outward direction and `Dy` 90° counter-clockwise from it, turned by `Angle` degrees. All zero is a joint |
 | `.csch` | `"Stretch": [{"Parameter":"Lpad","Anchor":1,"Moving":[2,3],"AxisDeg":0}]` on an MSHAPE | A Stretch by Parameter binding: the corners `Moving` follow `Parameter` along `AxisDeg` from corner `Anchor`. The corners' expressions already say so; the binding is what the drag handle reads |
 

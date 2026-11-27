@@ -173,7 +173,13 @@ Place the cell from the Library like any other cell, and set its parameters on t
 - **LVS** knows the placed cell by its generator, `cpcell:<cell name>`, and pairs its pins with the schematic instance's
   pins by port number.
 - **EM** solves the placed cell's layout as copper (`EmCopper`), so a bench placing it can be simulated by EM of its own
-  layout and [optimised](em-cells.html#placed) with the cell's own parameters as variables (`X1.Lpad`).
+  layout and [optimised](em-cells.html#optimise). Tune a placement's value through a VAR of the bench: set `Lpad` on `X1`
+  to `Lp1` and tune `Lp1`, as for any value of a schematic simulated by EM of its own layout.
+
+A drawn shape with `Model = "open"` is an open end to the circuit model, so its size has no effect there. `em=correct`
+corrects the circuit model by EM but searches on the circuit model, so it cannot move a variable that only changes such a
+shape: it stops at the start, saying the next point is the geometry it has already solved. Optimise such a variable with
+`em=direct`, which searches on EM itself.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/bench-layout.png" alt="The Bench layout: two PadTee cells joined by a 50 ohm line between two ports, the first with a 200 micrometre pad, the second with a 400 micrometre pad." style="width:100%;height:auto">
