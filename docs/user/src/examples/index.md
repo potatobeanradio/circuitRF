@@ -146,6 +146,12 @@ The artwork half of a process design kit, shipped inside the workspace: a Python
 
 *Folder:* `PDK PCells` · *Topics:* PCell, Python, PDK, parameterised cell, spiral inductor, MIM capacitor, thin-film resistor, microstrip, planar EM, LVS, GaAs MMIC, drag handles
 
+### [PCell Designer](pcell-designer/index.html) {#ex-pcell-designer}
+
+A parameterised cell made in the PCell Designer from the parts in the Library: a 50 Ω microstrip line with a bend and a tee, the tee's stub ending in a drawn pad (MSHAPE) whose far edge follows the parameter `Lpad` by Stretch by Parameter. Nothing in the cell holds a coordinate, so its layout is right at every value of `W`, `L1`, `Lstub` and `Lpad`. A bench places it twice, at `Lpad` = 200 µm and 400 µm, between two 50 Ω ports: it simulates from the cell's own schematic, Update Layout from Schematic draws each placement at its own values with an `Lpad` drag handle, and LVS reports nothing. Export writes the cell as a PCell package (`.cpcell`) that another workspace imports and places the same way, and `circuitrf pcell` does each step headless.
+
+*Folder:* `PCell Designer` · *Topics:* PCell Designer, designed cell, PCell, MSHAPE, drawn metal, Stretch by Parameter, PCell package, cpcell, Update Layout from Schematic, LVS, drag handles, circuitrf pcell
+
 ### [Layout versus schematic](lvs/index.html) {#ex-lvs}
 
 Three designs built to test whether artwork implements its schematic, each small enough to check by hand. A 3 dB resistive pi attenuator on a two-layer board is symmetric, grounded on drawn copper and stitched by vias, and LVS must report nothing. A copy with the same schematic carries six deliberate faults in its artwork — a swapped net, a missing part, an extra part, a short, an open and a wrong value — and its README states what the report should say about each, down to the short's path and coordinate. A Python script writes all six faults, or any one with `--only`. An MMIC bias tee on the shipped GaAs process adds what only a die can show: a ground reference that exists only in the stackup, parts that carry their generated parameters, and a MIM capacitor whose terminals sit on different layers. Its part table shows how drawing-grid quantisation sets the floor under LVS's 1 % property tolerance. A fourth bench runs the correct attenuator as an S-parameter sweep.

@@ -1,0 +1,280 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Bench",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "P1",
+      "Symbol": "Term",
+      "X": -200,
+      "Y": 1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "X1",
+      "Symbol": "Generic",
+      "X": 0,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Lpad",
+          "Expression": "200",
+          "Unit": "um",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        }
+      ],
+      "CellRef": "../../PadTee"
+    },
+    {
+      "InstanceName": "TL1",
+      "Symbol": "Mlin",
+      "X": 2000,
+      "Y": 1000,
+      "Rotation": "R90",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "W",
+          "Expression": "1.1",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "5",
+          "Unit": "mm",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "X2",
+      "Symbol": "Generic",
+      "X": 4000,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Lpad",
+          "Expression": "400",
+          "Unit": "um",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        }
+      ],
+      "CellRef": "../../PadTee"
+    },
+    {
+      "InstanceName": "P2",
+      "Symbol": "Term",
+      "X": 4200,
+      "Y": 1000,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": -200,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 4200,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -200,
+          0
+        ],
+        [
+          -400,
+          0
+        ],
+        [
+          -400,
+          600
+        ],
+        [
+          -200,
+          600
+        ],
+        [
+          -200,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          200,
+          0
+        ],
+        [
+          2000,
+          0
+        ],
+        [
+          2000,
+          800
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3800,
+          0
+        ],
+        [
+          2600,
+          0
+        ],
+        [
+          2600,
+          1400
+        ],
+        [
+          2000,
+          1400
+        ],
+        [
+          2000,
+          1200
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4200,
+          0
+        ],
+        [
+          4400,
+          0
+        ],
+        [
+          4400,
+          600
+        ],
+        [
+          4200,
+          600
+        ],
+        [
+          4200,
+          800
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "1",
+          "StopExpr": "12",
+          "NumPoints": 23,
+          "Mode": "PointCount",
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz"
+        }
+      ]
+    }
+  ]
+}
