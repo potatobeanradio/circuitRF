@@ -82,9 +82,6 @@ internal static class Pcd8PadTee
         Assert.True(vm.ApplyText(), vm.Status);
         Assert.True(vm.StretchByParameter("SH1", [2, 3], "Lpad", 0), vm.Status);
         Assert.Null(vm.Save());
-        // Save leaves the symbol view as Create made it, with no pins; the box Export would write is the cell's symbol here.
-        File.WriteAllText(Path.Combine(created.CellDir, "symbol", Cell + ".csym"),
-                          CircuitRF.Design.Symbol.SymbolPersistence.Serialize(AutoSymbolGenerator.Generate(Cell, 2)));
         return created.CellDir;
     }
 
@@ -194,9 +191,8 @@ public sealed class Pcd8AcceptanceTests : IDisposable
         Assert.Equal(asPlaced, S21(("X1.Lpad", "400 um")), (a, b) => Math.Abs(a - b) < 1e-12);
         Assert.NotEqual(asPlaced, S21(("X1.Lstub", "6 mm")), (a, b) => Math.Abs(a - b) < 1e-6);
 
-        // 6. One em=correct optimisation of the bench by EM of its own layout (the .cem Update Layout made); the stand-in
-        //    solver sees both pads as copper. X1.Lpad is tuned through a VAR row (X1.Lpad = Lp1): on the bench's own layout
-        //    an instance's value is refused as not reaching the copper (SDL-7's rule), so the VAR is how it is tuned.
+        // 6. One em=correct optimisation of the bench by EM of its own layout (the .cem Update Layout made), tune X1.Lpad;
+        //    the stand-in solver sees both pads as copper.
         string cem = Assert.Single(laid.EmSetups);
         var seen = new List<string>();
         EmEvaluation.SolverStandIn = (g, values, path) =>
@@ -220,14 +216,9 @@ public sealed class Pcd8AcceptanceTests : IDisposable
         var (m, v, c) = SchematicPersistence.LoadFromFile(bench);
         int sp = m.Analyses.FindIndex(a => a.Name == "SP1");
         m.Analyses[sp] = new SParameterAnalysis("SP1", [new FrequencySpec("6", "8", 3, SweepKind.Linear, "GHz", "GHz")]) { Model = AnalysisModel.Em };
-        var vars = new EditableComponent { InstanceName = "VAR1", Symbol = SymbolKind.Var, X = 0, Y = 2000 };
-        vars.Parameters.Add(new EditableParameter { Name = "Lp1", Expression = "200", Unit = "um" });
-        m.Components.Add(vars);
-        var x1Lpad = m.Components.Single(k => k.InstanceName == "X1").Parameters.Single(p => p.Name == "Lpad");
-        (x1Lpad.Expression, x1Lpad.Unit) = ("Lp1", "");
         m.Tuning = new TuningSetup
         {
-            Variables = [new TunableEntry { Key = "Lp1", Opt = true, Min = "100 um", Max = "600 um", Scale = TuneScale.Lin }],
+            Variables = [new TunableEntry { Key = "X1.Lpad", Opt = true, Min = "100 um", Max = "600 um", Scale = TuneScale.Lin }],
             Goals = [new OptimizationGoal { Name = "Match", Expression = "dB(SP1.S(1,1))", Analysis = "SP1", Type = GoalType.Le, Limit = "-15" }],
             Optimizer = new OptimizerSettings { Algorithm = "simplex", Em = OptimizerEmMode.Correct, EmBudget = 3, Seed = 1 },
         };

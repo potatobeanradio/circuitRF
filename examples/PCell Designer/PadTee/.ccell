@@ -38,11 +38,12 @@
       "Dimension": "Length",
       "ShowOnSchematic": true,
       "Description": "pad length",
-      "Minimum": 9.999999999999999E-05,
+      "Minimum": 0.0001,
       "Maximum": 0.0006
     }
   ],
   "PrimarySchematic": "PadTee.csch",
+  "PrimarySymbol": "PadTee.csym",
   "PrimaryLayout": "PadTee.clay",
   "IsTestBench": false,
   "LayoutGenerator": "cpcell:PadTee",
@@ -60,5 +61,5 @@
       "LayoutPin": "2"
     }
   ],
-  "NumPorts": 0
+  "NumPorts": 2
 }
