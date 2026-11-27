@@ -2597,6 +2597,56 @@ DOI <a href="https://doi.org/10.1109/TMTT.1984.1132907">10.1109/TMTT.1984.113290
 DOI <a href="https://doi.org/10.1049/el:19810088">10.1049/el:19810088</a>. The open-end length the arc is moved out by.</li>
 </ol>
 </blockquote>
+<h3 id="mshape">Drawn Metal (MSHAPE)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M83.79 24L165.39 24L211.29 69.9L211.29 126L83.79 126L83.79 24Z" /><path fill="none" stroke="#2D14C3" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M83.79 95.4L114.39 126" /><path fill="none" stroke="#2D14C3" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M83.79 75L134.79 126" /><path fill="none" stroke="#2D14C3" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M32.79 75L83.79 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1.02" stroke-miterlimit="4" x="28.71" y="70.92" width="8.16" height="8.16" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="89.5, 101.5, 110.5, 121.5, 131.5, 141.5" y="172.32">
+			MSHAPE
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M83.79 24L165.39 24L211.29 69.9L211.29 126L83.79 126L83.79 24Z" /><path fill="none" stroke="#9684FA" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M83.79 95.4L114.39 126" /><path fill="none" stroke="#9684FA" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M83.79 75L134.79 126" /><path fill="none" stroke="#9684FA" stroke-width="1.53" stroke-linecap="round" stroke-linejoin="round" d="M32.79 75L83.79 75" /><rect fill="none" stroke="#F07846" stroke-width="1.02" stroke-miterlimit="4" x="28.71" y="70.92" width="8.16" height="8.16" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="89.5, 101.5, 110.5, 121.5, 131.5, 141.5" y="172.32">
+			MSHAPE
+	</text></svg></span>
+</span><figcaption>MSHAPE</figcaption></figure>
+<p>Copper you draw: a pad, a launch, a flag, any shape no line model covers. With <code>Form = &quot;polygon&quot;</code> it is the closed
+outline through its corners; with <code>Form = &quot;path&quot;</code> it is a centreline of width <code>W</code> through them. The corners are the rows
+<code>X[1]</code>, <code>Y[1]</code>, <code>X[2]</code>, <code>Y[2]</code>, … and the pins the rows <code>PinX[k]</code>, <code>PinY[k]</code>, <code>PinW[k]</code> (the pin's width) and <code>PinDir[k]</code>
+(the way it faces, in degrees), all in the part's own frame, the origin where the layout puts the part. Every row is an
+expression, so a corner can follow a parameter (<code>X[2] = Lpad</code>). It is placed with a 100 µm square and one pin in the
+middle of its left edge; <strong>+</strong> in the parameter editor adds a corner, and a pin is added as its four rows.</p>
+<p>There is one terminal per <code>PinX[k]</code> row, numbered by k, and pin k is port k. In the layout the shape is drawn on
+<code>SignalLayer</code> (empty: the technology's top conductor) with a pin of <code>PinW[k]</code> at each pin.</p>
+<p><code>Model</code> says what a circuit simulation does with it. <code>Model = &quot;open&quot;</code> leaves its terminals open, which is what a pad at
+the end of a line is to a first approximation. <code>Model = &quot;none&quot;</code> gives it no circuit model at all: a schematic that holds
+one can only be simulated by EM, so a run by circuit models is refused naming it and an optimisation uses <code>em=direct</code>.
+Write the two words quoted in a netlist, as <code>Form=&quot;polygon&quot;</code> and <code>Model=&quot;open&quot;</code>.</p>
+<p>It is the drawn copper of the <a href="pcell-designer.html#mshape">PCell Designer</a>, where <strong>Stretch by Parameter</strong> ties corners
+to a parameter and a placed copy of the cell shows a drag handle for it. In LVS it is a conductor, as a line is.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. One terminal per PinX[k] row, numbered by k: pin k sits at PinX[k], PinY[k] on the outline, PinW[k] wide, facing PinDir[k]. With Model = none it has no circuit model; with Model = open its terminals are left open.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>Form</td><td><code>&quot;polygon&quot;</code></td><td>&mdash;</td><td>&mdash;</td><td>&quot;polygon&quot;: a closed outline through the vertices. &quot;path&quot;: a centreline through them, W wide.</td></tr>
+<tr><td>W</td><td><code>0</code></td><td>um</td><td>&mdash;</td><td>The path&#39;s width. A polygon ignores it.</td></tr>
+<tr><td>X[1]</td><td><code>0</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s x, in the part&#39;s own frame: the origin is where the layout places the part.</td></tr>
+<tr><td>Y[1]</td><td><code>-50</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s y, in the part&#39;s own frame.</td></tr>
+<tr><td>X[2]</td><td><code>100</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s x, in the part&#39;s own frame: the origin is where the layout places the part.</td></tr>
+<tr><td>Y[2]</td><td><code>-50</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s y, in the part&#39;s own frame.</td></tr>
+<tr><td>X[3]</td><td><code>100</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s x, in the part&#39;s own frame: the origin is where the layout places the part.</td></tr>
+<tr><td>Y[3]</td><td><code>50</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s y, in the part&#39;s own frame.</td></tr>
+<tr><td>X[4]</td><td><code>0</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s x, in the part&#39;s own frame: the origin is where the layout places the part.</td></tr>
+<tr><td>Y[4]</td><td><code>50</code></td><td>um</td><td>&mdash;</td><td>Vertex i&#39;s y, in the part&#39;s own frame.</td></tr>
+<tr><td>PinX[1]</td><td><code>0</code></td><td>um</td><td>&mdash;</td><td>Pin k&#39;s x: where a line joining pin k meets the outline.</td></tr>
+<tr><td>PinY[1]</td><td><code>0</code></td><td>um</td><td>&mdash;</td><td>Pin k&#39;s y.</td></tr>
+<tr><td>PinW[1]</td><td><code>100</code></td><td>um</td><td>&mdash;</td><td>Pin k&#39;s width: the width of the line it joins, and of the EM port there.</td></tr>
+<tr><td>PinDir[1]</td><td><code>180</code></td><td>deg</td><td>&mdash;</td><td>Pin k&#39;s outward direction, degrees: 180 faces -X, so a line joins it from the left.</td></tr>
+<tr><td>Model</td><td><code>&quot;none&quot;</code></td><td>&mdash;</td><td>shown</td><td>&quot;none&quot;: no circuit model, simulated by EM only. &quot;open&quot;: its terminals are left open in a circuit simulation.</td></tr>
+<tr><td>SignalLayer</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor the metal is on. Empty: the technology&#39;s top conductor.</td></tr>
+<tr><td>GroundReference</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The plane under it, for EM. Empty: the nearest ground-designated conductor below the signal layer.</td></tr>
+</tbody></table>
 <h3 id="via">Via (VIA)</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M139.62 50.48L139.45 51.31L138.95 52.13L138.12 52.92L136.99 53.67L135.56 54.36L133.87 54.99L131.94 55.54L129.81 56L127.51 56.37L125.08 56.64L122.56 56.8L120 56.86L117.44 56.8L114.92 56.64L112.49 56.37L110.19 56L108.06 55.54L106.13 54.99L104.44 54.36L103.01 53.67L101.88 52.92L101.05 52.13L100.55 51.31L100.39 50.48L100.55 49.65L101.05 48.83L101.88 48.04L103.01 47.29L104.44 46.6L106.13 45.97L108.06 45.42L110.19 44.96L112.49 44.59L114.92 44.32L117.44 44.16L120 44.11L122.56 44.16L125.08 44.32L127.51 44.59L129.81 44.96L131.94 45.42L133.87 45.97L135.56 46.6L136.99 47.29L138.12 48.04L138.95 48.83L139.45 49.65L139.62 50.48" /><path fill="#2D14C3" d="M129.81 50.48L129.62 51.1L129.06 51.7L128.16 52.25L126.94 52.73L125.45 53.13L123.75 53.43L121.91 53.61L120 53.67L118.09 53.61L116.25 53.43L114.55 53.13L113.07 52.73L111.85 52.25L110.94 51.7L110.38 51.1L110.19 50.48L110.38 49.86L110.94 49.26L111.85 48.71L113.07 48.23L114.55 47.83L116.25 47.54L118.09 47.35L120 47.29L121.91 47.35L123.75 47.54L125.45 47.83L126.94 48.23L128.16 48.71L129.06 49.26L129.62 49.86L129.81 50.48Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M110.19 50.48L110.19 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 50.48L129.81 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M124.41 53.33L124.41 102.37" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M126.62 52.83L126.62 101.87" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M128.09 52.28L128.09 101.32" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 99.52L129.62 100.14L129.06 100.74L128.16 101.29L126.94 101.77L125.45 102.17L123.75 102.46L121.91 102.65L120 102.71L118.09 102.65L116.25 102.46L114.55 102.17L113.07 101.77L111.85 101.29L110.94 100.74L110.38 100.14L110.19 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M139.62 99.52L139.45 100.35L138.95 101.17L138.12 101.96L136.99 102.71L135.56 103.4L133.87 104.03L131.94 104.58L129.81 105.04L127.51 105.41L125.08 105.68L122.56 105.84L120 105.89L117.44 105.84L114.92 105.68L112.49 105.41L110.19 105.04L108.06 104.58L106.13 104.03L104.44 103.4L103.01 102.71L101.88 101.96L101.05 101.17L100.55 100.35L100.39 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M100.39 99.52L100.55 98.69L101.05 97.87L101.88 97.08L103.01 96.33L104.44 95.64L106.13 95.01L108.06 94.46L110.19 94" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M129.81 94L131.94 94.46L133.87 95.01L135.56 95.64L136.99 96.33L138.12 97.08L138.95 97.87L139.45 98.69L139.62 99.52" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.96L120 47.29" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 105.89L120 124.04" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="22.96" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121.04" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="107, 116.57, 122.92" y="172.32">
@@ -8669,6 +8719,7 @@ itself: <a href="expressions.html#operators">operators</a>, <a href="expressions
 <tr><td><a href="#mcross">MCROSS</a></td><td>MCross</td><td>Microstrip</td></tr>
 <tr><td><a href="#mtaper">MTAPER</a></td><td>Mtaper</td><td>Microstrip</td></tr>
 <tr><td><a href="#mradial">MRADIAL</a></td><td>MRadial</td><td>Microstrip</td></tr>
+<tr><td><a href="#mshape">MSHAPE</a></td><td>MShape</td><td>Microstrip</td></tr>
 <tr><td><a href="#mrpad">MRPAD</a></td><td>Mrpad</td><td>Microstrip</td></tr>
 <tr><td><a href="#mklopf">MKLOPF</a></td><td>Mklopf</td><td>Microstrip</td></tr>
 <tr><td><a href="#via">VIA</a></td><td>Via</td><td>Microstrip</td></tr>

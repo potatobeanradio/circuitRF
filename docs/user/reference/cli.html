@@ -344,6 +344,12 @@ convention behind both.</p>
 <td>The layout in the format you asked for</td>
 </tr>
 <tr>
+<td><code>pcell new</code>, <code>check</code>, <code>render</code>, <code>export</code>, <code>import</code></td>
+<td>a workspace and a name, a designed cell, or a <code>.cpcell</code></td>
+<td>The <a href="pcell-designer.html">PCell Designer</a>'s commands — the same functions its window calls</td>
+<td>A designed cell, a check report, a picture of the cell at values, or a PCell package — as the noun says</td>
+</tr>
+<tr>
 <td><code>new workspace</code></td>
 <td>a directory</td>
 <td>The same code <strong>File ▸ New Workspace</strong> runs</td>
@@ -2988,6 +2994,50 @@ geometry, curves turned into polygons, holes keyholed, bitmaps dropped, unresolv
 references, layers with no mapping in the target format. stdout carries only the paths written, one
 per line, so a script can consume them directly:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o fab/ --to gerber 2&gt; convert.log | zip -j fab.zip -@</code></pre>
+<h2 id="pcell"><code>pcell</code> — the PCell Designer, headless</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf pcell render PadTee -o padtee.svg --set Lpad=400um</code></pre>
+<p><code>pcell</code> is the <a href="pcell-designer.html">PCell Designer</a> with no window. Each noun does what the window's own command does, so the
+two write the same files.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pcell new &lt;workspace&gt; &lt;name&gt;</code></td>
+<td>Makes a designed cell: a schematic, a symbol, and a <code>.ccell</code> that names its generator <code>cpcell:&lt;name&gt;</code>. Prints the paths it made.</td>
+</tr>
+<tr>
+<td><code>pcell check &lt;cell&gt; [--severity warning\|error]</code></td>
+<td>Runs the design check. Each finding is printed as <code>check</code> prints one, with a summary line.</td>
+</tr>
+<tr>
+<td><code>pcell render &lt;cell&gt; -o &lt;out.svg\|.pdf\|.png&gt; [--set name=value]...</code></td>
+<td>Draws the cell's layout at those values. Each value is a number with its unit (<code>Lpad=400um</code>). Parameters you leave out stay at their defaults. Every option <code>render</code> takes for a layout also works here (<code>--window</code>, <code>--size</code>, <code>--layers</code>, <code>--theme</code>, ...). Nothing is written except the picture.</td>
+</tr>
+<tr>
+<td><code>pcell export &lt;cell&gt; -o &lt;file.cpcell&gt;</code></td>
+<td>Writes the PCell package. The check runs first, and an error stops the export.</td>
+</tr>
+<tr>
+<td><code>pcell import &lt;file.cpcell&gt; --into &lt;workspace-or-library-folder&gt;</code></td>
+<td>Unpacks a package as a cell. Importing the same package again is reported as already imported. A different package with the same name is refused; nothing is overwritten.</td>
+</tr>
+</tbody>
+</table>
+<p><code>check</code>, <code>render</code> and <code>export</code> take a designed cell only. For any other cell, use <code>circuitrf render</code> and
+<code>circuitrf check</code>.</p>
+<p>Exit codes:</p>
+<ul>
+<li>0: done.</li>
+<li>1: refused, or an argument does not parse. For <code>check</code>, 1 also means an error was found, or a warning under
+<code>--severity warning</code>.</li>
+<li>130: <code>render</code> was cancelled.</li>
+</ul>
+<p>In an MCP client this is the <code>pcell</code> tool, with <code>what=new|check|render|export|import</code>.</p>
 <h2 id="new"><code>new</code> — a workspace or a cell</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf new workspace &lt;dir&gt; [--name N] [--tech &lt;id&gt;|none] [--length-unit um|mm|mil]
                         [--vendor-library &lt;name&gt;=&lt;folder&gt;]...

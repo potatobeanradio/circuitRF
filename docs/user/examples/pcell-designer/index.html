@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — PCell Designer</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/PCell Designer/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › PCell Designer</p>
+  </div>
+
+  <h1>PCell Designer</h1>
+  <p class="lede">A microstrip tee whose stub ends in a drawn pad, made a parameterised cell in the PCell Designer, placed twice at two pad lengths in a bench, laid out with a drag handle on each pad, checked by LVS and exported as a PCell package.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ PCell Designer</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>A parameterised cell made in the <strong>PCell Designer</strong> from the parts in the Library, placed twice in a bench at two
+values, laid out, checked by LVS and simulated. The <strong>PCell Designer</strong> reference page describes every control.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PadTee</strong></td>
+<td>A designed cell: Port 1 – <code>TL1</code> – bend <code>B1</code> – tee <code>T1</code> – <code>TL3</code> – Port 2 on a 50 Ω microstrip line, the tee's branch <code>TL2</code> ending in a drawn pad <code>SH1</code> (MSHAPE), 2 mm wide. Parameters <code>W</code>, <code>L1</code>, <code>Lstub</code> and <code>Lpad</code>, each with a range</td>
+</tr>
+<tr>
+<td><strong>Bench</strong></td>
+<td><code>PadTee</code> placed twice, <code>X1</code> with <code>Lpad = 200 um</code> and <code>X2</code> with <code>Lpad = 400 um</code>, joined by a 50 Ω line between two Ports, swept 1–12 GHz</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-designed-cell">1. The designed cell</h2>
+<p>Open <code>PadTee</code>'s schematic and choose <strong>Tools ▸ PCell Designer…</strong>. The canvas shows its layout at the values in the
+<strong>Value</strong> column. Type <code>600 um</code> as <code>Lpad</code>'s value and the pad grows; change <code>Lstub</code> and the pad moves with the stub's
+end. Nothing in the cell holds a coordinate: the lines are joined pin to pin, and the pad's far edge is tied to <code>Lpad</code>
+by <strong>Stretch by Parameter</strong>. The pad is <code>Model=&quot;open&quot;</code>, so in a circuit simulation it is an open end.</p>
+<h2 id="the-bench">2. The bench</h2>
+<p>Open <code>Bench</code> and press <strong>Simulate</strong>: <code>Bench.cdd</code> shows |S21| and |S11|. Then <strong>Update Layout from Schematic</strong> draws the
+two placements, each at its own <code>Lpad</code>; select one in the layout and drag its <code>Lpad</code> handle. <strong>LVS</strong> compares the layout
+with the schematic and finds no error; its one warning is the ground pour under <code>TL1</code>, which no via stitches.</p>
+<h2 id="export-and-import">3. Export and import</h2>
+<p><strong>Export…</strong> in the designer writes <code>PadTee.cpcell</code>. <strong>File ▸ Import ▸ PCell Package…</strong> in another workspace on the same
+board makes <code>PadTee</code> a cell there, placed exactly as here. From the command line:</p>
+<pre><code>circuitrf pcell check PadTee
+circuitrf pcell render PadTee -o padtee.svg --set Lpad=600um
+circuitrf pcell export PadTee -o PadTee.cpcell
+</code></pre>
+<h2 id="optimising-by-em">4. Optimising by EM</h2>
+<p>With <strong>Create or update EM setup</strong> on, Update Layout from Schematic also writes the bench's Planar setup, and EM solves the
+two placed cells as copper. Set <code>SP1</code> to run by EM, give <code>X1</code>'s <code>Lpad</code> a VAR (<code>Lp1</code>) and tune it. The pad is open in the
+circuit model, so <code>Lpad</code> moves only the EM response: <code>em=correct</code>, which searches on the corrected circuit model, stops at
+its start after one solve, and <code>em=direct</code> (algorithm <code>pattern</code>) is the mode that moves it.</p>
+<p>No results ship with this example.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

@@ -279,6 +279,12 @@ own values, the circuitry around it, or both.</p>
 <p>A 3D-parametric cell with no schematic has no circuit model, so it can only be simulated by EM: an optimisation
 with <code>em=</code> unstated uses <code>em=direct</code> and says why, and <code>em=correct</code> or <code>em=off</code> is refused naming the part. Give the
 cell a schematic as its circuit model and <code>em=correct</code> works.</p>
+<p><strong>A generated cell is copper when it says so.</strong> A placed cell drawn by a layout generator (a kit's PCell, a Python
+PCell, a <a href="pcell-designer.html">designed cell</a>) is a part to EM unless its <code>.ccell</code> sets <code>&quot;EmCopper&quot;: true</code>. Then EM
+solves the layout the generator draws as copper, at the placement's own values, and the cell's schematic stays its
+circuit model. A designed cell sets it from the moment it is made, and so does a kit part whose in-memory <code>.ccell</code> says
+so. An optimisation over such a placement's lengths (<code>X1.Lpad</code>) never steps below two database units of the coarsest
+placed layout, as a schematic's own lengths never do.</p>
 <p><strong>Each placement at its own values.</strong> When the larger schematic is laid out (<strong>Update Layout from Schematic</strong>), a
 placement whose own values give it different copper is placed as a <strong>variant</strong>: the cell's layout made at that
 placement's values, with your hand edits to the cell in it. Placements with the same values share one variant, and
