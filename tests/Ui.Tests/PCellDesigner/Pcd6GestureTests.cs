@@ -100,9 +100,6 @@ public sealed class Pcd6GestureTests : IDisposable
                                               Offset = new OffsetPlacement { Anchor = "TL3.2", Pin = 1 } };
             foreach (var d in ComponentTypeRegistry.DefaultParameters(SymbolKind.MShape, 1))
                 pad.Parameters.Add(new EditableParameter { Name = d.Name, Expression = d.Expression, Unit = d.Unit, Dimension = d.Dimension });
-            // The planner reads MSHAPE's every row as a number, so the two word rows are left out and the generator's own
-            // defaults (a polygon) stand. Reported to PCD-2: the planner should hand DrawnMetal.IsWord rows over as text.
-            pad.Parameters.RemoveAll(q => DrawnMetal.IsWord(q.Name));
             m.Components.Add(pad);
         });
         vm.AddParameter();   // P1 = 100 um
