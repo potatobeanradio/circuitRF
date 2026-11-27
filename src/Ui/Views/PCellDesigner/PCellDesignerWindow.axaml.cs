@@ -90,18 +90,22 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
         if (_watched is not null) _watched.PropertyChanged -= OnVmChanged;
         _watched = Vm;
         if (_watched is not null) _watched.PropertyChanged += OnVmChanged;
+        SyncCanvas();   // a view model planned before it was shown (a snapshot) is drawn at once
     }
 
     private void OnVmChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PCellDesignerViewModel.Layout) && Vm is { } vm)
-        {
-            var viewport = DesignCanvas.ViewModel is null ? (LayoutViewport?)null : DesignCanvas.CurrentViewport;
-            DesignCanvas.ViewModel = vm.Layout is { } layout ? new LayoutEditorViewModel(layout, vm.ClayPath) { Technology = vm.Technology } : null;
-            if (viewport is { } kept) DesignCanvas.SetViewport(kept);   // a re-plan keeps the view; the first one fits
-            else _fitPending = true;
-        }
+        if (e.PropertyName == nameof(PCellDesignerViewModel.Layout)) SyncCanvas();
         if (e.PropertyName == nameof(PCellDesignerViewModel.Schematic)) ShowSelection();
+    }
+
+    private void SyncCanvas()
+    {
+        if (Vm is not { } vm) return;
+        var viewport = DesignCanvas.ViewModel is null ? (LayoutViewport?)null : DesignCanvas.CurrentViewport;
+        DesignCanvas.ViewModel = vm.Layout is { } layout ? new LayoutEditorViewModel(layout, vm.ClayPath) { Technology = vm.Technology } : null;
+        if (viewport is { } kept) DesignCanvas.SetViewport(kept);   // a re-plan keeps the view; the first one fits
+        else _fitPending = true;
     }
 
     // ── Gestures (R-pcd6-2) ───────────────────────────────────────────────────────────────────────────────────────
