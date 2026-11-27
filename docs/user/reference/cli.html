@@ -293,7 +293,7 @@ convention behind both.</p>
 <td><code>filter</code></td>
 <td><strong>nothing</strong> — a specification in flags</td>
 <td>The <a href="filter-designer.html">Filter Designer</a>'s realisers, and one of them</td>
-<td>Each realiser and whether it can build the filter, to stdout; with <code>--realiser</code>, the test bench as a <code>.cnl</code> (<code>-o</code>), a <code>.csch</code> with <code>--to-schematic</code>, and a Planar EM <code>.em.s2p</code> with <code>--em</code></td>
+<td>Each realiser and whether it can build the filter, to stdout; with <code>--realiser</code>, the test bench as a <code>.cnl</code> (<code>-o</code>), a <code>.csch</code> with <code>--to-schematic</code>, a Planar EM <code>.em.s2p</code> with <code>--em</code>, and a designed cell with <code>--pcell</code></td>
 </tr>
 <tr>
 <td><code>filter lc</code></td>
@@ -2435,7 +2435,7 @@ bench is refused. Exit <strong>0</strong> when it budgeted (and
 transferred), <strong>1</strong> on a refusal.</p>
 <h2 id="filter"><code>filter</code> — a filter from its specification</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --band &lt;b&gt; --order &lt;n&gt; --f1 &lt;f&gt; [--f2 &lt;f&gt;] [--response butterworth|chebyshev] [--ripple dB] [--stop dB] [--z0 Ω] [--zeros f,f]
-                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic] [--em]] [--points n]
+                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; [-o &lt;file.cnl&gt; [--to-schematic] [--em]] [--pcell &lt;name|path&gt;]] [--points n]
 <span class="prompt">$ </span>circuitrf filter --extract &lt;file.s2p&gt; --band bandpass --order &lt;n&gt; --f1 &lt;f&gt; --f2 &lt;f&gt; [--response …] [--ripple dB] [--z0 Ω] [--zeros f,f]</code></pre>
 <p><code>filter</code> is the <a href="filter-designer.html">Filter Designer</a> with no window. It takes the specification as flags: the band
 (<code>lowpass</code>, <code>highpass</code>, <code>bandpass</code> or <code>bandstop</code>), the order, the cutoff or the lower edge <code>--f1</code> and, for a band, the upper
@@ -2456,6 +2456,12 @@ the layers; the technology's own defaults apply otherwise.</p>
 <p>The bench runs anywhere: <code>circuitrf sparam</code> on it gives the realised response. <code>--to-schematic</code> also draws it as a <code>.csch</code>
 beside it, through the same path as <code>netlist --to-schematic</code>. A realiser that cannot build the filter is a
 <code>filter.realiser.refused</code> error with its own reason.</p>
+<p><strong>With <code>--pcell</code></strong> it makes the realisation a <a href="pcell-designer.html">designed cell</a>, as the window's
+<a href="filter-designer.html#make-pcell">Make PCell…</a> does: the part, its site parts and two Ports, each synthesised length, gap and
+width a parameter with a ±20 % range, the specification kept for its metrics. A bare name goes into the <code>--workspace</code> root
+(else the current folder), a path into its own folder; either must be in a workspace, else <code>filter.pcell.no-workspace</code>.
+<code>-o</code> is then optional. It prints the cell and its parameters and forwards the design check's <code>pcell.*</code> findings; a
+refusal (a name taken, a bad name) is <code>filter.pcell.refused</code>, and a check error exits <strong>1</strong>.</p>
 <p><strong>With <code>--em</code></strong> it also solves the realised part on Planar MoM, as its layout draws it, on a coarse mesh. Ports 1 and 2
 are on the part's pins 1 and 2, and each site gets a port of its own, closed with the site's value. The sweep is
 <code>--points</code> frequencies across the bench's band; without it, 8N + 4Z + 1 for N poles and Z zeros (41 for order 5). It writes <code>&lt;name&gt;.em.s2p</code> beside the <code>.cnl</code> and prints one
