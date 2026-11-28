@@ -203,7 +203,8 @@ namespace RfCore.Signals
         {
             var fileRates = signals.SelectMany(s => s.Carriers)
                                    .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk
-                                                                 or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc)
+                                                                 or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
+                                                                 or CarrierStandard.Wlan)
                                    .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r).ToList();
             if (needHz < LadderBaseHz)
                 foreach (double fs in fileRates)
@@ -245,9 +246,11 @@ namespace RfCore.Signals
             var dbpsk = DbpskOf(spec);
             var css = CssOf(spec);
             var sc = ScOf(spec);
+            var wlan = WlanOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
-            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds ?? iq?.DurationSeconds
+            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds
+                            ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? iq?.DurationSeconds
                             ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
@@ -317,6 +320,14 @@ namespace RfCore.Signals
                         var x = ScQam.Generate(shape);
                         if (spec.ClipPaprDb is double t) OfdmGenerator.Clip(x, rate, bw, t);
                         raw.Add((c with { BandwidthHz = bw }, x, rate, bw));
+                        break;
+                    }
+                    case CarrierStandard.Wlan:
+                    {
+                        // unit power over the packet and zeros in the gap, as a pulse is unit power on its top: Pavg is the
+                        // packet's power, and the record's mean is Pavg plus 10 log10 of the duty (the label states it)
+                        var shape = wlan!;
+                        raw.Add((c, Wlan.Generate(shape), Wlan.SampleRateHz(shape), Wlan.Numerology(shape).OccupiedBwHz));
                         break;
                     }
                     default:
@@ -407,6 +418,14 @@ namespace RfCore.Signals
             return ScQam.Validate(c);
         }
 
+        /// <summary>The Wi-Fi packet (null when there is none): its record is one packet and its gap, so it is the only carrier;
+        /// it is gated, so a PAPR target against the record's mean would count the gap, and it is not clipped.</summary>
+        public static WlanSpec? WlanOf(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Wlan, "a Wi-Fi (WLAN) carrier", "the packet is gated, so the record's PAPR counts its gap");
+            return c is null ? null : Wlan.Validate(Wlan.Resolve(c));
+        }
+
         private static CarrierSpec? OwnRecordCarrier(SignalSpec spec, CarrierStandard standard, string what, string whyNoClip)
         {
             var c = spec.Carriers.FirstOrDefault(c => c.Standard == standard);
@@ -422,7 +441,7 @@ namespace RfCore.Signals
         /// not the record length the source states.</summary>
         public static bool HasOwnRecord(SignalSpec spec)
             => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null
-               || ScOf(spec) is not null;
+               || ScOf(spec) is not null || WlanOf(spec) is not null;
     }
 
     /// <summary>

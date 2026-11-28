@@ -144,6 +144,30 @@ namespace RfCore.Signals
         private static readonly int[] LegacyPilots = [-21, -7, 7, 21];
         private static readonly int[] LegacyPilotSign = [1, 1, 1, -1];
 
+        /// <summary>The packet a WLAN carrier describes: each field it states, WlanSpec's default for the rest.</summary>
+        public static WlanSpec Resolve(CarrierSpec c)
+        {
+            var d = new WlanSpec();
+            return new WlanSpec(c.WlanFormat ?? d.Format, c.BandwidthHz, c.Mcs ?? d.Mcs, c.GuardIntervalS ?? d.GuardS, c.Symbols ?? d.DataSymbols,
+                                c.IdleS ?? d.IdleS, c.Seed, c.Oversample ?? d.Oversample, c.WindowS ?? d.WindowS);
+        }
+
+        /// <summary>The amendment a format is named by in a carrier's <c>Std=</c>: a, n, ac, ax, be.</summary>
+        public static string StdName(WlanFormat f) => f switch
+        {
+            WlanFormat.Legacy => "a", WlanFormat.Ht => "n", WlanFormat.Vht => "ac", WlanFormat.He => "ax", _ => "be",
+        };
+
+        public static WlanFormat ParseStd(string v) => v.Trim().ToLowerInvariant() switch
+        {
+            "a" or "g" or "legacy" => WlanFormat.Legacy,
+            "n" or "ht" => WlanFormat.Ht,
+            "ac" or "vht" => WlanFormat.Vht,
+            "ax" or "he" => WlanFormat.He,
+            "be" or "eht" => WlanFormat.Eht,
+            _ => throw new WlanRefusal("std", $"Wi-Fi: Std must be a, g, n, ac, ax or be (got '{v}')"),
+        };
+
         public static int MaxMcs(WlanFormat f) => f switch { WlanFormat.Vht => 9, WlanFormat.He => 11, WlanFormat.Eht => 13, _ => 7 };
 
         public static int[] BandwidthsMHz(WlanFormat f) => f switch

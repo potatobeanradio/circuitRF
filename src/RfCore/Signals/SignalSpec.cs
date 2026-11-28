@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -99,6 +99,19 @@ namespace RfCore.Signals
         /// <summary>A CW carrier's phase at the start of the record (degrees); null = 0. The N-tone preset sets it.</summary>
         public double? PhaseDeg { get; init; }
 
+        // A Wi-Fi (WLAN) packet's settings; null = Wlan.Resolve's default (WlanSpec's). Its BW is BandwidthHz, its data
+        // symbols Symbols, and its random points come from Seed.
+        public WlanFormat? WlanFormat { get; init; }
+        public int? Mcs { get; init; }
+        /// <summary>The data guard interval (s).</summary>
+        public double? GuardIntervalS { get; init; }
+        /// <summary>The gap after the packet (s).</summary>
+        public double? IdleS { get; init; }
+        /// <summary>The record's rate over the channel's base rate.</summary>
+        public int? Oversample { get; init; }
+        /// <summary>The raised-cosine transition between OFDM symbols (s).</summary>
+        public double? WindowS { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
@@ -110,6 +123,7 @@ namespace RfCore.Signals
             CarrierStandard.Dbpsk => $"DBPSK {Fsk.FormatBitRate(Dbpsk.Resolve(this).BitRate)} {DataLabel(Dbpsk.Resolve(this).Data)}",
             CarrierStandard.Css => $"CSS SF{Css.Resolve(this).Sf} {Fsk.FormatHz(BandwidthHz)}",
             CarrierStandard.Sc => ScLabel(ScQam.Resolve(this)),
+            CarrierStandard.Wlan => WlanLabel(Signals.Wlan.Resolve(this)),
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
 
@@ -121,6 +135,11 @@ namespace RfCore.Signals
 
         private static string ScLabel(ScShape s)
             => $"SC {SignalSpec.FormatSymbolRate(s.SymbolRate)} {ScQam.ModName(s.Mod)} α {s.RollOff.ToString("0.###", CultureInfo.InvariantCulture)}";
+
+        // Pavg is the packet's power: the duty says what the record's mean is
+        private static string WlanLabel(WlanSpec s)
+            => $"Wi-Fi 802.11{Signals.Wlan.StdName(s.Format)} {s.BandwidthHz / 1e6:0} MHz MCS{s.Mcs} " +
+               $"({(100 * Signals.Wlan.DutyCycle(s)).ToString("0.#", CultureInfo.InvariantCulture)} % duty)";
 
         public static string ModName(QamOrder m) => m switch
         {
@@ -257,7 +276,8 @@ namespace RfCore.Signals
                     "DBPSK" => CarrierStandard.Dbpsk,
                     "CSS" => CarrierStandard.Css,
                     "SC" => CarrierStandard.Sc,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC or FILE)"),
+                    "WLAN" => CarrierStandard.Wlan,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN or FILE)"),
                 },
             };
             bool bwStated = parts.Skip(1).Any(p => p.Split('=')[0].Trim().Equals("BW", StringComparison.OrdinalIgnoreCase));
@@ -298,7 +318,14 @@ namespace RfCore.Signals
                     "PHASES" => c with { RingPhases = ScField(c, k, () => v) },
                     "PREAMBLE" => c with { Preamble = ScField(c, k, () => WholeField(k, v)) },
                     "PILOTBLOCK" => c with { PilotBlock = ScField(c, k, () => v) },
+                    "SYMBOLS" when c.Standard == CarrierStandard.Wlan => c with { Symbols = WholeField(k, v) },
                     "SYMBOLS" => c with { Symbols = ScField(c, k, () => WholeField(k, v)) },
+                    "STD" => c with { WlanFormat = Only(c, k, () => Signals.Wlan.ParseStd(v), CarrierStandard.Wlan) },
+                    "MCS" => c with { Mcs = Only(c, k, () => WholeField(k, v), CarrierStandard.Wlan) },
+                    "GI" => c with { GuardIntervalS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
+                    "IDLE" => c with { IdleS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
+                    "OVERSAMPLE" => c with { Oversample = Only(c, k, () => WholeField(k, v), CarrierStandard.Wlan) },
+                    "WINDOW" => c with { WindowS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
                     "SF" => c with { SpreadingFactor = CssField(c, k, v) },
                     "PHASE" when c.Standard == CarrierStandard.Cw => c with { PhaseDeg = Num() },
                     "PHASE" => throw new FormatException($"carrier field {k} belongs to a CW carrier"),
@@ -319,6 +346,8 @@ namespace RfCore.Signals
             }
             // a single carrier's is Rs(1 + α), where its root-raised-cosine spectrum ends
             if (c.Standard == CarrierStandard.Sc) c = c with { BandwidthHz = ScQam.BandwidthHz(ScQam.Validate(c)) };
+            // a Wi-Fi packet's is its channel's, BW as stated (20 MHz unstated)
+            if (c.Standard == CarrierStandard.Wlan) Signals.Wlan.Validate(Signals.Wlan.Resolve(c));
             return c;
         }
 
@@ -326,6 +355,17 @@ namespace RfCore.Signals
         {
             if (c.Standard != CarrierStandard.Fsk && !(alsoDbpsk && c.Standard is CarrierStandard.Dbpsk or CarrierStandard.Sc))
                 throw new FormatException($"carrier field {key} belongs to an FSK{(alsoDbpsk ? ", DBPSK or SC" : "")} carrier");
+            return read();
+        }
+
+        /// <summary>A field only the listed standards take; any other carrier refuses it, naming them.</summary>
+        private static T Only<T>(CarrierSpec c, string key, Func<T> read, params CarrierStandard[] standards)
+        {
+            if (!standards.Contains(c.Standard))
+            {
+                string names = string.Join(" or ", standards.Select(s => s.ToString().ToUpperInvariant()));
+                throw new FormatException($"carrier field {key} belongs to {("AEIOU".Contains(names[0]) ? "an" : "a")} {names} carrier");
+            }
             return read();
         }
 
@@ -551,6 +591,17 @@ namespace RfCore.Signals
                 if (c.DeviationHz is double dev) sb.Append(";Dev=").Append(FormatHz(dev, "kHz"));
                 if (c.GaussianBt is double bt) sb.Append(";BT=").Append(bt.ToString("R", inv));
                 if (c.Data is { } data) sb.Append(";Data=").Append(data);
+            }
+            if (c.Standard == CarrierStandard.Wlan)
+            {
+                if (c.WlanFormat is { } std) sb.Append(";Std=").Append(Signals.Wlan.StdName(std));
+                sb.Append(";BW=").Append(FormatHz(c.BandwidthHz, "MHz"));
+                if (c.Mcs is int mcs) sb.Append(";MCS=").Append(mcs.ToString(inv));
+                if (c.GuardIntervalS is double gi) sb.Append(";GI=").Append(FormatSeconds(gi, "us"));
+                if (c.Symbols is int ns) sb.Append(";Symbols=").Append(ns.ToString(inv));
+                if (c.IdleS is double idle) sb.Append(";Idle=").Append(FormatSeconds(idle, "us"));
+                if (c.Oversample is int os) sb.Append(";Oversample=").Append(os.ToString(inv));
+                if (c.WindowS is double win) sb.Append(";Window=").Append(FormatSeconds(win, "ns"));
             }
             if (c.Standard == CarrierStandard.Cw && c.PhaseDeg is double phase) sb.Append(";Phase=").Append(phase.ToString("R", inv));
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));

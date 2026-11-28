@@ -98,6 +98,7 @@ namespace RfCore.Signals
                 var nm = OfdmGenerator.Numerology(c);
                 return (nm.OccupiedBwHz, c.BandwidthHz);
             }
+            if (c.Standard == CarrierStandard.Wlan) return (Wlan.Numerology(Wlan.Resolve(c)).OccupiedBwHz, c.BandwidthHz);
             return (c.BandwidthHz * 0.9, c.BandwidthHz);
         }
 

@@ -25,6 +25,12 @@
 //           (unit). The preamble and pilot symbols are not measured: they
 //           train the pilot equalizer.
 //
+//    Record kinds (Wi-Fi, ...): the window is brought to the carrier's
+//           rate as whole records (a shorter run is refused), the record
+//           from its sample 0 cut out of it, its delay taken out as below,
+//           and the family's own measurement reads it as it reads the
+//           record the source plays (Wlan.Measure, ...).
+//
 //  Common to the three. The received and the sent record pass through
 //  ONE measurement filter, a cos² roll-off from the channel edge, so
 //  the measurement bandwidth is the channel's and the reference carries
@@ -44,7 +50,7 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css, Sc }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
@@ -65,7 +71,11 @@ namespace RfCore.Signals
     /// <see cref="FreqRefHz"/> FSK's frequency at each bit centre (the offset taken out) and the frequency sent there.</summary>
     public sealed record WaveformQuality(QualityKind Kind, double ErrorPercent, double PeakPercent, double DeviationHz,
                                          double OffsetHz, Complex[]? Points, Complex[]? Reference, double[]? FreqHz,
-                                         double[]? FreqRefHz, double DelayS);
+                                         double[]? FreqRefHz, double DelayS)
+    {
+        /// <summary>The family's EVM limit (%), where it states one (Wi-Fi: the MCS's); NaN otherwise.</summary>
+        public double LimitPercent { get; init; } = double.NaN;
+    }
 
     public static class SignalQuality
     {
@@ -76,8 +86,12 @@ namespace RfCore.Signals
             CarrierStandard.Fsk => QualityKind.Fsk,
             CarrierStandard.Css => QualityKind.Css,
             CarrierStandard.Sc => QualityKind.Sc,
+            CarrierStandard.Wlan => QualityKind.Wlan,
             _ => null,
         };
+
+        /// <summary>A kind read as one whole record by its family's own measurement.</summary>
+        public static bool IsRecordKind(QualityKind k) => k >= QualityKind.Wlan;
 
         /// <summary>
         /// Brings <paramref name="y"/> (sample 0 at record sample <paramref name="startSample"/> at <paramref name="fsHz"/>,
@@ -101,6 +115,7 @@ namespace RfCore.Signals
                 };
                 return null;
             }
+            if (IsRecordKind(kind)) return ReceiveRecord(carrier, kind, recordSeconds, y, fsHz, startSample, offsetHz, out why, driftHzps);
             double native = carrier.NativeRateHz;
             int nTot = carrier.Native.Length;
             // the instants of one record (window-independent) and the samples each reads; the channel's edge
@@ -243,14 +258,62 @@ namespace RfCore.Signals
             return new ReceivedWaveform(carrier, kind, x, sw, [.. at], span, guard, m - guard, native, tau, whole);
         }
 
+        /// <summary>A record kind's window as one record at the carrier's rate, from its sample 0, the delay against the record
+        /// the source played fitted over the occupied band and taken out; <see cref="ReceivedWaveform.S"/> is that record.</summary>
+        private static ReceivedWaveform? ReceiveRecord(CarrierRecord carrier, QualityKind kind, double recordSeconds, ReadOnlySpan<Complex> y,
+                                                       double fsHz, long startSample, double offsetHz, out string? why, double driftHzps)
+        {
+            double native = carrier.NativeRateHz;
+            int nTot = carrier.Native.Length;
+            if (!SignalEvm.ToNative(y, fsHz, startSample, offsetHz, native, recordSeconds, nTot, native / 2, native / 2, filterWhole: false,
+                                    out var x, out long n0, out bool whole, out why, driftHzps))
+                return null;
+            if (!whole)
+            {
+                why = $"its measurement reads a whole record ({recordSeconds * 1e6:0.#} us) and the run holds less; lengthen Stop";
+                return null;
+            }
+            int m = x.Length, a = (int)((nTot - ((n0 % nTot) + nTot) % nTot) % nTot);
+            var rec = new Complex[nTot];
+            for (int k = 0; k < nTot; k++) rec[k] = x[(a + k) % m];
+            var xs = Fft.Forward(rec);
+            var ss = Fft.Forward(carrier.Native);
+            double pass = Math.Min(carrier.OccupiedBwHz / 2, native / 2);
+            var h = new List<Complex>(); var hz = new List<double>();
+            for (int k = -(nTot - 1) / 2; k <= nTot / 2; k++)
+            {
+                double f = k * native / nTot;
+                if (Math.Abs(f) > pass) continue;
+                int b = (k % nTot + nTot) % nTot;
+                h.Add(xs[b] * Complex.Conjugate(ss[b]));
+                hz.Add(f);
+            }
+            double tau = h.Count > 1 ? SignalEvm.Delay([.. h], [.. hz]) : 0, period = nTot / native;
+            tau -= Math.Round(tau / period) * period;
+            if (tau != 0)
+            {
+                for (int b = 0; b < nTot; b++) xs[b] *= Complex.FromPolarCoordinates(1.0, 2 * Math.PI * (b <= nTot / 2 ? b : b - nTot) * native / nTot * tau);
+                rec = Fft.Inverse(xs);
+            }
+            return new ReceivedWaveform(carrier, kind, rec, carrier.Native, [], nTot, 0, nTot, native, tau, true);
+        }
+
         /// <summary>The quality of <paramref name="r"/>, as its kind is measured (the file header).</summary>
         public static WaveformQuality Evaluate(ReceivedWaveform r)
         {
             int m = r.X.Length;
             Complex X(int i) => r.X[(i % m + m) % m];
             Complex S(int i) => r.S[(i % m + m) % m];
+            var spec = r.Carrier.Spec;
             switch (r.Kind)
             {
+                case QualityKind.Wlan:
+                {
+                    // the packet from the record's sample 0: L-LTF frequency offset, LTF channel, pilot phase, nearest point
+                    var e = Wlan.Measure(Wlan.Resolve(spec), r.X);
+                    return new WaveformQuality(r.Kind, e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Received, e.Ideal,
+                                               null, null, r.DelayS) { LimitPercent = e.LimitPercent };
+                }
                 case QualityKind.Sc:
                 {
                     // against the ideal points, normalised to the constellation's mean power (unit)

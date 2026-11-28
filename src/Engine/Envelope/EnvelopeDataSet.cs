@@ -402,7 +402,7 @@ public static class EnvelopeDataSet
     public const int ConstMaxSamples = 6000;
 
     /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
-    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc }
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan }
 
     private static Meter MeterOf(CarrierStandard s) => s switch
     {
@@ -411,6 +411,7 @@ public static class EnvelopeDataSet
         CarrierStandard.Fsk => Meter.Fsk,
         CarrierStandard.Css => Meter.Css,
         CarrierStandard.Sc => Meter.Sc,
+        CarrierStandard.Wlan => Meter.Wlan,
         _ => Meter.None,
     };
 
@@ -424,6 +425,8 @@ public static class EnvelopeDataSet
         public ErrorCount? Errors { get; init; }
         public double BerEst { get; init; } = double.NaN;
         public Equalized? Eq { get; init; }
+        /// <summary>A record kind's own readout (code-domain power, correlations, ...).</summary>
+        public WaveformQuality? Q { get; init; }
     }
 
     /// <summary>
@@ -500,7 +503,9 @@ public static class EnvelopeDataSet
         return new Reading(q.ErrorPercent, q.PeakPercent, q.DeviationHz, q.OffsetHz, q.Points, q.Reference, q.FreqHz, q.FreqRefHz, w)
         {
             Offset = meter == Meter.Fsk ? new CarrierOffset(q.OffsetHz, double.NaN) : null,
-            Errors = meter == Meter.Fsk ? SignalDecisions.Fsk(q.FreqHz!, q.FreqRefHz!) : SignalDecisions.Css(w),
+            // a record kind decides against its own decisions (Wi-Fi's nearest point): no count to make
+            Errors = meter switch { Meter.Fsk => SignalDecisions.Fsk(q.FreqHz!, q.FreqRefHz!), Meter.Css => SignalDecisions.Css(w), _ => null },
+            Q = q,
         };
     }
 
@@ -640,7 +645,7 @@ public static class EnvelopeDataSet
             ds.Add(noiseName, new DataCube([branchAxis, carrierAxis], Only(noise!, kinds)) { Unit = "%" });
         }
 
-        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk, Meter.Sc];
+        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk, Meter.Sc, Meter.Wlan];
         if (meters.Any(qam.Contains))
         {
             Family("EVM_pct", "%", qam, "EVMdist_pct", "EVMnoise_pct");
