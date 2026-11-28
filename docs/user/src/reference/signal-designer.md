@@ -4,7 +4,7 @@ slug: reference/signal-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Signal Designer
 lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK, Bluetooth LE, LoRa, Sigfox, a single PSK, QAM or APSK carrier or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
-keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, single carrier, SC, root raised cosine, RRC, roll-off, matched filter, 8PSK, APSK, 16APSK, 32APSK, satellite, PN23, preamble, pilot block, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
+keywords: Signal Designer, MOD_Source, FR2, 120 kHz, mmWave, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, single carrier, SC, root raised cosine, RRC, roll-off, matched filter, 8PSK, APSK, 16APSK, 32APSK, satellite, PN23, preamble, pilot block, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
 ---
 
 <nav class="toc">
@@ -69,7 +69,8 @@ remembered by its full path. Several can be open at once, and each is listed in 
 
 One click replaces the carriers with a common case. The presets are in one row per family:
 
-- **Cellular** — **LTE 20 MHz**, **NR 20 MHz (30 kHz)**, **NR 100 MHz (30 kHz)**, **4 x LTE 20 contiguous**,
+- **Cellular** — **LTE 20 MHz**, **NR 20 MHz (30 kHz)**, **NR 100 MHz (30 kHz)**, **NR 100 MHz (120 kHz, FR2)**
+  (64QAM, [FR2](#nr-fr2)), **4 x LTE 20 contiguous**,
   or **2C NR 20 at spacing**: two NR 20 MHz carriers the number of MHz apart in the field beside it, centre
   to centre.
 - **Radar** — **Pulsed CW**, one [pulse train](#pulse).
@@ -167,6 +168,18 @@ A **FILE** card puts an I/Q file beside generated carriers, at its own offset an
 with LTE or NR carriers, the file must last a whole number of 0.5 ms slots.
 
 {{ui: signal-designer-2c}}
+
+### NR subcarrier spacing and FR2 {#nr-fr2}
+
+An NR card offers 15, 30, 60 and 120 kHz, and its
+bandwidth list follows the spacing. 15 to 60 kHz carry the FR1 bandwidths of 3GPP TS 38.101-1, up to 100 MHz.
+120 kHz is FR2 (TS 38.101-2): 50, 100, 200 and 400 MHz, with 32, 66, 132 and 264 resource blocks. FR2 also
+allows 60 kHz at 50, 100 and 200 MHz. Of those, only 200 MHz (264 RB) is added to the 60 kHz list: 50 and 100 MHz
+are FR1 bandwidths at 60 kHz as well and keep FR1's resource blocks (65 and 135, where FR2 has 66 and 132). The
+FFT is the smallest power of two holding the subcarriers over 0.85: 1024 points, 122.88 MS/s, for 100 MHz at
+120 kHz, and 4096 points, 491.52 MS/s, for 400 MHz. At 120 kHz a slot lasts 0.125 ms, so each 0.5 ms of the
+record holds four slots, 56 symbols, with the longer cyclic prefix on the first. The record stays in whole
+0.5 ms, as for every OFDM carrier, and the EVM tab demodulates it the same way.
 
 ## Pulsed CW {#pulse}
 

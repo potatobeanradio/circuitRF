@@ -12,7 +12,8 @@
 //    LTE   15 kHz, N_RB {6,15,25,50,75,100} for {1.4,3,5,10,15,20} MHz,
 //          FFT {128..2048}, CP 160/144 x N/2048 (7 symbols / 0.5 ms),
 //          DC subcarrier unused.
-//    NR    SCS 15/30/60 kHz, N_RB from the transmission-bandwidth table,
+//    NR    SCS 15/30/60/120 kHz, N_RB from the transmission-bandwidth
+//          tables (TS 38.101-1 for FR1; TS 38.101-2 for FR2: 50-400 MHz),
 //          FFT = smallest power of two >= N_sc/0.85 (min 128),
 //          CP 144 x N/2048, long CP (144+16*2^mu) x N/2048 on the first
 //          symbol of every 0.5 ms; DC subcarrier used.
@@ -44,14 +45,17 @@ namespace RfCore.Signals
             [10e6] = (50, 1024), [15e6] = (75, 1536), [20e6] = (100, 2048),
         };
 
-        // Maximum transmission bandwidth configuration N_RB, FR1, by SCS then channel BW (MHz).
+        // Maximum transmission bandwidth configuration N_RB, by SCS then channel BW (MHz): FR1 (TS 38.101-1 Table 5.3.2-1)
+        // and FR2 (TS 38.101-2 Table 5.3.2-1). FR2 allows 60 kHz at 50, 100 and 200 MHz and 120 kHz at 50 to 400 MHz;
+        // at 60 kHz, 50 and 100 MHz are FR1's too and keep FR1's N_RB (65, 135; FR2's are 66, 132), and 200 MHz is FR2's.
         private static readonly Dictionary<int, Dictionary<int, int>> NrTable = new()
         {
             [15] = new() { [5] = 25, [10] = 52, [15] = 79, [20] = 106, [25] = 133, [30] = 160, [40] = 216, [50] = 270 },
             [30] = new() { [5] = 11, [10] = 24, [15] = 38, [20] = 51, [25] = 65, [30] = 78, [40] = 106, [50] = 133,
                            [60] = 162, [70] = 189, [80] = 217, [90] = 245, [100] = 273 },
             [60] = new() { [10] = 11, [15] = 18, [20] = 24, [25] = 31, [30] = 38, [40] = 51, [50] = 65, [60] = 79,
-                           [70] = 93, [80] = 107, [90] = 121, [100] = 135 },
+                           [70] = 93, [80] = 107, [90] = 121, [100] = 135, [200] = 264 },
+            [120] = new() { [50] = 32, [100] = 66, [200] = 132, [400] = 264 },
         };
 
         public static IReadOnlyCollection<double> LteBandwidths => LteTable.Keys;
@@ -76,7 +80,7 @@ namespace RfCore.Signals
             {
                 int scsK = (int)Math.Round(c.ScsHz / 1e3);
                 if (!NrTable.TryGetValue(scsK, out var t))
-                    throw new ArgumentException($"NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60 kHz");
+                    throw new ArgumentException($"NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60, 120 kHz");
                 int bw = (int)Math.Round(c.BandwidthHz / 1e6);
                 if (!t.TryGetValue(bw, out int nrb))
                     throw new ArgumentException($"NR {bw} MHz is not defined at {scsK} kHz");

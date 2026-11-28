@@ -47,7 +47,7 @@ public sealed partial class CarrierRowViewModel : ObservableObject
 {
     public static IReadOnlyList<string> Standards { get; } = ["LTE", "NR", "CW", "PCW", "FSK", "DBPSK", "CSS", "SC", "FILE"];
     public static IReadOnlyList<string> Modulations { get; } = ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM"];
-    public static IReadOnlyList<double> ScsOptions { get; } = [15, 30, 60];
+    public static IReadOnlyList<double> ScsOptions { get; } = [15, 30, 60, 120];
 
     [ObservableProperty] private int _index = 1;
     [ObservableProperty] private string _standard = "LTE";
@@ -1265,6 +1265,8 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     [RelayCommand] private void PresetLte20() => Preset(new CarrierSpec { Standard = CarrierStandard.Lte, BandwidthHz = 20e6, Modulation = QamOrder.Qam64 });
     [RelayCommand] private void PresetNr20() => Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 20e6, ScsHz = 30e3, Modulation = QamOrder.Qam64 });
     [RelayCommand] private void PresetNr100() => Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 100e6, ScsHz = 30e3, Modulation = QamOrder.Qam256 });
+    /// <summary>NR 100 MHz in FR2 (TS 38.101-2): 120 kHz, 66 RB, 64QAM — the 256QAM of the FR1 preset is not an FR2 default.</summary>
+    [RelayCommand] private void PresetNr100Fr2() => Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 100e6, ScsHz = 120e3, Modulation = QamOrder.Qam64 });
 
     [RelayCommand]
     private void PresetTwoCarrier()

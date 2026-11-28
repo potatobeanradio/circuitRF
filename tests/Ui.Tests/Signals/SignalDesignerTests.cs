@@ -114,6 +114,10 @@ public class SignalDesignerTests : FirstLaunchUserState
 
         d.PresetNr100Command.Execute(null);
         Assert.Equal((1, "NR", 100.0), (d.Carriers.Count, d.Carriers[0].Standard, d.Carriers[0].BandwidthMHz));
+        d.PresetNr100Fr2Command.Execute(null);
+        Assert.Equal((1, "NR", 100.0, 120.0), (d.Carriers.Count, d.Carriers[0].Standard, d.Carriers[0].BandwidthMHz, d.Carriers[0].ScsKHz));
+        Assert.Contains(400.0, d.Carriers[0].BandwidthOptions);
+        d.PresetNr100Command.Execute(null);
 
         d.AddCarrierCommand.Execute(null);
         Assert.Equal(2, d.Carriers.Count);

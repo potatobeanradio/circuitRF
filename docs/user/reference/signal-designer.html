@@ -485,7 +485,8 @@ to the source, and the simulation picks its own time step. It is not the
 <h2 id="presets">Presets</h2>
 <p>One click replaces the carriers with a common case. The presets are in one row per family:</p>
 <ul>
-<li><strong>Cellular</strong> — <strong>LTE 20 MHz</strong>, <strong>NR 20 MHz (30 kHz)</strong>, <strong>NR 100 MHz (30 kHz)</strong>, <strong>4 x LTE 20 contiguous</strong>,
+<li><strong>Cellular</strong> — <strong>LTE 20 MHz</strong>, <strong>NR 20 MHz (30 kHz)</strong>, <strong>NR 100 MHz (30 kHz)</strong>, <strong>NR 100 MHz (120 kHz, FR2)</strong>
+(64QAM, <a href="#nr-fr2">FR2</a>), <strong>4 x LTE 20 contiguous</strong>,
 or <strong>2C NR 20 at spacing</strong>: two NR 20 MHz carriers the number of MHz apart in the field beside it, centre
 to centre.</li>
 <li><strong>Radar</strong> — <strong>Pulsed CW</strong>, one <a href="#pulse">pulse train</a>.</li>
@@ -1394,6 +1395,16 @@ with LTE or NR carriers, the file must last a whole number of 0.5 ms slots.</p>
 								Close
 						</text></g></g></g></svg></span>
 </span><figcaption>Two NR 20 MHz carriers 400 MHz apart: the spectrum is framed on both channels, and the simulation gives each its own envelope fundamental.</figcaption></figure>
+<h3 id="nr-fr2">NR subcarrier spacing and FR2</h3>
+<p>An NR card offers 15, 30, 60 and 120 kHz, and its
+bandwidth list follows the spacing. 15 to 60 kHz carry the FR1 bandwidths of 3GPP TS 38.101-1, up to 100 MHz.
+120 kHz is FR2 (TS 38.101-2): 50, 100, 200 and 400 MHz, with 32, 66, 132 and 264 resource blocks. FR2 also
+allows 60 kHz at 50, 100 and 200 MHz. Of those, only 200 MHz (264 RB) is added to the 60 kHz list: 50 and 100 MHz
+are FR1 bandwidths at 60 kHz as well and keep FR1's resource blocks (65 and 135, where FR2 has 66 and 132). The
+FFT is the smallest power of two holding the subcarriers over 0.85: 1024 points, 122.88 MS/s, for 100 MHz at
+120 kHz, and 4096 points, 491.52 MS/s, for 400 MHz. At 120 kHz a slot lasts 0.125 ms, so each 0.5 ms of the
+record holds four slots, 56 symbols, with the longer cyclic prefix on the first. The record stays in whole
+0.5 ms, as for every OFDM carrier, and the EVM tab demodulates it the same way.</p>
 <h2 id="pulse">Pulsed CW</h2>
 <p>A <strong>PCW</strong> card is a pulse train: a CW carrier switched on and off, the stimulus a pulsed-radar amplifier is
 specified with. The <strong>Pulsed CW</strong> preset replaces the carriers with one, or choose <strong>PCW</strong> in a card's standard

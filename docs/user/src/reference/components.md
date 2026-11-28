@@ -402,8 +402,9 @@ source impedance `Z`.
 
 - `Carrier[i]` — one carrier, written as a description string, e.g.
   `"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=1"`: the standard (`LTE`, `NR`, `CW`, `FILE`),
-  channel bandwidth, NR subcarrier spacing, modulation, offset from `Fc`, relative power (dB) and the
-  random-data seed. `BW`, `SCS` and `Off` take `Hz`, `kHz`, `MHz` or `GHz`; a bare number is in Hz. A
+  channel bandwidth, NR subcarrier spacing (`15`, `30` or `60kHz` with the FR1 bandwidths; `120kHz` with
+  FR2's 50, 100, 200 and 400 MHz, and 200 MHz at `60kHz`: see [NR in FR2](signal-designer.html#nr-fr2)),
+  modulation, offset from `Fc`, relative power (dB) and the random-data seed. `BW`, `SCS` and `Off` take `Hz`, `kHz`, `MHz` or `GHz`; a bare number is in Hz. A
   `FILE` carrier plays a two-column I/Q text file, `File=` its path and `Fs=` its sample rate (taken from
   the file's `# sample_rate_hz` header when absent). A `PCW` carrier is a pulse train,
   `"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"`: the pulse repetition interval,

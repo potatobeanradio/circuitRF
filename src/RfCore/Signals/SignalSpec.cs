@@ -28,9 +28,9 @@ namespace RfCore.Signals
     public sealed record CarrierSpec
     {
         public CarrierStandard Standard { get; init; } = CarrierStandard.Lte;
-        /// <summary>Channel bandwidth (Hz): 1.4/3/5/10/15/20 MHz for LTE; 5..100 MHz for NR.</summary>
+        /// <summary>Channel bandwidth (Hz): 1.4/3/5/10/15/20 MHz for LTE; 5..100 MHz for NR (FR1), 50..400 MHz (FR2).</summary>
         public double BandwidthHz { get; init; } = 20e6;
-        /// <summary>NR subcarrier spacing (Hz): 15, 30 or 60 kHz.  Ignored for LTE (15 kHz).</summary>
+        /// <summary>NR subcarrier spacing (Hz): 15, 30, 60 or 120 kHz.  Ignored for LTE (15 kHz).</summary>
         public double ScsHz { get; init; } = 30e3;
         public QamOrder Modulation { get; init; } = QamOrder.Qam64;
         /// <summary>Carrier offset from the source centre frequency (Hz).</summary>
