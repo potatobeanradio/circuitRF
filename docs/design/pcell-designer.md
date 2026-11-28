@@ -222,9 +222,15 @@ output at the instance's values, whose circuit model is its own schematic, and w
   - `MCROSS`'s model is not symmetric between arms 2 and 4 (its source draws `L3` on arm 2 only), so a cross with the
     outer arms on 2 and 4 made S22 and S44 differ by 7 dB. `X1`'s arms 2 and 4 now end at the through line's edge
     (`L` = W/2), where the model is the two through lines alone.
-  - `Theta` written as an expression of `F` followed by `deg` (`Theta=(90-38*F/2.45e9) deg`) is not drawn: the
-    generator returns the `MDLY` with no pins. The same expression in radians with no unit is drawn right and simulates
-    the same, so the cell uses it (§4).
+  - `Theta` written as an expression of `F` followed by `deg` (`Theta=(90-38*F/2.45e9) deg`) is refused on both
+    sides. The cause is the documented unit rule (`expressions.md` §8, no unit algebra across dimensions): `F`
+    carries a unit, so the expression counts as SI of the site's unit and only the bare `90` is read in degrees,
+    θ = π/2 − 38 = −36.4 rad. The circuit model refuses it (`device.delayline.spec-not-positive`, "Delay line:
+    θ = -36.4292036732051 must be positive."). The layout placed the `MDLY` with no pins and said nothing; it now
+    refuses the part with the same sentence, as it does any built-in part that draws nothing and says why
+    (0f29e86c3, `Pcd15AngleParameterTests`). The working form is the radian expression the cell uses,
+    `Theta=(90-38*F/2.45e9)*pi/180`. Dividing `F` by a value with its own unit is not one: `(90-38*F/2.45GHz) deg`
+    is 52 rad, positive, and is drawn as a line about 2980° long with no message (§4).
   - A netlist checked outside the designer needs the board's `H`, `Er`, `T`, `Sigma` and `TanD` on every microstrip
     part, as the designer's extracted text has them; without them the lines take another substrate.
 - **A cell inside a cell.** A designed cell placed in another, its parameter an expression of the outer cell's
@@ -248,8 +254,12 @@ The real Planar runs on the example are recorded in §5.
 
 ## 4. Possible enhancements
 
-- **A unit after an expression of a parameter** (`Theta=(90-38*F/2.45e9) deg`). It is how a user writes an angle that
-  scales with `F`; today only the unitless radians form reaches the generator, which is easy to get wrong by 57×.
+- **The site unit on a dimensionless unit-bearing expression.** `F/2.45GHz` is unit-bearing with power 0 of the site's
+  dimension, so `Theta=(90-38*F/2.45GHz) deg` skips its `deg` and reads 52 rad. Applying the site unit to the result
+  when the tracked power is 0 would read it as 52°, on the circuit and the layout alike, and give an angle that scales
+  with `F` a degree form; today only the radian form is right, which is easy to get wrong by 57×. It is a Core rule
+  change (`expressions.md` §8) to propose to the maintainer: it also changes `w/h+1` typed in mil, today a bare ratio,
+  to that ratio in mil.
 - **Offset and flip in the text view.** The Part panel (PCD-15) sets them without a hand edit; carrying them in the
   `.cnl` would let a designed cell be authored as text alone, at the cost of a Core grammar change.
 - **A cut on `MSHAPE` for the ground pour.** A slot drawn on its own needs the ground drawn around it in two shapes. A
