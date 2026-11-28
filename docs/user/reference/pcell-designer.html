@@ -192,7 +192,7 @@ parameter's own.</p>
 </figure>
 <h2 id="operations">Operations</h2>
 <p>Beside placing parts, a designed cell can be shaped by <strong>operations</strong> on their copper: Merge, Subtract, Intersect,
-Exclusive, Grow (or shrink) and Repeat, the icon buttons under the canvas (each names itself in its tooltip). The
+Exclusive, Grow (or shrink), Repeat, Fillet and Chamfer, the icon buttons under the canvas (each names itself in its tooltip). The
 <strong>Operations</strong> panel lists the cell's history in order. Each step changes
 the copper that the parts draw, and it is applied again at every value, so the cell stays a function of its
 parameters.</p>
@@ -209,6 +209,9 @@ is left as it is.</li>
 <strong>onto</strong> and the result goes there instead, which makes a mask opening, a keep-out or a clearance.</li>
 <li><strong>Repeat</strong> copies the selection into rows and columns at the pitches. The copies are copper only, with no pins and
 no circuit model.</li>
+<li><strong>Fillet</strong> rounds the selection's corners by the radius, and <strong>Chamfer</strong> cuts them straight, the size measured along
+each edge (a right angle gets a 45° cut). Outer corners lose copper and inner corners gain it. Where two parts meet in
+line, the joint is not a corner and stays as placed.</li>
 </ul>
 <p>Amounts, counts and pitches are written as any value is: <code>20 um</code>, <code>20um</code>, or an expression such as <code>Lmid/30</code>. One
 that names a parameter is drawn as a dimension.
@@ -270,6 +273,9 @@ canvas say where each part went and name the <strong>root</strong>, the part the
 <p>Dx, Dy and Angle are expressions, so <code>Dx = g</code> makes a gap that follows the parameter <code>g</code>. All three zero is exactly a
 joint. Everything joined to the offset part moves with it. When you drag an offset part on the canvas, the change is
 added to Dx and Dy as a number: <code>g</code> becomes <code>g + 30</code>, and the parameter stays in the expression.</p>
+<p>Select one part and the <strong>Part</strong> panel shows its Dx, Dy and Angle (when it has an offset), its rotation, and
+<strong>Flipped</strong>, the mirror that decides which way a bend turns or which side a tee's branch leaves. <strong>Apply</strong> writes them
+into the schematic as one undo step; after a turn or a flip the wires are redrawn to the part's nets.</p>
 <p>An anchor that does not resolve, an expression that does not evaluate, or two offsets that pull one chain in different
 directions is reported, and that offset is not applied. Nothing is moved to hide it.</p>
 <h2 id="mshape">Drawn metal and Stretch by Parameter</h2>

@@ -222,7 +222,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
                 Value = p.DefaultExpression,
             });
         Parameters.CollectionChanged += (_, _) => OnTableChanged();
-        Selection.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SelectionText));
+        Selection.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(SelectionText)); LoadPart(); };
         _container = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 0, width: 640, height: 400);
         CnlText = CnlOf(Schematic);
         RebuildOperations();
@@ -493,6 +493,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         Schematic.SchematicDirectory = _schematicDir;
         CnlText = CnlOf(Schematic);
         RebuildOperations();
+        LoadPart();
         Dirty = true;
         OnPropertyChanged(nameof(Schematic));
         OnPropertyChanged(nameof(CanUndo));
@@ -764,6 +765,55 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         if (layer.Length > 0 && !Selection.Contains(operand)) Selection.Add(operand);
     }
 
+    // ══ The selected part's placement (PCD-15) ═════════════════════════════════════════════════════════════════════
+
+    /// <summary>The one selected part, whose placement the Part pane shows; null for none or several.</summary>
+    [ObservableProperty] private string? _partName;
+    /// <summary>Its offset placement's Dx, Dy (expressions in <see cref="PartOffsetUnit"/>) and Angle, when it has one.</summary>
+    [ObservableProperty] private bool _partHasOffset;
+    [ObservableProperty] private string _partDx = "";
+    [ObservableProperty] private string _partDy = "";
+    [ObservableProperty] private string _partAngle = "";
+    [ObservableProperty] private string _partOffsetUnit = "";
+    /// <summary>Its symbol's rotation and flip in the schematic: what a bend's turn and a tee's side follow.</summary>
+    [ObservableProperty] private SymbolRotation _partRotation;
+    [ObservableProperty] private bool _partMirror;
+
+    public IReadOnlyList<SymbolRotation> Rotations { get; } = Enum.GetValues<SymbolRotation>();
+
+    private void LoadPart()
+    {
+        var comp = Selection.Count == 1 ? Schematic.Components.FirstOrDefault(c => c.InstanceName == Selection[0]) : null;
+        PartName = comp?.InstanceName;
+        PartHasOffset = comp?.Offset is not null;
+        (PartDx, PartDy, PartAngle, PartOffsetUnit) = comp?.Offset is { } o ? (o.Dx, o.Dy, o.Angle, o.Unit) : ("", "", "", "");
+        (PartRotation, PartMirror) = comp is null ? (SymbolRotation.R0, false) : (comp.Rotation, comp.MirrorX);
+    }
+
+    [RelayCommand] private void ApplyPartEdit() => ApplyPart();
+
+    /// <summary>The Part pane written back, as a hand edit of the <c>.csch</c> writes it: the offset's Dx, Dy and Angle, the
+    /// rotation and the flip. One undo step; the plan follows.</summary>
+    public bool ApplyPart()
+    {
+        if (PartName is not { } id) { Status = "Part: select one part first."; return false; }
+        return Gesture("Part", () =>
+        {
+            var next = Copy(SchematicPersistence.Serialize(Schematic, CellName));
+            var comp = next.Components.First(c => c.InstanceName == id);
+            if (comp.Offset is { } o)
+            {
+                string Expr(string t) { string e = t.Trim().Length > 0 ? t.Trim() : "0"; Parser.Parse(e); return e; }   // a typo is the status line
+                comp.Offset = o with { Dx = Expr(PartDx), Dy = Expr(PartDy), Angle = Expr(PartAngle) };
+            }
+            bool turned = comp.Rotation != PartRotation || comp.MirrorX != PartMirror;
+            (comp.Rotation, comp.MirrorX) = (PartRotation, PartMirror);
+            // A turn or a flip moves the part's pins off its wires: the netlist merged back redraws them to its nets.
+            if (turned && CellNetlistMerge.Merge(next, CnlOf(Schematic)).Schematic is { } merged) next = merged;
+            return (next, $"{id}: placement set.");
+        });
+    }
+
     // ══ Operations (brief-pcd-14 R-pcd14-2 to -5) ══════════════════════════════════════════════════════════════
 
     /// <summary>The history, one row per operation in order; rebuilt after every edit and plan.</summary>
@@ -778,6 +828,10 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     [ObservableProperty] private string _repeatColumns = "2";
     [ObservableProperty] private string _repeatPitchX = "1 mm";
     [ObservableProperty] private string _repeatPitchY = "0";
+
+    /// <summary>Fillet: the radius; Chamfer: the leg along each edge. Expressions.</summary>
+    [ObservableProperty] private string _filletRadius = "100 um";
+    [ObservableProperty] private string _chamferSize = "100 um";
 
     public bool HasOperations => Operations.Count > 0;
 
@@ -816,6 +870,8 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         var op = kind switch
         {
             PCellOperationKind.Grow => new PCellOperation { Kind = kind, A = ids, Amount = Text(GrowAmount), Onto = Text(GrowOnto), Unit = LengthUnit },
+            PCellOperationKind.Fillet => new PCellOperation { Kind = kind, A = ids, Amount = Text(FilletRadius), Unit = LengthUnit },
+            PCellOperationKind.Chamfer => new PCellOperation { Kind = kind, A = ids, Amount = Text(ChamferSize), Unit = LengthUnit },
             PCellOperationKind.Repeat => new PCellOperation
             {
                 Kind = kind, A = ids, Rows = Text(RepeatRows), Columns = Text(RepeatColumns),
@@ -829,13 +885,11 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     [RelayCommand] private void Merge() => AddOperation(PCellOperationKind.Merge);
     [RelayCommand] private void Subtract() => AddOperation(PCellOperationKind.Subtract);
     [RelayCommand] private void Intersect() => AddOperation(PCellOperationKind.Intersect);
-    /// <summary>Fillet: the radius; Chamfer: the leg along each edge. Expressions.</summary>
-    [ObservableProperty] private string _filletRadius = "100 um";
-    [ObservableProperty] private string _chamferSize = "100 um";
-
     [RelayCommand] private void Exclusive() => AddOperation(PCellOperationKind.Exclusive);
     [RelayCommand] private void Grow() => AddOperation(PCellOperationKind.Grow);
     [RelayCommand] private void Repeat() => AddOperation(PCellOperationKind.Repeat);
+    [RelayCommand] private void Fillet() => AddOperation(PCellOperationKind.Fillet);
+    [RelayCommand] private void Chamfer() => AddOperation(PCellOperationKind.Chamfer);
 
     /// <summary>R-pcd14-3: the row's edited fields written back (<see cref="PCellOperations.Edit"/>).</summary>
     public bool EditOperation(string id, PCellOperation operation) =>
@@ -870,8 +924,6 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     {
         if (Selection.FirstOrDefault(id => Schematic.Components.Any(c => c.InstanceName == id && DrawnMetal.Is(c))) is not { } shape)
         {
-            PCellOperationKind.Fillet => new PCellOperation { Kind = kind, A = ids, Amount = Text(FilletRadius), Unit = LengthUnit },
-            PCellOperationKind.Chamfer => new PCellOperation { Kind = kind, A = ids, Amount = Text(ChamferSize), Unit = LengthUnit },
             Status = "Make tool: select an MSHAPE first.";
             return false;
         }
@@ -888,8 +940,6 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
             Set(DrawnMetal.Role, DrawnMetal.RoleTool);
             Set(DrawnMetal.Model, DrawnMetal.ModelOpen);
             return (next, $"{shape} is a tool: it cuts, merges or bounds in an operation, and is never copper itself.");
-    [RelayCommand] private void Fillet() => AddOperation(PCellOperationKind.Fillet);
-    [RelayCommand] private void Chamfer() => AddOperation(PCellOperationKind.Chamfer);
         });
     }
 

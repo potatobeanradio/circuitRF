@@ -1,6 +1,6 @@
 # circuitRF — PCell Designer: a schematic of primitives as a parameterised cell
 
-**Status:** built (series PCD-0 to PCD-14) · **Date:** 2026-11-28
+**Status:** built (series PCD-0 to PCD-15) · **Date:** 2026-11-28
 
 The schematic-driven layout series (SDL) made a schematic of primitives draw a joined layout and be solved and
 optimised by EM. The PCell Designer makes such a schematic a **designed cell**: a PCell whose layout is the planner's
@@ -183,6 +183,23 @@ output at the instance's values, whose circuit model is its own schematic, and w
 - **Seen where.** Not in the `.cnl` (operations are geometry): the designer's history panel (PCD-14) and
   `circuitrf pcell ops <cell>`. A Grow amount or Repeat pitch that names a parameter is a dimension line.
 
+### PCD-15 — the Part panel, Fillet and Chamfer, a cell inside a cell
+
+- **The Part panel.** One selected part shows its offset's `Dx`, `Dy` and `Angle` (when it has one), its symbol's
+  rotation and **Flipped** (`MirrorX`). Apply writes those `.csch` fields, as the showcase cells' hand edits did, as one
+  undo step. A turn or a flip moves the pins off their wires, so the cell's own netlist is merged back in the same step
+  and the wires are redrawn (PCD-9's second Apply). An expression that does not parse is refused. The text view and the
+  `.cnl` are unchanged.
+- **Fillet and Chamfer** are operation kinds with `Amount` (the radius, or the leg along each edge): four Clipper
+  offsets by the amount, shrink-grow (convex corners) then grow-shrink (concave ones). The offset that makes a corner
+  takes round joins (Fillet) or bevel joins (Chamfer: the bevel meets each edge `d` from the old corner, so a right
+  angle gets a 45° cut of leg `d`); the offset that undoes it takes a mitre, which leaves those corners as made. The
+  whole layer is smoothed and only A's share of the change is kept, so a joint between two parts in line stays
+  square. They pass the pin and port checks, suppress and keep-model like any step; no new `.csch` field.
+- **A cell inside a cell.** A designed cell placed in another, its parameter an expression of the outer cell's
+  (`Lmid = 2*a`), regenerates with `a` (`Pcd15NestedCellTests`). It passed as the shared code stood; nothing was
+  changed for it.
+
 ## 3. The acceptance check and the real EM run
 
 `Pcd8AcceptanceTests` runs the six steps of PCD-0 §8 in one test, and all six pass (about 40 s, the EM solver a
@@ -200,8 +217,8 @@ The real Planar runs on the example are recorded in §5.
 
 ## 4. Possible enhancements
 
-- **Offset and flip in the text view.** Every showcase cell needed its `.csch` edited for them. Carrying them in the
-  `.cnl` would let a designed cell be authored as text alone.
+- **Offset and flip in the text view.** The Part panel (PCD-15) sets them without a hand edit; carrying them in the
+  `.cnl` would let a designed cell be authored as text alone, at the cost of a Core grammar change.
 - **A cut on `MSHAPE` for the ground pour.** A slot drawn on its own needs the ground drawn around it in two shapes. A
   shape that cuts the pour would make a slot one part, and would keep it open under a pour.
 
@@ -213,9 +230,8 @@ The real Planar runs on the example are recorded in §5.
   planner.
 - **Models fitted from EM.** `em=correct` already corrects the primitives' models by EM during optimisation. A fitted
   parametric model needs a sampling plan and a model format of its own, which is the Model Composer's territory.
-- **Offset and Stretch in the `.cnl`, and an Offset editor in Properties.** The text view does not carry them (they are
-  placement, not circuit), and today an offset is written in the `.csch` and then dragged. Carrying them in the text
-  needs a Core grammar change; a Properties row needs only the UI, and is the cheaper first step.
+- **An offset made from the Part panel.** It edits an offset a part already has (a drop off a pin makes one); choosing
+  the anchor and pin there would make a joined part an offset one without a re-drop.
 - **Choice parameters on a designed cell.** `EmEvaluation.Apply` applies real values only (D-numbers); a choice needs
   string values through the planner's scope.
 - **A declared circuit model for `MSHAPE` beyond `open`** (a pad capacitance, a Touchstone file). It would give a pad's
@@ -232,8 +248,6 @@ The real Planar runs on the example are recorded in §5.
 - **Operations seen by a bare circuit run.** A placed cell's operations are found through the registered resolver, so a
   run outside any workspace runs the circuit model; a key on the cell's `define` would carry the EM-only mark everywhere,
   at the cost of a Core grammar change.
-- **Fillet and chamfer as operations.** A grow out and back in with round joins rounds a corner by a radius expression;
-  worth adding when a cell needs smooth current paths at high frequency.
 - **A generator handle for a Grow or a Repeat pitch.** The designer draws them as dimensions; a parent placement could
   drag them too once a grow has an axis to drag along.
 

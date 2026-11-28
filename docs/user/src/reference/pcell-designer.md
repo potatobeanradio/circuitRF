@@ -126,7 +126,7 @@ parameter's own.
 ## Operations {#operations}
 
 Beside placing parts, a designed cell can be shaped by **operations** on their copper: Merge, Subtract, Intersect,
-Exclusive, Grow (or shrink) and Repeat, the icon buttons under the canvas (each names itself in its tooltip). The
+Exclusive, Grow (or shrink), Repeat, Fillet and Chamfer, the icon buttons under the canvas (each names itself in its tooltip). The
 **Operations** panel lists the cell's history in order. Each step changes
 the copper that the parts draw, and it is applied again at every value, so the cell stays a function of its
 parameters.
@@ -143,6 +143,9 @@ parameters.
   **onto** and the result goes there instead, which makes a mask opening, a keep-out or a clearance.
 - **Repeat** copies the selection into rows and columns at the pitches. The copies are copper only, with no pins and
   no circuit model.
+- **Fillet** rounds the selection's corners by the radius, and **Chamfer** cuts them straight, the size measured along
+  each edge (a right angle gets a 45° cut). Outer corners lose copper and inner corners gain it. Where two parts meet in
+  line, the joint is not a corner and stays as placed.
 
 Amounts, counts and pitches are written as any value is: `20 um`, `20um`, or an expression such as `Lmid/30`. One
 that names a parameter is drawn as a dimension.
@@ -187,6 +190,10 @@ A part that no net joins needs to be told where it goes: a pad beside a line, a 
 Dx, Dy and Angle are expressions, so `Dx = g` makes a gap that follows the parameter `g`. All three zero is exactly a
 joint. Everything joined to the offset part moves with it. When you drag an offset part on the canvas, the change is
 added to Dx and Dy as a number: `g` becomes `g + 30`, and the parameter stays in the expression.
+
+Select one part and the **Part** panel shows its Dx, Dy and Angle (when it has an offset), its rotation, and
+**Flipped**, the mirror that decides which way a bend turns or which side a tee's branch leaves. **Apply** writes them
+into the schematic as one undo step; after a turn or a flip the wires are redrawn to the part's nets.
 
 An anchor that does not resolve, an expression that does not evaluate, or two offsets that pull one chain in different
 directions is reported, and that offset is not applied. Nothing is moved to hide it.

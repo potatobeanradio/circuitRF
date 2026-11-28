@@ -233,7 +233,7 @@
                           ResizeDirection="Columns"/>
 
             <!-- Parameters (R-pcd6-3) over the response (R-pcd6-5) -->
-            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto">
+            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*,Auto">
                 <Border Classes="pane" Grid.Row="0">
                     <StackPanel>
                         <DockPanel>
@@ -308,7 +308,30 @@
                         </ScrollViewer>
                     </StackPanel>
                 </Border>
-                <Border Classes="pane" Grid.Row="2">
+                <!-- The selected part's placement (PCD-15): what the .csch holds and the text view does not. -->
+                <Border Classes="pane" Grid.Row="2" IsVisible="{Binding PartName, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="panelhdr" Text="{Binding PartName, StringFormat='Part {0}'}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding PartHasOffset}">
+                            <TextBlock Text="Dx" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding PartDx}" Width="80" ToolTip.Tip="Offset along the anchor pin's direction, an expression"/>
+                            <TextBlock Text="Dy" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding PartDy}" Width="80" ToolTip.Tip="Offset 90° counter-clockwise from it, an expression"/>
+                            <TextBlock Text="{Binding PartOffsetUnit}" VerticalAlignment="Center"/>
+                            <TextBlock Text="Angle" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            <TextBox Text="{Binding PartAngle}" Width="50" ToolTip.Tip="Degrees; 0 faces the anchor pin, as at a joint"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Rotation" VerticalAlignment="Center"/>
+                            <ComboBox ItemsSource="{Binding Rotations}" SelectedItem="{Binding PartRotation}" MinWidth="70"/>
+                            <CheckBox Content="Flipped" IsChecked="{Binding PartMirror}" Margin="6,0,0,0"
+                                      ToolTip.Tip="Mirrored in the schematic: which way a bend turns, which side a tee's branch leaves"/>
+                            <Button Content="Apply" Command="{Binding ApplyPartEditCommand}" Margin="6,0,0,0"
+                                    ToolTip.Tip="Write the placement into the schematic, as one undo step"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <Border Classes="pane" Grid.Row="3">
                     <Panel>
                         <ctl:AspectRatioPanel IsVisible="{Binding ResponseNote, Converter={x:Static ObjectConverters.IsNull}}">
                             <ddc:PlotControl Name="ResponsePlotControl"
@@ -323,7 +346,7 @@
                     </Panel>
                 </Border>
                 <!-- A cell made from filter synthesis: its metrics (brief-pcd-12), from the response or the last EM run. -->
-                <Border Classes="pane" Grid.Row="3" IsVisible="{Binding IsFilterCell}">
+                <Border Classes="pane" Grid.Row="4" IsVisible="{Binding IsFilterCell}">
                     <vm:FilterMetricsPanel Metrics="{Binding FilterMetrics}"/>
                 </Border>
             </Grid>
