@@ -8,13 +8,12 @@
 //   M4  Bluetooth EDR (Core v5.4 Vol 2 Part B cl. 6.7): the GFSK access code and header, a 5 us guard, then the payload
 //       from the switch's function, starting on the right sample; ramps and off-time after it, 625 us in all.
 //   M5  The deviation of a clean record reads within 0.1 %, and a 5 % high one reads 5 % high.
-//   M6  With the new options unset the record is byte for byte what it was.
+//   M6  With the new options unset the record is what it was: stored samples, power and sums to 1e-9 relative.
 //   M7  Bursts lay out as the standard does (GSM normal burst, 3GPP TS 45.002 cl. 5.2.3); refusals name the field.
 
 using System;
 using System.Linq;
 using System.Numerics;
-using System.Security.Cryptography;
 using RfCore.Signals;
 using Xunit;
 
@@ -129,22 +128,42 @@ public class FskMaryTests
         Assert.Equal(5, FskQuality.Measure(s, hi, rate).DeviationErrorPercent, 1);
     }
 
-    private static string Hash(FskShape s)
-    {
-        var (x, f, _) = Gen(s);
-        var d = x.SelectMany(v => new[] { v.Real, v.Imaginary }).Concat(f).ToArray();
-        var b = new byte[d.Length * 8];
-        Buffer.BlockCopy(d, 0, b, 0, b.Length);
-        return Convert.ToHexString(SHA256.HashData(b))[..16];
-    }
+    // Reference values of the binary generator before levels, pulses and bursts existed: samples at fixed indices across
+    // the record, the mean power, the sum of the samples and of the frequency. Compared to 1e-9 relative, not bit for bit,
+    // so the platform's maths library may differ in the last place.
+    private static readonly (FskShape Shape, int N, (int I, Complex X)[] At, double P, Complex Sum, double F)[] Before =
+    [
+        (new FskShape(100e3, 45e3, 0, "PN9"), 16352,
+         [(2047, new(0.4795770000205758, -0.8774998011687892)), (4091, new(-0.9649376458604223, 0.26247921746558567)),
+          (6135, new(0.6263695409542535, -0.7795262652180219)), (10223, new(0.8774998011687339, 0.47957700002067705)),
+          (14311, new(-0.04854956092033743, 0.9988207747811628))],
+         1, new(-126.72656154067597, 520.8107966824715), 1440000),
+        (new FskShape(100e3, 45e3, 0.5, "PN9"), 16352,
+         [(2047, new(0.8899870115616428, -0.45598587615361097)), (4091, new(-0.9455316730809485, -0.3255301141227065)),
+          (6135, new(0.956292417666526, -0.29241205842699225)), (10223, new(0.4670370409817705, 0.8842377521634054)),
+          (14311, new(-0.6017808261018812, 0.7986612782250917))],
+         1, new(-502.71341246236415, 419.0758424162154), 1440000.0000000943),
+        (new FskShape(270833.333, 67708.33, 0.3, "1100101"), 224,
+         [(31, new(0.27315022975235465, 0.961971388340753)), (59, new(-0.5344054581653517, 0.8452282569123447)),
+          (87, new(0.20194734888200921, 0.979396379551981)), (143, new(0.9697252395723032, -0.2441986071549945)),
+          (199, new(0.7092168511167368, -0.7049903957445522))],
+         1, new(127.4074663085225, 45.41204398775179), 2166666.559999998),
+    ];
 
     [Fact]
     public void M6_UnsetOptionsLeaveTheRecordAsItWas()
     {
-        // hashes of the binary generator before levels, pulses and bursts existed
-        Assert.Equal("E63CD084D9031EC5", Hash(new FskShape(100e3, 45e3, 0, "PN9")));
-        Assert.Equal("FF774D7BAE024F4C", Hash(new FskShape(100e3, 45e3, 0.5, "PN9")));
-        Assert.Equal("1B8B665E2FD57D37", Hash(new FskShape(270833.333, 67708.33, 0.3, "1100101")));
+        static void Near(Complex want, Complex got, string what) =>
+            Assert.True((got - want).Magnitude <= 1e-9 * want.Magnitude, $"{what}: {got}, was {want}");
+        foreach (var (shape, n, at, p, sum, f) in Before)
+        {
+            var (x, fr, _) = Gen(shape);
+            Assert.Equal(n, x.Length);
+            foreach (var (i, v) in at) Near(v, x[i], $"{shape.Kind} sample {i}");
+            Near(p, x.Average(v => v.Real * v.Real + v.Imaginary * v.Imaginary), $"{shape.Kind} mean power");
+            Near(sum, x.Aggregate(Complex.Zero, (a, v) => a + v), $"{shape.Kind} sum");
+            Near(f, fr.Sum(), $"{shape.Kind} frequency sum");
+        }
     }
 
     [Fact]
