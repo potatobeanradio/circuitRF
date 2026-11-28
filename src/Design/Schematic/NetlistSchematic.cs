@@ -830,7 +830,7 @@ public static class NetlistSchematic
         // the symbol has no other way to know how many pins to draw.
         if (ComponentTypeRegistry.PortCountParameter(kind) is { } countParam
             && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond or SymbolKind.PhasedArray or SymbolKind.Mlad
-                            or SymbolKind.Mcla or SymbolKind.PropagationChannel)
+                            or SymbolKind.Mcla or SymbolKind.PropagationChannel or SymbolKind.MShape)
             && !comp.Parameters.Any(p => p.Name == countParam))
         {
             int n = kind is SymbolKind.Sdd or SymbolKind.ZPort ? nets.Count / 2

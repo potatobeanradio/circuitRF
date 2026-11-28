@@ -1131,6 +1131,8 @@ public static class ComponentTypeRegistry
         SymbolKind.WBond                                     => "Arrays",
         // A ladder's via pins G1… follow its list: one per shorted stub arm.
         SymbolKind.Mlad                                      => "Sections",
+        // Drawn metal: one pin per PinX[k] row, k = 1, 2, … to the first missing one (MShapeModel.PinCountOf).
+        SymbolKind.MShape                                    => "PinX[k]",
         _                                                    => null,
     };
 
