@@ -93,11 +93,14 @@ namespace RfCore.Signals
         /// <summary>Data symbols in the record; null = one data period, at most <see cref="ScQam.DefaultMaxSymbols"/>.</summary>
         public int? Symbols { get; init; }
 
+        /// <summary>A CW carrier's phase at the start of the record (degrees); null = 0. The N-tone preset sets it.</summary>
+        public double? PhaseDeg { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
             CarrierStandard.Nr => $"NR {BandwidthHz / 1e6:0.#} MHz {ScsHz / 1e3:0} kHz {ModName(Modulation)}",
-            CarrierStandard.Cw => "CW",
+            CarrierStandard.Cw => PhaseDeg is double ph ? $"CW {ph.ToString("0.##", CultureInfo.InvariantCulture)}°" : "CW",
             CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(PulsedCw.Resolve(this).Width)} / {PulsedCw.FormatTime(PulsedCw.Resolve(this).Pri)}",
             CarrierStandard.Fsk => FskLabel(Fsk.Resolve(this)),
             CarrierStandard.Dbpsk => $"DBPSK {Fsk.FormatBitRate(Dbpsk.Resolve(this).BitRate)} {DataLabel(Dbpsk.Resolve(this).Data)}",
@@ -225,6 +228,7 @@ namespace RfCore.Signals
         /// <c>"FILE;File=iq/capture.txt;Fs=122.88MHz;Off=0;P=0"</c>, or for a pulse train
         /// <c>"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"</c>, or for FSK
         /// <c>"FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"</c>, or for DBPSK <c>"DBPSK;Rb=100bps;Data=PN9;Off=0;P=0"</c>,
+        /// or for a CW tone with its starting phase in degrees <c>"CW;Phase=90;Off=0.5MHz;P=0;Seed=1"</c>,
         /// or for chirp spread spectrum <c>"CSS;SF=7;BW=125kHz;Off=0;P=0"</c>, or for a single carrier
         /// <c>"SC;Rs=10Msps;Mod=16APSK;RollOff=0.2;Rings=2.85;Phases=45,15;Data=PN15;Preamble=64;PilotBlock=36/1440;Off=0;P=0"</c>
         /// (Rs takes sps, ksps or Msps; <see cref="ScQam"/> states every default). BW, SCS, Fs, Dev and Off take Hz, kHz,
@@ -289,6 +293,8 @@ namespace RfCore.Signals
                     "PILOTBLOCK" => c with { PilotBlock = ScField(c, k, () => v) },
                     "SYMBOLS" => c with { Symbols = ScField(c, k, () => WholeField(k, v)) },
                     "SF" => c with { SpreadingFactor = CssField(c, k, v) },
+                    "PHASE" when c.Standard == CarrierStandard.Cw => c with { PhaseDeg = Num() },
+                    "PHASE" => throw new FormatException($"carrier field {k} belongs to a CW carrier"),
                     _ => throw new FormatException($"unknown carrier field '{k}'"),
                 };
             }
@@ -538,6 +544,7 @@ namespace RfCore.Signals
                 if (c.GaussianBt is double bt) sb.Append(";BT=").Append(bt.ToString("R", inv));
                 if (c.Data is { } data) sb.Append(";Data=").Append(data);
             }
+            if (c.Standard == CarrierStandard.Cw && c.PhaseDeg is double phase) sb.Append(";Phase=").Append(phase.ToString("R", inv));
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
             // a pulse, and the PN data of an FSK, DBPSK or CSS carrier, draw no random symbols

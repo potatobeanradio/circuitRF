@@ -274,7 +274,8 @@ namespace RfCore.Signals
                     {
                         double rate = 1.92e6;
                         int n = (int)Math.Round(record * rate);
-                        raw.Add((c, Enumerable.Repeat(Complex.One, n).ToArray(), rate, 0));
+                        var tone = c.PhaseDeg is double ph ? Complex.FromPolarCoordinates(1, ph * Math.PI / 180) : Complex.One;
+                        raw.Add((c, Enumerable.Repeat(tone, n).ToArray(), rate, 0));
                         break;
                     }
                     case CarrierStandard.Pcw:

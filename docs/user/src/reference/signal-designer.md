@@ -4,7 +4,7 @@ slug: reference/signal-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Signal Designer
 lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK, Bluetooth LE, LoRa, Sigfox, a single PSK, QAM or APSK carrier or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
-keywords: Signal Designer, MOD_Source, FR2, 120 kHz, mmWave, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, single carrier, SC, root raised cosine, RRC, roll-off, matched filter, 8PSK, APSK, 16APSK, 32APSK, satellite, PN23, preamble, pilot block, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
+keywords: Signal Designer, MOD_Source, FR2, 120 kHz, mmWave, two-tone, N-tone, multitone, intermodulation, IMD, intercept, IP3, Newman phases, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, single carrier, SC, root raised cosine, RRC, roll-off, matched filter, 8PSK, APSK, 16APSK, 32APSK, satellite, PN23, preamble, pilot block, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
 ---
 
 <nav class="toc">
@@ -80,6 +80,8 @@ One click replaces the carriers with a common case. The presets are in one row p
   - **Bluetooth LE** — a menu: **LE 1M / LE Coded** and **LE 2M**, as [GFSK](#fsk) at 2.44 GHz.
   - **LoRaWAN** — a menu: a [LoRa](#css) packet at **SF7** or **SF12**, 125 kHz at 868.1 MHz (EU868).
   - **Sigfox** — the RC1 uplink: [DBPSK](#dbpsk) at 100 b/s, 868.13 MHz.
+- **Tones** — **N tones**: the number of equal CW tones in the field beside it (2 by default), the spacing in
+  the next field apart, centred on `Fc`, for intermodulation and intercept tests: see [N tones](#tones).
 
 ## A custom I/Q file {#custom}
 
@@ -180,6 +182,28 @@ FFT is the smallest power of two holding the subcarriers over 0.85: 1024 points,
 120 kHz, and 4096 points, 491.52 MS/s, for 400 MHz. At 120 kHz a slot lasts 0.125 ms, so each 0.5 ms of the
 record holds four slots, 56 symbols, with the longer cyclic prefix on the first. The record stays in whole
 0.5 ms, as for every OFDM carrier, and the EVM tab demodulates it the same way.
+
+### N tones {#tones}
+
+The **N tones** preset replaces the carriers with N **CW** cards of equal power, tone k (counting from 0) at
+`Fc` + (k − (N − 1)/2) × spacing: two tones 1 MHz apart sit at ±0.5 MHz. They are ordinary CW cards, so each can
+be moved or changed after the preset, and the envelope run plays them as it plays any CW carriers.
+
+**The phases.** Two tones start in phase. Their relative phase only moves the beat in time, and the PAPR is
+3.01 dB at any phase. N tones all in phase peak together once in every beat period, 10 log N dB above the
+average: 9 dB for eight tones. So from three tones up, tone k starts at Newman's phase, 180 k² / N degrees.
+That spreads the peaks and keeps the PAPR at 3.7 dB for three tones, 3.0 dB for four and 2.4 to 2.7 dB from five up.
+
+In the netlist a tone's starting phase is the CW card's `Phase=`, in degrees, and is written only when it is not 0:
+
+```
+Carrier[1]="CW;Off=-1MHz;P=0;Seed=1"
+Carrier[2]="CW;Phase=60;Off=0;P=0;Seed=1"
+Carrier[3]="CW;Phase=240;Off=1MHz;P=0;Seed=1"
+```
+
+The card does not show the phase, and editing the card keeps it. A carrier's offset snaps to a multiple of
+1 / Record (1 kHz at the default 1 ms), so the spacing is exact when every tone's offset is such a multiple.
 
 ## Pulsed CW {#pulse}
 

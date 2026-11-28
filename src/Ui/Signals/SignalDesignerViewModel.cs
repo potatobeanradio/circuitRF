@@ -336,6 +336,8 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     private double? _measureStart, _measureEnd;
     /// <summary>An SC carrier's Symbols= and Span=, written in the netlist only; carried through the Designer unchanged.</summary>
     private int? _scSymbols, _scSpan;
+    /// <summary>A CW carrier's Phase= (the N-tone preset's), carried through the Designer unchanged.</summary>
+    private double? _cwPhaseDeg;
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(PriError), nameof(HasPriError))] private string _priText = Us(PulsedCw.DefaultPri);
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(WidthError), nameof(HasWidthError))] private string _widthText = Us(PulsedCw.DefaultWidth);
@@ -527,11 +529,13 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         Seed = Seed,
         FilePath = Standard == "FILE" ? FilePath : null,
         SampleRateHz = Standard == "FILE" && SampleRateMHz > 0 ? SampleRateMHz * 1e6 : null,
+        PhaseDeg = Standard == "CW" ? _cwPhaseDeg : null,
     };
 
     public static CarrierRowViewModel FromSpec(CarrierSpec c, int index)
     {
         var row = FromBaseSpec(c, index);
+        row._cwPhaseDeg = c.PhaseDeg;
         if (c.Standard == CarrierStandard.Fsk)
         {
             var f = Fsk.Resolve(c);
@@ -727,6 +731,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     [ObservableProperty] private bool _shapingEnabled = true;
     [ObservableProperty] private double _shapingFloorDbc = -80;
     [ObservableProperty] private double _presetSpacingMHz = 400;
+    /// <summary>The N-tone preset's tone count and tone-to-tone spacing.</summary>
+    [ObservableProperty] private int _presetTones = 2;
+    [ObservableProperty] private double _presetToneSpacingMHz = 1;
     /// <summary>
     /// A pulse's CCDF over its on-time only (50 % to 50 %), as a signal analyser gates a burst: the average it is
     /// measured against is then the pulse's own, not the record's. Off, it is over the whole PRI, where the duty cycle
@@ -1317,6 +1324,24 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             : [new CarrierSpec { Standard = CarrierStandard.Lte, BandwidthHz = 20e6, Modulation = QamOrder.Qam64 }];
         _beforeCustom = null;
         Preset(back);
+    }
+
+    /// <summary>
+    /// N equal CW tones <see cref="PresetToneSpacingMHz"/> apart, centred on Fc, for intermodulation and intercept tests.
+    /// Two tones start in phase (any relative phase only moves the beat in time; the PAPR is 3.01 dB either way). From
+    /// three up, tone k (0-based) starts at Newman's phase 180 k² / N degrees, which keeps the PAPR at 2.4-3.7 dB, where N
+    /// tones in phase peak at 10 log N.
+    /// </summary>
+    [RelayCommand]
+    private void PresetNTone()
+    {
+        int n = Math.Max(2, PresetTones);
+        double df = PresetToneSpacingMHz * 1e6;
+        Preset(Enumerable.Range(0, n).Select(k => new CarrierSpec
+        {
+            Standard = CarrierStandard.Cw, OffsetHz = (k - (n - 1) / 2.0) * df,
+            PhaseDeg = n > 2 && k > 0 ? 180.0 * k * k / n % 360 : null,
+        }).ToArray());
     }
 
     [RelayCommand]

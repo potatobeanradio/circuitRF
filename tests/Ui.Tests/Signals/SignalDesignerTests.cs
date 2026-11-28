@@ -579,6 +579,24 @@ public class SignalDesignerTests : FirstLaunchUserState
     }
 
     [Fact]
+    public void NTonePreset_SetsEqualCwTonesCentredOnFc_WithNewmanPhasesFromThree()
+    {
+        var (vm, s) = Bench();
+        using var d = new SignalDesignerViewModel();
+        d.SetTarget(vm, s, preview: false);
+        d.PresetToneSpacingMHz = 2;
+        d.PresetNToneCommand.Execute(null);
+        Assert.Equal(new[] { -1.0, 1.0 }, d.Carriers.Select(c => c.OffsetMHz));
+        Assert.All(d.Carriers, c => Assert.Equal(("CW", 0.0), (c.Standard, c.PowerDb)));
+        Assert.All(d.Carriers, c => Assert.Null(c.ToSpec().PhaseDeg));
+
+        d.PresetTones = 3;
+        d.PresetNToneCommand.Execute(null);
+        Assert.Equal(new[] { -2.0, 0.0, 2.0 }, d.Carriers.Select(c => c.OffsetMHz));
+        Assert.Equal(new double?[] { null, 60, 240 }, d.Carriers.Select(c => c.ToSpec().PhaseDeg));
+    }
+
+    [Fact]
     public void PulsePreset_IsOnePulsedCarrier()
     {
         var (vm, s) = Bench();

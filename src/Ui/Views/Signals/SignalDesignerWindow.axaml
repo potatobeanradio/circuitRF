@@ -168,7 +168,7 @@
                                 <TextBlock Classes="cardhdr" Text="Presets"/>
                                 <!-- One row per family, its name on the left. A family of several standards is one button with
                                      a menu (one item per mode), so a row does not grow by a button per mode. -->
-                                <Grid ColumnDefinitions="64,*" RowDefinitions="Auto,Auto,Auto" Tag="preset-rows">
+                                <Grid ColumnDefinitions="64,*" RowDefinitions="Auto,Auto,Auto,Auto" Tag="preset-rows">
                                     <TextBlock Classes="lbl" Text="Cellular" VerticalAlignment="Top" Margin="0,5,0,0"/>
                                     <WrapPanel Grid.Column="1">
                                         <Button Classes="small" Margin="0,0,6,4" Content="LTE 20 MHz" Command="{Binding PresetLte20Command}"/>
@@ -189,6 +189,17 @@
                                     <Button Grid.Row="1" Grid.Column="1" Classes="small" Margin="0,2,0,4" HorizontalAlignment="Left" Content="Pulsed CW"
                                             Command="{Binding PresetPulseCommand}"
                                             ToolTip.Tip="One pulsed-CW carrier, for a pulsed-radar amplifier: set its PRI, width, edges and delay on the card"/>
+                                    <TextBlock Grid.Row="3" Classes="lbl" Text="Tones" Margin="0,6,0,0"/>
+                                    <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                                        <Button Classes="small" Content="N tones" Command="{Binding PresetNToneCommand}"
+                                                ToolTip.Tip="N equal CW tones centred on Fc, for intermodulation and intercept tests. Two tones start in phase; three or more start at Newman's phases, which keep the PAPR low."/>
+                                        <NumericUpDown Value="{Binding PresetTones}" Increment="1" Minimum="2" Maximum="64" FormatString="0" MinWidth="70"
+                                                       ToolTip.Tip="How many tones"/>
+                                        <TextBlock Classes="lbl" Text="tones"/>
+                                        <NumericUpDown Value="{Binding PresetToneSpacingMHz}" Increment="0.1" Minimum="0.001" FormatString="0.###" MinWidth="90"
+                                                       ToolTip.Tip="Tone-to-tone spacing. Offsets snap to 1 / Record (1 kHz at 1 ms)."/>
+                                        <TextBlock Classes="lbl" Text="MHz apart"/>
+                                    </StackPanel>
                                     <TextBlock Grid.Row="2" Classes="lbl" Text="IoT" Margin="0,2,0,0"/>
                                     <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,2,0,0">
                                         <!-- Each sets one carrier and moves Centre Fc to the mode's channel (unless Fc is an expression). -->

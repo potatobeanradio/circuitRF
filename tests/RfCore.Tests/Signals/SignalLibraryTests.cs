@@ -15,6 +15,9 @@
 //   S8  The cache returns the same signal for the same spec and a different one for a different seed.
 //   S9  Inline carrier syntax round-trips.
 //   S10 A carrier's frequencies mean the same in any unit: 20MHz, 20000kHz and 20e6 generate the identical signal.
+//   S11 N tones (the N-tone preset's CW cards): two equal tones 1 MHz apart hold all the power in two equal bins at
+//       +-0.5 MHz and peak 3.01 dB over the average; a CW card's Phase= round-trips, starts its tone there, and is
+//       absent from a plain CW card's text.
 
 using System;
 using System.IO;
@@ -219,5 +222,32 @@ public class SignalLibraryTests
         var reference = SignalComposer.Generate(specs[0]).Carriers[0].Native;
         foreach (var sp in specs.Skip(1))
             Assert.Equal(reference, SignalComposer.Generate(sp).Carriers[0].Native);
+    }
+
+    [Fact]
+    public void S11_NTones_SitAtTheirOffsets_AtEqualPower_TwoTonePaprIs3dB()
+    {
+        var sig = SignalComposer.Generate(new SignalSpec
+        {
+            Carriers = [new CarrierSpec { Standard = CarrierStandard.Cw, OffsetHz = -0.5e6 },
+                        new CarrierSpec { Standard = CarrierStandard.Cw, OffsetHz = 0.5e6 }],
+            RecordSeconds = 1e-3,
+        });
+        double fs = 7.68e6;
+        var x = sig.Composite(fs);
+        var X = Fft.Forward(x);
+        var p = X.Select(v => v.Magnitude * v.Magnitude).ToArray();
+        double total = p.Sum(), df = fs / x.Length;
+        int lo = (int)Math.Round(-0.5e6 / df) + x.Length, hi = (int)Math.Round(0.5e6 / df);
+        Assert.Equal(0.5, p[lo] / total, 9);
+        Assert.Equal(0.5, p[hi] / total, 9);
+        Assert.Equal(10 * Math.Log10(2), SignalMeasure.PaprDb(x, 0), 6);
+
+        var c = SignalSpec.ParseCarrier("CW;Phase=60;Off=1MHz;P=0");
+        Assert.Equal(60, c.PhaseDeg);
+        Assert.Equal("CW;Phase=60;Off=1MHz;P=0;Seed=1", SignalSpec.FormatCarrier(c));
+        Assert.DoesNotContain("Phase", SignalSpec.FormatCarrier(SignalSpec.ParseCarrier("CW;Off=0;P=0")));
+        var one = SignalComposer.Generate(new SignalSpec { Carriers = [c] }).Carriers[0].Native[0];
+        Assert.Equal(60, one.Phase * 180 / Math.PI, 9);
     }
 }

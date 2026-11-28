@@ -499,6 +499,8 @@ is left as you typed it.
 <li><strong>Sigfox</strong> — the RC1 uplink: <a href="#dbpsk">DBPSK</a> at 100 b/s, 868.13 MHz.</li>
 </ul>
 </li>
+<li><strong>Tones</strong> — <strong>N tones</strong>: the number of equal CW tones in the field beside it (2 by default), the spacing in
+the next field apart, centred on <code>Fc</code>, for intermodulation and intercept tests: see <a href="#tones">N tones</a>.</li>
 </ul>
 <h2 id="custom">A custom I/Q file</h2>
 <p>The <strong>Custom I/Q</strong> card makes an I/Q file you supply the whole signal: a capture from an instrument, a
@@ -1405,6 +1407,21 @@ FFT is the smallest power of two holding the subcarriers over 0.85: 1024 points,
 120 kHz, and 4096 points, 491.52 MS/s, for 400 MHz. At 120 kHz a slot lasts 0.125 ms, so each 0.5 ms of the
 record holds four slots, 56 symbols, with the longer cyclic prefix on the first. The record stays in whole
 0.5 ms, as for every OFDM carrier, and the EVM tab demodulates it the same way.</p>
+<h3 id="tones">N tones</h3>
+<p>The <strong>N tones</strong> preset replaces the carriers with N <strong>CW</strong> cards of equal power, tone k (counting from 0) at
+<code>Fc</code> + (k − (N − 1)/2) × spacing: two tones 1 MHz apart sit at ±0.5 MHz. They are ordinary CW cards, so each can
+be moved or changed after the preset, and the envelope run plays them as it plays any CW carriers.</p>
+<p><strong>The phases.</strong> Two tones start in phase. Their relative phase only moves the beat in time, and the PAPR is
+3.01 dB at any phase. N tones all in phase peak together once in every beat period, 10 log N dB above the
+average: 9 dB for eight tones. So from three tones up, tone k starts at Newman's phase, 180 k² / N degrees.
+That spreads the peaks and keeps the PAPR at 3.7 dB for three tones, 3.0 dB for four and 2.4 to 2.7 dB from five up.</p>
+<p>In the netlist a tone's starting phase is the CW card's <code>Phase=</code>, in degrees, and is written only when it is not 0:</p>
+<pre><code>Carrier[1]=&quot;CW;Off=-1MHz;P=0;Seed=1&quot;
+Carrier[2]=&quot;CW;Phase=60;Off=0;P=0;Seed=1&quot;
+Carrier[3]=&quot;CW;Phase=240;Off=1MHz;P=0;Seed=1&quot;
+</code></pre>
+<p>The card does not show the phase, and editing the card keeps it. A carrier's offset snaps to a multiple of
+1 / Record (1 kHz at the default 1 ms), so the spacing is exact when every tone's offset is such a multiple.</p>
 <h2 id="pulse">Pulsed CW</h2>
 <p>A <strong>PCW</strong> card is a pulse train: a CW carrier switched on and off, the stimulus a pulsed-radar amplifier is
 specified with. The <strong>Pulsed CW</strong> preset replaces the carriers with one, or choose <strong>PCW</strong> in a card's standard

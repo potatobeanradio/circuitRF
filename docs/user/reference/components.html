@@ -780,7 +780,8 @@ source impedance <code>Z</code>.</p>
 <code>&quot;NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=1&quot;</code>: the standard (<code>LTE</code>, <code>NR</code>, <code>CW</code>, <code>FILE</code>),
 channel bandwidth, NR subcarrier spacing (<code>15</code>, <code>30</code> or <code>60kHz</code> with the FR1 bandwidths; <code>120kHz</code> with
 FR2's 50, 100, 200 and 400 MHz, and 200 MHz at <code>60kHz</code>: see <a href="signal-designer.html#nr-fr2">NR in FR2</a>),
-modulation, offset from <code>Fc</code>, relative power (dB) and the random-data seed. <code>BW</code>, <code>SCS</code> and <code>Off</code> take <code>Hz</code>, <code>kHz</code>, <code>MHz</code> or <code>GHz</code>; a bare number is in Hz. A
+modulation, offset from <code>Fc</code>, relative power (dB) and the random-data seed. A <code>CW</code> carrier also takes
+<code>Phase=</code>, its starting phase in degrees (0 when absent; see <a href="signal-designer.html#tones">N tones</a>). <code>BW</code>, <code>SCS</code> and <code>Off</code> take <code>Hz</code>, <code>kHz</code>, <code>MHz</code> or <code>GHz</code>; a bare number is in Hz. A
 <code>FILE</code> carrier plays a two-column I/Q text file, <code>File=</code> its path and <code>Fs=</code> its sample rate (taken from
 the file's <code># sample_rate_hz</code> header when absent). A <code>PCW</code> carrier is a pulse train,
 <code>&quot;PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0&quot;</code>: the pulse repetition interval,
