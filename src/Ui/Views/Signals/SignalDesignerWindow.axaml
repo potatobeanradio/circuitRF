@@ -712,7 +712,7 @@
                                             <!-- the family's own reading: Wi-Fi EVM against its MCS limit, GNSS per PRN, WCDMA code-domain power, NPR, … -->
                                             <ScrollViewer Margin="0,4,0,0" MaxHeight="160" Tag="quality-text"
                                                           IsVisible="{Binding QualityText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                <SelectableTextBlock FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="11" Text="{Binding QualityText}"/>
+                                                <SelectableTextBlock FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="11" Text="{Binding QualityText}" TextWrapping="Wrap"/>
                                             </ScrollViewer>
                                         </StackPanel>
                                         <Button Grid.Column="1" Classes="small" Margin="8,0,0,0" VerticalAlignment="Center"

@@ -1778,7 +1778,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                 "Expected" => "Expected PSD (" + Gnss.Resolve(sig.Carriers[0].Spec).Band.Reference + ")",
                 _ => t.QuantityName,
             };
-        PsdPlot.Legend = PsdPlot.Traces.Count > 1 ? LegendPlacement.Inside : LegendPlacement.Off;
+        PsdPlot.Legend = PsdPlot.Traces.Count > 1 ? LegendPlacement.Below : LegendPlacement.Off;
         // A pulse train's CCDF is as true as any signal's: a step at its peak-to-average, which is its power duty.
         CcdfPlot.Axes.YScale = AxisScale.Log;
         // the legend names the reference when it is drawn; alone, the signal's curve needs none
