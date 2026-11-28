@@ -177,7 +177,7 @@
                                     <DataTemplate x:DataType="vm:PCellOperationRow">
                                         <StackPanel Margin="0,0,0,6">
                                             <DockPanel>
-                                                <CheckBox DockPanel.Dock="Left" Content="Suppressed" IsChecked="{Binding Suppressed}" ToolTip.Tip="Kept in the history, not applied"/>
+                                                <CheckBox DockPanel.Dock="Left" Content="Suppressed" IsChecked="{Binding Suppressed}" Margin="0,0,10,0" ToolTip.Tip="Kept in the history, not applied"/>
                                                 <Button DockPanel.Dock="Right" Content="✕" Click="OnOperationDelete" ToolTip.Tip="Delete"/>
                                                 <Button DockPanel.Dock="Right" Content="↓" Click="OnOperationDown" ToolTip.Tip="Later"/>
                                                 <Button DockPanel.Dock="Right" Content="↑" Click="OnOperationUp" ToolTip.Tip="Earlier"/>
@@ -205,12 +205,18 @@
                     </StackPanel>
                 </Border>
                 <Border Classes="pane" Grid.Row="2">
-                    <ctl:AspectRatioPanel>
-                        <ddc:PlotControl Name="ResponsePlotControl"
-                                         Plot="{Binding Plot}"
-                                         Library="{Binding PlotHost.Library}"
-                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
-                    </ctl:AspectRatioPanel>
+                    <Panel>
+                        <ctl:AspectRatioPanel IsVisible="{Binding ResponseNote, Converter={x:Static ObjectConverters.IsNull}}">
+                            <ddc:PlotControl Name="ResponsePlotControl"
+                                             Plot="{Binding Plot}"
+                                             Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                        </ctl:AspectRatioPanel>
+                        <!-- Nothing to plot (no circuit model and no EM run yet): say why, not blank axes. -->
+                        <TextBlock Text="{Binding ResponseNote}" TextWrapping="Wrap" Margin="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsVisible="{Binding ResponseNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </Panel>
                 </Border>
                 <!-- A cell made from filter synthesis: its metrics (brief-pcd-12), from the response or the last EM run. -->
                 <Border Classes="pane" Grid.Row="3" IsVisible="{Binding IsFilterCell}">

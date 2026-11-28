@@ -180,6 +180,10 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     /// <summary>The last Run EM result at the current values (R-pcd6-6), overlaid on <see cref="Response"/>.</summary>
     [ObservableProperty] private SNP? _em;
 
+    /// <summary>Why the plot is empty, shown in its place; null while it has a trace.</summary>
+    [ObservableProperty] private string? _responseNote;
+    private string? _responseWhy;
+
     [ObservableProperty] private bool _busy;
 
     /// <summary>True when the schematic or the table changed since the last Save.</summary>
@@ -334,6 +338,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         Dimensions = DimensionsNow();
         Response = response.S;
         Em = null;   // the EM result was for the values before this change
+        _responseWhy = response.Refusal;
         if (response.Refusal is { } why) Status = "Response: " + why;
         RebuildOperations();
         // A filter cell's metrics, read off the response just computed (PCellFilter.CircuitMetrics's own two steps, so
@@ -461,6 +466,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         Plot.CustomTitleOn = true;
         Plot.CustomTitle = "Response";
         if (Plot.Traces.Count > 0) Plot.Autoscale(force: true);
+        ResponseNote = Plot.Traces.Count > 0 ? null : "No response: " + (_responseWhy ?? "not run yet.");
         _container.OnPlotChanged(this, EventArgs.Empty);
         OnPropertyChanged(nameof(Plot));
         _container.RequestPlotRedraw();

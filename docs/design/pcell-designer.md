@@ -1,6 +1,6 @@
 # circuitRF — PCell Designer: a schematic of primitives as a parameterised cell
 
-**Status:** built (series PCD-0 to PCD-8) · **Date:** 2026-11-27
+**Status:** built (series PCD-0 to PCD-14) · **Date:** 2026-11-28
 
 The schematic-driven layout series (SDL) made a schematic of primitives draw a joined layout and be solved and
 optimised by EM. The PCell Designer makes such a schematic a **designed cell**: a PCell whose layout is the planner's
