@@ -14,6 +14,7 @@ keywords: PCell Designer, designed cell, PCell, parameterised cell, parametric c
 <li><a href="#open">Opening it</a></li>
 <li><a href="#window">The window</a></li>
 <li><a href="#markers">Markers and dimensions</a></li>
+<li><a href="#operations">Operations</a></li>
 <li><a href="#placement">Where each part goes</a></li>
 <li><a href="#mshape">Drawn metal and Stretch by Parameter</a></li>
 <li><a href="#em">Run EM and Optimise</a></li>
@@ -120,6 +121,34 @@ parameter's own.
 <figure class="figure">
 <img src="../../images/pcell-designer/dimensions.png" alt="The PCell Designer on the PadTee cell with Dimensions on: rulers over the layout labelled W = 1.1 mm, L1 = 3 mm, Lstub = 4 mm and Lpad = 300 µm." style="width:100%;height:auto">
 <figcaption>The <b>PadTee</b> cell with <b>Dimensions</b> on: each parameter drawn where it acts on the copper.</figcaption>
+</figure>
+
+## Operations {#operations}
+
+Beside placing parts, a designed cell can be shaped by **operations** on their copper: Merge, Subtract, Intersect,
+Exclusive, Grow (or shrink) and Repeat. They are kept in the cell's history, in order, and applied every time the
+layout is planned, so a cut or a grown edge follows the parameters like everything else.
+
+- **Select operands.** Click a part or a drawn shape on the canvas; Shift-click adds or removes one. The selection is
+  listed under the canvas, first selected first. **Add layer** adds a whole layer as an operand (`layer:<name>`).
+- **Make tool** turns the selected `MSHAPE` into a cutter: it is never copper itself, only an operand (its `Role` is
+  `"tool"`).
+- **Merge**, **Subtract** (the first selected minus the rest), **Intersect** and **Exclusive** work on the first
+  operand with the rest. **Grow** grows the selection by its amount (negative shrinks), onto another layer when one is
+  named. **Repeat** copies the selection in rows and columns at the pitches. Amounts, counts and pitches are
+  expressions (`g/2`, `2*W`), so they can follow the parameters. Each press adds one operation, as one undo step.
+- **The Operations panel** lists the history, each operation on one line. Change its operands, amount or pitches and
+  press **Apply**; move it earlier or later; tick **Suppressed** to keep it without applying it; or delete it. An
+  operation that could not be applied says why on its row. The canvas, the response and the dimensions follow every
+  change.
+
+An operation that changes the copper of the conductor makes the cell **EM-only**: its schematic no longer describes it.
+The response line then says so, naming the operation (`no circuit model: op1 (Subtract) changes the copper`), and
+**Run EM** gives the response.
+
+<figure class="figure">
+<img src="../../images/pcell-designer/operations.png" alt="The PCell Designer on a copy of the PadTee cell with a square tool on the line TL3 and one operation, op1 Subtract TL3 minus SH9, in the Operations panel; the line has a square notch where the tool was, and the response line says the cell has no circuit model." style="width:100%;height:auto">
+<figcaption>A <b>Subtract</b> in the history: a square tool cut out of <code>TL3</code>.</figcaption>
 </figure>
 
 ## Where each part goes {#placement}
@@ -270,8 +299,9 @@ star pad <code>SH1</code>. The response shows the three outputs near −4.8 dB a
 
 **A spurline bandstop** (`Spurline`). A 50 Ω line with an L-shaped slit, drawn as one polygon with `Model = "none"`,
 so it is simulated by EM only. The slit's far end follows `Ls` by Stretch by Parameter, so `Ls` is a drag handle
-wherever the cell is placed. A coarse Planar sweep puts the notch at 5.39 GHz, against a quarter-wave estimate of
-5.45 GHz. The bench's `em=direct` optimisation of `X1.Ls` moved it to 4.97 GHz in 8 solves.
+wherever the cell is placed. A Planar sweep in 25 MHz steps puts the notch at 5.38 GHz, against a quarter-wave
+estimate of 5.45 GHz. Two `em=direct` passes on `X1.Ls`, the second over a narrowed range, moved it to 4.98 GHz at
+`Ls = 9.21 mm`.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/spurline.png" alt="The PCell Designer on the spurline: a straight line with a long slit along its axis that turns out through one edge." style="width:100%;height:auto">
@@ -294,8 +324,8 @@ the feeds.</figcaption>
 its middle and two outputs either side, each crossing a quarter-wave microstrip-to-slotline transition. One output
 crosses it the other way round, so the outputs are 180° apart. The ground is drawn copper: two `MSHAPE`s on the ground
 layer, since a polygon has no hole. Planar's ground is an unbroken plane, so the bench solves in its 3D view, which
-turns the drawn ground into copper with the slot in it. A coarse EMerge solve (17 s) gives −5.72 and −5.87 dB at
-5 GHz, 179° apart.
+turns the drawn ground into copper with the slot in it. An EMerge solve on its Standard mesh (11 points over 4-6 GHz,
+40 s) gives −5.92 and −6.01 dB at 5 GHz, 180° ± 1° apart across the band. Most of the loss is the slot radiating.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/slotline.png" alt="The PCell Designer on the slotline divider: three microstrips crossing a long slot in the drawn ground, the input in the middle and an output at each side." style="width:100%;height:auto">
