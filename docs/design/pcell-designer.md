@@ -202,9 +202,13 @@ output at the instance's values, whose circuit model is its own schematic, and w
   `K` = 1.4142 (a third to port 2, R1 = Z0·(K + 1/K) = 106.07 Ω), an equal MWPD on its port 3 behind a 20° spacer
   (R2 = 100 Ω), and on port 2 a phase line of three MDLYs (two mitred corners and a straight run `Th`) as long at F as
   the spacer and the second stage. It is planar, has two resistors, each on its own ring's site, and every line is
-  stated at `F`, so `F` re-plans the rings and the lines together (S1). Two things found on the way: a part's
-  angle written as a cell parameter needs its unit in the text (`Theta=Th deg`), or the generator reads the radians as
-  degrees; and an MDLY's `Style` is written as a word (`Style=Straight`): quoted, it was not recognised, and the run fell
+  stated at `F`, so `F` re-plans the rings and the lines together (S1). Found on the way, both fixed: a part's angle
+  written as a cell parameter with no unit in the text (`Theta=Th`) reached the generator as radians read as degrees;
+  the planner now knows an angle by its row's dimension as well as by a `deg` unit, so `Theta=Th` and `Theta=Th deg`
+  draw the same line, as the circuit model always read them (8d2358637, `Pcd15AngleParameterTests`). And LVS compared
+  angles exactly, so at `Th` = 48 the degree/radian round trip read "schematic 48 deg, layout 48 deg"; an angle now
+  has an absolute tolerance of 1e-6° (a0a8d3b0d). Still open: an MDLY's `Style` is written as a word
+  (`Style=Straight`): quoted, the planner hands the generator the quotes, it is not recognised, and the run falls
   back to a meander too short for its turns, drawn with no pins.
 - **A cell inside a cell.** A designed cell placed in another, its parameter an expression of the outer cell's
   (`Lmid = 2*a`), regenerates with `a` (`Pcd15NestedCellTests`). It passed as the shared code stood; nothing was
