@@ -22,9 +22,30 @@ public partial class FilterDesignerWindow : Window, ICrfMenuWindow
         }
         DataContextChanged += (_, _) => Theme();
         ActualThemeVariantChanged += (_, _) => Theme();
-        DataContextChanged += (_, _) => Watch();
+        DataContextChanged += (_, _) => { Watch(); WirePlot(); };
         // closing stops the Designer's background realisations at their next solve
         Closed += (_, _) => { (DataContext as FilterDesignerViewModel)?.Cancel(); Watch(null); _realiseBar?.Stop(); };
+    }
+
+    private bool _plotWired;
+
+    /// <summary>The response plot's marker tools, wired to its Data Display container as the LC Filter Designer wires
+    /// its plots: add, drag and step a marker, with its readout box.</summary>
+    private void WirePlot()
+    {
+        if (_plotWired || DataContext is not FilterDesignerViewModel vm
+            || this.FindControl<PlotControl>("ResponsePlotControl") is not { } plot) return;
+        _plotWired = true;
+        var container = vm.ResponseContainer;
+        plot.NextMarkerIndexProvider = container.GetNextMarkerIndex;
+        plot.FindMarkerInfoBoxVmProvider = container.FindMarkerInfoBoxVm;
+        plot.ContainerProvider = () => container;
+        plot.SelectedMarkersProvider = container.GetSelectedMarkers;
+        plot.StepSelectedMarkersHandler = container.StepSelectedMarkers;
+        plot.PlotChanged += container.OnPlotChanged;
+        plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
+        plot.MarkerAdded += container.OnMarkerAdded;
+        container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
     }
 
     private FilterDesignerViewModel? _watched;

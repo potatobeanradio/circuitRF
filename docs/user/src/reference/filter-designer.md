@@ -97,6 +97,10 @@ The plot shows |S21| and |S11| in dB:
 - **realised**: the selected realisation's test bench, run by the engine. That is the part with each site filled, on the
   substrate, between two ports of Z0. The bench has the board's loss.
 
+Markers work as on any [Data Display](data-display.html) plot (add one from the plot's menu, drag it or step it with
+the arrow keys, read it in its box), and each one stays on its trace, at its own frequency, when an edit recomputes
+the response.
+
 Above the plot, a line reads the loss out. It gives the unloaded Q, the loss the ideal at that Q has at the centre
 frequency, and the realised part's own loss there, with how much of it is dissipated rather than reflected. For example,
 the five-pole hairpin's 3 dB or so at 2.4 GHz is nearly all dissipation, close to what the ideal at Qu loses, and not a

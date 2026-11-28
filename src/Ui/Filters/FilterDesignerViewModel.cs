@@ -209,6 +209,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>|S21| and |S11|, ideal and realised.</summary>
     public Plot Plot => _container.PlotVM.Plot;
 
+    /// <summary>The plot's Data Display container, whose marker tools the window wires to the plot.</summary>
+    public PlotContainerViewModel ResponseContainer => _container;
+
+    /// <summary>Markers by trace name, kept across a re-run while their trace is gone, as the PCell Designer keeps them.</summary>
+    private readonly Dictionary<string, List<Marker>> _parkedMarkers = new(StringComparer.Ordinal);
+
     /// <summary>The realisation the plot shows, which Place would put down.</summary>
     public FilterRealisation? Realisation => _realisation;
 
@@ -537,6 +543,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     private void BuildPlot(SNP? ideal, SNP? lossy, SNP? realised, SNP? em)
     {
+        // The traces are rebuilt on every edit: each marker goes to the new trace of the same name, at its own x.
+        foreach (var old in Plot.Traces)
+            if (old.Markers.Count > 0) _parkedMarkers[old.Label ?? ""] = [.. old.Markers];
+            else _parkedMarkers.Remove(old.Label ?? "");
         Plot.Traces.Clear();
         void Add(SNP? snp, int row, int colour, string label)
         {
@@ -545,6 +555,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             var t = new Trace(snp, MatrixType.S, row, 0, DependentVarFormat.Db, false,
                 new TraceProperties { LineColorIndex = index, MarkerColorIndex = index, FillColorIndex = index, Custom = false })
                 { Label = label };
+            if (_parkedMarkers.Remove(label, out var kept)) t.Markers.AddRange(kept);
             t.BuildPath(PlotType.Rect, Plot.FreqUnits);
             Plot.Traces.Add(t);
         }
