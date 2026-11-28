@@ -451,7 +451,7 @@ public sealed partial class SignalDesignerViewModel
                     new CarrierSpec { Standard = CarrierStandard.Lte, BandwidthHz = m.Item1, Modulation = QamOrder.Qam16, Uplink = true, RbStart = o.RbStart, RbCount = o.RbCount });
             }),
         ]),
-        Menu("WCDMA", "UTRA FDD test models (TS 25.141 cl. 6.1.1) at 2140 MHz, the 12.2 kb/s uplink reference channel (TS 25.141 Annex A) at 1950 MHz. Sets Centre Fc unless it is an expression.",
+        Menu("WCDMA", "UTRA FDD test models (TS 25.141 cl. 6.1.1) at 2140 MHz, the 12.2 kb/s uplink reference channel (TS 25.141 Annex A; spreading and scrambling per TS 25.213 cl. 4.2) at 1950 MHz. Sets Centre Fc unless it is an expression.",
             Enum.GetValues<WcdmaModel>().Select(m => Item(Wcdma.ModelName(m) + (m == WcdmaModel.Uplink12k2 ? "   1950 MHz" : "   2140 MHz"),
                 new CarrierSpec { Standard = CarrierStandard.Wcdma, WcdmaModel = m }, m == WcdmaModel.Uplink12k2 ? 1950e6 : 2140e6))),
     ];

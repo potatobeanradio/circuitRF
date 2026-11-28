@@ -524,6 +524,9 @@ is sample for sample what it was.
 | **TDD** | `TDD` | a slot pattern and the special slot's symbols, `DDDSU:10,2`, or `TM` for the test model's own | FDD |
 | **Cell ID** | `CellId` | the physical cell identity | 1 |
 
+**Power with TDD.** `Pavg` stays the record's mean, uplink and gaps included, because an LTE or NR carrier can share
+the source with other carriers; a transmitting symbol carries 1/duty of that power.
+
 **Standards.** NR uplink: 3GPP TS 38.211 V19.5.0, cl. 6.3.1.4 (transform precoding), cl. 5.1.1 (π/2-BPSK), the
 DM-RS of cl. 6.4.1.1 and the low-PAPR sequences of cl. 5.2.2. LTE uplink: TS 36.211 V19.3.0, cl. 5.3.3 and 5.6
 (SC-FDMA), cl. 5.5 (DM-RS). Test models: TS 38.141-1 V19.6.0 cl. 4.9.2.2 and 4.9.2.3; TS 36.141 V19.1.0 cl. 6.1.1
@@ -624,7 +627,8 @@ over the whole periodic record, and the receiver applies the same filter, so a c
 
 **WCDMA** is one 10 ms frame at 3.84 Mcps, RRC α = 0.22, at 30.72 MS/s: the downlink test models of 3GPP TS 25.141
 V19.0.0 §6.1.1 (channels per §6.1.1.5–6.1.1.9, scrambling per TS 25.213 V19.0.0 §5.2.2, P-SCH and S-SCH per
-§5.2.3), or the 12.2 kb/s uplink reference channel (TS 25.213 §4.2.1.1, §4.3.2.2). The preset menu puts the
+§5.2.3), or the 12.2 kb/s uplink reference channel (TS 25.141 Annex A, spread and scrambled per TS 25.213 §4.2.1.1,
+§4.3.2.2). The preset menu puts the
 downlink at 2140 MHz and the uplink at 1950 MHz. **802.11b** (IEEE Std 802.11-2020 Clauses 15 and 16, checked
 against IEEE Std 802.11b-1999 clause 18) is the long preamble and PLCP header at 1 Mb/s, then the PSDU, scrambled,
 at 11 Mchip/s and 88 MS/s; frames follow back to back. **802.15.4** (IEEE Std 802.15.4-2020, the 2450 MHz O-QPSK
@@ -682,6 +686,11 @@ clause 20; DVB-S2, ETSI EN 302 307-1 clauses 5.4–5.6; DVB-S2X, ETSI EN 302 307
 **Quality.** The EVM and the constellation, measured at each data symbol's instant through the matched filter, as
 for any SC carrier. Bursts are read on their data symbols only.
 
+**Power.** A carrier with bursts (`Guard` above 0) states `Pavg` as the power while it transmits, as a pulse's top
+or a Wi-Fi packet's power: each frame is brought to unit power and the guards are silent. **Clip to PAPR** on a burst
+is judged against the record's mean, guards included, so it clips less deep than the number typed by about
+10·log10(1/duty) dB. Leave it off for bursts, or read the PAPR under the plots first.
+
 **Limits and simplifications.** Any pulse but RRC rings into the next symbols in a window that is not whole
 records: read an envelope run's EVM over whole records. The data is PN and the standards' own known sequences
 (training, headers, Golay guards) are the SC carrier's QPSK known symbols; EDGE's 26 training symbols are put first
@@ -723,6 +732,9 @@ Carrier[1]="FSK;Preset=Bluetooth EDR 2 Mb/s;Off=0;P=0"
 carrier **offset** and the **FSK error**, the rms of what is left over the nominal deviation. Ramps, guards and a
 switched payload are not read by it; an EDR packet's DPSK payload is read as an SC carrier is, and its **EDR
 payload EVM** follows.
+
+**Power.** A preset with bursts, or an EDR packet, states `Pavg` as the power while it transmits; the record's
+mean is lower by the duty.
 
 **Simplified.** The data is PN9. A sync word a standard derives from an address (Bluetooth's) is a stand-in of the
 right length. The Wi-SUN 4FSK mapping and BT, the Z-Wave bit order and regional centres, and the 920 MHz 4FSK mode

@@ -47,6 +47,30 @@ public sealed class EnvelopeExportCliTests : IDisposable
     /// The verb rebuilds the analysis to apply its overrides; the noise keys go with it (NZ-7, NZ-8). Rebuilt without them,
     /// Noise=yes ran noiseless headlessly and EvmSplit wrote no split.
     /// </summary>
+    /// <summary>`explain` names each new family's own quality reading, and `check` passes a bench of them.</summary>
+    [Fact]
+    public void Explain_NamesTheQualityReadingOfEachNewFamily()
+    {
+        string cnl = Path.Combine(_dir, "families.cnl");
+        File.WriteAllText(cnl,
+            "MOD_Source:S1 a 0 Fc=2.14e9 Pavg=0 Z=50 Carrier[1]=\"WCDMA;Model=Tm1x64;Code=0;Off=0;P=0\"\n" +
+            "R:R1 a 0 R=50\n" +
+            "MOD_Source:S2 b 0 Fc=1.57542e9 Pavg=0 Z=50 Carrier[1]=\"GNSS;Signal=L1CA;Sats=1@1.8kHz@12@0dB,5@-2kHz@300@-3dB;CN0=45;Record=20ms;Off=0;P=0;Seed=1\"\n" +
+            "R:R2 b 0 R=50\n" +
+            "MOD_Source:S3 c 0 Fc=5.21e9 Pavg=0 Z=50 Carrier[1]=\"WLAN;Std=ax;BW=20MHz;MCS=7;Off=0;P=0;Seed=1\"\n" +
+            "R:R3 c 0 R=50\n" +
+            "analysis ENV1 type=env Stop=0.5e-3 Accuracy=draft Segments=1 Warmup=1e-6\n");
+
+        var explain = RunCli("explain", cnl, "--analysis");
+        Assert.True(explain.ExitCode == 0, explain.StdErr);
+        Assert.Contains("EVM, peak code-domain error and code-domain power on S1:", explain.StdOut);
+        Assert.Contains("correlation (code phase and C/N0 per PRN) on S2:", explain.StdOut);
+        Assert.Contains("EVM on S3:", explain.StdOut);
+
+        var check = RunCli("check", cnl);
+        Assert.True(check.ExitCode == 0, check.StdOut + check.StdErr);
+    }
+
     [Fact]
     public void TheNoiseKeys_ReachTheRun()
     {
