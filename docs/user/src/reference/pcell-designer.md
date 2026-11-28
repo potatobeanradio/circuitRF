@@ -126,7 +126,8 @@ parameter's own.
 ## Operations {#operations}
 
 Beside placing parts, a designed cell can be shaped by **operations** on their copper: Merge, Subtract, Intersect,
-Exclusive, Grow (or shrink) and Repeat. The **Operations** panel lists the cell's history in order. Each step changes
+Exclusive, Grow (or shrink) and Repeat, the icon buttons under the canvas (each names itself in its tooltip). The
+**Operations** panel lists the cell's history in order. Each step changes
 the copper that the parts draw, and it is applied again at every value, so the cell stays a function of its
 parameters.
 
