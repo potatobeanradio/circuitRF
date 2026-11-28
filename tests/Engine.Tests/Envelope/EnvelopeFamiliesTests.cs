@@ -34,7 +34,9 @@ public sealed class EnvelopeFamiliesTests(ITestOutputHelper output)
         var plan = EnvelopeRunner.Resolve(tb.Analyses.OfType<EnvelopeAnalysis>().Single(), nl.ResolvedGlobals);
         bool used = false;
         ElaboratedNetlist Elab() { if (used) return new Elaborator(lib).Elaborate(tb); used = true; return nl; }
-        var ds = EnvelopeRunner.Run(plan, Elab);
+        var notes = new List<string>();
+        var ds = EnvelopeRunner.Run(plan, Elab, note: notes.Add);
+        Assert.True(ds.Contains("Pavg_dBm"), string.Join(" | ", notes));
         var sig = nl.Components.Select(c => c.Model).OfType<ModSourceModel>().Single().Signal;
         var rec = sig.Carriers[0];
         var own = SignalQuality.Receive(rec, sig.RecordSeconds, rec.Native, rec.NativeRateHz, 0, 0, out _);
