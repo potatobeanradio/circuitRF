@@ -262,7 +262,9 @@ public static class LayoutConductorLookup
             {
                 if (CellHierarchy.InstanceBbox(view.Instances[i], baseDir).IsEmpty) continue;
                 if (instanceHit < 0) instanceHit = i;
-                if (best is null) break;   // no top-level contender: the first instance answers, as before
+                // With no top-level contender (bestArea is MaxValue) the first instance with copper here, on the port's
+                // layer, answers; one that only covers the point (a drawn ground on another layer under a line's end)
+                // does not. None has copper: the first instance answers, as before.
                 if (InstanceCopperAt(i, x, y, onLayer) is { } copper)
                 {
                     var cb = LayoutGeometry.BboxOf(copper);
