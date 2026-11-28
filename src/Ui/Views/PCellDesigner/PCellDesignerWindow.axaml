@@ -182,6 +182,26 @@
                             <TextBox Text="{Binding RepeatPitchX}" Width="60" ToolTip.Tip="Pitch X"/>
                             <TextBox Text="{Binding RepeatPitchY}" Width="60" ToolTip.Tip="Pitch Y"/>
                         </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding FilletCommand}" ToolTip.Tip="Fillet — the selection's corners rounded by the radius, outer and inner" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="RoundedCorner" Width="18" Height="18"/>
+                                    <TextBlock Text="Fillet" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding FilletRadius}" Width="70" ToolTip.Tip="Fillet radius, an expression"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding ChamferCommand}" ToolTip.Tip="Chamfer — the selection's corners cut straight, the size along each edge" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Panel Classes="seticon" Width="18" Height="18">
+                                        <Path Classes="setline" Data="M3,16 L3,3 L11,3 L16,8 L16,16"/>
+                                    </Panel>
+                                    <TextBlock Text="Chamfer" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding ChamferSize}" Width="70" ToolTip.Tip="Chamfer size along each edge, an expression"/>
+                        </StackPanel>
                         <Button Command="{Binding MakeToolOfSelectionCommand}" ToolTip.Tip="Make tool — the selected MSHAPE becomes a cutter: an operand, never copper" Padding="6,3">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <mi:MaterialIcon Kind="ContentCut" Width="18" Height="18"/>
@@ -271,6 +291,7 @@
                                             <StackPanel Orientation="Horizontal" Spacing="4">
                                                 <TextBox Text="{Binding Operands}" MinWidth="120" ToolTip.Tip="Operands: A, then | and B"/>
                                                 <TextBox Text="{Binding Amount}" Width="70" IsVisible="{Binding IsGrow}" ToolTip.Tip="Amount"/>
+                                                <TextBox Text="{Binding Amount}" Width="70" IsVisible="{Binding IsCorner}" ToolTip.Tip="Radius (Fillet) or size (Chamfer)"/>
                                                 <TextBox Text="{Binding Amount2}" Width="70" IsVisible="{Binding IsGrow}" ToolTip.Tip="Onto layer"/>
                                                 <TextBox Text="{Binding Amount}" Width="40" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Rows"/>
                                                 <TextBox Text="{Binding Amount2}" Width="40" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Columns"/>

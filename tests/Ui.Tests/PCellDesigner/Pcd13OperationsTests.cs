@@ -125,6 +125,28 @@ public sealed class Pcd13OperationsTests
         Assert.Equal(500L * 1000, Math.Abs(span.ToX - span.FromX) + Math.Abs(span.ToY - span.FromY));
     }
 
+    /// <summary>PCD-15: Fillet rounds TL1's two outer corners by the radius, Chamfer cuts them at 45° by the leg; its joint
+    /// with TL2 stays square (the layer is smoothed as a whole), and a suppressed step leaves the line as planned.</summary>
+    [Fact]
+    public void FilletAndChamfer_TreatTheOuterCornersOnly_AndCanBeSuppressed()
+    {
+        using var ws = new Pcd5Workspace();
+        double bare = CopperArea(ws, Plan(ws, ws.Designed("Fc0")), Top);
+        double r = 100 * 1000;   // 100 µm in DBU
+        foreach (var (name, kind, removed) in new[] { ("Fc1", PCellOperationKind.Fillet, 2 * (1 - Math.PI / 4) * r * r),
+                                                      ("Fc2", PCellOperationKind.Chamfer, r * r) })
+        {
+            var at = Plan(ws, ws.Designed(name, edit: m => m.PCellOperations =
+                [new PCellOperation { Id = "op1", Kind = kind, A = ["TL1"], Amount = "Lmid/30" }]));
+            Assert.True(PCellOperations.TraceOf(at.Layout!)!.Steps.Single().Applied, Lines(at));
+            double cut = bare - CopperArea(ws, at, Top);
+            Assert.True(Math.Abs(cut - removed) < 0.02 * removed, $"{kind}: {cut} DBU² removed, {removed} expected");
+        }
+        var off = Plan(ws, ws.Designed("Fc3", edit: m => m.PCellOperations =
+            [new PCellOperation { Id = "op1", Kind = PCellOperationKind.Fillet, A = ["TL1"], Amount = "100 um", Suppressed = true }]));
+        Near(bare, CopperArea(ws, off, Top));
+    }
+
     [Fact]
     public void ModelHonesty_ACopperCutIsEmOnly_UnlessKeepModel_AndTheBenchSaysSo()
     {

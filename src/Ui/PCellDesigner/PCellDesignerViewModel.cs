@@ -77,6 +77,7 @@ public sealed partial class PCellOperationRow(PCellOperation operation, string? 
     [ObservableProperty] private string _pitchY = operation.PitchY ?? "";
 
     public bool IsGrow => Operation.Kind == PCellOperationKind.Grow;
+    public bool IsCorner => Operation.Kind is PCellOperationKind.Fillet or PCellOperationKind.Chamfer;
     public bool IsRepeat => Operation.Kind == PCellOperationKind.Repeat;
 
     /// <summary>The operation with the row's text written back.</summary>
@@ -89,7 +90,7 @@ public sealed partial class PCellOperationRow(PCellOperation operation, string? 
         {
             A = Ids(parts[0]),
             B = parts.Length > 1 ? Ids(parts[1]) : Operation.B,
-            Amount = IsGrow ? Text(Amount) : Operation.Amount,
+            Amount = IsGrow || IsCorner ? Text(Amount) : Operation.Amount,
             Onto = IsGrow ? Text(Amount2) : Operation.Onto,
             Rows = IsRepeat ? Text(Amount) : Operation.Rows,
             Columns = IsRepeat ? Text(Amount2) : Operation.Columns,
@@ -800,8 +801,8 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         return (e.Schematic, e.Schematic is null ? e.Refusal ?? "refused" : $"{what}: done. The canvas and the response follow.");
     });
 
-    /// <summary>R-pcd14-2: Merge, Subtract (the first selected minus the rest), Intersect, Exclusive, Grow or Repeat on the
-    /// selection, added to the history as one undo step.</summary>
+    /// <summary>R-pcd14-2: Merge, Subtract (the first selected minus the rest), Intersect, Exclusive, Grow, Repeat, Fillet
+    /// or Chamfer on the selection, added to the history as one undo step.</summary>
     public bool AddOperation(PCellOperationKind kind)
     {
         var ids = Selection.ToList();
@@ -828,6 +829,10 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     [RelayCommand] private void Merge() => AddOperation(PCellOperationKind.Merge);
     [RelayCommand] private void Subtract() => AddOperation(PCellOperationKind.Subtract);
     [RelayCommand] private void Intersect() => AddOperation(PCellOperationKind.Intersect);
+    /// <summary>Fillet: the radius; Chamfer: the leg along each edge. Expressions.</summary>
+    [ObservableProperty] private string _filletRadius = "100 um";
+    [ObservableProperty] private string _chamferSize = "100 um";
+
     [RelayCommand] private void Exclusive() => AddOperation(PCellOperationKind.Exclusive);
     [RelayCommand] private void Grow() => AddOperation(PCellOperationKind.Grow);
     [RelayCommand] private void Repeat() => AddOperation(PCellOperationKind.Repeat);
@@ -865,6 +870,8 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
     {
         if (Selection.FirstOrDefault(id => Schematic.Components.Any(c => c.InstanceName == id && DrawnMetal.Is(c))) is not { } shape)
         {
+            PCellOperationKind.Fillet => new PCellOperation { Kind = kind, A = ids, Amount = Text(FilletRadius), Unit = LengthUnit },
+            PCellOperationKind.Chamfer => new PCellOperation { Kind = kind, A = ids, Amount = Text(ChamferSize), Unit = LengthUnit },
             Status = "Make tool: select an MSHAPE first.";
             return false;
         }
@@ -881,6 +888,8 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
             Set(DrawnMetal.Role, DrawnMetal.RoleTool);
             Set(DrawnMetal.Model, DrawnMetal.ModelOpen);
             return (next, $"{shape} is a tool: it cuts, merges or bounds in an operation, and is never copper itself.");
+    [RelayCommand] private void Fillet() => AddOperation(PCellOperationKind.Fillet);
+    [RelayCommand] private void Chamfer() => AddOperation(PCellOperationKind.Chamfer);
         });
     }
 

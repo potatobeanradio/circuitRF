@@ -144,6 +144,25 @@ internal static class PCellOperationsEngine
                                             box.right + (long)Math.Round(d), (box.top + box.bottom) / 2));
                         break;
                     }
+                    case PCellOperationKind.Fillet or PCellOperationKind.Chamfer:
+                    {
+                        double d = Math.Round(Si(op.Amount, op.Unit) * dbuPerMetre);   // whole DBU: straight edges come back exact
+                        if (d < 1) return $"{op.Kind} needs an amount of one database unit or more";
+                        // Shrink then grow (an opening) treats the convex corners, grow then shrink (a closing) the concave
+                        // ones. The step that makes the corner takes the kind's join, the step that undoes the offset a mitre,
+                        // which leaves the corners just made as they are. Round joins make arcs of radius d. Bevel joins cut a
+                        // corner on the line through the two edge offsets, which meets each edge d from where the corner was:
+                        // a right angle gets a 45° chamfer of leg d.
+                        var join = op.Kind == PCellOperationKind.Fillet ? JoinType.Round : JoinType.Bevel;
+                        Paths64 By(Paths64 p, double delta, JoinType j) => Clipper.InflatePaths(p, delta, j, EndType.Polygon);
+                        // The layer smoothed as a whole, so a joint between two parts stays square; only A's corners change.
+                        var smooth = By(By(By(By(all, -d, JoinType.Miter), d, join), d, JoinType.Miter), -d, join);
+                        var removed = Clipper.Difference(a, smooth, Rule);
+                        var added = Clipper.Intersect(Clipper.Difference(smooth, all, Rule), Clipper.InflatePaths(a, d, JoinType.Miter, EndType.Polygon), Rule);
+                        result = Clipper.Union(Clipper.Difference(a, removed, Rule), added, Rule);
+                        trialCopper[layer] = Clipper.Union(Clipper.Difference(all, removed, Rule), added, Rule);
+                        break;
+                    }
                     case PCellOperationKind.Repeat:
                     {
                         int rows = (int)Math.Round(Si(op.Rows, "")), cols = (int)Math.Round(Si(op.Columns, ""));

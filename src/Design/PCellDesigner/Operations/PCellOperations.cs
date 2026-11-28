@@ -15,7 +15,7 @@ using CircuitRF.Design.Workspace;
 
 namespace CircuitRF.Design.PCellDesigner.Operations;
 
-public enum PCellOperationKind { Merge, Subtract, Intersect, Exclusive, Grow, Repeat }
+public enum PCellOperationKind { Merge, Subtract, Intersect, Exclusive, Grow, Repeat, Fillet, Chamfer }
 
 /// <summary>brief-pcd-13 R-pcd13-1: one step of a designed cell's history. Expressions evaluate in the cell's scope; a
 /// length is in <see cref="Unit"/> when it carries none of its own.</summary>
@@ -143,7 +143,8 @@ public static class PCellOperations
     {
         if (op.A.Count == 0) return "it names no operand.";
         if (op.IsBoolean && op.B is not { Count: > 0 }) return $"{op.Kind} needs a second operand (B).";
-        if (op.Kind == PCellOperationKind.Grow && string.IsNullOrWhiteSpace(op.Amount)) return "Grow needs an Amount.";
+        if ((op.Kind is PCellOperationKind.Grow or PCellOperationKind.Fillet or PCellOperationKind.Chamfer) && string.IsNullOrWhiteSpace(op.Amount))
+            return $"{op.Kind} needs an Amount.";
         if (op.Kind == PCellOperationKind.Repeat && (string.IsNullOrWhiteSpace(op.Rows) || string.IsNullOrWhiteSpace(op.Columns)))
             return "Repeat needs Rows and Columns.";
         foreach (string operand in op.A.Concat(op.B ?? []))
@@ -173,6 +174,8 @@ public static class PCellOperations
             PCellOperationKind.Intersect => $"{a} & ({b})",
             PCellOperationKind.Exclusive => $"{a} ^ ({b})",
             PCellOperationKind.Grow      => $"{a} by {length(op.Amount)}{(op.Onto is { Length: > 0 } onto ? " onto " + onto : "")}",
+            PCellOperationKind.Fillet    => $"{a} radius {length(op.Amount)}",
+            PCellOperationKind.Chamfer   => $"{a} by {length(op.Amount)}",
             _                            => $"{a} {op.Rows} x {op.Columns} at {length(op.PitchX)}, {length(op.PitchY)}",
         };
         return $"{op.Id}  {op.Kind}  {what}  on {(op.Layer is { Length: > 0 } l ? l : "top conductor")}"
