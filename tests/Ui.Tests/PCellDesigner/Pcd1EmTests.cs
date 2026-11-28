@@ -8,9 +8,11 @@ using CircuitRF.Design.Optimization;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd1EmTests : IDisposable
 {
     private readonly string _ws = Path.Combine(Path.GetTempPath(), "crf-pcd1-" + Guid.NewGuid().ToString("N")[..12]);

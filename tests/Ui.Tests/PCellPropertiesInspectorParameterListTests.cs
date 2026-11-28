@@ -5,6 +5,7 @@ using CircuitRF.Design.Layout.PCells.Wire;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
 using Xunit;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests;
 
@@ -13,6 +14,7 @@ namespace CircuitRF.Ui.Tests;
 /// lists its parameters, editable, with lazy row materialization (the L1j assertion); editing one of
 /// two instances sharing a generated cell forks a new cell and leaves the other unchanged.
 /// </summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
 {
     private readonly string _root;

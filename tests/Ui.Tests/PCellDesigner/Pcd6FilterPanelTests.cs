@@ -5,9 +5,11 @@ using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Ui.PCellDesigner;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd6FilterPanelTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd6f-" + Guid.NewGuid().ToString("N")[..12]);

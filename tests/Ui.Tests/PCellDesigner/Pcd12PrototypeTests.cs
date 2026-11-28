@@ -3,9 +3,11 @@
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Synthesis.Filters;
 using CircuitRF.Core.Systems;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public class Pcd12PrototypeTests
 {
     /// <summary>R-pcd12-1: the LC Filter Designer's and the Match Designer's g-values, now one body in LowpassPrototype,

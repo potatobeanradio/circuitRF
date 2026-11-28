@@ -8,10 +8,12 @@ using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>A designed cell's saved layout (the planner's output at the defaults) is LVS clean against its own schematic.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd5OwnLayoutLvsTests
 {
     [Fact]

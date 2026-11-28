@@ -4,9 +4,11 @@ using System.Runtime.CompilerServices;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Ui.PCellDesigner;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd6DesignerTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd6-" + Guid.NewGuid().ToString("N")[..12]);

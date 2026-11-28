@@ -3,9 +3,11 @@
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Layout.Em.ParametricEm;
 using RfCore.Data;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd9ShortModelTests
 {
     /// <summary>Model="short" ties every MSHAPE pin to one node and counts as a circuit model: three pins joining two Ports

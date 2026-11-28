@@ -7,6 +7,7 @@ using CircuitRF.Design.Layout.SchematicSync;
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Ui.PCellDesigner;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
@@ -280,6 +281,7 @@ internal static class Pcd9Cells
     }
 }
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd9Probe
 {
     /// <summary>CRF_PCD9_PROBE=<folder> holding cell.cnl, params.txt (name|default|unit|min|max) and offsets.txt

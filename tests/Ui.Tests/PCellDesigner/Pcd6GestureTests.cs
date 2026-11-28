@@ -4,9 +4,11 @@ using System.Text.RegularExpressions;
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Ui.PCellDesigner;
 using CircuitRF.Ui.Tests.SchematicSync;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd6GestureTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd6g-" + Guid.NewGuid().ToString("N")[..12]);

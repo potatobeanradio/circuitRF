@@ -3,10 +3,12 @@
 using System.Runtime.CompilerServices;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>brief-pcd-0 §4 and S4: every new field round-trips, and existing files re-serialise byte for byte.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd1SeamsTests
 {
     private static string RepoRoot([CallerFilePath] string here = "")

@@ -11,9 +11,11 @@ using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
 using CircuitRF.Ui.Filters;
 using CircuitRF.Ui.PCellDesigner;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public class Pcd12FilterCellTests(Xunit.Abstractions.ITestOutputHelper output)
 {
     private static readonly FilterSpec Spec = new(FilterResponse.Chebyshev, FilterBand.Bandpass, 3, 2.2e9, 2.6e9, 0.1);

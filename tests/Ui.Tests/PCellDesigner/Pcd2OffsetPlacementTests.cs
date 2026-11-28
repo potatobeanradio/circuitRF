@@ -3,10 +3,12 @@
 using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Tests.SchematicSync;
 using Xunit;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>brief-pcd-2: offset placement in the planner, its geometry, and the plan-at-values entry point.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd2OffsetPlacementTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd2-" + Guid.NewGuid().ToString("N")[..12]);

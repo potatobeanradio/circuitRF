@@ -4,10 +4,12 @@ using System.Text.RegularExpressions;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>brief-pcd-4 R-pcd4-1 with PCD-3's drawn metal: an MSHAPE dropped on a pin, then edited as text.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd4MShapeTests
 {
     [Fact]

@@ -4,9 +4,11 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd3SchematicTests
 {
     private static string Bench(string model) =>

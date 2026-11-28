@@ -3,9 +3,11 @@
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd3StretchTests
 {
     /// <summary>R-pcd3-3: Stretch leaves the shape where it is at the current value, moves the moving vertices by δ along

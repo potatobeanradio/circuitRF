@@ -2,9 +2,11 @@
 
 using CircuitRF.Design.PCellDesigner.Operations;
 using CircuitRF.Ui.PCellDesigner;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd14OperationsTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd14-" + Guid.NewGuid().ToString("N")[..12]);

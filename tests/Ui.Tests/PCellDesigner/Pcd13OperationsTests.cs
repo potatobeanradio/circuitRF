@@ -13,9 +13,11 @@ using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.PCellDesigner.Operations;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd13OperationsTests
 {
     private static readonly LayerKey Top = new(1, 0), Mask = new(3, 0);

@@ -2,9 +2,11 @@
 
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.PCells;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd3GeneratorTests
 {
     /// <summary>R-pcd3-2: MSHAPE draws its polygon, or its path W wide, on the signal layer with its pins as declared; a

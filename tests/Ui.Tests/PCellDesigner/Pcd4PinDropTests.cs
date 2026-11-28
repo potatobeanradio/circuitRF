@@ -2,10 +2,12 @@
 
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>brief-pcd-4 R-pcd4-2: a part dropped on a free pin joins its net; on a joined pin it is refused.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd4PinDropTests
 {
     private static EditableComponent PaletteMlin()

@@ -1,3 +1,4 @@
+using CircuitRF.Ui.Tests.Layout.PCells;
 // Owner: PCD-8 (brief-pcd-8 R-pcd8-1). The PCell Designer example's PadTee and Bench, BUILT by the functions the designer's
 // window calls rather than written as JSON. Skipped unless CRF_AUTHOR_PCD8=1, because it WRITES examples/PCell Designer:
 // the two cell folders are built in a scratch workspace and replace PadTee/ and Bench/ there. Nothing else in the example
@@ -5,6 +6,7 @@
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd8ExampleAuthoring
 {
     public sealed class AuthorFactAttribute : FactAttribute

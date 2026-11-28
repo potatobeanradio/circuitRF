@@ -1,9 +1,11 @@
+using CircuitRF.Ui.Tests.Layout.PCells;
 // Owner: PCD-9 (showcase examples). The three showcase cells and their benches, BUILT by the functions the designer's
 // window calls. Skipped unless CRF_AUTHOR_PCD9=1, because it WRITES examples/PCell Designer: the six cell folders are built
 // in a scratch workspace and replace their namesakes there; nothing else in the example is touched.
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd9ExampleAuthoring
 {
     public sealed class AuthorFactAttribute : FactAttribute

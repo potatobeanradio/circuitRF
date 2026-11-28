@@ -5,10 +5,12 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>brief-pcd-5 R-pcd5-2: a Stretch binding on a drawn shape is a Length handle on the generated cell.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd5HandlesTests
 {
     [Fact]

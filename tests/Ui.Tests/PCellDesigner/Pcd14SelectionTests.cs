@@ -1,7 +1,10 @@
 // Owner: PCD-14 (brief-pcd-14 R-pcd14-1). Headless, through the view model.
 
+using CircuitRF.Ui.Tests.Layout.PCells;
+
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd14SelectionTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd14s-" + Guid.NewGuid().ToString("N")[..12]);

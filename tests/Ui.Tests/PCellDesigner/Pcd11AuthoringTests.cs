@@ -3,9 +3,11 @@
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Ui.PCellDesigner;
 using CircuitRF.Ui.Tests.SchematicSync;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd11AuthoringTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd11-" + Guid.NewGuid().ToString("N")[..12]);

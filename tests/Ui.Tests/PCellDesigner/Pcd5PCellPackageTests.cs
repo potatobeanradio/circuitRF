@@ -10,10 +10,12 @@ using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>brief-pcd-5: a designed cell behaves as any PCell — one test per requirement.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd5PCellPackageTests
 {
     private const double Mm = 1e-3;

@@ -19,6 +19,7 @@ using CircuitRF.Ui.PCellDesigner;
 using CircuitRF.Ui.Tuning;
 using RfCore;
 using RfCore.Data;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
@@ -116,6 +117,7 @@ internal static class Pcd8PadTee
     }
 }
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd8AcceptanceTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd8-" + Guid.NewGuid().ToString("N")[..12]);

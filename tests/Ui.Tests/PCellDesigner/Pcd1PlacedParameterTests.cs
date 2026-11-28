@@ -8,9 +8,11 @@ using CircuitRF.Design.Optimization;
 using CircuitRF.Diagnostics;
 using RfCore;
 using RfCore.Data;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd1PlacedParameterTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd1p-" + Guid.NewGuid().ToString("N")[..12]);

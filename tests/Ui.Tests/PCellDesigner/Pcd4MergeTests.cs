@@ -4,10 +4,12 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
 /// <summary>brief-pcd-4 R-pcd4-1 and R-pcd4-2: the text view merged by designator, and a part dropped on a pin.</summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd4MergeTests
 {
     private const string Line =

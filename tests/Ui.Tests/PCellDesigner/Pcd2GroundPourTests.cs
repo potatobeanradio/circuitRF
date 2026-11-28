@@ -5,6 +5,7 @@ using Clipper2Lib;
 using CircuitRF.Design.Layout.Lvs;
 using CircuitRF.Design.PCellDesigner;
 using Xunit;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
@@ -14,6 +15,7 @@ namespace CircuitRF.Ui.Tests.PCellDesigner;
 /// over, in its own layout or a parent's; and LVS on a layout whose only copper is inside a placed cell still knows the
 /// technology's ground reference.
 /// </summary>
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd2GroundPourTests : IDisposable
 {
     private readonly string _ws = Path.Combine(Path.GetTempPath(), "crf-pcd2g-" + Guid.NewGuid().ToString("N")[..12]);

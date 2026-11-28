@@ -3,9 +3,11 @@
 using System.Runtime.CompilerServices;
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Ui.PCellDesigner;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd10MarkersAndDimensionsTests : IDisposable
 {
     private readonly string _scratch = Path.Combine(Path.GetTempPath(), "crf-pcd10-" + Guid.NewGuid().ToString("N")[..12]);

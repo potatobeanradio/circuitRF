@@ -4,9 +4,11 @@
 using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Diagnostics;
 using RfCore.Data;
+using CircuitRF.Ui.Tests.Layout.PCells;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
 
+[Collection(PCellResolverCollection.Name)]
 public sealed class Pcd9ShowcaseTests : IDisposable
 {
     private readonly string _ws = Pcd9Cells.Workspace(Path.Combine(Path.GetTempPath(), "crf-pcd9-" + Guid.NewGuid().ToString("N")[..12]));
