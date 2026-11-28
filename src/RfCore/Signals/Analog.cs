@@ -110,6 +110,40 @@ namespace RfCore.Signals
             new("ILS GS", 334.4e6, new(AnalogKind.Gs)),
         ];
 
+        /// <summary>An ANALOG carrier's shape: each field it states, AnalogShape's default for the rest.</summary>
+        public static AnalogShape Resolve(CarrierSpec c)
+        {
+            var d = new AnalogShape(AnalogKind.Am);
+            return new AnalogShape(c.AnalogKind ?? d.Kind, ParseTones(c.Tones), c.NoiseBandwidthHz ?? d.NoiseBandwidthHz, (ulong)c.Seed,
+                                   c.Depth ?? d.Depth, c.DeviationHz ?? d.DeviationHz, c.ModIndex, c.PeakPhaseRad ?? d.PeakPhaseRad,
+                                   c.BearingDeg ?? d.BearingDeg, c.Ddm ?? d.Ddm, c.Sdm, c.Ident ?? d.Ident, c.RecordS ?? d.RecordSeconds);
+        }
+
+        /// <summary><c>frequency@level@phase</c>, comma-separated: the frequency in Hz or kHz, the level in dB, the phase in degrees.</summary>
+        public static AnalogTone[]? ParseTones(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            var inv = CultureInfo.InvariantCulture;
+            return [.. text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(t =>
+            {
+                var f = t.Split('@', StringSplitOptions.TrimEntries);
+                double Num(int i) => f.Length > i && f[i].Length > 0
+                    ? double.TryParse(f[i].Replace("dB", "", StringComparison.Ordinal), NumberStyles.Float, inv, out double v) ? v
+                      : throw new FormatException($"analog carrier: '{f[i]}' in tone '{t}' is not a number")
+                    : 0;
+                if (f.Length > 3) throw new FormatException($"analog carrier: a tone is frequency@level@phase (got '{t}')");
+                return new AnalogTone(SignalSpec.ParseHz("Tones", f[0]), Num(1), Num(2));
+            })];
+        }
+
+        public static AnalogKind ParseKind(string v)
+        {
+            string t = v.Trim().Replace("-", "");
+            foreach (var k in Enum.GetValues<AnalogKind>())
+                if (k.ToString().Equals(t, StringComparison.OrdinalIgnoreCase)) return k;
+            throw new FormatException($"analog carrier: Kind must be AM, DSB-SC, USB, LSB, FM, PM, VOR, LOC or GS (got '{v}')");
+        }
+
         public static string Label(AnalogKind k) => k switch
         {
             AnalogKind.Am => "AM", AnalogKind.DsbSc => "DSB-SC", AnalogKind.Usb => "USB", AnalogKind.Lsb => "LSB",

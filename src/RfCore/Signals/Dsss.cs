@@ -177,6 +177,24 @@ namespace RfCore.Signals
         public static double NativeRateHz => SamplesPerChip * ChipRateHz;
         public static double RecordSeconds => 10e-3;
 
+        /// <summary>A WCDMA carrier's test model and scrambling code (TM1 64 DPCH and code 0 unstated).</summary>
+        public static (WcdmaModel Model, int Code) Resolve(CarrierSpec c)
+        {
+            int code = c.ScramblingCode ?? 0;
+            if (code is < 0 or > 7) throw new FormatException($"WCDMA carrier: the scrambling code must be 0 to 7 (group 0; got {code})");
+            return (c.WcdmaModel ?? WcdmaModel.Tm1x64, code);
+        }
+
+        /// <summary>A model as a label names it: TM1x64, ..., Uplink12k2.</summary>
+        public static string ModelName(WcdmaModel m) => m.ToString().Replace("Tm", "TM", StringComparison.Ordinal);
+
+        public static WcdmaModel ParseModel(string v)
+        {
+            foreach (var m in Enum.GetValues<WcdmaModel>())
+                if (m.ToString().Equals(v.Trim(), StringComparison.OrdinalIgnoreCase)) return m;
+            throw new FormatException($"WCDMA carrier: Model must be one of {string.Join(", ", Enum.GetValues<WcdmaModel>().Select(ModelName))} (got '{v}')");
+        }
+
         // TS 25.141 Table 6.2 (TM1 DPCH: code, offset, level with 16 / 32 / 64 DPCH; 0 = not in that variant)
         private static readonly (int Code, int Off, int L16, int L32, int L64)[] Tm1Dpch =
         [
@@ -519,6 +537,19 @@ namespace RfCore.Signals
         public const int SamplesPerChip = 8;
         public static double NativeRateHz => SamplesPerChip * ChipRateHz;
 
+        /// <summary>An 802.11b carrier's frame: the PSDU's rate (Rb: 1, 2, 5.5 or 11 Mb/s) and length (11 Mb/s, 1000 B unstated).</summary>
+        public static Wlan11bShape Resolve(CarrierSpec c)
+        {
+            var rate = (c.BitRateBps ?? 11e6) switch
+            {
+                1e6 => Wlan11bRate.Dbpsk1M, 2e6 => Wlan11bRate.Dqpsk2M, 5.5e6 => Wlan11bRate.Cck5M5, 11e6 => Wlan11bRate.Cck11M,
+                var r => throw new FormatException($"802.11b carrier: Rb must be 1, 2, 5.5 or 11 Mbps (got {r / 1e6} Mb/s)"),
+            };
+            int bytes = c.PsduBytes ?? 1000;
+            if (bytes is < 1 or > 4095) throw new FormatException($"802.11b carrier: the PSDU must be 1 to 4095 bytes (got {bytes})");
+            return new Wlan11bShape(rate, bytes);
+        }
+
         /// <summary>The 11-chip Barker code, first chip first.</summary>
         public static readonly int[] Barker = [1, -1, 1, 1, -1, 1, 1, 1, -1, -1, -1];
 
@@ -667,6 +698,14 @@ namespace RfCore.Signals
         public const double ChipRateHz = 2e6, ChannelBandwidthHz = 5e6;
         public const int SamplesPerChip = 8;
         public static double NativeRateHz => SamplesPerChip * ChipRateHz;
+
+        /// <summary>An 802.15.4 carrier's frame (127 B unstated).</summary>
+        public static Oqpsk154Shape Resolve(CarrierSpec c)
+        {
+            int bytes = c.PsduBytes ?? 127;
+            if (bytes is < 1 or > 127) throw new FormatException($"802.15.4 carrier: the PSDU must be 1 to 127 bytes (got {bytes})");
+            return new Oqpsk154Shape(bytes);
+        }
 
         private const string Symbol0 = "11011001110000110101001000101110";
 

@@ -326,7 +326,12 @@ namespace RfCore.Signals
             return Close(new ScShape(c.SymbolRateHz ?? DefaultSymbolRate, mod, c.RollOff ?? DefaultRollOff, c.Span,
                                ParseList(c.Rings, "Rings") ?? (mod == ScModulation.Apsk32 ? DefaultRings32 : IsApsk(mod) ? DefaultRings16 : []),
                                ParseList(c.RingPhases, "Phases") ?? (mod == ScModulation.Apsk32 ? DefaultPhases32 : IsApsk(mod) ? DefaultPhases16 : []),
-                               data, c.Preamble ?? 0, pilot?.Length ?? 0, pilot?.Every ?? 0, nd));
+                               data, c.Preamble ?? 0, pilot?.Length ?? 0, pilot?.Every ?? 0, nd)
+            {
+                Pulse = c.ScPulse ?? ScPulse.Rrc, Bt = c.GaussianBt ?? DefaultBt, RotationDeg = c.RotationDeg ?? 0,
+                Differential = c.Differential ?? false, Offset = c.OffsetQ ?? false, FrameData = c.FrameData ?? 0,
+                Guard = c.GuardSymbols ?? 0, Ramp = c.RampSymbols ?? 0,
+            });
         }
 
         /// <summary>The shape with its data symbols made whole frames, then multiplied (up to 16 times) until a rotation or
@@ -732,6 +737,31 @@ namespace RfCore.Signals
             }
             OfdmGenerator.Normalise(x);
             return x;
+        }
+
+        /// <summary>The shape of a burst's switched DPSK payload (Bluetooth EDR): <paramref name="t"/>'s symbols at its rate,
+        /// RRC of its roll-off, differential (QPSK for π/4-DQPSK, 8PSK for 8DPSK), the reference symbol and the 10 sync
+        /// symbols known, the rest <paramref name="data"/>. Not closed: the payload is exactly its symbols.</summary>
+        public static ScShape DpskShape(FskSwitch t, string data)
+        {
+            var mod = t.Modulation.ToUpperInvariant() switch
+            {
+                "PI/4-DQPSK" or "π/4-DQPSK" or "DQPSK" => ScModulation.Qpsk,
+                "8DPSK" or "D8PSK" => ScModulation.Psk8,
+                _ => throw new FormatException($"FSK carrier: the switched payload is PI/4-DQPSK or 8DPSK (got '{t.Modulation}')"),
+            };
+            if (t.Symbols <= 11) throw new FormatException($"FSK carrier: the switched payload needs more than its 11 known symbols (got {t.Symbols})");
+            return new ScShape(t.SymbolRate, mod, t.RollOff, null, [], [], data.ToUpperInvariant(), 11, 0, 0, t.Symbols - 11) { Differential = true };
+        }
+
+        /// <summary>The payload function <see cref="Fsk.Generate"/> takes for a switch: <see cref="DpskShape"/>'s record at
+        /// <paramref name="rateHz"/>, exactly t.Symbols · rate / Rs samples at unit mean power, symbol k's matched-filter peak
+        /// on sample k · rate / Rs.</summary>
+        public static Complex[] DpskPayload(FskSwitch t, string data, double rateHz)
+        {
+            var y = Fft.ResamplePeriodic(Generate(DpskShape(t, data)), (int)Math.Round(t.Symbols * rateHz / t.SymbolRate));
+            OfdmGenerator.Normalise(y);
+            return y;
         }
 
         /// <summary>The burst gate at the native rate: 1 over each frame's symbol periods, a sin² ramp of Ramp symbols

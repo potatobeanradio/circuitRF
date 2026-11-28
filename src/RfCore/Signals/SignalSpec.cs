@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -71,6 +71,17 @@ namespace RfCore.Signals
         public double? GaussianBt { get; init; }
         /// <summary>PN9, PN15, or a fixed pattern of 0s and 1s; the record is one period of it. A DBPSK carrier's too.</summary>
         public string? Data { get; init; }
+        /// <summary>FSK levels: 2, 4 or 8 (null = 2).</summary>
+        public int? Levels { get; init; }
+        /// <summary>FSK: the odd level of each symbol value, comma-separated (null = Fsk.DefaultMapping).</summary>
+        public string? Mapping { get; init; }
+        /// <summary>FSK: the frequency pulse (null = NRZ); its roll-off is <see cref="RollOff"/>.</summary>
+        public FskPulse? FskPulse { get; init; }
+        /// <summary>FSK: L, symbols, of an LREC / LRC pulse.</summary>
+        public int? PulseLength { get; init; }
+        public bool? Manchester { get; init; }
+        /// <summary>FSK: a standard's settings and burst (FskPresets.Key), the fields stated over it.</summary>
+        public string? Preset { get; init; }
 
         /// <summary>A CSS carrier's spreading factor (null = <see cref="Css.DefaultSf"/>); its chirp bandwidth is
         /// <see cref="BandwidthHz"/>.</summary>
@@ -95,6 +106,19 @@ namespace RfCore.Signals
         public string? PilotBlock { get; init; }
         /// <summary>Data symbols in the record; null = one data period, at most <see cref="ScQam.DefaultMaxSymbols"/>.</summary>
         public int? Symbols { get; init; }
+        /// <summary>The pulse (null = RRC); a Gaussian pulse's BT is <see cref="GaussianBt"/>.</summary>
+        public ScPulse? ScPulse { get; init; }
+        /// <summary>Degrees each symbol turns by from the one before.</summary>
+        public double? RotationDeg { get; init; }
+        /// <summary>Each point the previous one times the label's (BPSK, QPSK, 8PSK).</summary>
+        public bool? Differential { get; init; }
+        /// <summary>Q half a symbol after I.</summary>
+        public bool? OffsetQ { get; init; }
+        /// <summary>Data symbols per frame, each with its own preamble and pilot blocks.</summary>
+        public int? FrameData { get; init; }
+        /// <summary>Symbol periods of silence after each frame, and of each raised-cosine ramp inside it.</summary>
+        public double? GuardSymbols { get; init; }
+        public double? RampSymbols { get; init; }
 
         /// <summary>A CW carrier's phase at the start of the record (degrees); null = 0. The N-tone preset sets it.</summary>
         public double? PhaseDeg { get; init; }
@@ -123,6 +147,28 @@ namespace RfCore.Signals
         /// <summary>The record (s) of a carrier that states its own (GNSS).</summary>
         public double? RecordS { get; init; }
 
+        // DSSS carriers: a WCDMA test model and its scrambling code; an 802.11b or 802.15.4 frame's PSDU (an 802.11b
+        // carrier's rate is BitRateBps). Null = the family's default (TM1 64 DPCH, code 0; 11 Mb/s, 1000 B; 127 B).
+        public WcdmaModel? WcdmaModel { get; init; }
+        public int? ScramblingCode { get; init; }
+        public int? PsduBytes { get; init; }
+
+        // An analog or navigation carrier's settings; null = Analog.Resolve's default (AnalogShape's: AM of one 1 kHz tone).
+        // Its FM deviation is DeviationHz, its record RecordS, its noise message's draw Seed.
+        public AnalogKind? AnalogKind { get; init; }
+        /// <summary>The message tones, comma-separated, each frequency@level (dB)@phase (degrees), the last two optional.</summary>
+        public string? Tones { get; init; }
+        /// <summary>A Gaussian noise message to this bandwidth (Hz) in place of the tones.</summary>
+        public double? NoiseBandwidthHz { get; init; }
+        public double? Depth { get; init; }
+        /// <summary>FM: the deviation as Index times the top message frequency.</summary>
+        public double? ModIndex { get; init; }
+        public double? PeakPhaseRad { get; init; }
+        public double? BearingDeg { get; init; }
+        public double? Ddm { get; init; }
+        public double? Sdm { get; init; }
+        public string? Ident { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
@@ -130,23 +176,28 @@ namespace RfCore.Signals
             CarrierStandard.Cw => PhaseDeg is double ph ? $"CW {ph.ToString("0.##", CultureInfo.InvariantCulture)}°" : "CW",
             CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(PulsedCw.Resolve(this).Width)} / {PulsedCw.FormatTime(PulsedCw.Resolve(this).Pri)}"
                                    + (ChirpHz is double ch ? $" chirp {(ch > 0 ? "up" : "down")} {Fsk.FormatHz(Math.Abs(ch))}" : ""),
-            CarrierStandard.Fsk => FskLabel(Fsk.Resolve(this)),
+            CarrierStandard.Fsk => (Preset is { } pre ? pre + ": " : "") + FskLabel(Fsk.Resolve(this)),
             CarrierStandard.Dbpsk => $"DBPSK {Fsk.FormatBitRate(Dbpsk.Resolve(this).BitRate)} {DataLabel(Dbpsk.Resolve(this).Data)}",
             CarrierStandard.Css => $"CSS SF{Css.Resolve(this).Sf} {Fsk.FormatHz(BandwidthHz)}",
             CarrierStandard.Sc => ScLabel(ScQam.Resolve(this)),
             CarrierStandard.Wlan => WlanLabel(Signals.Wlan.Resolve(this)),
             CarrierStandard.Gnss => GnssLabel(Signals.Gnss.Resolve(this)),
+            CarrierStandard.Wcdma => $"WCDMA {Signals.Wcdma.ModelName(Signals.Wcdma.Resolve(this).Model)}" + (ScramblingCode is int sc ? $" code {sc}" : ""),
+            CarrierStandard.Wlan11b => $"802.11b {Ieee80211b.Resolve(this).RateMbps.ToString(CultureInfo.InvariantCulture)} Mb/s {Ieee80211b.Resolve(this).PsduBytes} B",
+            CarrierStandard.Oqpsk154 => $"802.15.4 O-QPSK {Ieee802154.Resolve(this).PsduBytes} B",
+            CarrierStandard.Analog => $"{Signals.Analog.Label(Signals.Analog.Resolve(this).Kind)} {Fsk.FormatHz(Signals.Analog.BandwidthHz(Signals.Analog.Validate(Signals.Analog.Resolve(this))))}",
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
 
         private static string FskLabel(FskShape s)
-            => $"{s.Kind} {Fsk.FormatBitRate(s.BitRate)} ±{Fsk.FormatHz(s.Deviation)}{(s.Bt > 0 ? $" BT {s.Bt.ToString("0.###", CultureInfo.InvariantCulture)}" : "")} "
+            => $"{s.Kind} {Fsk.FormatBitRate(s.BitRate)}{(s.Levels > 2 ? $" ({SignalSpec.FormatSymbolRate(s.SymbolRate)})" : "")} ±{Fsk.FormatHz(s.Deviation)}{(s.Bt > 0 ? $" BT {s.Bt.ToString("0.###", CultureInfo.InvariantCulture)}" : "")} "
              + DataLabel(s.Data);
 
         private static string DataLabel(string data) => data is "PN9" or "PN15" or "PN23" ? data : $"{data.Length}-bit pattern";
 
         private static string ScLabel(ScShape s)
-            => $"SC {SignalSpec.FormatSymbolRate(s.SymbolRate)} {ScQam.ModName(s.Mod)} α {s.RollOff.ToString("0.###", CultureInfo.InvariantCulture)}";
+            => $"SC {SignalSpec.FormatSymbolRate(s.SymbolRate)} {ScQam.ModName(s.Mod)} α {s.RollOff.ToString("0.###", CultureInfo.InvariantCulture)}"
+               + (s.Pulse == Signals.ScPulse.Rrc ? "" : $" {ScQam.PulseName(s.Pulse)}");
 
         // Pavg is the packet's power: the duty says what the record's mean is
         private static string WlanLabel(WlanSpec s)
@@ -293,7 +344,11 @@ namespace RfCore.Signals
                     "SC" => CarrierStandard.Sc,
                     "WLAN" => CarrierStandard.Wlan,
                     "GNSS" => CarrierStandard.Gnss,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS or FILE)"),
+                    "WCDMA" => CarrierStandard.Wcdma,
+                    "WLAN11B" => CarrierStandard.Wlan11b,
+                    "OQPSK154" => CarrierStandard.Oqpsk154,
+                    "ANALOG" => CarrierStandard.Analog,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG or FILE)"),
                 },
             };
             bool bwStated = parts.Skip(1).Any(p => p.Split('=')[0].Trim().Equals("BW", StringComparison.OrdinalIgnoreCase));
@@ -323,11 +378,15 @@ namespace RfCore.Signals
                     "MEASUREEND" => c with { MeasureEnd = PulseFraction(c, k, v) },
                     "CHIRP" => c with { ChirpHz = c.Standard == CarrierStandard.Pcw ? ParseHz(k, v) is var ch && ch != 0 ? ch : null
                                                   : throw new FormatException($"carrier field {k} belongs to a PCW carrier") },
+                    "RB" when c.Standard == CarrierStandard.Wlan11b => c with { BitRateBps = ParseBitRate(k, v) },
                     "RB" => c with { BitRateBps = FskField(c, k, () => ParseBitRate(k, v), alsoDbpsk: true) },
+                    "DEV" when c.Standard == CarrierStandard.Analog => c with { DeviationHz = ParseHz(k, v) },
                     "DEV" => c with { DeviationHz = FskField(c, k, () => ParseHz(k, v)) },
+                    "BT" when c.Standard == CarrierStandard.Sc => c with { GaussianBt = Num() },
                     "BT" => c with { GaussianBt = FskField(c, k, Num) },
                     "DATA" => c with { Data = FskField(c, k, () => v, alsoDbpsk: true) },
                     "RS" => c with { SymbolRateHz = ScField(c, k, () => ParseSymbolRate(k, v)) },
+                    "ROLLOFF" when c.Standard == CarrierStandard.Fsk => c with { RollOff = Num() },
                     "ROLLOFF" => c with { RollOff = ScField(c, k, Num) },
                     "SPAN" => c with { Span = ScField(c, k, () => WholeField(k, v)) },
                     "RINGS" => c with { Rings = ScField(c, k, () => v) },
@@ -344,7 +403,33 @@ namespace RfCore.Signals
                     "SIGNAL" => c with { GnssSignal = Only(c, k, () => Signals.Gnss.ParseSignal(v), CarrierStandard.Gnss) },
                     "SATS" => c with { Satellites = Only(c, k, () => v, CarrierStandard.Gnss) },
                     "CN0" => c with { Cn0DbHz = Only(c, k, () => double.Parse(v.Replace("dBHz", "", StringComparison.OrdinalIgnoreCase), NumberStyles.Float, CultureInfo.InvariantCulture), CarrierStandard.Gnss) },
-                    "RECORD" => c with { RecordS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Gnss) },
+                    "RECORD" => c with { RecordS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Gnss, CarrierStandard.Analog) },
+                    "KIND" => c with { AnalogKind = Only(c, k, () => Signals.Analog.ParseKind(v), CarrierStandard.Analog) },
+                    "TONES" => c with { Tones = Only(c, k, () => v, CarrierStandard.Analog) },
+                    "NOISEBW" => c with { NoiseBandwidthHz = Only(c, k, () => ParseHz(k, v), CarrierStandard.Analog) },
+                    "DEPTH" => c with { Depth = Only(c, k, Num, CarrierStandard.Analog) },
+                    "INDEX" => c with { ModIndex = Only(c, k, Num, CarrierStandard.Analog) },
+                    "PEAKPHASE" => c with { PeakPhaseRad = Only(c, k, Num, CarrierStandard.Analog) },
+                    "BEARING" => c with { BearingDeg = Only(c, k, Num, CarrierStandard.Analog) },
+                    "DDM" => c with { Ddm = Only(c, k, Num, CarrierStandard.Analog) },
+                    "SDM" => c with { Sdm = Only(c, k, Num, CarrierStandard.Analog) },
+                    "IDENT" => c with { Ident = Only(c, k, () => v, CarrierStandard.Analog) },
+                    "MODEL" => c with { WcdmaModel = Only(c, k, () => Signals.Wcdma.ParseModel(v), CarrierStandard.Wcdma) },
+                    "CODE" => c with { ScramblingCode = Only(c, k, () => WholeField(k, v), CarrierStandard.Wcdma) },
+                    "PSDU" => c with { PsduBytes = Only(c, k, () => WholeField(k, v), CarrierStandard.Wlan11b, CarrierStandard.Oqpsk154) },
+                    "PULSE" when c.Standard == CarrierStandard.Sc => c with { ScPulse = ScQam.ParsePulse(v) },
+                    "PULSE" => c with { FskPulse = Only(c, k, () => Fsk.ParsePulse(v), CarrierStandard.Fsk, CarrierStandard.Sc) },
+                    "LEVELS" => c with { Levels = FskField(c, k, () => WholeField(k, v)) },
+                    "MAPPING" => c with { Mapping = FskField(c, k, () => v) },
+                    "PULSELENGTH" => c with { PulseLength = FskField(c, k, () => WholeField(k, v)) },
+                    "MANCHESTER" => c with { Manchester = FskField(c, k, () => Flag(k, v)) },
+                    "PRESET" => c with { Preset = FskField(c, k, () => FskPresets.Find(v) is { } fp ? FskPresets.Key(fp) : v) },
+                    "ROTATION" => c with { RotationDeg = ScField(c, k, Num) },
+                    "DIFFERENTIAL" => c with { Differential = ScField(c, k, () => Flag(k, v)) },
+                    "OFFSETQ" => c with { OffsetQ = ScField(c, k, () => Flag(k, v)) },
+                    "FRAMEDATA" => c with { FrameData = ScField(c, k, () => WholeField(k, v)) },
+                    "GUARD" => c with { GuardSymbols = ScField(c, k, Num) },
+                    "RAMP" => c with { RampSymbols = ScField(c, k, Num) },
                     "WINDOW" => c with { WindowS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
                     "SF" => c with { SpreadingFactor = CssField(c, k, v) },
                     "PHASE" when c.Standard == CarrierStandard.Cw => c with { PhaseDeg = Num() },
@@ -369,6 +454,12 @@ namespace RfCore.Signals
             // a Wi-Fi packet's is its channel's, BW as stated (20 MHz unstated)
             if (c.Standard == CarrierStandard.Wlan) Signals.Wlan.Validate(Signals.Wlan.Resolve(c));
             // a GNSS carrier's is its code's main lobe
+            // a DSSS carrier's is its channel's: WCDMA 5 MHz, 802.11b 22 MHz, 802.15.4 5 MHz
+            if (c.Standard == CarrierStandard.Wcdma) { Signals.Wcdma.Resolve(c); c = c with { BandwidthHz = Signals.Wcdma.ChannelBandwidthHz }; }
+            if (c.Standard == CarrierStandard.Wlan11b) { Ieee80211b.Resolve(c); c = c with { BandwidthHz = Ieee80211b.ChannelBandwidthHz }; }
+            if (c.Standard == CarrierStandard.Oqpsk154) { Ieee802154.Resolve(c); c = c with { BandwidthHz = Ieee802154.ChannelBandwidthHz }; }
+            // an analog carrier's is its occupied band (Carson's for FM and PM)
+            if (c.Standard == CarrierStandard.Analog) c = c with { BandwidthHz = Signals.Analog.BandwidthHz(Signals.Analog.Validate(Signals.Analog.Resolve(c))) };
             if (c.Standard == CarrierStandard.Gnss) c = c with { BandwidthHz = Signals.Gnss.BandwidthHz(Signals.Gnss.Validate(Signals.Gnss.Resolve(c))) };
             return c;
         }
@@ -386,7 +477,7 @@ namespace RfCore.Signals
             if (!standards.Contains(c.Standard))
             {
                 string names = string.Join(" or ", standards.Select(s => s.ToString().ToUpperInvariant()));
-                throw new FormatException($"carrier field {key} belongs to {("AEIOU".Contains(names[0]) ? "an" : "a")} {names} carrier");
+                throw new FormatException($"carrier field {key} belongs to {("AEFHILMNORSX".Contains(names[0]) ? "an" : "a")} {names} carrier");
             }
             return read();
         }
@@ -396,6 +487,14 @@ namespace RfCore.Signals
             if (c.Standard != CarrierStandard.Sc) throw new FormatException($"carrier field {key} belongs to an SC carrier");
             return read();
         }
+
+        /// <summary>An on/off field: 1 or 0 (yes / no, true / false read the same).</summary>
+        private static bool Flag(string key, string v) => v.Trim().ToLowerInvariant() switch
+        {
+            "1" or "yes" or "true" or "on" => true,
+            "0" or "no" or "false" or "off" => false,
+            _ => throw new FormatException($"carrier field {key}={v} is 1 or 0"),
+        };
 
         private static int WholeField(string key, string v)
         {
@@ -606,6 +705,14 @@ namespace RfCore.Signals
                 if (c.Symbols is int ns) sb.Append(";Symbols=").Append(ns.ToString(inv));
                 if (c.Preamble is int pre) sb.Append(";Preamble=").Append(pre.ToString(inv));
                 if (c.PilotBlock is { } pb) sb.Append(";PilotBlock=").Append(pb);
+                if (c.ScPulse is { } pulse) sb.Append(";Pulse=").Append(ScQam.PulseName(pulse));
+                if (c.GaussianBt is double sbt) sb.Append(";BT=").Append(sbt.ToString("R", inv));
+                if (c.RotationDeg is double rot) sb.Append(";Rotation=").Append(rot.ToString("R", inv));
+                if (c.Differential is bool dif) sb.Append(";Differential=").Append(dif ? '1' : '0');
+                if (c.OffsetQ is bool oq) sb.Append(";OffsetQ=").Append(oq ? '1' : '0');
+                if (c.FrameData is int fd) sb.Append(";FrameData=").Append(fd.ToString(inv));
+                if (c.GuardSymbols is double gs) sb.Append(";Guard=").Append(gs.ToString("R", inv));
+                if (c.RampSymbols is double rp) sb.Append(";Ramp=").Append(rp.ToString("R", inv));
             }
             if (c.Standard == CarrierStandard.Fsk)
             {
@@ -613,6 +720,13 @@ namespace RfCore.Signals
                 if (c.DeviationHz is double dev) sb.Append(";Dev=").Append(FormatHz(dev, "kHz"));
                 if (c.GaussianBt is double bt) sb.Append(";BT=").Append(bt.ToString("R", inv));
                 if (c.Data is { } data) sb.Append(";Data=").Append(data);
+                if (c.Preset is { } pre) sb.Append(";Preset=").Append(pre);
+                if (c.Levels is int lv) sb.Append(";Levels=").Append(lv.ToString(inv));
+                if (c.Mapping is { } map) sb.Append(";Mapping=").Append(map);
+                if (c.FskPulse is { } fpu) sb.Append(";Pulse=").Append(Fsk.PulseName(fpu));
+                if (c.RollOff is double fro) sb.Append(";RollOff=").Append(fro.ToString("R", inv));
+                if (c.PulseLength is int pl) sb.Append(";PulseLength=").Append(pl.ToString(inv));
+                if (c.Manchester is bool mc) sb.Append(";Manchester=").Append(mc ? '1' : '0');
             }
             if (c.Standard == CarrierStandard.Wlan)
             {
@@ -632,11 +746,34 @@ namespace RfCore.Signals
                 if (c.Cn0DbHz is double cn0) sb.Append(";CN0=").Append(cn0.ToString("R", inv));
                 if (c.RecordS is double rs) sb.Append(";Record=").Append(FormatSeconds(rs, "ms"));
             }
+            if (c.Standard == CarrierStandard.Wcdma)
+            {
+                if (c.WcdmaModel is { } wm) sb.Append(";Model=").Append(wm.ToString());
+                if (c.ScramblingCode is int code) sb.Append(";Code=").Append(code.ToString(inv));
+            }
+            if (c.Standard is CarrierStandard.Wlan11b or CarrierStandard.Oqpsk154)
+            {
+                if (c.BitRateBps is double rb) sb.Append(";Rb=").Append((rb / 1e6).ToString("R", inv)).Append("Mbps");
+                if (c.PsduBytes is int psdu) sb.Append(";PSDU=").Append(psdu.ToString(inv));
+            }
+            if (c.Standard == CarrierStandard.Analog)
+            {
+                if (c.AnalogKind is { } ak) sb.Append(";Kind=").Append(ak.ToString().ToUpperInvariant());
+                if (c.Tones is { } tones) sb.Append(";Tones=").Append(tones);
+                if (c.NoiseBandwidthHz is double nbw) sb.Append(";NoiseBW=").Append(FormatHz(nbw, "kHz"));
+                foreach (var (key, value) in new[] { ("Depth", c.Depth), ("Index", c.ModIndex), ("PeakPhase", c.PeakPhaseRad),
+                                                     ("Bearing", c.BearingDeg), ("DDM", c.Ddm), ("SDM", c.Sdm) })
+                    if (value is double d) sb.Append(';').Append(key).Append('=').Append(d.ToString("R", inv));
+                if (c.DeviationHz is double adev) sb.Append(";Dev=").Append(FormatHz(adev, "kHz"));
+                if (c.Ident is { } id) sb.Append(";Ident=").Append(id);
+                if (c.RecordS is double ar) sb.Append(";Record=").Append(FormatSeconds(ar, "ms"));
+            }
             if (c.Standard == CarrierStandard.Cw && c.PhaseDeg is double phase) sb.Append(";Phase=").Append(phase.ToString("R", inv));
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
             // a pulse, and the PN data of an FSK, DBPSK or CSS carrier, draw no random symbols
-            if (c.Standard is not (CarrierStandard.Pcw or CarrierStandard.Fsk or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc))
+            if (c.Standard is not (CarrierStandard.Pcw or CarrierStandard.Fsk or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
+                                   or CarrierStandard.Wcdma or CarrierStandard.Wlan11b or CarrierStandard.Oqpsk154))
                 sb.Append(";Seed=").Append(c.Seed.ToString(inv));
             return sb.ToString();
         }

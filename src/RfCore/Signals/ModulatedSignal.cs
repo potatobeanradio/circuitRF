@@ -204,7 +204,8 @@ namespace RfCore.Signals
             var fileRates = signals.SelectMany(s => s.Carriers)
                                    .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk
                                                                  or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
-                                                                 or CarrierStandard.Wlan or CarrierStandard.Gnss)
+                                                                 or CarrierStandard.Wlan or CarrierStandard.Gnss or CarrierStandard.Wcdma
+                                                                 or CarrierStandard.Wlan11b or CarrierStandard.Oqpsk154 or CarrierStandard.Analog)
                                    .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r).ToList();
             if (needHz < LadderBaseHz)
                 foreach (double fs in fileRates)
@@ -248,10 +249,15 @@ namespace RfCore.Signals
             var sc = ScOf(spec);
             var wlan = WlanOf(spec);
             var gnss = GnssOf(spec);
+            var wcdma = WcdmaOf(spec);
+            var w11b = Wlan11bOf(spec);
+            var o154 = Oqpsk154Of(spec);
+            var analog = AnalogOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
             double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds
-                            ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? gnss?.RecordSeconds ?? iq?.DurationSeconds
+                            ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? gnss?.RecordSeconds
+                            ?? (wcdma is null ? (double?)null : Wcdma.RecordSeconds) ?? w11b?.RecordSeconds ?? o154?.RecordSeconds ?? analog?.RecordSeconds ?? iq?.DurationSeconds
                             ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
@@ -292,10 +298,11 @@ namespace RfCore.Signals
                     }
                     case CarrierStandard.Fsk:
                     {
-                        // constant envelope: unit power at every sample, so it is unit mean power as it stands
+                        // constant envelope: unit power at every sample, so it is unit mean power as it stands. A burst is unit
+                        // power while on (its switched DPSK payload unit mean power), as a pulse is on its top: Pavg is the on-power
                         var shape = fsk!;
                         double rate = Fsk.NativeRateHz(shape), bw = Fsk.BandwidthHz(shape);
-                        raw.Add((c with { BandwidthHz = bw }, Fsk.Generate(shape, rate).Samples, rate, 0.9 * bw));
+                        raw.Add((c with { BandwidthHz = bw }, Fsk.Generate(shape, rate, ScQam.DpskPayload).Samples, rate, 0.9 * bw));
                         break;
                     }
                     case CarrierStandard.Dbpsk:
@@ -319,7 +326,16 @@ namespace RfCore.Signals
                         var shape = sc!;
                         double rate = ScQam.NativeRateHz(shape), bw = ScQam.BandwidthHz(shape);
                         var x = ScQam.Generate(shape);
-                        if (spec.ClipPaprDb is double t) OfdmGenerator.Clip(x, rate, bw, t);
+                        if (spec.ClipPaprDb is double t) OfdmGenerator.Clip(x, rate, bw, t);   // a burst's PAPR: against the record's mean
+                        if (shape.Guard > 0)
+                        {
+                            // a burst is unit power over its frames, as a pulse is on its top: Pavg is the on-power
+                            var w = ScQam.Window(shape);
+                            double on = 0; int k = 0;
+                            for (int j = 0; j < x.Length; j++) if (w[j] == 1) { on += x[j].Real * x[j].Real + x[j].Imaginary * x[j].Imaginary; k++; }
+                            double a = 1 / Math.Sqrt(on / k);
+                            for (int j = 0; j < x.Length; j++) x[j] *= a;
+                        }
                         raw.Add((c with { BandwidthHz = bw }, x, rate, bw));
                         break;
                     }
@@ -337,6 +353,34 @@ namespace RfCore.Signals
                         var shape = gnss!;
                         double bw = Gnss.BandwidthHz(shape);
                         raw.Add((c with { BandwidthHz = bw }, Gnss.Generate(shape), Gnss.NativeRateHz(shape), 0.9 * bw));
+                        break;
+                    }
+                    case CarrierStandard.Wcdma:
+                    {
+                        // one 10 ms frame, unit mean power; clipped as an OFDM record is, over its RRC band
+                        var (model, code) = wcdma!.Value;
+                        double rate = Wcdma.NativeRateHz, occ = Wcdma.ChipRateHz * (1 + Wcdma.RollOff);
+                        var x = Wcdma.Generate(model, code);
+                        if (spec.ClipPaprDb is double t) OfdmGenerator.Clip(x, rate, occ, t);
+                        raw.Add((c with { BandwidthHz = Wcdma.ChannelBandwidthHz }, x, rate, occ));
+                        break;
+                    }
+                    case CarrierStandard.Wlan11b:
+                        // one frame, back to back with the next, unit mean power
+                        raw.Add((c with { BandwidthHz = Ieee80211b.ChannelBandwidthHz }, Ieee80211b.Generate(w11b!),
+                                 Ieee80211b.NativeRateHz, Ieee80211b.ChipRateHz * (1 + Ieee80211b.RollOff)));
+                        break;
+                    case CarrierStandard.Oqpsk154:
+                        // one frame of half-sine chips: constant envelope, unit power
+                        raw.Add((c with { BandwidthHz = Ieee802154.ChannelBandwidthHz }, Ieee802154.Generate(o154!),
+                                 Ieee802154.NativeRateHz, 1.2 * Ieee802154.ChipRateHz));
+                        break;
+                    case CarrierStandard.Analog:
+                    {
+                        // unit mean power at its own rate, as DBPSK's
+                        var shape = analog!;
+                        double bw = Analog.BandwidthHz(shape);
+                        raw.Add((c with { BandwidthHz = bw }, Analog.Generate(shape), Analog.NativeRateHz(shape), bw));
                         break;
                     }
                     default:
@@ -443,6 +487,39 @@ namespace RfCore.Signals
             return c is null ? null : Gnss.Validate(Gnss.Resolve(c));
         }
 
+        /// <summary>The WCDMA carrier's model and code (null when there is none): its record is one frame, so it is the only
+        /// carrier; a test model's channels sum to peaks, and Clip applies to it, as to SC.</summary>
+        public static (WcdmaModel Model, int Code)? WcdmaOf(SignalSpec spec)
+        {
+            var c = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.Wcdma);
+            if (c is null) return null;
+            if (spec.Carriers.Count > 1)
+                throw new ArgumentException("a WCDMA carrier must be the source's only carrier");
+            return Wcdma.Resolve(c);
+        }
+
+        /// <summary>The 802.11b frame (null when there is none): the only carrier, and not clipped.</summary>
+        public static Wlan11bShape? Wlan11bOf(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Wlan11b, "an 802.11b (WLAN11B) carrier", "its chips are its mask's, not a PAPR target's");
+            return c is null ? null : Ieee80211b.Resolve(c);
+        }
+
+        /// <summary>The 802.15.4 frame (null when there is none): the only carrier, and of constant envelope, so not clipped.</summary>
+        public static Oqpsk154Shape? Oqpsk154Of(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Oqpsk154, "an 802.15.4 (OQPSK154) carrier", "it has a constant envelope");
+            return c is null ? null : Ieee802154.Resolve(c);
+        }
+
+        /// <summary>The analog carrier (null when there is none): its record is whole 100 ms of its message, so it is the only
+        /// carrier, and it is not clipped (a clipped AM is a distorted message, not a PAPR target).</summary>
+        public static AnalogShape? AnalogOf(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Analog, "an ANALOG carrier", "its envelope is its message");
+            return c is null ? null : Analog.Validate(Analog.Resolve(c));
+        }
+
         private static CarrierSpec? OwnRecordCarrier(SignalSpec spec, CarrierStandard standard, string what, string whyNoClip)
         {
             var c = spec.Carriers.FirstOrDefault(c => c.Standard == standard);
@@ -458,7 +535,9 @@ namespace RfCore.Signals
         /// not the record length the source states.</summary>
         public static bool HasOwnRecord(SignalSpec spec)
             => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null
-               || ScOf(spec) is not null || WlanOf(spec) is not null || GnssOf(spec) is not null;
+               || ScOf(spec) is not null || WlanOf(spec) is not null || GnssOf(spec) is not null
+               || WcdmaOf(spec) is not null || Wlan11bOf(spec) is not null || Oqpsk154Of(spec) is not null
+               || AnalogOf(spec) is not null;
     }
 
     /// <summary>

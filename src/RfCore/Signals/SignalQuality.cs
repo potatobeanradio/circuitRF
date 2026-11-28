@@ -50,7 +50,7 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
@@ -64,6 +64,10 @@ namespace RfCore.Signals
         /// <summary>SC: the instants of the known (preamble and pilot) symbols the window holds, and their points.</summary>
         public int[]? KnownAt { get; init; }
         public Complex[]? KnownIdeal { get; init; }
+        /// <summary>SC: the record symbol each of <see cref="At"/> is (its rotation's and differential chain's place).</summary>
+        public int[]? SymbolIndex { get; init; }
+        /// <summary>FSK: the instants of a switched DPSK payload's symbols the window holds (Bluetooth EDR).</summary>
+        public int[]? SwitchAt { get; init; }
     }
 
     /// <summary>A carrier's received quality. <see cref="ErrorPercent"/> is the EVM (DBPSK), the FSK error or the de-chirped
@@ -77,6 +81,14 @@ namespace RfCore.Signals
         public double LimitPercent { get; init; } = double.NaN;
         /// <summary>GNSS: each satellite's acquisition, in the order the carrier lists them.</summary>
         public GnssCorrelation[]? Gnss { get; init; }
+        /// <summary>WCDMA: the composite EVM's companions, the peak code-domain error and each channel's code-domain power.</summary>
+        public WcdmaQuality? Wcdma { get; init; }
+        /// <summary>802.11b: the worst margin against the transmit mask (dB, positive inside); NaN otherwise.</summary>
+        public double MaskMarginDb { get; init; } = double.NaN;
+        /// <summary>FSK: a switched DPSK payload's EVM, read as the SC carrier is (matched filter, the sent record's points).</summary>
+        public EvmResult? Switched { get; init; }
+        /// <summary>Analog: what the demodulator reads back (depth, deviation, bearing, DDM, SDM).</summary>
+        public AnalogReading? Analog { get; init; }
     }
 
     public static class SignalQuality
@@ -90,6 +102,10 @@ namespace RfCore.Signals
             CarrierStandard.Sc => QualityKind.Sc,
             CarrierStandard.Wlan => QualityKind.Wlan,
             CarrierStandard.Gnss => QualityKind.Gnss,
+            CarrierStandard.Wcdma => QualityKind.Wcdma,
+            CarrierStandard.Wlan11b => QualityKind.Wlan11b,
+            CarrierStandard.Oqpsk154 => QualityKind.Oqpsk154,
+            CarrierStandard.Analog => QualityKind.Analog,
             _ => null,
         };
 
@@ -123,14 +139,14 @@ namespace RfCore.Signals
             int nTot = carrier.Native.Length;
             // the instants of one record (window-independent) and the samples each reads; the channel's edge
             int[] instants; int span; double pass;
-            ScShape? sc = null; ScSymbols? scSyms = null;
+            ScShape? sc = null; ScSymbols? scSyms = null; int[]? switchInstants = null;
             switch (kind)
             {
                 case QualityKind.Sc:
                 {
                     sc = ScQam.Resolve(c);
                     scSyms = ScQam.Symbols(sc);
-                    instants = [.. Enumerable.Range(0, scSyms.Points.Length).Select(k => k * ScQam.SamplesPerSymbol)];
+                    instants = scSyms.At;                       // k·sps, but for the guards of a burst
                     span = 1;
                     pass = ScQam.BandwidthHz(sc) / 2;
                     break;
@@ -147,11 +163,17 @@ namespace RfCore.Signals
                 case QualityKind.Fsk:
                 {
                     var f = Fsk.Resolve(c);
-                    int sps = (int)Math.Round(native / f.BitRate);
-                    // the frequency at a bit centre is read from the samples either side of it
-                    instants = [.. Enumerable.Range(0, nTot / sps).Select(k => k * sps + sps / 2 - 1)];
+                    // the frequency at a symbol centre is read from the samples either side of it; ramps, guards and a
+                    // switched payload are not read
+                    instants = Fsk.SymbolCentres(f, native);
                     span = 3;
-                    pass = f.Deviation + f.BitRate;
+                    pass = f.Deviation + f.SymbolRate;
+                    if (f.Burst?.Then is { } t)
+                    {
+                        var l = Fsk.Layout(f, native);
+                        double per = native / t.SymbolRate;
+                        switchInstants = [.. Enumerable.Range(0, t.Symbols).Select(k => l.PayloadStart + (int)Math.Round(k * per))];
+                    }
                     break;
                 }
                 default:
@@ -223,19 +245,25 @@ namespace RfCore.Signals
             // and of the matched filter's own ringing: its span, or ~4/α symbols of a whole-record filter's tail
             if (!whole && sc is not null)
                 guard += ScQam.SamplesPerSymbol * (sc.Span is int sp ? sp / 2 + 1 : (int)Math.Ceiling(4 / Math.Max(sc.RollOff, 0.1)));
-            var at = new List<int>(); var which = new List<int>();
-            if (whole)
+            // each instant of the record at its place in the window (every copy a run longer than one record holds)
+            (List<int> At, List<int> Which) Place(int[] instants, int span)
             {
-                for (long r = 0; r < m / nTot; r++)
-                    for (int j = 0; j < instants.Length; j++) { at.Add((int)(((instants[j] - w0 + r * nTot) % m + m) % m)); which.Add(j); }
+                var at = new List<int>(); var which = new List<int>();
+                if (whole)
+                {
+                    for (long r = 0; r < m / nTot; r++)
+                        for (int j = 0; j < instants.Length; j++) { at.Add((int)(((instants[j] - w0 + r * nTot) % m + m) % m)); which.Add(j); }
+                }
+                else
+                    for (long r = (long)Math.Floor((double)n0 / nTot); r * nTot < n0 + m; r++)
+                        for (int j = 0; j < instants.Length; j++)
+                        {
+                            long i0 = r * nTot + instants[j] - n0;
+                            if (i0 >= guard && i0 + span <= m - guard) { at.Add((int)i0); which.Add(j); }
+                        }
+                return (at, which);
             }
-            else
-                for (long r = (long)Math.Floor((double)n0 / nTot); r * nTot < n0 + m; r++)
-                    for (int j = 0; j < instants.Length; j++)
-                    {
-                        long i0 = r * nTot + instants[j] - n0;
-                        if (i0 >= guard && i0 + span <= m - guard) { at.Add((int)i0); which.Add(j); }
-                    }
+            var (at, which) = Place(instants, span);
             if (scSyms is not null)
             {
                 // the data symbols are measured; the known ones are kept apart, for the pilot equalizer
@@ -249,6 +277,7 @@ namespace RfCore.Signals
                 return new ReceivedWaveform(carrier, kind, x, sw, [.. data.Select(i => at[i])], span, guard, m - guard, native, tau, whole)
                 {
                     Ideal = [.. data.Select(i => scSyms.Points[which[i]])],
+                    SymbolIndex = [.. data.Select(i => which[i])],
                     KnownAt = [.. known.Select(i => at[i])],
                     KnownIdeal = [.. known.Select(i => scSyms.Points[which[i]])],
                 };
@@ -258,7 +287,10 @@ namespace RfCore.Signals
                 why = $"the run holds no whole {(kind == QualityKind.Css ? "chirp" : "bit")} clear of its ends; lengthen Stop";
                 return null;
             }
-            return new ReceivedWaveform(carrier, kind, x, sw, [.. at], span, guard, m - guard, native, tau, whole);
+            return new ReceivedWaveform(carrier, kind, x, sw, [.. at], span, guard, m - guard, native, tau, whole)
+            {
+                SwitchAt = switchInstants is null ? null : [.. Place(switchInstants, 1).At],
+            };
         }
 
         /// <summary>A record kind's window as one record at the carrier's rate, from its sample 0, the delay against the record
@@ -324,6 +356,35 @@ namespace RfCore.Signals
                     return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
                     { Gnss = [.. g.Satellites.Select(sv => Gnss.Correlate(g, r.X, sv.Prn))] };
                 }
+                case QualityKind.Wcdma:
+                {
+                    // composite EVM after the matched filter; code-domain power and PCDE descrambled (TS 25.141 6.7.1:
+                    // 17.5 % QPSK, 12.5 % 16QAM, 8 % 64QAM)
+                    var (model, code) = Wcdma.Resolve(spec);
+                    var q = Wcdma.Measure(model, r.X, code);
+                    return new WaveformQuality(r.Kind, q.EvmPercent, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    {
+                        Wcdma = q,
+                        LimitPercent = model switch { WcdmaModel.Tm6 => 8, WcdmaModel.Tm5x8 or WcdmaModel.Tm5x4 or WcdmaModel.Tm5x2 => 12.5, _ => 17.5 },
+                    };
+                }
+                case QualityKind.Wlan11b:
+                {
+                    // chip EVM after the matched filter, and the transmit mask over the whole native band
+                    var (rms, pk) = Ieee80211b.Evm(Ieee80211b.Resolve(spec), r.X);
+                    return new WaveformQuality(r.Kind, rms, pk, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { MaskMarginDb = Ieee80211b.MaskMarginDb(r.X, r.NativeHz) };
+                }
+                case QualityKind.Oqpsk154:
+                {
+                    // chip EVM at each half-sine's peak; the PHY's limit is 35 %
+                    var (rms, pk) = Ieee802154.Evm(Ieee802154.Resolve(spec), r.X);
+                    return new WaveformQuality(r.Kind, rms, pk, double.NaN, double.NaN, null, null, null, null, r.DelayS) { LimitPercent = 35 };
+                }
+                case QualityKind.Analog:
+                    // demodulated as a receiver reads it: the message, and the depth, deviation, bearing or DDM it carries
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { Analog = Analog.Measure(Analog.Resolve(spec), r.X) };
                 case QualityKind.Sc:
                 {
                     // against the ideal points, normalised to the constellation's mean power (unit)
@@ -360,8 +421,20 @@ namespace RfCore.Signals
                         err += e * e;
                         peak = Math.Max(peak, Math.Abs(e));
                     }
+                    EvmResult? switched = null;
+                    if (r.SwitchAt is { Length: > 0 } sa)
+                    {
+                        // the DPSK payload as the SC carrier is read: matched filter, the sent record's points at unit power
+                        var ps = ScQam.DpskShape(shape.Burst!.Then!, shape.Data);
+                        var xm = ScQam.Filter(ps, r.X, r.NativeHz, matched: true);
+                        var sm = ScQam.Filter(ps, r.S, r.NativeHz, matched: true);
+                        var id = sa.Select(i => sm[(i % m + m) % m]).ToArray();
+                        double rms = Math.Sqrt(id.Average(v => v.Real * v.Real + v.Imaginary * v.Imaginary));
+                        for (int k = 0; k < id.Length; k++) id[k] /= rms;
+                        switched = SignalEvm.Score(spec, [.. sa.Select(i => xm[(i % m + m) % m])], id, id.Length, 1);
+                    }
                     return new WaveformQuality(r.Kind, 100 * Math.Sqrt(err / n) / shape.Deviation, 100 * peak / shape.Deviation,
-                                               a * shape.Deviation, b, null, null, [.. fr.Select(v => v - b)], fs, r.DelayS);
+                                               a * shape.Deviation, b, null, null, [.. fr.Select(v => v - b)], fs, r.DelayS) { Switched = switched };
                 }
                 default:
                 {

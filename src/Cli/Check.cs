@@ -2060,11 +2060,13 @@ internal static class Check
                              .Any(m => m.Spec.Carriers.Any(c => c.Standard is RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr
                                  or RfCore.Signals.CarrierStandard.Dbpsk or RfCore.Signals.CarrierStandard.Fsk or RfCore.Signals.CarrierStandard.Css
                                  or RfCore.Signals.CarrierStandard.Sc or RfCore.Signals.CarrierStandard.Wlan
-                                 or RfCore.Signals.CarrierStandard.Gnss));
+                                 or RfCore.Signals.CarrierStandard.Gnss or RfCore.Signals.CarrierStandard.Wcdma
+                                 or RfCore.Signals.CarrierStandard.Wlan11b or RfCore.Signals.CarrierStandard.Oqpsk154
+                                 or RfCore.Signals.CarrierStandard.Analog));
                 if (!env.Noise && !masks)
                     f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "the run has no Noise and no PhaseNoise mask, so it runs once"));
                 else if (!qam)
-                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK, CSS, SC, WLAN or GNSS), so there is no error to split"));
+                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154 or ANALOG), so there is no error to split"));
             }
 
             // brief-trn-5 R-trn5-6 — in a transient bench, a waveform source whose DC value is not its t = 0 value (info); in any

@@ -124,9 +124,45 @@ namespace RfCore.Signals
         /// would otherwise ask for gigabytes without saying so.</summary>
         public const int MaxSamples = 1 << 23;
 
+        /// <summary>The carrier's shape: its preset's (burst and switch included) or binary NRZ FSK's, each stated field over it.</summary>
         public static FskShape Resolve(CarrierSpec c)
-            => new(c.BitRateBps ?? DefaultBitRate, c.DeviationHz ?? DefaultDeviation, c.GaussianBt ?? 0,
-                   (c.Data ?? DefaultData).ToUpperInvariant());
+        {
+            var b = c.Preset is { } name
+                ? (FskPresets.Find(name) ?? throw new FormatException($"FSK carrier: unknown preset '{name}' ({string.Join(", ", FskPresets.All.Select(FskPresets.Key))})")).Shape
+                : new FskShape(DefaultBitRate, DefaultDeviation, 0, DefaultData);
+            return b with
+            {
+                BitRate = c.BitRateBps ?? b.BitRate, Deviation = c.DeviationHz ?? b.Deviation, Bt = c.GaussianBt ?? b.Bt,
+                Data = (c.Data ?? b.Data).ToUpperInvariant(), Levels = c.Levels ?? b.Levels, Mapping = ParseMapping(c.Mapping) ?? b.Mapping,
+                Pulse = c.FskPulse ?? b.Pulse, RollOff = c.RollOff ?? b.RollOff, PulseLength = c.PulseLength ?? b.PulseLength,
+                Manchester = c.Manchester ?? b.Manchester,
+            };
+        }
+
+        private static int[]? ParseMapping(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            var p = text.Split(',', StringSplitOptions.TrimEntries);
+            var v = new int[p.Length];
+            for (int i = 0; i < p.Length; i++)
+                if (!int.TryParse(p[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out v[i]))
+                    throw new FormatException($"FSK carrier: Mapping is the odd level of each symbol, comma-separated (got '{text}')");
+            return v;
+        }
+
+        /// <summary>A pulse as a carrier's <c>Pulse=</c> names it.</summary>
+        public static string PulseName(FskPulse p) => p switch
+        {
+            FskPulse.Nrz => "NRZ", FskPulse.RaisedCosine => "RC", FskPulse.RootRaisedCosine => "RRC", FskPulse.C4fm => "C4FM",
+            FskPulse.Lrec => "LREC", _ => "LRC",
+        };
+
+        public static FskPulse ParsePulse(string v)
+        {
+            foreach (var p in Enum.GetValues<FskPulse>())
+                if (PulseName(p).Equals(v.Trim(), StringComparison.OrdinalIgnoreCase)) return p;
+            throw new FormatException($"FSK carrier: unknown pulse '{v}' ({string.Join(", ", Enum.GetValues<FskPulse>().Select(PulseName))})");
+        }
 
         /// <summary>Refuses an FSK carrier that cannot be generated, with a sentence naming the field; returns the shape.</summary>
         public static FskShape Validate(CarrierSpec c)

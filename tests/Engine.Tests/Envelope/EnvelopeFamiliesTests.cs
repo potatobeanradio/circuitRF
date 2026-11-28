@@ -61,4 +61,34 @@ public sealed class EnvelopeFamiliesTests(ITestOutputHelper output)
         Assert.Equal(own.Gnss[1].Cn0DbHz, cn0[1], 0.1);
         Assert.Equal([own.Gnss[0].CodePhaseChips, own.Gnss[1].CodePhaseChips], phase);
     }
+
+    [Fact]
+    public void WcdmaTm1_EvmAndCodeDomainPowerSurviveThePad()
+    {
+        var (ds, own) = Pad("WCDMA;Model=Tm1x64;Off=0;P=0", "10.2e-3");
+        double evm = ds["EVM_pct"].RealValues[0], pcde = ds["PCDE_dB"].RealValues[0];
+        var cdp = ds["CDP_dB"].RealValues;
+        output.WriteLine($"EVM {evm:G4} % (record {own.ErrorPercent:G4} %), PCDE {pcde:0.0} dB, CPICH {cdp[1]:0.000} dB (record {own.Wcdma!.Channels[1].PowerDb:0.000})");
+        Assert.True(evm < 0.1, $"EVM {evm} %");
+        Assert.True(pcde < -50, $"PCDE {pcde} dB");
+        Assert.Equal(own.Wcdma.Channels.Length, cdp.Length);
+        for (int i = 0; i < cdp.Length; i++) Assert.Equal(own.Wcdma.Channels[i].PowerDb, cdp[i], 0.01);
+    }
+
+    /// <summary>A rotated, a differential and a burst single carrier decide every bit right: the rotation turned back first,
+    /// the differential one on its steps (π/2-BPSK read straight lands on the decision boundary). The EDGE-like burst is read
+    /// against its clean waveform through a band filter, so its run holds whole records.</summary>
+    [Theory]
+    [InlineData("Mod=BPSK;Rotation=90", "250e-6")]
+    [InlineData("Mod=QPSK;Differential=1", "250e-6")]
+    [InlineData("Mod=8PSK;Symbols=244;Preamble=26;Pulse=LinearGMSK;Rotation=67.5;FrameData=122;Guard=8.25;Ramp=4", "300e-6")]
+    public void Sc_RotatedDifferentialAndBurst_DecideEveryBit(string fields, string stop)
+    {
+        var (ds, own) = Pad($"SC;Rs=5Msps;{fields};Off=0;P=0", stop);
+        double evm = ds["EVM_pct"].RealValues[0];
+        output.WriteLine($"EVM {evm:G6} % (record {own.ErrorPercent:G6} %), bits {ds["Bits"].RealValues[0]}, errors {ds["BitErrors"].RealValues[0]}");
+        Assert.Equal(own.ErrorPercent, evm, 0.01);
+        Assert.Equal(0, ds["BitErrors"].RealValues[0]);
+        Assert.True(ds["Bits"].RealValues[0] > 500);
+    }
 }

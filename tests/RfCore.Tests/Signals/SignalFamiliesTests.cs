@@ -4,6 +4,10 @@
 //   I1  Carriers that existed before the families format and cache exactly as they did.
 //   W*  Wi-Fi (WLAN).
 //   G*  GNSS.
+//   D*  DSSS: WCDMA, 802.11b, 802.15.4.
+//   S*  The single carrier's pulses, rotation, differential and offset forms, frames and bursts.
+//   F*  FSK's levels, pulses, Manchester and presets (bursts, the EDR switch to DPSK).
+//   A*  Analog and navigation carriers.
 
 using System;
 using System.Linq;
@@ -120,5 +124,149 @@ public class SignalFamiliesTests
         Assert.Equal(100, q.Gnss[0].CodePhaseChips, 0.1);
         Assert.Equal(2000, q.Gnss[1].CodePhaseChips, 0.1);
         Assert.Equal(48, q.Gnss[0].Cn0DbHz, 2.0);
+    }
+
+    [Fact]
+    public void D1_Dsss_ParseRoundTripLabelsAndRefusals()
+    {
+        var w = RoundTrip("WCDMA;Model=Tm1x64;Code=2;Off=0;P=0", CarrierStandard.Wcdma);
+        Assert.Equal((5e6, "WCDMA TM1x64 code 2"), (w.BandwidthHz, w.Label));
+        var b = RoundTrip("WLAN11B;Rb=5.5Mbps;PSDU=200;Off=0;P=0", CarrierStandard.Wlan11b);
+        Assert.Equal((22e6, "802.11b 5.5 Mb/s 200 B"), (b.BandwidthHz, b.Label));
+        var z = RoundTrip("OQPSK154;PSDU=20;Off=0;P=0", CarrierStandard.Oqpsk154);
+        Assert.Equal((5e6, "802.15.4 O-QPSK 20 B"), (z.BandwidthHz, z.Label));
+        RoundTrip("WCDMA;Off=0;P=0", CarrierStandard.Wcdma);
+        Refuses(("WCDMA;Model=TM9", "Model must be one of"), ("WCDMA;Code=9", "0 to 7"), ("LTE;Model=Tm2", "MODEL belongs to a WCDMA carrier"),
+                ("WLAN11B;Rb=3Mbps", "Rb must be 1, 2, 5.5 or 11"), ("OQPSK154;PSDU=200", "1 to 127 bytes"),
+                ("LTE;PSDU=10", "PSDU belongs to a WLAN11B or OQPSK154 carrier"), ("OQPSK154;Rb=1Mbps", "RB belongs to an FSK"));
+    }
+
+    [Fact]
+    public void D2_Wcdma_ComposesAtItsRate_ReadsEvmPcdeAndCodePower_AndClips()
+    {
+        var c = SignalSpec.ParseCarrier("WCDMA;Model=Tm1x16;Off=0;P=0");
+        Assert.Contains("only carrier", Assert.Throws<ArgumentException>(() =>
+            SignalComposer.Generate(new SignalSpec { Carriers = [c, new CarrierSpec()] })).Message);
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var rec = sig.Carriers.Single();
+        Assert.Equal((30.72e6, 307200, 10e-3), (rec.NativeRateHz, rec.Native.Length, sig.RecordSeconds));
+        Assert.Equal(1.0, rec.Native.Average(v => v.Magnitude * v.Magnitude), 9);
+        var q = Own(sig);
+        Assert.True(q.ErrorPercent < 0.01 && q.Wcdma!.PeakCdeDb < -50, $"EVM {q.ErrorPercent} %, PCDE {q.Wcdma!.PeakCdeDb} dB");
+        Assert.Equal(-10, q.Wcdma.Channels.Single(x => x.Channel.Kind == WcdmaChannelKind.Cpich).PowerDb, 0.2);
+        Assert.Equal(17.5, q.LimitPercent);
+        Assert.NotNull(SignalComposer.WcdmaOf(new SignalSpec { Carriers = [c], ClipPaprDb = 7 }));   // Clip applies, as to SC
+    }
+
+    [Fact]
+    public void D3_Wlan11bAnd154_ComposeAtTheirRates_ReadTheirEvm()
+    {
+        var b = SignalSpec.ParseCarrier("WLAN11B;Rb=11Mbps;PSDU=100;Off=0;P=0");
+        OnlyCarrier(b, clipped: false);
+        var sb = SignalComposer.Generate(new SignalSpec { Carriers = [b] });
+        Assert.Equal(88e6, sb.Carriers.Single().NativeRateHz);
+        var qb = Own(sb);
+        Assert.True(qb.ErrorPercent < 0.01 && qb.MaskMarginDb > 0, $"EVM {qb.ErrorPercent} %, mask margin {qb.MaskMarginDb} dB");
+
+        var z = SignalSpec.ParseCarrier("OQPSK154;PSDU=20;Off=0;P=0");
+        OnlyCarrier(z, clipped: false);
+        var sz = SignalComposer.Generate(new SignalSpec { Carriers = [z] });
+        Assert.Equal((16e6, new Oqpsk154Shape(20).RecordSeconds), (sz.Carriers.Single().NativeRateHz, sz.RecordSeconds));
+        Assert.All(sz.Carriers.Single().Native, v => Assert.Equal(1.0, v.Magnitude, 9));
+        Assert.True(Own(sz).ErrorPercent < 0.01, $"EVM {Own(sz).ErrorPercent} %");
+    }
+
+    private const string Edge = "SC;Rs=1Msps;Mod=8PSK;Preamble=26;Pulse=LinearGMSK;Rotation=67.5;FrameData=122;Guard=8.25;Ramp=4;Off=0;P=0";
+
+    [Fact]
+    public void S1_Sc_NewFieldsParseRoundTripAndRefuse()
+    {
+        var c = RoundTrip(Edge, CarrierStandard.Sc);
+        var s = ScQam.Resolve(c);
+        Assert.Equal((ScPulse.LinearGmsk, 67.5, 122, 8.25, 4.0), (s.Pulse, s.RotationDeg, s.FrameData, s.Guard, s.Ramp));
+        Assert.EndsWith(" LinearGMSK", c.Label);
+        Assert.True(ScQam.Resolve(RoundTrip("SC;Rs=1Msps;Mod=QPSK;RollOff=0.4;Differential=1;Off=0;P=0", CarrierStandard.Sc)).Differential);
+        Assert.True(ScQam.Resolve(RoundTrip("SC;Rs=1Msps;Pulse=HalfSine;OffsetQ=1;Off=0;P=0", CarrierStandard.Sc)).Offset);
+        Assert.Equal(0.5, ScQam.Resolve(RoundTrip("SC;Pulse=Gaussian;BT=0.5;Off=0;P=0", CarrierStandard.Sc)).Bt);
+        Refuses(("SC;Mod=16QAM;Differential=1", "Differential takes BPSK, QPSK or 8PSK"), ("SC;Pulse=Sinc", "unknown pulse"),
+                ("SC;Guard=1;Ramp=1", "needs a Guard of at least twice"), ("FSK;Rotation=90", "ROTATION belongs to an SC carrier"),
+                ("SC;Differential=2", "is 1 or 0"));
+    }
+
+    [Fact]
+    public void S2_ScBurst_IsUnitPowerOverItsFrames_AndReadsItsOwnRecord()
+    {
+        var c = SignalSpec.ParseCarrier(Edge);
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var rec = sig.Carriers.Single();
+        var w = ScQam.Window(ScQam.Resolve(c));
+        Assert.Equal(1.0, rec.Native.Where((_, i) => w[i] == 1).Average(v => v.Magnitude * v.Magnitude), 9);   // Pavg is the on-power
+        Assert.True(rec.Native.Average(v => v.Magnitude * v.Magnitude) < 0.99);
+        var q = Own(sig);
+        Assert.True(q.ErrorPercent < 1e-6, $"{q.ErrorPercent} %");
+        Assert.True(Own(SignalComposer.Generate(new SignalSpec { Carriers = [SignalSpec.ParseCarrier("SC;Mod=BPSK;Rotation=90;Off=0;P=0")] })).ErrorPercent < 1e-6);
+    }
+
+    [Fact]
+    public void F1_Fsk_NewFieldsParseRoundTripAndRefuse()
+    {
+        var c = RoundTrip("FSK;Rb=9.6kbps;Dev=1.944kHz;Levels=4;Mapping=1,3,-1,-3;Pulse=RRC;RollOff=0.2;Off=0;P=0", CarrierStandard.Fsk);
+        var s = Fsk.Resolve(c);
+        Assert.Equal((4, FskPulse.RootRaisedCosine, 0.2, 4800.0), (s.Levels, s.Pulse, s.RollOff, s.SymbolRate));
+        Assert.Contains("(4.8ksps)", c.Label);
+        var p = RoundTrip("FSK;Preset=Bluetooth EDR 2 Mb/s;Off=0;P=0", CarrierStandard.Fsk);
+        Assert.Equal("PI/4-DQPSK", Fsk.Resolve(p).Burst!.Then!.Modulation);
+        Assert.StartsWith("Bluetooth EDR 2 Mb/s: ", p.Label);
+        Assert.Equal("FSK;Preset=DECT;Off=0;P=0", SignalSpec.FormatCarrier(SignalSpec.ParseCarrier("FSK;Preset=dect")));
+        Assert.True(Fsk.Resolve(RoundTrip("FSK;Rb=19.2kbps;Manchester=1;Off=0;P=0", CarrierStandard.Fsk)).Manchester);
+        Assert.Equal(3, Fsk.Resolve(RoundTrip("FSK;Pulse=LRC;PulseLength=3;Off=0;P=0", CarrierStandard.Fsk)).PulseLength);
+        Refuses(("FSK;Preset=Morse", "unknown preset"), ("FSK;Levels=3", "Levels must be 2, 4 or 8"), ("FSK;Pulse=Sinc", "unknown pulse"),
+                ("SC;Levels=4", "LEVELS belongs to an FSK carrier"), ("LTE;Pulse=RRC", "PULSE belongs to an FSK or SC carrier"));
+    }
+
+    [Fact]
+    public void F2_FskEdr_ComposesWithItsDpskPayload_AndReadsBothParts()
+    {
+        var c = SignalSpec.ParseCarrier("FSK;Preset=Bluetooth EDR 3 Mb/s;Off=0;P=0");
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var s = Fsk.Resolve(c);
+        var rec = sig.Carriers.Single();
+        Assert.Equal(Fsk.NativeRateHz(s), rec.NativeRateHz);
+        Assert.Equal(625e-6, sig.RecordSeconds, 12);                       // one slot
+        var l = Fsk.Layout(s, rec.NativeRateHz);
+        // on-power 1: the GFSK part unit magnitude, the DPSK payload unit mean power; off after the burst
+        Assert.Equal(1.0, rec.Native.Skip(l.Ramp).Take(l.Fsk).Average(v => v.Magnitude), 9);
+        Assert.Equal(1.0, rec.Native.Skip(l.PayloadStart).Take(l.Payload).Average(v => v.Magnitude * v.Magnitude), 6);
+        Assert.Equal(0, rec.Native[^1].Magnitude);
+        var q = Own(sig);
+        Assert.True(q.ErrorPercent < 0.1, $"FSK error {q.ErrorPercent} %");
+        Assert.True(q.Switched!.RmsPercent < 0.1 && q.Switched.Symbols > 200, $"payload EVM {q.Switched.RmsPercent} % over {q.Switched.Symbols}");
+    }
+
+    [Fact]
+    public void A1_Analog_ParsesRoundTripsLabelsAndRefuses()
+    {
+        var c = RoundTrip("ANALOG;Kind=FM;Tones=1kHz@0@0;Dev=75kHz;Off=0;P=0;Seed=1", CarrierStandard.Analog);
+        Assert.Equal((152e3, "FM 152 kHz"), (c.BandwidthHz, c.Label));
+        var v = RoundTrip("ANALOG;Kind=VOR;Bearing=45;Ident=ABC;Record=200ms;Off=0;P=0;Seed=1", CarrierStandard.Analog);
+        Assert.Equal((AnalogKind.Vor, 45.0, "ABC"), (Analog.Resolve(v).Kind, Analog.Resolve(v).BearingDeg, v.Ident));
+        RoundTrip("ANALOG;Kind=USB;Tones=700Hz@0@0,1.9kHz@-3@90;Off=0;P=0;Seed=1", CarrierStandard.Analog);
+        Refuses(("ANALOG;Kind=QAM", "Kind must be"), ("ANALOG;Kind=AM;Depth=1.5", "Depth must be above 0"),
+                ("LTE;Depth=0.3", "DEPTH belongs to an ANALOG carrier"), ("ANALOG;Kind=FM;Ident=X", "Ident belongs to a VOR"));
+    }
+
+    [Fact]
+    public void A2_Analog_ComposesAtItsRate_AndReadsItsModulationBack()
+    {
+        var c = SignalSpec.ParseCarrier("ANALOG;Kind=AM;Depth=0.5;Off=0;P=0;Seed=1");
+        OnlyCarrier(c, clipped: false);
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var s = Analog.Validate(Analog.Resolve(c));
+        Assert.Equal((Analog.NativeRateHz(s), 0.1), (sig.Carriers.Single().NativeRateHz, sig.RecordSeconds));
+        Assert.Equal(1.0, sig.Carriers.Single().Native.Average(v => v.Magnitude * v.Magnitude), 9);
+        var q = Own(sig).Analog!;
+        Assert.Equal((0.5, 1000.0), (Math.Round(q.Depth, 6), q.MessageHz));
+        var vor = Own(SignalComposer.Generate(new SignalSpec { Carriers = [SignalSpec.ParseCarrier("ANALOG;Kind=VOR;Bearing=45;Off=0;P=0;Seed=1")] })).Analog!;
+        Assert.Equal(45, vor.BearingDeg, 0.01);
     }
 }

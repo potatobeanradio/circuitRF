@@ -56,6 +56,19 @@ namespace RfCore.Signals
 
         private const double GsmRate = 1625e3 / 6;
 
+        /// <summary>A preset as a carrier's <c>Preset=</c> names it: its family and name ("Bluetooth EDR 2 Mb/s"), or the
+        /// name alone when it starts with the family ("DECT").</summary>
+        public static string Key(FskPreset p) => p.Name.StartsWith(p.Family, System.StringComparison.OrdinalIgnoreCase) ? p.Name : $"{p.Family} {p.Name}";
+
+        /// <summary>The preset <paramref name="key"/> names (its key, or its name when only one has it), or null.</summary>
+        public static FskPreset? Find(string key)
+        {
+            string k = key.Trim();
+            return All.FirstOrDefault(p => Key(p).Equals(k, System.StringComparison.OrdinalIgnoreCase))
+                   ?? (All.Count(p => p.Name.Equals(k, System.StringComparison.OrdinalIgnoreCase)) == 1
+                       ? All.First(p => p.Name.Equals(k, System.StringComparison.OrdinalIgnoreCase)) : null);
+        }
+
         public static readonly FskPreset[] All =
         [
             // Bluetooth Core v5.4 Vol 2 Part A cl. 3 (GFSK BT 0.5, h 0.28-0.35; 160 kHz is h 0.32) and Part B cl. 6.4 / 6.7:
