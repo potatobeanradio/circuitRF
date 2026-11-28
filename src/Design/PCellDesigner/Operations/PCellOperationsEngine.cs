@@ -273,7 +273,7 @@ internal static class PCellOperationsEngine
             => technology.Layers.FirstOrDefault(l => l.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Key;
         LayerKey LayerOf(string? name)
             => name is { Length: > 0 } n
-                ? FindLayer(n) ?? throw new ExpressionException($"the technology has no layer {n}")
+                ? FindLayer(n) ?? throw new ExpressionException(PCellDesignerDiagnostics.NoLayer(n))
                 : SubstrateResolver.ResolveSignalLayerKey(technology, PCellLayerSelection.Default, out _);
     }
 

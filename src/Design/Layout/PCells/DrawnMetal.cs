@@ -3,6 +3,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Design.Schematic;
 
 namespace CircuitRF.Design.Layout.PCells;
@@ -51,7 +52,8 @@ public static class DrawnMetal
         try { now = evaluator.Eval(binding.Parameter, scope).AsReal(); }
         catch (Exception e) when (e is ExpressionException or InvalidOperationException)
         {
-            throw new ArgumentException($"{binding.Parameter} does not evaluate: {e.Message}", nameof(binding), e);
+            throw new PCellDesignerArgumentException(
+                PCellDesignerDiagnostics.StretchNotEvaluable(binding.Parameter, e.Message), nameof(binding), e);
         }
 
         double rad = binding.AxisDeg * Math.PI / 180.0;

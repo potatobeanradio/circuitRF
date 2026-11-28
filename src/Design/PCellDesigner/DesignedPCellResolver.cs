@@ -210,9 +210,9 @@ public sealed class DesignedPCellResolver : IPCellGeneratorResolver
     private PCellResult Generate(string generatorId, IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology)
     {
         string cellDir = Lookup(generatorId) is { Count: 1 } dirs ? dirs[0]
-            : throw new InvalidOperationException($"{generatorId}: its designed cell is no longer found under {_root}.");
+            : throw new PCellDesignerRefusalException(PCellDesignerDiagnostics.CellMissing(generatorId, _root));
         if (technology is null)
-            throw new InvalidOperationException($"{generatorId}: a designed cell is drawn on a technology, and none resolved.");
+            throw new PCellDesignerRefusalException(PCellDesignerDiagnostics.NoTechnology(generatorId));
 
         var drawing = _drawing ??= [];
         if (drawing.Contains(cellDir, StringComparer.Ordinal))
@@ -263,9 +263,8 @@ public sealed class DesignedPCellResolver : IPCellGeneratorResolver
     {
         // A generated cell is written at the default database unit; a cell planned at another would be drawn scaled.
         if (layout.DbuPerMicron != LayoutUnits.DefaultDbuPerMicron)
-            throw new InvalidOperationException(
-                $"{Path.GetFileName(cellDir)}'s layout is at {layout.DbuPerMicron} database units per micron; a designed cell is drawn at " +
-                $"{LayoutUnits.DefaultDbuPerMicron}.");
+            throw new PCellDesignerRefusalException(
+                PCellDesignerDiagnostics.DatabaseUnit(Path.GetFileName(cellDir), layout.DbuPerMicron, LayoutUnits.DefaultDbuPerMicron));
 
         string layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
         var shapes = new List<LayoutShape>();

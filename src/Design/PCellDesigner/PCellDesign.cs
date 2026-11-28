@@ -30,7 +30,7 @@ public static class PCellDesign
     public static CellCreateResult Create(string parentDir, string cellName)
     {
         if (Directory.Exists(Path.Combine(parentDir, cellName)))
-            throw new IOException($"A folder named {cellName} already exists in {parentDir}; choose another name.");
+            throw new PCellDesignerIOException(PCellDesignerDiagnostics.FolderExists(cellName, parentDir));
         var created = CellCreate.Create(parentDir, cellName, CellViews.Schematic | CellViews.Symbol);
         string ccellPath = Path.Combine(created.CellDir, CellFolder.CcellFileName);
         var ccell = CellPersistence.LoadFromFile(ccellPath);

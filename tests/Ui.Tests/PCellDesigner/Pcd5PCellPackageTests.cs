@@ -31,7 +31,7 @@ public sealed class Pcd5PCellPackageTests
         Assert.Equal("cpcell:Made1", ccell.LayoutGenerator);
         Assert.True(ccell.EmCopper);
         Assert.True(File.Exists(created.SchematicPath) && File.Exists(created.SymbolPath));
-        Assert.Throws<IOException>(() => PCellDesign.Create(ws.Root, "Made1"));   // never over an existing cell
+        Assert.ThrowsAny<IOException>(() => PCellDesign.Create(ws.Root, "Made1"));   // never over an existing cell
     }
 
     [Fact]
