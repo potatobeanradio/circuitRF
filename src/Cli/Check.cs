@@ -2058,12 +2058,11 @@ internal static class Check
                                                     && v.Kind == CircuitRF.Core.Expressions.ValueKind.String && !string.IsNullOrWhiteSpace(v.AsString()));
                 bool qam = nl.Components.Select(c => c.Model).OfType<ModSourceModel>()
                              .Any(m => m.Spec.Carriers.Any(c => c.Standard is RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr
-                                 || RfCore.Signals.SignalQuality.KindOf(c.Standard) is not null
-                                    && !(c.Standard == RfCore.Signals.CarrierStandard.Tones && RfCore.Signals.SignalSpec.ResolveTones(c).NotchWidthHz <= 0)));
+                                 || RfCore.Signals.SignalQuality.Reads(c)));
                 if (!env.Noise && !masks)
                     f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "the run has no Noise and no PhaseNoise mask, so it runs once"));
                 else if (!qam)
-                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, or TONES with a notch), so there is no error to split"));
+                    f.Add(CliDiagnostics.CheckEvmSplitNothing(path, env.Name, "no source plays a carrier with symbols (LTE, NR, DBPSK, FSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, TONES with a notch, or a coded or chirped PCW), so there is no error to split"));
             }
 
             // brief-trn-5 R-trn5-6 — in a transient bench, a waveform source whose DC value is not its t = 0 value (info); in any

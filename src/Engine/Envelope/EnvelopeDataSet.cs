@@ -373,6 +373,8 @@ public static class EnvelopeDataSet
                 ds.Add("DE_pct", new DataCube([branchAxis], [.. pf.Select((x, b) => pdc > 0 && !noRf[b] ? 100 * x / pdc : double.NaN)]));
             if (pulse is not null) note?.Invoke(EnvelopePulse.Add(ds, r, pulse, plan.Params.StartS, branchAxis, noRf));
             else if (!multi) AddAmAm(ds, r, t0, drive, reZ, branchAxis, noRf, ProbeV, ProbeI);
+            // a coded or chirped pulse's compression (PSL, ISL, mainlobe), read as the other carriers' quality is
+            if (pulse is not null && carSpecs.Any(SignalQuality.Reads)) AddEvm(ds, r, quiet, plan, t0, branchAxis, carSpecs, noRf, ProbeV, reads, note);
         }
 
         ds.Add("__EnvStep_s", DataCube.Scalar(r.StepS));
@@ -402,7 +404,7 @@ public static class EnvelopeDataSet
     public const int ConstMaxSamples = 6000;
 
     /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
-    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr }
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse }
 
     private static Meter MeterOf(CarrierStandard s) => s switch
     {
@@ -418,6 +420,7 @@ public static class EnvelopeDataSet
         CarrierStandard.Oqpsk154 => Meter.Oqpsk154,
         CarrierStandard.Analog => Meter.Analog,
         CarrierStandard.Tones => Meter.Npr,
+        CarrierStandard.Pcw => Meter.Pulse,
         _ => Meter.None,
     };
 
@@ -552,7 +555,8 @@ public static class EnvelopeDataSet
                                Axis branchAxis, List<CarrierSpec> carSpecs, bool[] noRf, Func<int, int, Complex[]> probeV,
                                CarrierRead[,] reads, Action<string>? note)
     {
-        var meters = carSpecs.Select(c => MeterOf(c.Standard)).ToArray();
+        // a plain pulse, and tones with no notch, are not read here (the pulse cubes and the spectrum are their measures)
+        var meters = carSpecs.Select(c => c.Standard is CarrierStandard.Lte or CarrierStandard.Nr || SignalQuality.Reads(c) ? MeterOf(c.Standard) : Meter.None).ToArray();
         if (meters.All(m => m == Meter.None)) return;
         var recs = r.Sources.SelectMany(s => s.Signal.Carriers.Select(c => (rec: c, record: s.Signal.RecordSeconds, hz: s.FcHz + c.OffsetHz))).ToList();
         int nb = branchAxis.Length, nc = recs.Count;
@@ -763,6 +767,12 @@ public static class EnvelopeDataSet
         }
         if (meters.Contains(Meter.Wlan11b)) PerCarrier("MaskMargin_dB", "dB", q => q.MaskMarginDb);
         if (meters.Contains(Meter.Npr)) PerCarrier("NPR_dB", "dB", q => q.NprDb);
+        if (meters.Contains(Meter.Pulse))
+        {
+            PerCarrier("PSL_dB", "dB", q => q.Compression?.PslDb ?? double.NaN);
+            PerCarrier("ISL_dB", "dB", q => q.Compression?.IslDb ?? double.NaN);
+            PerCarrier("Mainlobe_s", "s", q => q.Compression?.MainlobeSeconds ?? double.NaN);
+        }
         if (meters.Contains(Meter.Analog))
             PerItem("Analog", "", "quantity", q => q.Analog is { } a
                 ? [("MessageHz", a.MessageHz), ("MessageLevel", a.MessageLevel), ("Depth", a.Depth), ("DeviationHz", a.DeviationHz),

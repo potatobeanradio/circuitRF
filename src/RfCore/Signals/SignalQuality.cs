@@ -50,7 +50,7 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
@@ -91,6 +91,8 @@ namespace RfCore.Signals
         public AnalogReading? Analog { get; init; }
         /// <summary>Tones and noise: the noise power ratio in the notch (dB); NaN otherwise.</summary>
         public double NprDb { get; init; } = double.NaN;
+        /// <summary>A coded or chirped pulse: the received first pulse through the matched filter of the one sent.</summary>
+        public CompressionResult? Compression { get; init; }
     }
 
     public static class SignalQuality
@@ -109,7 +111,18 @@ namespace RfCore.Signals
             CarrierStandard.Oqpsk154 => QualityKind.Oqpsk154,
             CarrierStandard.Analog => QualityKind.Analog,
             CarrierStandard.Tones => QualityKind.Npr,
+            CarrierStandard.Pcw => QualityKind.Pulse,
             _ => null,
+        };
+
+        /// <summary>Whether <paramref name="c"/> has a quality to read: a kind, and for tones and noise a notch, for a pulse a
+        /// code or a chirp to compress.</summary>
+        public static bool Reads(CarrierSpec c) => KindOf(c.Standard) switch
+        {
+            null => false,
+            QualityKind.Npr => SignalSpec.ResolveTones(c).NotchWidthHz > 0,
+            QualityKind.Pulse => c.PulseCode is not null || c.ChirpHz is not null,
+            _ => true,
         };
 
         /// <summary>A kind read as one whole record by its family's own measurement.</summary>
@@ -137,9 +150,10 @@ namespace RfCore.Signals
                 };
                 return null;
             }
-            if (kind == QualityKind.Npr && SignalSpec.ResolveTones(c).NotchWidthHz <= 0)
+            if (!Reads(c))
             {
-                why = "tones and noise carry no symbols, and without Notch= there is no NPR to read";
+                why = kind == QualityKind.Pulse ? "a pulse has no symbols, and without Code= or Chirp= nothing to compress"
+                    : "tones and noise carry no symbols, and without Notch= there is no NPR to read";
                 return null;
             }
             if (IsRecordKind(kind)) return ReceiveRecord(carrier, kind, recordSeconds, y, fsHz, startSample, offsetHz, out why, driftHzps);
@@ -389,6 +403,17 @@ namespace RfCore.Signals
                     var (rms, pk) = Ieee802154.Evm(Ieee802154.Resolve(spec), r.X);
                     return new WaveformQuality(r.Kind, rms, pk, double.NaN, double.NaN, null, null, null, null, r.DelayS) { LimitPercent = 35 };
                 }
+                case QualityKind.Pulse:
+                {
+                    // the record's first pulse (slot 0 of a train) against the one sent: the matched filter's output
+                    var p = SignalSpec.ResolvePulse(spec);
+                    var sent = PulsedCw.OnePulse(p, r.NativeHz);
+                    int i0 = (int)Math.Floor(p.Delay * r.NativeHz);
+                    var got = new Complex[sent.Length];
+                    for (int i = 0; i < sent.Length; i++) got[i] = r.X[(i0 + i) % m];
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { Compression = Compress(got, sent, r.NativeHz) };
+                }
                 case QualityKind.Npr:
                 {
                     // the band's density outside the notch over the density in its middle half, over one whole record
@@ -473,6 +498,37 @@ namespace RfCore.Signals
                                                null, null, r.DelayS);
                 }
             }
+        }
+
+        /// <summary>The mainlobe, PSL and ISL of <paramref name="y"/> through the filter matched to <paramref name="s"/>, read
+        /// either side of the output's peak as <see cref="PulseCompression.Measure(ReadOnlySpan{Complex}, double)"/> reads an
+        /// autocorrelation (which it is, exactly, when y is s).</summary>
+        internal static CompressionResult Compress(Complex[] y, Complex[] s, double rateHz)
+        {
+            int n = s.Length, len = 1;
+            while (len < 2 * n) len <<= 1;
+            var a = new Complex[len]; var b = new Complex[len];
+            Array.Copy(y, a, n); Array.Copy(s, b, n);
+            Fft.Transform(a, inverse: false);
+            Fft.Transform(b, inverse: false);
+            for (int i = 0; i < len; i++) a[i] *= Complex.Conjugate(b[i]);
+            Fft.Transform(a, inverse: true);
+            var r = new double[2 * n - 1];                                   // lag -(n-1) .. n-1
+            for (int k = -(n - 1); k < n; k++) r[k + n - 1] = a[(k + len) % len].Magnitude / len;
+            int pk = 0;
+            for (int i = 1; i < r.Length; i++) if (r[i] > r[pk]) pk = i;
+            double peak = r[pk], half = peak / Math.Sqrt(2), w3 = 0, nulls = 0, psl = 0, isl = 0;
+            foreach (int dir in new[] { 1, -1 })
+            {
+                double R(int k) => pk + dir * k is int i && i >= 0 && i < r.Length ? r[i] : 0;
+                int far = dir > 0 ? r.Length - 1 - pk : pk, k1 = 1, k3 = 0;
+                while (k1 < far && R(k1 + 1) < R(k1)) k1++;
+                while (k3 + 1 <= far && R(k3 + 1) >= half) k3++;
+                w3 += k3 + 1 <= far ? k3 + (R(k3) - half) / (R(k3) - R(k3 + 1)) : k3;
+                nulls += k1;
+                for (int k = k1; k <= far; k++) { psl = Math.Max(psl, R(k)); isl += R(k) * R(k); }
+            }
+            return new(w3 / rateHz, nulls / rateHz, 20 * Math.Log10(psl / peak), 10 * Math.Log10(isl / (peak * peak)));
         }
 
         /// <summary>

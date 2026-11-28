@@ -298,4 +298,47 @@ public class SignalFamiliesTests
         Assert.Null(SignalQuality.Receive(plain, 2e-6, plain.Native, plain.NativeRateHz, 0, 0, out string? why));
         Assert.Contains("Notch=", why);
     }
+
+    [Fact]
+    public void R1_Radar_KeysParseRoundTripAndRefuse()
+    {
+        var b = RoundTrip("PCW;PRI=100us;PW=13us;Rise=0.1us;Fall=0.1us;Code=Barker:13;ChipSmoothing=0.1;Off=0;P=0", CarrierStandard.Pcw);
+        var s = SignalSpec.ResolvePulse(b);
+        Assert.Equal(13, s.Code!.Length);
+        Assert.Contains("Barker:13", b.Label);
+        Assert.True(b.BandwidthHz > SignalSpec.ParseCarrier("PCW;PRI=100us;PW=13us;Rise=0.1us;Fall=0.1us;Off=0;P=0").BandwidthHz);
+        var st = RoundTrip("PCW;PRI=100us;PW=10us;PRIs=100us,125us,150us;Off=0;P=0", CarrierStandard.Pcw);
+        Assert.Equal(375e-6, PulsedCw.RecordSeconds(SignalSpec.ResolvePulse(st)), 12);
+        Assert.Equal(3, SignalSpec.ResolvePulse(RoundTrip("PCW;PRI=100us;PW=10us;Jitter=0.05;Pulses=16;Off=0;P=0;Seed=3", CarrierStandard.Pcw)).Train!.Seed);
+        Assert.Equal(PulseFm.Tangent, SignalSpec.ResolvePulse(RoundTrip("PCW;PRI=500us;PW=50us;Chirp=10MHz;Fm=Tangent;Off=0;P=0", CarrierStandard.Pcw)).Fm);
+        var f = RoundTrip("FMCW;BW=250MHz;Ramp=50us;Idle=12.5us;Off=0;P=0", CarrierStandard.Fmcw);
+        Assert.Equal(62.5e-6, SignalSpec.ResolveFmcw(f).Period, 15);
+        Refuses(("PCW;Code=Barker:6", "no Barker code of length"), ("PCW;Code=Foo:3", "Code is kind:length"), ("LTE;Jitter=0.1", "JITTER belongs to a PCW carrier"),
+                ("PCW;Fm=Cubic", "Fm must be"), ("LTE;Triangle=1", "TRIANGLE belongs to an FMCW carrier"), ("FMCW;Triangle=1;Idle=1us", "a triangle has no idle"));
+    }
+
+    [Fact]
+    public void R2_Radar_ComposesTheWholeTrain_AndReadsTheCompression()
+    {
+        var c = SignalSpec.ParseCarrier("PCW;PRI=100us;PW=13us;Rise=0.1us;Fall=0.1us;Code=Barker:13;Off=0;P=0");
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var p = SignalSpec.ResolvePulse(c);
+        double rate = sig.Carriers.Single().NativeRateHz;
+        var q = Own(sig).Compression!;
+        var ideal = PulseCompression.Measure(PulsedCw.OnePulse(p, rate), rate);
+        Assert.Equal(ideal.PslDb, q.PslDb, 9);
+        Assert.Equal(ideal.IslDb, q.IslDb, 9);
+        Assert.Equal(ideal.MainlobeSeconds, q.MainlobeSeconds, 15);
+        Assert.True(q.PslDb < -20, $"PSL {q.PslDb} dB");
+        Assert.False(SignalQuality.Reads(SignalSpec.ParseCarrier("PCW;PRI=100us;PW=10us;Off=0;P=0")));   // a plain pulse: the pulse cubes
+
+        var train = SignalComposer.Generate(new SignalSpec { Carriers = [SignalSpec.ParseCarrier("PCW;PRI=100us;PW=10us;PRIs=100us,125us,150us;Off=0;P=0")] });
+        Assert.Equal(375e-6, train.RecordSeconds, 12);
+        Assert.Equal((int)Math.Round(375e-6 * train.Carriers.Single().NativeRateHz), train.Carriers.Single().Native.Length);
+
+        var ramp = SignalComposer.Generate(new SignalSpec { Carriers = [SignalSpec.ParseCarrier("FMCW;BW=250MHz;Ramp=50us;Idle=12.5us;Off=0;P=0")] });
+        Assert.Equal(62.5e-6, ramp.RecordSeconds, 15);
+        Assert.All(ramp.Carriers.Single().Native, v => Assert.Equal(1.0, v.Magnitude, 9));
+        Assert.True(SignalComposer.HasOwnRecord(ramp.Spec));
+    }
 }

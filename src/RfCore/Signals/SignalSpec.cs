@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Tones }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Tones, Fmcw }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -44,7 +44,7 @@ namespace RfCore.Signals
         /// <c># sample_rate_hz</c> header. Stated, it wins over the header — a file with none needs it.</summary>
         public double? SampleRateHz { get; init; }
 
-        // A pulsed-CW carrier's timing (s); null = the default PulsedCw.Resolve applies. Null rather than defaulted so
+        // A pulsed-CW carrier's timing (s); null = the default SignalSpec.ResolvePulse applies. Null rather than defaulted so
         // the JSON, and with it the cache key, of every other carrier is what it was before pCW existed.
         /// <summary>Pulse repetition interval: the record is one PRI.</summary>
         public double? PriSeconds { get; init; }
@@ -61,6 +61,27 @@ namespace RfCore.Signals
         /// <summary>A linear-FM chirp across the pulse width (Hz): positive sweeps up, negative down, centred on the
         /// carrier. Null (never 0) for a plain pulse, so its JSON and cache key are what they were.</summary>
         public double? ChirpHz { get; init; }
+        // A pulse's radar options (SignalSpec.ResolvePulse); null = off, so a plain pulse's JSON and cache key are what they were.
+        /// <summary>An intra-pulse phase code, kind:length[:root] (<c>Barker:13</c>, <c>P3:64</c>, <c>ZadoffChu:63:5</c>).</summary>
+        public string? PulseCode { get; init; }
+        public double? ChipSmoothing { get; init; }
+        /// <summary>The law the chirp is swept with (null = linear), and its tangent β or sine k.</summary>
+        public PulseFm? PulseFm { get; init; }
+        public double? FmParam { get; init; }
+        /// <summary>A Gaussian envelope of half-amplitude width PW.</summary>
+        public bool? GaussianPulse { get; init; }
+        /// <summary>A train: staggered PRIs (times, comma-separated), jitter (fraction; drawn from Seed), pulses before
+        /// the dwell, the dwell (s), frequency steps (Hz, count) and a pair's spacing (s).</summary>
+        public string? TrainPris { get; init; }
+        public double? Jitter { get; init; }
+        public int? Pulses { get; init; }
+        public double? DwellS { get; init; }
+        public double? StepHz { get; init; }
+        public int? Steps { get; init; }
+        public double? PairS { get; init; }
+        /// <summary>An FMCW carrier's ramp (s) and whether it is a triangle; its sweep is BandwidthHz, its reset IdleS.</summary>
+        public double? RampS { get; init; }
+        public bool? Triangle { get; init; }
 
         // An FSK carrier's settings; null = the default Fsk.Resolve applies, for the same reason as the pulse's.
         /// <summary>Bit (chip) rate, b/s; a DBPSK carrier's too.</summary>
@@ -188,8 +209,11 @@ namespace RfCore.Signals
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
             CarrierStandard.Nr => $"NR {BandwidthHz / 1e6:0.#} MHz {ScsHz / 1e3:0} kHz {ModName(Modulation)}",
             CarrierStandard.Cw => PhaseDeg is double ph ? $"CW {ph.ToString("0.##", CultureInfo.InvariantCulture)}°" : "CW",
-            CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(PulsedCw.Resolve(this).Width)} / {PulsedCw.FormatTime(PulsedCw.Resolve(this).Pri)}"
-                                   + (ChirpHz is double ch ? $" chirp {(ch > 0 ? "up" : "down")} {Fsk.FormatHz(Math.Abs(ch))}" : ""),
+            CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(SignalSpec.ResolvePulse(this).Width)} / {PulsedCw.FormatTime(SignalSpec.ResolvePulse(this).Pri)}"
+                                   + (ChirpHz is double ch ? $" chirp {(ch > 0 ? "up" : "down")} {Fsk.FormatHz(Math.Abs(ch))}" : "")
+                                   + (PulseCode is { } code ? $" {code}" : "") + (GaussianPulse == true ? " Gaussian" : "")
+                                   + (SignalSpec.ResolvePulse(this).Train is { } tr ? $" train of {tr.PulseCount}" : ""),
+            CarrierStandard.Fmcw => $"FMCW {(Triangle == true ? "triangle" : "sawtooth")} {Fsk.FormatHz(BandwidthHz)} / {PulsedCw.FormatTime(RampS ?? SignalSpec.DefaultFmcwRamp)}",
             CarrierStandard.Fsk => (Preset is { } pre ? pre + ": " : "") + FskLabel(Fsk.Resolve(this)),
             CarrierStandard.Dbpsk => $"DBPSK {Fsk.FormatBitRate(Dbpsk.Resolve(this).BitRate)} {DataLabel(Dbpsk.Resolve(this).Data)}",
             CarrierStandard.Css => $"CSS SF{Css.Resolve(this).Sf} {Fsk.FormatHz(BandwidthHz)}",
@@ -372,7 +396,8 @@ namespace RfCore.Signals
                     "OQPSK154" => CarrierStandard.Oqpsk154,
                     "ANALOG" => CarrierStandard.Analog,
                     "TONES" => CarrierStandard.Tones,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, TONES or FILE)"),
+                    "FMCW" => CarrierStandard.Fmcw,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, TONES, FMCW or FILE)"),
                 },
             };
             bool bwStated = parts.Skip(1).Any(p => p.Split('=')[0].Trim().Equals("BW", StringComparison.OrdinalIgnoreCase));
@@ -422,7 +447,21 @@ namespace RfCore.Signals
                     "STD" => c with { WlanFormat = Only(c, k, () => Signals.Wlan.ParseStd(v), CarrierStandard.Wlan) },
                     "MCS" => c with { Mcs = Only(c, k, () => WholeField(k, v), CarrierStandard.Wlan) },
                     "GI" => c with { GuardIntervalS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
-                    "IDLE" => c with { IdleS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
+                    "IDLE" => c with { IdleS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan, CarrierStandard.Fmcw) },
+                    "CODE" when c.Standard == CarrierStandard.Pcw => c with { PulseCode = Checked(v, () => ParsePulseCode(v)) },
+                    "CHIPSMOOTHING" => c with { ChipSmoothing = PulseOnly(c, k, Num) },
+                    "FM" => c with { PulseFm = PulseOnly(c, k, () => ParsePulseFm(v)) },
+                    "FMPARAM" => c with { FmParam = PulseOnly(c, k, Num) },
+                    "GAUSSIAN" => c with { GaussianPulse = PulseOnly(c, k, () => Flag(k, v)) },
+                    "PRIS" => c with { TrainPris = PulseOnly(c, k, () => Checked(v, () => ParseTimes(v))) },
+                    "JITTER" => c with { Jitter = PulseOnly(c, k, Num) },
+                    "PULSES" => c with { Pulses = PulseOnly(c, k, () => WholeField(k, v)) },
+                    "DWELL" => c with { DwellS = PulseOnly(c, k, () => ParseSeconds(k, v)) },
+                    "STEP" => c with { StepHz = PulseOnly(c, k, () => ParseHz(k, v)) },
+                    "STEPS" => c with { Steps = PulseOnly(c, k, () => WholeField(k, v)) },
+                    "PAIR" => c with { PairS = PulseOnly(c, k, () => ParseSeconds(k, v)) },
+                    "TRIANGLE" => c with { Triangle = Only(c, k, () => Flag(k, v), CarrierStandard.Fmcw) },
+                    "RAMP" when c.Standard == CarrierStandard.Fmcw => c with { RampS = ParseSeconds(k, v) },
                     "OVERSAMPLE" => c with { Oversample = Only(c, k, () => WholeField(k, v), CarrierStandard.Wlan) },
                     "SIGNAL" => c with { GnssSignal = Only(c, k, () => Signals.Gnss.ParseSignal(v), CarrierStandard.Gnss) },
                     "SATS" => c with { Satellites = Only(c, k, () => v, CarrierStandard.Gnss) },
@@ -471,7 +510,9 @@ namespace RfCore.Signals
                 };
             }
             // A pulse's bandwidth is its edges', never the 20 MHz a CarrierSpec defaults to.
-            if (c.Standard == CarrierStandard.Pcw) c = c with { BandwidthHz = PulsedCw.BandwidthHz(PulsedCw.Validate(c)) };
+            if (c.Standard == CarrierStandard.Pcw) c = c with { BandwidthHz = PulsedCw.BandwidthHz(PulsedCw.Check(ResolvePulse(c))) };
+            // an FMCW carrier's BW is its sweep, as stated (the composer's record carries the occupied band, the sweep over 0.9)
+            if (c.Standard == CarrierStandard.Fmcw) ResolveFmcw(c).Check();
             // an FSK carrier's is Carson's, from its rate and deviation
             if (c.Standard == CarrierStandard.Fsk) c = c with { BandwidthHz = Fsk.BandwidthHz(Fsk.Validate(c)) };
             // a DBPSK carrier's is its pulse's main lobe, from its rate
@@ -620,7 +661,16 @@ namespace RfCore.Signals
 
         /// <summary>A time field: a number, optionally followed by s, ms, us (µs) or ns, exact case as for
         /// <see cref="ParseHz"/>, and applied the same way, by re-reading the literal with its exponent.</summary>
-        private static double ParseSeconds(string key, string v)
+        /// <summary><paramref name="v"/> as written, once <paramref name="check"/> has read it without refusing.</summary>
+        private static string Checked<T>(string v, Func<T> check) { check(); return v; }
+
+        private static T PulseOnly<T>(CarrierSpec c, string key, Func<T> read)
+        {
+            if (c.Standard != CarrierStandard.Pcw) throw new FormatException($"carrier field {key} belongs to a PCW carrier");
+            return read();
+        }
+
+        internal static double ParseSeconds(string key, string v)
         {
             string num = v, exp = "";
             foreach (var (unit, e) in TimeUnits)
@@ -681,6 +731,64 @@ namespace RfCore.Signals
             string scaled = (hz / double.Parse("1" + exp, inv)).ToString("R", inv);
             return !scaled.Contains('E') && ParseHz("", scaled + unit) == hz ? scaled + unit : hz.ToString("R", inv);
         }
+
+        /// <summary>A PCW carrier's pulse: <see cref="PulsedCw.Resolve"/>'s timing, then each radar option it states (code,
+        /// chip smoothing, NLFM, Gaussian envelope, train); a plain pulse is PulsedCw.Resolve's shape exactly.</summary>
+        public static PulseShape ResolvePulse(CarrierSpec c)
+        {
+            var s = PulsedCw.Resolve(c);
+            if (c.PulseCode is { } code) { var (kind, n, root) = ParsePulseCode(code); s = s with { Code = RadarCodes.Phases(kind, n, root) }; }
+            if (c.ChipSmoothing is double cs) s = s with { ChipSmoothing = cs };
+            if (c.PulseFm is { } fm) s = s with { Fm = fm, FmParam = c.FmParam };
+            // a Gaussian's span is Delay to Delay + 4 PW (and a pair's spacing): centred in the PRI unless Delay is stated
+            if (c.GaussianPulse == true)
+                s = s with { Gaussian = true, Delay = c.DelaySeconds ?? 0.5 * (s.Pri - 4 * s.Width - (c.PairS ?? 0)) };
+            if (c.TrainPris is not null || c.Jitter is not null || c.Pulses is not null || c.DwellS is not null || c.StepHz is not null
+                || c.Steps is not null || c.PairS is not null)
+                s = s with
+                {
+                    Train = new PulseTrain
+                    {
+                        Pris = c.TrainPris is { } p ? ParseTimes(p) : null, Jitter = c.Jitter ?? 0, Seed = c.Seed, Pulses = c.Pulses,
+                        Dwell = c.DwellS ?? 0, StepHz = c.StepHz ?? 0, Steps = c.Steps ?? 1, PairSpacing = c.PairS ?? 0,
+                    },
+                };
+            return s;
+        }
+
+        /// <summary>A pulse's <c>Code=kind:length[:root]</c>: Barker:13, Frank:4 (16 chips), P1:4, P2:4, P3:64, P4:64,
+        /// ZadoffChu:63:5, Mls:7 (127 chips); the length as <see cref="RadarCodes.Phases"/> takes it.</summary>
+        public static (RadarCode Kind, int N, int Root) ParsePulseCode(string text)
+        {
+            var p = text.Split(':', StringSplitOptions.TrimEntries);
+            var inv = CultureInfo.InvariantCulture;
+            RadarCode? kind = p[0].Equals("ZC", StringComparison.OrdinalIgnoreCase) ? RadarCode.ZadoffChu : null;
+            foreach (var k in Enum.GetValues<RadarCode>())
+                if (k.ToString().Equals(p[0], StringComparison.OrdinalIgnoreCase)) kind = k;
+            int n = 0, root = 1;
+            if (kind is null || p.Length is < 2 or > 3 || !int.TryParse(p[1], NumberStyles.Integer, inv, out n)
+                || p.Length == 3 && !int.TryParse(p[2], NumberStyles.Integer, inv, out root))
+                throw new FormatException($"pCW carrier: Code is kind:length[:root], the kind one of {string.Join(", ", Enum.GetValues<RadarCode>())} (got '{text}')");
+            try { RadarCodes.Phases(kind.Value, n, root); }
+            catch (ArgumentException e) { throw new FormatException($"pCW carrier: Code {text}: {e.Message}"); }
+            return (kind.Value, n, root);
+        }
+
+        private static PulseFm ParsePulseFm(string v)
+        {
+            foreach (var f in Enum.GetValues<PulseFm>())
+                if (f.ToString().Equals(v.Trim(), StringComparison.OrdinalIgnoreCase)) return f;
+            throw new FormatException($"pCW carrier: Fm must be Linear, Tangent or Sine (got '{v}')");
+        }
+
+        /// <summary>Times, comma-separated, each as a carrier's time fields read them.</summary>
+        private static double[] ParseTimes(string text) => [.. text.Split(',', StringSplitOptions.TrimEntries).Select(t => ParseSeconds("PRIs", t))];
+
+        public const double DefaultFmcwRamp = 50e-6;
+
+        /// <summary>An FMCW carrier's ramp: its sweep (BW), ramp, idle and form, each stated or the default (50 µs, no idle,
+        /// sawtooth).</summary>
+        public static Fmcw ResolveFmcw(CarrierSpec c) => new(c.BandwidthHz, c.RampS ?? DefaultFmcwRamp, c.IdleS ?? 0, c.Triangle ?? false);
 
         /// <summary>A TONES carrier's shape: each field it states, MultitoneShape's default for the rest.</summary>
         public static MultitoneShape ResolveTones(CarrierSpec c)
@@ -743,6 +851,25 @@ namespace RfCore.Signals
                 if (c.MeasureStart is double ms) sb.Append(";MeasureStart=").Append(ms.ToString("R", inv));
                 if (c.MeasureEnd is double me) sb.Append(";MeasureEnd=").Append(me.ToString("R", inv));
                 if (c.ChirpHz is double ch) sb.Append(";Chirp=").Append(FormatHz(ch, "MHz"));
+                if (c.PulseCode is { } code) sb.Append(";Code=").Append(code);
+                if (c.ChipSmoothing is double cs) sb.Append(";ChipSmoothing=").Append(cs.ToString("R", inv));
+                if (c.PulseFm is { } fm) sb.Append(";Fm=").Append(fm.ToString());
+                if (c.FmParam is double fp) sb.Append(";FmParam=").Append(fp.ToString("R", inv));
+                if (c.GaussianPulse is bool g) sb.Append(";Gaussian=").Append(g ? '1' : '0');
+                if (c.TrainPris is { } pris) sb.Append(";PRIs=").Append(pris);
+                if (c.Jitter is double j) sb.Append(";Jitter=").Append(j.ToString("R", inv));
+                if (c.Pulses is int np) sb.Append(";Pulses=").Append(np.ToString(inv));
+                if (c.DwellS is double dw) sb.Append(";Dwell=").Append(FormatSeconds(dw, "us"));
+                if (c.StepHz is double st) sb.Append(";Step=").Append(FormatHz(st, "MHz"));
+                if (c.Steps is int sts) sb.Append(";Steps=").Append(sts.ToString(inv));
+                if (c.PairS is double pr) sb.Append(";Pair=").Append(FormatSeconds(pr, "us"));
+            }
+            if (c.Standard == CarrierStandard.Fmcw)
+            {
+                sb.Append(";BW=").Append(FormatHz(c.BandwidthHz, "MHz"));
+                if (c.RampS is double rs) sb.Append(";Ramp=").Append(FormatSeconds(rs, "us"));
+                if (c.IdleS is double idle) sb.Append(";Idle=").Append(FormatSeconds(idle, "us"));
+                if (c.Triangle is bool tri) sb.Append(";Triangle=").Append(tri ? '1' : '0');
             }
             if (c.Standard == CarrierStandard.Css)
             {
@@ -846,7 +973,9 @@ namespace RfCore.Signals
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
             // a pulse, and the PN data of an FSK, DBPSK or CSS carrier, draw no random symbols
-            if (c.Standard is not (CarrierStandard.Pcw or CarrierStandard.Fsk or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
+            // (a jittered train draws its PRIs from Seed)
+            if (c.Standard == CarrierStandard.Pcw && c.Jitter is not null) sb.Append(";Seed=").Append(c.Seed.ToString(inv));
+            if (c.Standard is not (CarrierStandard.Pcw or CarrierStandard.Fmcw or CarrierStandard.Fsk or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
                                    or CarrierStandard.Wcdma or CarrierStandard.Wlan11b or CarrierStandard.Oqpsk154))
                 sb.Append(";Seed=").Append(c.Seed.ToString(inv));
             return sb.ToString();

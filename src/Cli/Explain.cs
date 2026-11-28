@@ -1620,6 +1620,7 @@ internal static class Explain
                                          or RfCore.Signals.CarrierStandard.Wlan or RfCore.Signals.CarrierStandard.Oqpsk154 => "EVM",
                                      RfCore.Signals.CarrierStandard.Wcdma => "EVM, peak code-domain error and code-domain power",
                                      RfCore.Signals.CarrierStandard.Wlan11b => "EVM and mask margin",
+                                     RfCore.Signals.CarrierStandard.Pcw when RfCore.Signals.SignalQuality.Reads(x.k) => "pulse compression (mainlobe, PSL, ISL)",
                                      RfCore.Signals.CarrierStandard.Tones when RfCore.Signals.SignalSpec.ResolveTones(x.k).NotchWidthHz > 0 => "NPR",
                                      RfCore.Signals.CarrierStandard.Analog => "demodulated reading (depth, deviation, bearing, DDM)",
                                      RfCore.Signals.CarrierStandard.Fsk when RfCore.Signals.Fsk.Resolve(x.k).Burst?.Then is not null

@@ -257,7 +257,9 @@ namespace RfCore.Signals
             var tones = TonesOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
-            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds
+            var fmcw = FmcwOf(spec);
+            double record = (pulse is null ? (double?)null : PulsedCw.RecordSeconds(pulse)) ?? (fmcw is null ? (double?)null : fmcw.Period)
+                            ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds
                             ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? gnss?.RecordSeconds
                             ?? (wcdma is null ? (double?)null : Wcdma.RecordSeconds) ?? w11b?.RecordSeconds ?? o154?.RecordSeconds ?? analog?.RecordSeconds
                             ?? (tones is null ? (double?)null : Multitone.RecordSeconds(tones)) ?? iq?.DurationSeconds
@@ -378,6 +380,14 @@ namespace RfCore.Signals
                         raw.Add((c with { BandwidthHz = Ieee802154.ChannelBandwidthHz }, Ieee802154.Generate(o154!),
                                  Ieee802154.NativeRateHz, 1.2 * Ieee802154.ChipRateHz));
                         break;
+                    case CarrierStandard.Fmcw:
+                    {
+                        // unit magnitude throughout: Pavg is its power at every instant
+                        var ramp = fmcw!;
+                        double rate = ramp.NativeRateHz();
+                        raw.Add((c with { BandwidthHz = ramp.OccupiedBandwidthHz }, ramp.Generate(rate), rate, Math.Abs(ramp.BandwidthHz)));
+                        break;
+                    }
                     case CarrierStandard.Tones:
                     {
                         // unit mean power; Clip applies (noise has peaks) over the occupied span, and fills a notch as a
@@ -441,7 +451,7 @@ namespace RfCore.Signals
                 throw new ArgumentException("a pulsed-CW (PCW) carrier must be the source's only carrier");
             if (spec.ClipPaprDb is not null)
                 throw new ArgumentException("a pulsed-CW (PCW) carrier is not clipped: remove Clip from the source");
-            return PulsedCw.Validate(pcw);
+            return PulsedCw.Check(SignalSpec.ResolvePulse(pcw));
         }
 
         /// <summary>The FSK carrier's settings (null when there is none), refused — as a pulse is — when it shares the
@@ -545,6 +555,14 @@ namespace RfCore.Signals
             return Multitone.Validate(SignalSpec.ResolveTones(c));
         }
 
+        /// <summary>The FMCW ramp (null when there is none): its record is one period, so it is the only carrier, and its
+        /// envelope is constant, so it is not clipped.</summary>
+        public static Fmcw? FmcwOf(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Fmcw, "an FMCW carrier", "it has a constant envelope");
+            return c is null ? null : SignalSpec.ResolveFmcw(c).Check();
+        }
+
         private static CarrierSpec? OwnRecordCarrier(SignalSpec spec, CarrierStandard standard, string what, string whyNoClip)
         {
             var c = spec.Carriers.FirstOrDefault(c => c.Standard == standard);
@@ -562,7 +580,7 @@ namespace RfCore.Signals
             => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null
                || ScOf(spec) is not null || WlanOf(spec) is not null || GnssOf(spec) is not null
                || WcdmaOf(spec) is not null || Wlan11bOf(spec) is not null || Oqpsk154Of(spec) is not null
-               || AnalogOf(spec) is not null || TonesOf(spec) is not null;
+               || AnalogOf(spec) is not null || TonesOf(spec) is not null || FmcwOf(spec) is not null;
     }
 
     /// <summary>

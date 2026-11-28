@@ -35,22 +35,26 @@ internal static class EnvelopePulse
     internal static PulseShape? Of(EnvelopeRunResult r)
         => r.Sources.Length == 1 && r.Sources[0].Signal.Carriers.Count == 1 &&
            r.Sources[0].Signal.Carriers[0].Spec.Standard == CarrierStandard.Pcw
-            ? PulsedCw.Resolve(r.Sources[0].Signal.Carriers[0].Spec)
+            ? SignalSpec.ResolvePulse(r.Sources[0].Signal.Carriers[0].Spec)
             : null;
 
     /// <summary>The whole pulses inside the run: the run time each rising edge leaves 0. Run time t is record time
     /// <paramref name="startS"/> + t.</summary>
     internal static List<double> Starts(PulseShape s, double startS, double lastT)
     {
+        // a train's slots (and each pair's second pulse) in every record; one slot a PRI long for a plain pulse
+        var (slots, _, record) = PulsedCw.Layout(s);
+        double[] subs = s.Train is { PairSpacing: > 0 } tr ? [0, tr.PairSpacing] : [0];
         var list = new List<double>();
         double dur = s.End - s.Delay;
-        for (long n = (long)Math.Floor((startS - s.Delay) / s.Pri); ; n++)
-        {
-            double t = s.Delay + n * s.Pri - startS;
-            if (t + dur > lastT + 1e-12) break;
-            if (t >= -1e-12) list.Add(t);
-        }
-        return list;
+        for (long n = (long)Math.Floor((startS - s.Delay) / record); ; n++)
+            foreach (double slot in slots)
+                foreach (double sub in subs)
+                {
+                    double t = s.Delay + n * record + slot + sub - startS;
+                    if (t + dur > lastT + 1e-12) return list;
+                    if (t >= -1e-12) list.Add(t);
+                }
     }
 
     /// <summary>Adds the pulse cubes; returns the sentence the Messages pane shows.</summary>
