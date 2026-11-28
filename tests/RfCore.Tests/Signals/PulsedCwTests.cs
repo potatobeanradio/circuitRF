@@ -8,6 +8,8 @@
 //   P4  A linear-FM chirp: the instantaneous frequency is a line from -B/2 at the rising edge's 50 % point to +B/2 at
 //       the falling edge's (reversed for Chirp=-B), |envelope| is the plain pulse's, and the bandwidth and rate grow to
 //       hold the sweep. Chirp=0 writes nothing, keeps the cache key, and generates today's record bit for bit.
+//   P5  With the radar options unset, the plain pulse and the chirp are the values stored here (worked from the
+//       raised-cosine and the chirp's formula outside this code), to 1e-9 relative.
 
 using System;
 using System.Linq;
@@ -142,6 +144,38 @@ public class PulsedCwTests
         var today = Enumerable.Range(0, (int)Math.Round(ps.Pri * r0)).Select(i => new System.Numerics.Complex(ps.At(i / r0), 0)).ToArray();
         Assert.Equal(today, PulsedCw.Generate(PulsedCw.Resolve(zero), r0));
         Assert.Equal(today, SignalComposer.Generate(new SignalSpec { Carriers = [zero] }).Carriers[0].Native);
+    }
+
+    [Fact]
+    public void P5_TheRadarOptionsUnsetLeaveThePulseAndTheChirp()
+    {
+        static void Near(double expected, double actual) => Assert.Equal(expected, actual, 1e-9 * Math.Max(Math.Abs(expected), 1e-300));
+        var s = PulsedCw.Check(PulsedCw.Resolve(SignalSpec.ParseCarrier(Text)));
+        Assert.Null(s.Code);
+        Assert.Null(s.Train);
+        Assert.Equal(PulseFm.Linear, s.Fm);
+        Assert.Equal(30.72e6, PulsedCw.NativeRateHz(s));
+        Assert.Equal(100e-6, PulsedCw.RecordSeconds(s));
+        var x = PulsedCw.Generate(s, 30.72e6);
+        Assert.Equal(3072, x.Length);
+        foreach (var (i, v) in new[] { (310, 0.028302788594545103), (315, 0.20582688139984), (320, 0.4873492017714499), (1000, 1.0),
+                                       (1850, 0.8407292570149936), (1855, 0.5727636183813857), (1860, 0.27907405439733), (0, 0.0), (3000, 0.0) })
+        {
+            Near(v, x[i].Real);
+            Assert.Equal(0.0, x[i].Imaginary);
+        }
+
+        var c = PulsedCw.Check(PulsedCw.Resolve(SignalSpec.ParseCarrier(Text + ";Chirp=20MHz")));
+        Assert.Equal(61.44e6, PulsedCw.NativeRateHz(c));
+        var y = PulsedCw.Generate(c, 61.44e6);
+        Assert.Equal(6144, y.Length);
+        foreach (var (i, re, im) in new[] { (310, 0.0, 0.0), (620, -0.01598483737740611, 0.023356643942257477),
+                                            (640, 0.44324708877468055, 0.2025864328133547), (1600, -0.7950698395613465, -0.606517889447537),
+                                            (3500, 0.4098813260044023, -0.9121388592713682), (3710, -0.44909041539961164, -0.3554939680747648) })
+        {
+            Near(re, y[i].Real);
+            Near(im, y[i].Imaginary);
+        }
     }
 
     private sealed class Tol(double eps) : System.Collections.Generic.IEqualityComparer<double>
