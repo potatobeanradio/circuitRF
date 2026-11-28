@@ -1044,6 +1044,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["pcell/render"]       = ["cell"],
             ["pcell/export"]       = ["cell"],
             ["pcell/import"]       = ["path"],
+            ["pcell/ops"]          = ["cell"],   // brief-pcd-13 D10
             // brief-plg-5: plugins by id. No allow — permission is granted only in the window.
             ["plugin/list"]        = [],
             ["plugin/describe"]    = ["id"],

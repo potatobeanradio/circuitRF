@@ -2062,7 +2062,7 @@ internal static class ToolCatalog
             "PCell Designer: a parameterised cell made of circuitRF's primitives, every position a function of its "
           + "parameters, exported as a PCell package (.cpcell) any workspace places like a kit's PCell. "
           + "new -> write its schematic (.csch: the parts, the Offset and Stretch fields, the .ccell's Parameters) -> check "
-          + "-> render at values -> export; import puts a package into a workspace. Exit 1: refused, or check found an error.",
+          + "-> render at values -> export; import puts a package into a workspace; ops lists its operation history. Exit 1: refused, or check found an error.",
             "what",
             "What to do.",
             [
@@ -2094,6 +2094,10 @@ internal static class ToolCatalog
                     [new("path", true, "The .cpcell.")],
                     [new("into", "--into", OptKind.Path, "Required. The workspace, or a library folder it references.")],
                     "Unpack a package as a cell. The same package again is already imported; another with the same name is refused, never overwritten."),
+                new("ops", ["pcell", "ops"],
+                    [new("cell", true, "The designed cell's folder.")],
+                    [],
+                    "List the cell's operation history (merge, subtract, intersect, exclusive, grow, repeat), one line each."),
             ]),
 
         // The seventh, and the only one that names no file. It is also reachable as MCP RESOURCES,

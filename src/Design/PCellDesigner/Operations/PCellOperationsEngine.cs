@@ -76,17 +76,9 @@ internal static class PCellOperationsEngine
             foreach (var key in part.Planned.Keys.ToList()) part.Planned[key] = Clipper.Union(part.Planned[key], Rule);
             part.Now = Copy(part.Planned);
             parts.Add(part);
-            if (part.Tool || CellLayoutResolver.Resolve(inst, layoutDir, technology).View is not { } view) continue;
-            foreach (var pin in view.Pins)
-            {
-                var (x, y, deg) = ChainPose.Of(inst).Apply(pin);
-                double inward = Math.Max(1, Math.Min(pin.WidthDbu / 4.0, 10.0 * layout.DbuPerMicron)), rad = (deg + 180) * Math.PI / 180;
-                pins.Add(new Pin(id, pin.Name, x, y, pin.Layer, (long)Math.Round(x + inward * Math.Cos(rad)), (long)Math.Round(y + inward * Math.Sin(rad))));
-            }
+            if (!part.Tool) pins.AddRange(PinsOf(inst, id, layoutDir, technology, layout.DbuPerMicron));
         }
-        var ports = layout.Shapes.OfType<LabelShape>().Where(l => l.IsPort)
-            .Select(l => (Name: l.Text, Pin: pins.Where(p => Math.Abs(p.X - l.X) <= 2 && Math.Abs(p.Y - l.Y) <= 2).Cast<Pin?>().FirstOrDefault()))
-            .Where(p => p.Pin is not null).Select(p => (p.Name, Pin: p.Pin!)).ToList();
+        var ports = PortsOf(layout, pins);
         var vias = layout.Shapes.OfType<ViaShape>().Cast<LayoutShape>().Concat(parts.SelectMany(p => p.Points.OfType<ViaShape>())).ToList();
 
         var copper = new Dictionary<LayerKey, Paths64>();
@@ -246,14 +238,16 @@ internal static class PCellOperationsEngine
         double Si(string? expression, string unit)
         {
             if (string.IsNullOrWhiteSpace(expression)) return 0;
-            if (!SchematicLayoutPlanner.TryResolveSiValue(expression, unit, scope, evaluator, out double v, out string? error))
+            // "20 um" as every value box reads it: the unit lifted off the text, else the operation's own (D11).
+            var (e, u) = Optimization.TunableValue.Split(expression, unit);
+            if (!SchematicLayoutPlanner.TryResolveSiValue(e, u ?? "", scope, evaluator, out double v, out string? error))
                 throw new ExpressionException($"'{expression}': {error}");
             return v;
         }
         bool Names(string? expression)
         {
             if (string.IsNullOrWhiteSpace(expression)) return false;
-            try { return AstWalker.CollectRefs(Parser.Parse(expression)).Count > 0; }
+            try { return AstWalker.CollectRefs(Parser.Parse(Optimization.TunableValue.Split(expression, null).Expression)).Count > 0; }
             catch (Exception) { return false; }
         }
         LayerKey? FindLayer(string name)
@@ -262,6 +256,49 @@ internal static class PCellOperationsEngine
             => name is { Length: > 0 } n
                 ? FindLayer(n) ?? throw new ExpressionException($"the technology has no layer {n}")
                 : SubstrateResolver.ResolveSignalLayerKey(technology, PCellLayerSelection.Default, out _);
+    }
+
+    /// <summary>A part's pins where the plan put them, each with a probe point just inside its copper.</summary>
+    private static IEnumerable<Pin> PinsOf(LayoutInstance inst, string id, string layoutDir, Technology technology, int dbuPerMicron)
+    {
+        foreach (var pin in CellLayoutResolver.Resolve(inst, layoutDir, technology).View?.Pins ?? [])
+        {
+            var (x, y, deg) = ChainPose.Of(inst).Apply(pin);
+            double inward = Math.Max(1, Math.Min(pin.WidthDbu / 4.0, 10.0 * dbuPerMicron)), rad = (deg + 180) * Math.PI / 180;
+            yield return new Pin(id, pin.Name, x, y, pin.Layer, (long)Math.Round(x + inward * Math.Cos(rad)), (long)Math.Round(y + inward * Math.Sin(rad)));
+        }
+    }
+
+    /// <summary>Each Port label on the part pin it was placed on (PortPlacement D1).</summary>
+    private static List<(string Name, Pin Pin)> PortsOf(LayoutView layout, List<Pin> pins)
+        => [.. layout.Shapes.OfType<LabelShape>().Where(l => l.IsPort)
+                  .Select(l => (Name: l.Text, Pin: pins.FirstOrDefault(p => Math.Abs(p.X - l.X) <= 2 && Math.Abs(p.Y - l.Y) <= 2)))
+                  .Where(p => p.Pin is not null).Select(p => (p.Name, p.Pin!))];
+
+    /// <summary>
+    /// brief-pcd-13 D8: which ports each piece of a layout's copper joins ("1=2, 3"): every placed part's copper and the
+    /// layout's own, labels and the ground pour left out. What the LVS of a cell with operations compares.
+    /// </summary>
+    internal static string PortsJoined(LayoutView layout, string layoutDir, Technology technology)
+    {
+        var copper = new Dictionary<LayerKey, Paths64>();
+        var vias = new List<LayoutShape>();
+        var pins = new List<Pin>();
+        void Take(LayoutShape s)
+        {
+            if (s is LabelShape || s.Generated == GroundArtwork.PourTag) return;
+            if (!LayoutBooleans.IsClipperOperand(s)) { if (s is ViaShape) vias.Add(s); return; }
+            var paths = LayoutClipper.ToClipperPaths(s, LayoutFlattener.ResolveTolDbu(s, technology));
+            copper[s.Layer] = copper.TryGetValue(s.Layer, out var had) ? [.. had, .. paths] : paths;
+        }
+        foreach (var inst in layout.Instances)
+        {
+            foreach (var s in LayoutFlatten.FlattenAllLevels(inst, layoutDir, technology).Shapes) Take(s);
+            if (inst.SchematicId is { Length: > 0 } id) pins.AddRange(PinsOf(inst, id, layoutDir, technology, layout.DbuPerMicron));
+        }
+        foreach (var s in layout.Shapes) Take(s);
+        foreach (var key in copper.Keys.ToList()) copper[key] = Clipper.Union(copper[key], Rule);
+        return Joined(copper, vias, PortsOf(layout, pins), technology);
     }
 
     private static Dictionary<LayerKey, Paths64> Copy(Dictionary<LayerKey, Paths64> d)

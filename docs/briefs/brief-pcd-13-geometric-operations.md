@@ -5,8 +5,9 @@
 one hook each in `src/Design/Layout/SchematicSync/DesignedCellLayout.cs` (the engine after the planner),
 `src/Design/Schematic/SchematicPersistence.cs` and `EditableSchematic.cs` (one additive field, D1),
 `src/Design/Layout/PCells/DrawnMetal.cs` (the `Role` word), `src/Design/Layout/Em/ParametricEm/EmModelSwitch.cs`
-(R-pcd13-4), `src/Design/PCellDesigner/PCellDimensions.cs` (R-pcd13-6); `src/Cli/PCellVerb.cs`, `src/Cli/CliEntry.cs`
-(the `pcell ops` noun) and `tests/Ui.Tests/PCellDesigner/Pcd7PCellVerbTests.cs` (its gate); `docs/design/pcell-designer.md`
+(R-pcd13-4), `src/Design/PCellDesigner/PCellDimensions.cs` (R-pcd13-6); `src/Design/Layout/Lvs/LvsRun.cs` (one hook) and new
+`LvsOperatedCell.cs` (D8); `src/Cli/PCellVerb.cs`, `src/Cli/CliEntry.cs`, `src/Cli/Serve/ToolCatalog.cs` (the `pcell ops`
+noun and MCP mode) and `tests/Ui.Tests/PCellDesigner/Pcd7PCellVerbTests.cs` (its gate); `docs/design/pcell-designer.md`
 **Depends on:** PCD-0, PCD-2 (`DesignedCellLayout.At`), PCD-3 (`MSHAPE`), PCD-5 (the generator), PCD-7 (the verb), PCD-10
 (`PCellDimensions`). **PCD-14** (the history panel in the designer window) codes against §2.
 
@@ -165,32 +166,35 @@ canvas. **Make tool** on an `MSHAPE` sets its `Role` row to `"tool"` (and `Model
   `<Cell>:op<k> (<Kind>)`. A designed cell is resolvable wherever a workspace is open or a layout or EM run is made
   (seam 12); a bare circuit run outside one sees no operation and runs the model.
 - **D8 — LVS.** A placed designed cell is a leaf: `cpcell:<Name>`, its generator's pins and its `Terminals`, operations
-  or none, so a bench compares it exactly as before. The cell itself, once an operation changes its copper, is compared
-  by its **ports' connectivity on the final copper**: the ports one piece of copper joins (`CopperPieces`) must be the
-  ports joined on the planned copper, which the planner made to match the schematic; an operation that changes that is
-  refused (D6). A part-by-part `circuitrf lvs` of the cell's own saved layout reads the copper a merge or a cut leaves as
-  plain artwork, not as the parts' bodies, so it reports shorts across them: that comparison is not the one for such a
-  cell (§5).
+  or none, so a bench compares it exactly as before. The cell itself, once an operation changes its copper (or it places
+  a tool), is compared by its **ports' connectivity on the final copper**: `LvsRun` hands such a cell to
+  `LvsOperatedCell`, which reads which ports each piece of copper joins (`CopperPieces`) on the saved layout and on the
+  cell planned without its history (the planner drew that one from the schematic), and reports `lvs.net.short` or
+  `lvs.net.open` when they differ, with the Info `lvs.scope.pcell-operations` saying how it was compared. Merged or cut
+  copper is no longer a part's body, so a part-by-part reading would call it a short. The engine refuses an operation
+  that would change the joins in the first place (D6), so a cell planned by `At` is clean.
 - **D9 — Dimensions.** The engine records a span for a Grow whose `Amount` names a cell parameter (from A's outline
   outward by the amount, at the right of its bounds) and for a Repeat pitch that names one (from the first copy to the
   next). `PCellDimensions.Of` draws them with its own labels (one hook line reading `TraceOf(layout).Spans`). No
   generator handle: a grow has no drag direction a parent placement could hold.
+- **D11 — Values as circuitRF spells them.** An amount or a pitch is read as every value box reads one
+  (`TunableValue.Split`): `20 um`, `20um` and `Lmid/30` all evaluate, a unit written in the text winning over `Unit`.
 - **D10 — The CLI.** `circuitrf pcell ops <cell>` prints `PCellOperations.Listing(cellDir)`, one line per operation
   and exits 0; a cell that is not designed is `pcell.cell.not-designed`. The verb holds
-  no logic (PCD-7's gate gains the call).
+  no logic (PCD-7's gate gains the call). The MCP `pcell` tool has the mode `what=ops`.
 
 ## 4. Tests
 
 `tests/Ui.Tests/PCellDesigner/Pcd13*.cs` on `Pcd5Workspace`'s designed through line: Merge (a tool's area becomes
 copper), Subtract with a tool `MSHAPE`, Intersect, Grow onto a mask layer, Repeat; the model-honesty rule (conductor
-Subtract named, mask Grow and `KeepModel` not); the pin-removal refusal; LVS of a bench placing a cell with a Subtract,
-and a cut that severs the ports refused. Plus PCD-7's gate and help for `pcell ops`.
+Subtract named, mask Grow and `KeepModel` not); the pin-removal refusal; LVS of cells with a Subtract and a Merge on their own
+layouts and of a bench placing one; a step that joins or severs the ports refused; an amount written `100 um`. Plus PCD-7's gate and help for `pcell ops`.
 
 ## 5. Possible enhancements
 
-- **`circuitrf lvs` on a cell with operations, by port connectivity.** D8's rule lives in the engine; LVS reading a
-  designed cell with an applied history through the same rule would make `lvs` on its own layout clean instead of
-  reporting the parts' merged copper as shorts.
+- **Part-by-part LVS inside a cell with operations.** D8 compares such a cell by its ports; reading each changed part's
+  remaining copper as its body would also check the parts between the ports, at the cost of drawing it in the part's
+  own frame.
 - **An EM-only mark carried in the netlist.** D7 finds a placed cell's operations through the registered resolver; a
   key on the cell's `define` would let a bare circuit run outside a workspace see them too, at the cost of a Core
   grammar change.

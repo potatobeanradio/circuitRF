@@ -185,6 +185,9 @@ public static class LvsRun
         var (resolution, _) = TechnologyResolver.ResolveForDocument(
             view.TechRef, clay, null, new TechnologyCache());
 
+        // brief-pcd-13 D8: a designed cell whose operations changed its copper is compared by its ports' connectivity.
+        if (LvsOperatedCell.Run(cellDir, model, view, clay, resolution.Tech) is { } operated) return operated;
+
         bool bench = IsTestBench(cellDir);
         return Run(view, clay, cellDir, resolution.Tech, model, csch, bench, options, control, carried);
     }

@@ -91,6 +91,20 @@ public sealed class Pcd13OperationsTests
     }
 
     [Fact]
+    public void Grow_TakesAnAmountWithASpaceBeforeItsUnit()
+    {
+        using var ws = new Pcd5Workspace();
+        var add = PCellOperations.Add(Schematic(ws.Designed("Gs0")),
+            new PCellOperation { Kind = PCellOperationKind.Grow, A = ["TL2"], Amount = "100 um", Onto = "Soldermask Top" });
+        Assert.Null(add.Refusal);
+        string cell = ws.Designed("Gs1", edit: m => m.PCellOperations = add.Schematic!.PCellOperations);
+        var at = Plan(ws, cell);
+        Assert.True(PCellOperations.TraceOf(at.Layout!)!.Steps.Single().Applied, Lines(at));
+        var b = Clipper.GetBounds(LayoutClipper.ToClipperPaths(at.Layout!.Shapes.Single(s => s.Layer == Mask), 1));
+        Assert.InRange(b.right - b.left, 3200 * 1000 - 2, 3200 * 1000 + 2);
+    }
+
+    [Fact]
     public void Repeat_CopiesAPadAtAParameterPitch_WithItsDimension()
     {
         using var ws = new Pcd5Workspace();
@@ -145,31 +159,59 @@ public sealed class Pcd13OperationsTests
     }
 
     [Fact]
-    public void Lvs_ACellWithASubtractIsALeafOnABench_AndACutThatSeversThePortsIsRefused()
+    public void Lvs_CellsWithASubtractAndAMergeAreCleanOnTheirOwnLayout_AndALeafOnABench()
     {
         using var ws = new Pcd5Workspace();
-        string cell = ws.Designed("Lv1", edit: m =>
+        string cut = ws.Designed("Lv1", edit: m =>
         {
             m.Components.Add(Tool("SH1", "TL2.1", "0.5", "0", 0, -100, 200, 100));
             m.PCellOperations = [new PCellOperation { Id = "op1", Kind = PCellOperationKind.Subtract, A = ["TL1"], B = ["SH1"] }];
         });
-        Assert.True(PCellOperations.TraceOf(Plan(ws, cell).Layout!)!.Steps.Single().Applied);
-        using (var registration = DesignedPCellResolver.Register(ws.Root))
+        string merged = ws.Designed("Lv2", edit: m =>
         {
-            string bench = ws.Bench("BenchLv1", cell, "3");
-            Assert.Null(LayoutFromSchematic.Run(bench).Refusal);
-            var placed = LvsRun.Run(Path.GetDirectoryName(Path.GetDirectoryName(bench))!);
-            Assert.True(placed.ErrorCount == 0, Errors(placed));
+            m.Components.Add(Tool("SH1", "TL2.1", "0.5", "0.55", 0, -100, 200, 100));   // across TL1's edge
+            m.PCellOperations = [new PCellOperation { Id = "op1", Kind = PCellOperationKind.Merge, A = ["TL1"], B = ["SH1"] }];
+        });
+        foreach (string cell in new[] { cut, merged })
+        {
+            var at = Plan(ws, cell);
+            Assert.True(PCellOperations.TraceOf(at.Layout!)!.Steps.Single().Applied, Lines(at));
+            string clay = Path.Combine(cell, "layout", Path.GetFileName(cell) + ".clay");
+            LayoutPersistence.SaveToFile(clay, at.Layout!);
+            using var generated = GeneratedCellsRun.Prepare(clay);
+            var own = LvsRun.Run(cell);
+            Assert.True(own.ErrorCount == 0, Errors(own));
+            Assert.Contains(own.Findings, f => f.Id == "lvs.scope.pcell-operations");
         }
 
+        using var registration = DesignedPCellResolver.Register(ws.Root);
+        string bench = ws.Bench("BenchLv1", cut, "3");
+        Assert.Null(LayoutFromSchematic.Run(bench).Refusal);
+        var placed = LvsRun.Run(Path.GetDirectoryName(Path.GetDirectoryName(bench))!);
+        Assert.True(placed.ErrorCount == 0, Errors(placed));
+    }
+
+    [Fact]
+    public void AStepThatJoinsOrSeversPorts_IsRefused()
+    {
+        using var ws = new Pcd5Workspace();
+        // Without TL2, TL3 sits 1 mm past TL1's end: the ports are on two pieces of copper. A bridge would join them.
+        var joined = Plan(ws, ws.Designed("Pj1", edit: m =>
+        {
+            m.Components.RemoveAll(c => c.InstanceName == "TL2");
+            m.Components.Single(c => c.InstanceName == "TL3").Offset = new OffsetPlacement { Anchor = "TL1.2", Pin = 1, Dx = "1", Unit = "mm" };
+            m.Components.Add(Tool("SH1", "TL1.2", "0", "0", -100, -200, 1100, 200));
+            m.PCellOperations = [new PCellOperation { Id = "op1", Kind = PCellOperationKind.Merge, A = ["TL1"], B = ["SH1"] }];
+        }));
+        Assert.Contains(joined.Lines, l => l.Text.StartsWith("op1 (Merge) was not applied: it changes which ports the copper joins", StringComparison.Ordinal));
+
         // A 100 µm band right across TL1: its pins keep their copper, but port 1 no longer reaches port 2.
-        var severed = Plan(ws, ws.Designed("Lv2", edit: m =>
+        var severed = Plan(ws, ws.Designed("Pj2", edit: m =>
         {
             m.Components.Add(Tool("SH1", "TL2.1", "0.5", "0", 0, -1000, 100, 1000));
             m.PCellOperations = [new PCellOperation { Id = "op1", Kind = PCellOperationKind.Subtract, A = ["TL1"], B = ["SH1"] }];
         }));
-        Assert.Contains(severed.Lines, l => l.Severity == SchematicLayoutPlanner.ReportSeverity.Warning
-                                            && l.Text.StartsWith("op1 (Subtract) was not applied: it changes which ports the copper joins", StringComparison.Ordinal));
+        Assert.Contains(severed.Lines, l => l.Text.StartsWith("op1 (Subtract) was not applied: it changes which ports the copper joins", StringComparison.Ordinal));
     }
 
     // ── fixtures ─────────────────────────────────────────────────────────────

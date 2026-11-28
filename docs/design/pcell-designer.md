@@ -174,8 +174,10 @@ output at the instance's values, whose circuit model is its own schematic, and w
   registered designed cell, so circuit runs are refused and optimisation runs `em=direct`. Mask, silk and keep-out steps
   keep the model.
 - **LVS.** A placed designed cell stays a leaf, so a bench compares it as before. The cell itself, once an operation
-  changes its copper, is compared by its ports' connectivity on the final copper, the rule above. A part-by-part `lvs` of
-  its own saved layout reads merged or cut copper as plain artwork and reports shorts across it.
+  changes its copper, is compared by its ports' connectivity on the final copper (`LvsOperatedCell`, from `LvsRun`):
+  merged or cut copper is no longer a part's body, so a part-by-part reading would call it a short.
+- **Values as circuitRF spells them.** An amount or a pitch is read through `TunableValue.Split`, so `20 um`, `20um`
+  and `Lmid/30` all evaluate.
 - **Seen where.** Not in the `.cnl` (operations are geometry): the designer's history panel (PCD-14) and
   `circuitrf pcell ops <cell>`. A Grow amount or Repeat pitch that names a parameter is a dimension line.
 

@@ -153,7 +153,7 @@ public static class PCellOperations
         foreach (string? e in new[] { op.Amount, op.Rows, op.Columns, op.PitchX, op.PitchY })
         {
             if (string.IsNullOrWhiteSpace(e)) continue;
-            try { Parser.Parse(e); }
+            try { Parser.Parse(Optimization.TunableValue.Split(e, null).Expression); }   // "20 um" as a value box takes it
             catch (Exception ex) when (ex is not OutOfMemoryException) { return $"'{e}' is not an expression: {ex.Message}"; }
         }
         return null;
