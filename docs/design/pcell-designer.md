@@ -207,9 +207,10 @@ output at the instance's values, whose circuit model is its own schematic, and w
   the planner now knows an angle by its row's dimension as well as by a `deg` unit, so `Theta=Th` and `Theta=Th deg`
   draw the same line, as the circuit model always read them (8d2358637, `Pcd15AngleParameterTests`). And LVS compared
   angles exactly, so at `Th` = 48 the degree/radian round trip read "schematic 48 deg, layout 48 deg"; an angle now
-  has an absolute tolerance of 1e-6° (a0a8d3b0d). Still open: an MDLY's `Style` is written as a word
-  (`Style=Straight`): quoted, the planner hands the generator the quotes, it is not recognised, and the run falls
-  back to a meander too short for its turns, drawn with no pins.
+  has an absolute tolerance of 1e-6° (a0a8d3b0d). And a word written quoted (`Style="Straight"`, the netlist's own
+  form) reached the generator with its quotes, was not recognised, and fell back to a meander too short for its turns,
+  drawn with no pins; the planner now unquotes every word parameter once, for every part, before any branch hands it
+  on (cb56062fa, `Pcd15AngleParameterTests`).
 - **A cell inside a cell.** A designed cell placed in another, its parameter an expression of the outer cell's
   (`Lmid = 2*a`), regenerates with `a` (`Pcd15NestedCellTests`). It passed as the shared code stood; nothing was
   changed for it.
