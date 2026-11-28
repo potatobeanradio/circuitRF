@@ -34,6 +34,11 @@ public static class DocSignalFixtures
     public static FigureScene DesignerEvm() => Designer(tab: 1, clip: null,
         carriers: "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"");
 
+    /// <summary>One GNSS carrier, two GPS L1 C/A satellites at C/N0 45 dB-Hz: the family card, the spectrum against the
+    /// signal's expected PSD, and each PRN's code phase and C/N0 in the numbers under the plots.</summary>
+    public static FigureScene DesignerGnss() => Designer(tab: 0, clip: null,
+        carriers: "\"GNSS;Signal=L1CA;Sats=1@1.8kHz@12@0dB,5@-2kHz@300@-3dB;CN0=45;Off=0;P=0;Seed=1\"");
+
     /// <summary>
     /// A custom I/Q file (Load Custom): a single-carrier 64QAM capture at 200 MS/s with no header, so its rate is the
     /// one entered on the Custom I/Q card, stored workspace-relative and clipped to 8 dB. The presets, the carriers,

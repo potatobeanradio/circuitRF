@@ -770,13 +770,13 @@ owns the mixing grid, and the source just supplies power at those frequencies.</
 			MOD_Source
 	</text></svg></span>
 </span><figcaption>MOD_Source</figcaption></figure>
-<p>A <strong>modulated</strong> RF source — LTE, NR, CW, a pulsed-CW train, FSK (wireless M-Bus, Bluetooth LE), DBPSK (Sigfox), chirp spread spectrum (LoRa), a single PSK, QAM or APSK carrier or an imported I/Q waveform — for the
+<p>A <strong>modulated</strong> RF source — LTE, NR (with their uplinks and test models), CW, a pulsed-CW train or radar waveform, FMCW, FSK (wireless M-Bus, Bluetooth, DECT, Z-Wave, Wi-SUN, LMR), DBPSK (Sigfox), chirp spread spectrum (LoRa), a single PSK, QAM or APSK carrier, Wi-Fi, WCDMA, 802.11b, 802.15.4, GNSS, broadcast OFDM, analog and avionics carriers, tones and noise, or an imported I/Q waveform — for the
 <a href="simulations.html#envelope">Envelope analysis</a>: ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
 two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
 <strong>carriers</strong> around its centre frequency <code>Fc</code>; <code>Pavg</code> is the total average available power behind the
 source impedance <code>Z</code>.</p>
 <ul>
-<li><code>Carrier[i]</code> — one carrier, written as a description string, e.g.
+<li><p><code>Carrier[i]</code> — one carrier, written as a description string, e.g.
 <code>&quot;NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=1&quot;</code>: the standard (<code>LTE</code>, <code>NR</code>, <code>CW</code>, <code>FILE</code>),
 channel bandwidth, NR subcarrier spacing (<code>15</code>, <code>30</code> or <code>60kHz</code> with the FR1 bandwidths; <code>120kHz</code> with
 FR2's 50, 100, 200 and 400 MHz, and 200 MHz at <code>60kHz</code>: see <a href="signal-designer.html#nr-fr2">NR in FR2</a>),
@@ -802,10 +802,50 @@ the symbol rate, the modulation (<code>BPSK</code>, <code>QPSK</code>, <code>8PS
 roll-off, APSK's ring radii and phases, the data (<code>PN9</code>, <code>PN15</code>, <code>PN23</code> or a pattern), known symbols, and
 optionally <code>Span=</code> (the filter in symbols) and <code>Symbols=</code> (the data symbols in the record). It must be the
 source's only carrier, and unlike the others with a record of their own it can be clipped: see
-<a href="signal-designer.html#sc">A single carrier</a>.</li>
-<li><code>Record</code> — periodic record length (s), whole 0.5 ms slots. <code>Clip</code> — target PAPR (dB) for
+<a href="signal-designer.html#sc">A single carrier</a>.</p>
+<p>The keys below are each written only when stated, so a carrier without them is what it was. Each standard after
+<code>PCW</code> must be the source's only carrier.</p>
+<ul>
+<li><code>LTE</code> and <code>NR</code> options: <code>Link=UL</code> (LTE SC-FDMA, NR PUSCH), <code>DFTs=1</code> and <code>Pi2BPSK=1</code> (NR DFT-s-OFDM),
+<code>RbStart=</code>, <code>RbCount=</code>, <code>TM=</code> (<code>NR-FR1-TM1.1</code> … <code>E-TM3.3</code>), <code>TDD=</code> (<code>DDDSU:10,2</code>, or <code>TM</code>) and <code>CellId=</code>:
+see <a href="signal-designer.html#ofdm-options">LTE and NR options</a>.</li>
+<li><code>SC</code>: <code>Pulse=</code> (<code>RRC</code>, <code>RC</code>, <code>Gaussian</code>, <code>Rect</code>, <code>HalfSine</code>, <code>LinearGMSK</code>), <code>BT=</code>, <code>Rotation=</code> (degrees),
+<code>Differential=1</code>, <code>OffsetQ=1</code>, <code>FrameData=</code>, <code>Guard=</code> and <code>Ramp=</code> (symbols), and <code>Mod=SOQPSK-TG</code>:
+see <a href="signal-designer.html#sc-options">SC pulses, rotation and bursts</a>.</li>
+<li><code>FSK</code>: <code>Levels=</code> (2, 4, 8), <code>Mapping=</code>, <code>Pulse=</code> (<code>NRZ</code>, <code>RC</code>, <code>RRC</code>, <code>C4FM</code>, <code>LREC</code>, <code>LRC</code>), <code>RollOff=</code>,
+<code>PulseLength=</code>, <code>Manchester=1</code> and <code>Preset=</code> (<code>Bluetooth EDR 2 Mb/s</code>, <code>DECT</code>, …): see
+<a href="signal-designer.html#fsk-options">FSK levels, pulses and packets</a>.</li>
+<li><code>PCW</code>: <code>Code=</code> (<code>Barker:13</code>, <code>P3:64</code>, <code>ZadoffChu:63:5</code>, …), <code>ChipSmoothing=</code>, <code>Fm=</code> (<code>Linear</code>, <code>Tangent</code>,
+<code>Sine</code>) and <code>FmParam=</code>, <code>Gaussian=1</code>, and a train's <code>PRIs=</code>, <code>Jitter=</code>, <code>Pulses=</code>, <code>Dwell=</code>, <code>Step=</code>,
+<code>Steps=</code> and <code>Pair=</code>; <code>FMCW</code> takes <code>BW=</code> (the sweep), <code>Ramp=</code>, <code>Idle=</code> and <code>Triangle=1</code>:
+<code>&quot;FMCW;BW=250MHz;Ramp=50us;Idle=12.5us;Off=0;P=0&quot;</code>. See <a href="signal-designer.html#radar">Radar waveforms</a>.</li>
+<li><code>WLAN</code>, one IEEE 802.11 packet and its gap: <code>Std=</code> (<code>a</code>, <code>n</code>, <code>ac</code>, <code>ax</code>, <code>be</code>), <code>BW=</code>, <code>MCS=</code>, <code>GI=</code>,
+<code>Symbols=</code>, <code>Idle=</code>, <code>Oversample=</code> and <code>Window=</code>, e.g.
+<code>&quot;WLAN;Std=ax;BW=80MHz;MCS=11;GI=0.8us;Symbols=4;Idle=16us;Oversample=4;Off=0;P=0;Seed=1&quot;</code>. <strong><code>Pavg</code> is
+the packet power</strong>: see <a href="signal-designer.html#wlan">Wi-Fi</a>.</li>
+<li><code>WCDMA</code>: <code>Model=</code> (<code>Tm1x64</code> … <code>Tm6</code>, <code>Uplink12k2</code>) and <code>Code=</code> (the scrambling code, 0 to 7); <code>WLAN11B</code>:
+<code>Rb=</code> (1, 2, 5.5 or 11 Mbps) and <code>PSDU=</code> (bytes); <code>OQPSK154</code>: <code>PSDU=</code>. See
+<a href="signal-designer.html#dsss">WCDMA, 802.11b and 802.15.4</a>.</li>
+<li><code>GNSS</code>: <code>Signal=</code> (<code>L1CA</code>, <code>L5</code>, <code>E1</code>, <code>B1I</code>), <code>Sats=</code> (<code>PRN@Doppler@code phase@power</code>, comma-separated),
+<code>CN0=</code> (dB-Hz; absent: no noise) and <code>Record=</code>:
+<code>&quot;GNSS;Signal=L1CA;Sats=1@1.8kHz@12@0dB,5@-2kHz@300@-3dB;CN0=45;Record=20ms;Off=0;P=0;Seed=1&quot;</code>. See
+<a href="signal-designer.html#gnss">GNSS</a>.</li>
+<li><code>ANALOG</code>: <code>Kind=</code> (<code>AM</code>, <code>DSBSC</code>, <code>USB</code>, <code>LSB</code>, <code>FM</code>, <code>PM</code>, <code>VOR</code>, <code>LOC</code>, <code>GS</code>), <code>Tones=</code>
+(<code>frequency@level@phase</code>, comma-separated), <code>NoiseBW=</code>, <code>Depth=</code>, <code>Dev=</code>, <code>Index=</code>, <code>PeakPhase=</code>, <code>Bearing=</code>,
+<code>DDM=</code>, <code>SDM=</code>, <code>Ident=</code> and <code>Record=</code>: see <a href="signal-designer.html#analog">Analog and avionics</a>.</li>
+<li><code>TONES</code>: <code>N=</code>, <code>Spacing=</code>, <code>Phase=</code> (<code>Zero</code>, <code>Newman</code>, <code>Schroeder</code>, <code>Random</code>), <code>Powers=</code>, <code>Notch=</code>
+(<code>centre/width</code>), <code>NotchTones=</code>, <code>NoiseBW=</code>, <code>NoiseDb=</code> and <code>Record=</code>:
+<code>&quot;TONES;N=100;Spacing=100kHz;Phase=Random;Notch=0/1MHz;Off=0;P=0;Seed=1&quot;</code>. See
+<a href="signal-designer.html#tones-noise">Tones and noise</a>.</li>
+<li><code>OFDM</code>, a numerology of its own: <code>Preset=</code> (<code>DVB-T 2K</code>, <code>DVB-T 8K</code>, <code>DVB-T2 8K PP2</code>, <code>ISDB-T mode 3</code>,
+<code>DAB mode I</code>, <code>WiMAX 10 MHz PUSC</code>, <code>NB-IoT UL</code>) and <code>Symbols=</code>; the NB-IoT uplink also takes <code>SCS=</code>, <code>NbTones=</code>,
+<code>FirstTone=</code>, <code>Pi2BPSK=</code>, <code>Slots=</code> and <code>CellId=</code>. See <a href="signal-designer.html#ofdm-options">OFDM numerologies</a>.</li>
+</ul>
+</li>
+<li><p><code>Record</code> — periodic record length (s), whole 0.5 ms slots. <code>Clip</code> — target PAPR (dB) for
 clip-and-filter; absent means <strong>unclipped</strong> (the natural OFDM PAPR, about 11–12 dB).
-<code>Shaping</code> — out-of-channel spectral floor (dBc), or <code>off</code>.</li>
+<code>Shaping</code> — out-of-channel spectral floor (dBc), or <code>off</code>.</p>
+</li>
 </ul>
 <p>Select the source and press <strong>Design signal…</strong> in the inspector to open the
 <a href="signal-designer.html">Signal Designer</a>: the carriers and presets, or a custom I/Q file of your own, with

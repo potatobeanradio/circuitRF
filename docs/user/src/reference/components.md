@@ -394,7 +394,7 @@ owns the mixing grid, and the source just supplies power at those frequencies.
 
 {{symbol: modsource}}
 
-A **modulated** RF source — LTE, NR, CW, a pulsed-CW train, FSK (wireless M-Bus, Bluetooth LE), DBPSK (Sigfox), chirp spread spectrum (LoRa), a single PSK, QAM or APSK carrier or an imported I/Q waveform — for the
+A **modulated** RF source — LTE, NR (with their uplinks and test models), CW, a pulsed-CW train or radar waveform, FMCW, FSK (wireless M-Bus, Bluetooth, DECT, Z-Wave, Wi-SUN, LMR), DBPSK (Sigfox), chirp spread spectrum (LoRa), a single PSK, QAM or APSK carrier, Wi-Fi, WCDMA, 802.11b, 802.15.4, GNSS, broadcast OFDM, analog and avionics carriers, tones and noise, or an imported I/Q waveform — for the
 [Envelope analysis](simulations.html#envelope): ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
 two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
 **carriers** around its centre frequency `Fc`; `Pavg` is the total average available power behind the
@@ -427,6 +427,43 @@ source impedance `Z`.
   optionally `Span=` (the filter in symbols) and `Symbols=` (the data symbols in the record). It must be the
   source's only carrier, and unlike the others with a record of their own it can be clipped: see
   [A single carrier](signal-designer.html#sc).
+
+  The keys below are each written only when stated, so a carrier without them is what it was. Each standard after
+  `PCW` must be the source's only carrier.
+  - `LTE` and `NR` options: `Link=UL` (LTE SC-FDMA, NR PUSCH), `DFTs=1` and `Pi2BPSK=1` (NR DFT-s-OFDM),
+    `RbStart=`, `RbCount=`, `TM=` (`NR-FR1-TM1.1` … `E-TM3.3`), `TDD=` (`DDDSU:10,2`, or `TM`) and `CellId=`:
+    see [LTE and NR options](signal-designer.html#ofdm-options).
+  - `SC`: `Pulse=` (`RRC`, `RC`, `Gaussian`, `Rect`, `HalfSine`, `LinearGMSK`), `BT=`, `Rotation=` (degrees),
+    `Differential=1`, `OffsetQ=1`, `FrameData=`, `Guard=` and `Ramp=` (symbols), and `Mod=SOQPSK-TG`:
+    see [SC pulses, rotation and bursts](signal-designer.html#sc-options).
+  - `FSK`: `Levels=` (2, 4, 8), `Mapping=`, `Pulse=` (`NRZ`, `RC`, `RRC`, `C4FM`, `LREC`, `LRC`), `RollOff=`,
+    `PulseLength=`, `Manchester=1` and `Preset=` (`Bluetooth EDR 2 Mb/s`, `DECT`, …): see
+    [FSK levels, pulses and packets](signal-designer.html#fsk-options).
+  - `PCW`: `Code=` (`Barker:13`, `P3:64`, `ZadoffChu:63:5`, …), `ChipSmoothing=`, `Fm=` (`Linear`, `Tangent`,
+    `Sine`) and `FmParam=`, `Gaussian=1`, and a train's `PRIs=`, `Jitter=`, `Pulses=`, `Dwell=`, `Step=`,
+    `Steps=` and `Pair=`; `FMCW` takes `BW=` (the sweep), `Ramp=`, `Idle=` and `Triangle=1`:
+    `"FMCW;BW=250MHz;Ramp=50us;Idle=12.5us;Off=0;P=0"`. See [Radar waveforms](signal-designer.html#radar).
+  - `WLAN`, one IEEE 802.11 packet and its gap: `Std=` (`a`, `n`, `ac`, `ax`, `be`), `BW=`, `MCS=`, `GI=`,
+    `Symbols=`, `Idle=`, `Oversample=` and `Window=`, e.g.
+    `"WLAN;Std=ax;BW=80MHz;MCS=11;GI=0.8us;Symbols=4;Idle=16us;Oversample=4;Off=0;P=0;Seed=1"`. **`Pavg` is
+    the packet power**: see [Wi-Fi](signal-designer.html#wlan).
+  - `WCDMA`: `Model=` (`Tm1x64` … `Tm6`, `Uplink12k2`) and `Code=` (the scrambling code, 0 to 7); `WLAN11B`:
+    `Rb=` (1, 2, 5.5 or 11 Mbps) and `PSDU=` (bytes); `OQPSK154`: `PSDU=`. See
+    [WCDMA, 802.11b and 802.15.4](signal-designer.html#dsss).
+  - `GNSS`: `Signal=` (`L1CA`, `L5`, `E1`, `B1I`), `Sats=` (`PRN@Doppler@code phase@power`, comma-separated),
+    `CN0=` (dB-Hz; absent: no noise) and `Record=`:
+    `"GNSS;Signal=L1CA;Sats=1@1.8kHz@12@0dB,5@-2kHz@300@-3dB;CN0=45;Record=20ms;Off=0;P=0;Seed=1"`. See
+    [GNSS](signal-designer.html#gnss).
+  - `ANALOG`: `Kind=` (`AM`, `DSBSC`, `USB`, `LSB`, `FM`, `PM`, `VOR`, `LOC`, `GS`), `Tones=`
+    (`frequency@level@phase`, comma-separated), `NoiseBW=`, `Depth=`, `Dev=`, `Index=`, `PeakPhase=`, `Bearing=`,
+    `DDM=`, `SDM=`, `Ident=` and `Record=`: see [Analog and avionics](signal-designer.html#analog).
+  - `TONES`: `N=`, `Spacing=`, `Phase=` (`Zero`, `Newman`, `Schroeder`, `Random`), `Powers=`, `Notch=`
+    (`centre/width`), `NotchTones=`, `NoiseBW=`, `NoiseDb=` and `Record=`:
+    `"TONES;N=100;Spacing=100kHz;Phase=Random;Notch=0/1MHz;Off=0;P=0;Seed=1"`. See
+    [Tones and noise](signal-designer.html#tones-noise).
+  - `OFDM`, a numerology of its own: `Preset=` (`DVB-T 2K`, `DVB-T 8K`, `DVB-T2 8K PP2`, `ISDB-T mode 3`,
+    `DAB mode I`, `WiMAX 10 MHz PUSC`, `NB-IoT UL`) and `Symbols=`; the NB-IoT uplink also takes `SCS=`, `NbTones=`,
+    `FirstTone=`, `Pi2BPSK=`, `Slots=` and `CellId=`. See [OFDM numerologies](signal-designer.html#ofdm-options).
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.
