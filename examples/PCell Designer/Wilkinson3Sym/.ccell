@@ -1,0 +1,77 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "F",
+      "DefaultExpression": "2.45",
+      "Unit": "GHz",
+      "Dimension": "Frequency",
+      "ShowOnSchematic": true,
+      "Description": "centre frequency",
+      "Minimum": 1500000000,
+      "Maximum": 3500000000
+    },
+    {
+      "Name": "Re",
+      "DefaultExpression": "150",
+      "Unit": "Ohm",
+      "Dimension": "Resistance",
+      "ShowOnSchematic": true,
+      "Description": "end resistors R23, R34",
+      "Minimum": 50,
+      "Maximum": 200
+    },
+    {
+      "Name": "Rb",
+      "DefaultExpression": "150",
+      "Unit": "Ohm",
+      "Dimension": "Resistance",
+      "ShowOnSchematic": true,
+      "Description": "bridge resistor R24",
+      "Minimum": 50,
+      "Maximum": 1000000000
+    },
+    {
+      "Name": "Lm",
+      "DefaultExpression": "0.9",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "serpentine leg, the middle arm\u0027s trim",
+      "Minimum": 0.0006,
+      "Maximum": 0.0014
+    }
+  ],
+  "PrimarySchematic": "Wilkinson3Sym.csch",
+  "PrimarySymbol": "Wilkinson3Sym.csym",
+  "PrimaryLayout": "Wilkinson3Sym.clay",
+  "IsTestBench": false,
+  "LayoutGenerator": "cpcell:Wilkinson3Sym",
+  "PCellDesign": {
+    "Sweep": "start=1.5 stop=3.5 npts=81 Unit=GHz"
+  },
+  "EmCopper": true,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "P1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "P2",
+      "LayoutPin": "2"
+    },
+    {
+      "Port": 3,
+      "Name": "P3",
+      "LayoutPin": "3"
+    },
+    {
+      "Port": 4,
+      "Name": "P4",
+      "LayoutPin": "4"
+    }
+  ],
+  "NumPorts": 4
+}

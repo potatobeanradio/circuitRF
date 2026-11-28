@@ -132,9 +132,9 @@ output at the instance's values, whose circuit model is its own schematic, and w
 
 ### PCD-9 — the showcase cells
 
-- `Wilkinson3`, `Spurline`, `DualModePatch` and `Slotline` are built by `Pcd9Cells.Design`, using the steps of the
-  window: Create, the text applied, the table typed, offsets and flips set on the schematic, the text applied again,
-  Stretch by Parameter, Save. The text view carries no placement, so an offset or a flip is set on the part.
+- `Wilkinson3`, `Wilkinson3Sym`, `Spurline`, `DualModePatch` and `Slotline` are built by `Pcd9Cells.Design`, using the
+  steps of the window: Create, the text applied, the table typed, offsets and flips set on the schematic, the text
+  applied again, Stretch by Parameter, Save. The text view carries no placement, so an offset or a flip is set on the part.
 - A bend's turn and a tee's branch side come from the drawing's chirality, not from the text: the sign of MBEND's
   `Angle` does not turn it. Flipping a part moves its pins off its wires, so the text is applied again afterwards. That
   redraws the wires and keeps every part's orientation and offset.
@@ -211,6 +211,22 @@ output at the instance's values, whose circuit model is its own schematic, and w
   form) reached the generator with its quotes, was not recognised, and fell back to a meander too short for its turns,
   drawn with no pins; the planner now unquotes every word parameter once, for every part, before any branch hands it
   on (cb56062fa, `Pcd15AngleParameterTests`).
+- **`Wilkinson3Sym`, a symmetric 3-way divider with a bridged resistor delta.** A cross `X1` feeds three quarter-wave
+  arms of 86.6 Ω (up, down, and a serpentine on the axis); 0603s `R23` and `R34` join neighbouring outputs and a 2010
+  `R24` joins ports 2 and 4 with its body across the middle output line, so the three 150 Ω resistors are a delta and
+  every port is matched and isolated at f0 (the two end resistors alone, at 86.6 Ω, leave S33 and S42 near −15 dB:
+  the second bench, `Rb` = 1 GΩ). Each resistor closes a loop, and a loop closes only to 1 DBU (S1), so every length a
+  resistor spans is fixed copper (the risers, and a serpentine as wide as an outer arm's bend and run) and the rest of
+  each arm is one `MDLY` at `F`, the same for all three, `Theta=(90-38*F/2.45e9)*pi/180`. A Corner and a Meander
+  `MDLY` (the first idea) would move the arm ends with `F` and open the loops at every `F` but one. Found on the way:
+  - `MCROSS`'s model is not symmetric between arms 2 and 4 (its source draws `L3` on arm 2 only), so a cross with the
+    outer arms on 2 and 4 made S22 and S44 differ by 7 dB. `X1`'s arms 2 and 4 now end at the through line's edge
+    (`L` = W/2), where the model is the two through lines alone.
+  - `Theta` written as an expression of `F` followed by `deg` (`Theta=(90-38*F/2.45e9) deg`) is not drawn: the
+    generator returns the `MDLY` with no pins. The same expression in radians with no unit is drawn right and simulates
+    the same, so the cell uses it (§4).
+  - A netlist checked outside the designer needs the board's `H`, `Er`, `T`, `Sigma` and `TanD` on every microstrip
+    part, as the designer's extracted text has them; without them the lines take another substrate.
 - **A cell inside a cell.** A designed cell placed in another, its parameter an expression of the outer cell's
   (`Lmid = 2*a`), regenerates with `a` (`Pcd15NestedCellTests`). It passed as the shared code stood; nothing was
   changed for it.
@@ -232,6 +248,8 @@ The real Planar runs on the example are recorded in §5.
 
 ## 4. Possible enhancements
 
+- **A unit after an expression of a parameter** (`Theta=(90-38*F/2.45e9) deg`). It is how a user writes an angle that
+  scales with `F`; today only the unitless radians form reaches the generator, which is easy to get wrong by 57×.
 - **Offset and flip in the text view.** The Part panel (PCD-15) sets them without a hand edit; carrying them in the
   `.cnl` would let a designed cell be authored as text alone, at the cost of a Core grammar change.
 - **A cut on `MSHAPE` for the ground pour.** A slot drawn on its own needs the ground drawn around it in two shapes. A

@@ -300,7 +300,7 @@ Over MCP it is the `pcell` tool, with `what=new|check|render|export|import`.
 
 ## Examples {#examples}
 
-The **PCell Designer** example (File ▸ New ▸ Examples) holds `PadTee`, the cell this page uses, and four showcase
+The **PCell Designer** example (File ▸ New ▸ Examples) holds `PadTee`, the cell this page uses, and five showcase
 cells. Each comes with a bench that places it and a Data Display, and its README gives the closed-form estimates and
 the numbers.
 
@@ -319,6 +319,22 @@ circuit models:
 <figcaption><code>Wilkinson3</code> in the designer. The first ring <code>W1</code> divides one third to two thirds, the
 second <code>W2</code> halves the two thirds, and <code>D1</code>-<code>D3</code> carry port 2 past it. The response
 shows the three outputs near −5 dB and the input match at 2.45 GHz.</figcaption>
+</figure>
+
+**A symmetric 3-way divider** (`Wilkinson3Sym`, 2.45 GHz). A cross feeds three quarter-wave arms of 86.6 Ω: one
+turns up, one down, and the middle one runs on through a serpentine. Resistors only between neighbouring outputs
+cannot match every port, so a third, a 2010 between the outer outputs whose body bridges the middle output line,
+makes the three a delta of 150 Ω. The copper each resistor spans is of fixed size and the rest of every arm is one
+`MDLY` at `F`, so every loop closes at any `F`. By circuit models at 2.45 GHz:
+- the three outputs are in phase, at −4.95, −4.79 and −4.95 dB;
+- every match is −29.9 dB or better and every isolation −31 dB or better;
+- placed at `Re = 86.6 Ω` with the bridge left off (`Rb = 1 GΩ`, the second bench), S33 and S42 rise to −15 dB.
+
+<figure class="figure">
+<img src="../../images/pcell-designer/wilkinson3-sym.png" alt="The PCell Designer on the symmetric 3-way divider: a cross at the input, an arm turning up and one turning down, a serpentine middle arm, two small resistors between neighbouring outputs and a long one bridging the middle output line, and the circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">
+<figcaption><code>Wilkinson3Sym</code> in the designer. <code>R23</code> and <code>R34</code> join neighbouring outputs at
+the arm ends; <code>R24</code> joins ports 2 and 4 across the middle line <code>O3</code>. <code>Lm</code>, the
+serpentine's leg, trims the middle arm.</figcaption>
 </figure>
 
 **A spurline bandstop** (`Spurline`). A 50 Ω line with an L-shaped slit, drawn as one polygon with `Model = "none"`,

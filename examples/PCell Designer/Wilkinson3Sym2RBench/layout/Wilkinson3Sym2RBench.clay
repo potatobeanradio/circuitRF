@@ -1,0 +1,180 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"X1": {
+			"F": 2450000000,
+			"Re": 86.6,
+			"Rb": 1000000000,
+			"Lm": 0.0009000000000000001
+		}
+	},
+	"GeneratedPlacements": {
+		"P1": {
+			"X": 4050000,
+			"Y": 10554688,
+			"RotationDeg": 270,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 7550000,
+			"Y": -10554688,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"P3": {
+			"X": 4050000,
+			"Y": -10554688,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"Text": "3"
+		},
+		"P4": {
+			"X": 550000,
+			"Y": -10554688,
+			"RotationDeg": 90,
+			"Mirror": false,
+			"Text": "4"
+		},
+		"X1": {
+			"X": 4050000,
+			"Y": 10554688,
+			"RotationDeg": 270,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"cpcell-Wilkinson3Sym_eed56da8e700": {
+			"GeneratorId": "cpcell:Wilkinson3Sym",
+			"Parameters": {
+				"F": 2450000000,
+				"Re": 86.6,
+				"Rb": 1000000000,
+				"Lm": 0.0009000000000000001
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Label",
+			"X": 4050000,
+			"Y": 10554688,
+			"Text": "1",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R270",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 7550000,
+			"Y": -10554688,
+			"Text": "2",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R90",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 4050000,
+			"Y": -10554688,
+			"Text": "3",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P3",
+			"PortDirection": "R90",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 550000,
+			"Y": -10554688,
+			"Text": "4",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P4",
+			"PortDirection": "R90",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				10640000, 13094688,
+				-2540000, 13094688,
+				-2540000, -13094688,
+				10640000, -13094688
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/cpcell-Wilkinson3Sym_eed56da8e700",
+			"X": 4050000,
+			"Y": 10554688,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "X1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		}
+	]
+}

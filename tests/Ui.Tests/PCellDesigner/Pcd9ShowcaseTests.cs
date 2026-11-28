@@ -59,6 +59,32 @@ public sealed class Pcd9ShowcaseTests : IDisposable
         foreach (var (i, j) in new[] { (3, 2), (4, 2), (4, 3) }) Assert.True(Db(i, j) < -20, $"S{i}{j} = {Db(i, j):F1} dB");
     }
 
+    /// <summary>The symmetric 3-way divider at 2.45 GHz: with the bridge, the outputs in phase and isolated from each other;
+    /// the same cell with the bridge left off (Re = 86.6 Ω, Rb = 1 GΩ) cannot isolate ports 2 and 4.</summary>
+    [Fact]
+    public void Wilkinson3Sym_BridgedDeltaIsolatesEveryPair()
+    {
+        string bench = DesignedAndPlaced(Pcd9Cells.WilkinsonSym, Pcd9Cells.WilkinsonSymBench);
+        var s = At245(bench);
+        double Db(int i, int j) => 20 * Math.Log10(s(i, j).Magnitude);
+        double Deg(int i, int j) => s(i, j).Phase * 180 / Math.PI;
+        foreach (int i in new[] { 2, 3, 4 }) Assert.InRange(Db(i, 1), -5.2, -4.77);
+        foreach (int i in new[] { 3, 4 }) Assert.InRange(Math.IEEERemainder(Deg(i, 1) - Deg(2, 1), 360), -3, 3);
+        foreach (var (i, j) in new[] { (3, 2), (4, 2), (4, 3) }) Assert.True(Db(i, j) < -20, $"S{i}{j} = {Db(i, j):F1} dB");
+
+        var two = At245(Pcd9Cells.WilkinsonSym2RBench(_ws, Path.Combine(_ws, Pcd9Cells.WilkinsonSym.Cell)));
+        Assert.True(20 * Math.Log10(two(4, 2).Magnitude) > -20, "S42 with the bridge left off");
+    }
+
+    private static Func<int, int, System.Numerics.Complex> At245(string bench)
+    {
+        var r = CircuitEvaluation.Evaluate(PreparedCircuit.FromSchematic(bench), new CircuitEvaluationRequest { Em = false, Analyses = ["SP1"] });
+        Assert.True(r.Status == RunStatus.Success, r.StatusMessage);
+        var snp = DataSetBuilder.ToSnp(r.Results.Single(a => a.Name == "SP1").Data);
+        var m = snp.Matrices[Array.FindIndex(snp.Frequencies, f => Math.Abs(f - 2.45e9) < 1e6)];
+        return (i, j) => m[i - 1, j - 1];
+    }
+
     /// <summary>The spurline: EM only, its slit's far end a drag handle on Ls.</summary>
     [Fact]
     public void Spurline_EmOnly_SlitFollowsLs()

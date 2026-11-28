@@ -1,6 +1,6 @@
 using CircuitRF.Ui.Tests.Layout.PCells;
 // Owner: PCD-9 (showcase examples). The three showcase cells and their benches, BUILT by the functions the designer's
-// window calls. Skipped unless CRF_AUTHOR_PCD9=1, because it WRITES examples/PCell Designer: the six cell folders are built
+// window calls. Skipped unless CRF_AUTHOR_PCD9=1, because it WRITES examples/PCell Designer: the cell folders are built
 // in a scratch workspace and replace their namesakes there; nothing else in the example is touched.
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
@@ -27,6 +27,9 @@ public sealed class Pcd9ExampleAuthoring
             Pcd9Cells.Workspace(scratch);
             // Every bench ships a layout with its ground pour; the circuit-only one has no EM setup.
             Assert.Null(LayoutFromSchematic.Run(Pcd9Cells.WilkinsonBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Wilkinson))).Refusal);
+            string sym = Pcd9Cells.Design(scratch, Pcd9Cells.WilkinsonSym);
+            Assert.Null(LayoutFromSchematic.Run(Pcd9Cells.WilkinsonSymBench(scratch, sym)).Refusal);
+            Assert.Null(LayoutFromSchematic.Run(Pcd9Cells.WilkinsonSym2RBench(scratch, sym)).Refusal);
             // The two EM-only benches are laid out with their Planar setups, so their SP1 runs by EM as shipped. An example
             // keeps each setup in its cell's em/ folder (the path inside it stays relative to the workspace).
             foreach (string bench in new[] { Pcd9Cells.SpurlineBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Spurline)),
@@ -56,7 +59,8 @@ public sealed class Pcd9ExampleAuthoring
             CellCreate.WriteThreeDView(benchDir, "SlotlineBench", made.Document!);
             File.Delete(cem);
 
-            foreach (string cell in new[] { "Wilkinson3", "Wilkinson3Bench", "Spurline", "SpurlineBench", "DualModePatch", "PatchBench",
+            foreach (string cell in new[] { "Wilkinson3", "Wilkinson3Bench", "Wilkinson3Sym", "Wilkinson3SymBench", "Wilkinson3Sym2RBench",
+                                            "Spurline", "SpurlineBench", "DualModePatch", "PatchBench",
                                             "Slotline", "SlotlineBench" })
             {
                 string from = Path.Combine(scratch, cell), to = Path.Combine(example, cell);

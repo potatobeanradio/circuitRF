@@ -54,6 +54,67 @@ internal static class Pcd9Cells
         [], [],
         Sweep: "start=1.5 stop=3.5 npts=81 Unit=GHz");
 
+    // ══ 1b. Wilkinson3Sym: a symmetric 3-way divider, a cross and a resistor delta ═══════════════════════════════════
+    //
+    // The input feeds a cross X1; its up and down arms rise (V, B) and run right (E, H) to the tees T2 and T4, 3.5 mm off
+    // the axis, and its middle arm runs as a serpentine (S1-S6, legs M1-M3) and H3 to the cross X3 on the axis. R23 and
+    // R34 (0603s) join the tees' branches to X3's; the bridge R24, a 2010, joins the branches of T2B and T4B and its body
+    // spans the middle output line O3, so the three resistors are a delta. The loops close by construction at every F:
+    // the riser is fixed (the 0603 between the lines sets 3.5 mm), the serpentine is as wide as the outer arm's bend and
+    // E together, and the three H are one spec at F. Each H is the quarter wave at F less the fixed copper's share, 38° at
+    // 2.45 GHz, scaled with F (in radians: the generator takes an expression of F only unitless). Lm, the serpentine's
+    // leg, trims the middle arm against the outer two (0.9 mm, from the live response). Re = 86.6 Ω and Rb = 1 GΩ is the
+    // same cell with the bridge left off.
+    public static readonly Pcd9Spec WilkinsonSym = new(
+        "Wilkinson3Sym",
+        """
+        MCROSS:X1  nm  nu  n1  nd  W1=0.338 mm  W2=0.338 mm  W3=1.1 mm  W4=0.338 mm  L1=0.6 mm  L2=0.55 mm  L3=0.6 mm  L4=0.55 mm
+        MLIN:V2  nu  u1  W=0.338 mm  L=2.781 mm
+        MBEND:B2  u1  u2  W=0.338 mm  Angle=90 deg
+        MLIN:E2  u2  u3  W=0.338 mm  L=3.445 mm
+        MDLY:H2  u3  e2  Z0=86.6 Ohm  F=F  Theta=(90-38*F/2.45e9)*pi/180  Style=Straight
+        MTEE:T2  e2  o2  r2  W1=0.338 mm  W2=1.1 mm  W3=0.8 mm  L1=0.6 mm  L2=0.6 mm  L3=0.55 mm
+        MTEE:T2B  o2  c2  g2  W1=1.1 mm  W2=1.1 mm  W3=1.2 mm  L1=1.45 mm  L2=1.45 mm  L3=0.55 mm
+        MLIN:O2  c2  p2  W=1.1 mm  L=2 mm
+        MLIN:V4  nd  w1  W=0.338 mm  L=2.781 mm
+        MBEND:B4  w1  w2  W=0.338 mm  Angle=90 deg
+        MLIN:E4  w2  w3  W=0.338 mm  L=3.445 mm
+        MDLY:H4  w3  e4  Z0=86.6 Ohm  F=F  Theta=(90-38*F/2.45e9)*pi/180  Style=Straight
+        MTEE:T4  e4  o4  r4  W1=0.338 mm  W2=1.1 mm  W3=0.8 mm  L1=0.6 mm  L2=0.6 mm  L3=0.55 mm
+        MTEE:T4B  o4  c4  g4  W1=1.1 mm  W2=1.1 mm  W3=1.2 mm  L1=1.45 mm  L2=1.45 mm  L3=0.55 mm
+        MLIN:O4  c4  p4  W=1.1 mm  L=2 mm
+        MBEND:S1  nm  s1  W=0.338 mm  Angle=90 deg
+        MLIN:M1  s1  s2  W=0.338 mm  L=Lm
+        MBEND:S2  s2  s3  W=0.338 mm  Angle=90 deg
+        MLIN:G1  s3  s4  W=0.338 mm  L=1 mm
+        MBEND:S3  s4  s5  W=0.338 mm  Angle=90 deg
+        MLIN:M2  s5  s6  W=0.338 mm  L=2*Lm+0.338e-3
+        MBEND:S4  s6  s7  W=0.338 mm  Angle=90 deg
+        MLIN:G2  s7  s8  W=0.338 mm  L=1 mm
+        MBEND:S5  s8  s9  W=0.338 mm  Angle=90 deg
+        MLIN:M3  s9  s10  W=0.338 mm  L=Lm
+        MBEND:S6  s10  s11  W=0.338 mm  Angle=90 deg
+        MDLY:H3  s11  e3  Z0=86.6 Ohm  F=F  Theta=(90-38*F/2.45e9)*pi/180  Style=Straight
+        MCROSS:X3  o3  r3  e3  r5  W1=1.1 mm  W2=0.8 mm  W3=0.338 mm  W4=0.8 mm  L1=0.6 mm  L2=0.55 mm  L3=0.6 mm  L4=0.55 mm
+        MLIN:O3  o3  p3  W=1.1 mm  L=4.9 mm
+        R:R23  r2  r3  R=Re  Footprint=smt:0603
+        R:R34  r5  r4  R=Re  Footprint=smt:0603
+        R:R24  g2  g4  R=Rb  Footprint=smt:2010
+        Port:P1  n1  0  Num=1  Z=50 Ohm
+        Port:P2  p2  0  Num=2  Z=50 Ohm
+        Port:P3  p3  0  Num=3  Z=50 Ohm
+        Port:P4  p4  0  Num=4  Z=50 Ohm
+        """,
+        [
+            ("F",  "2.45", "GHz", "1.5", "3.5", "centre frequency"),
+            ("Re", "150",  "Ohm", "50",  "200", "end resistors R23, R34"),
+            ("Rb", "150",  "Ohm", "50",  "1e9", "bridge resistor R24"),
+            ("Lm", "0.9",  "mm",  "0.6", "1.4", "serpentine leg, the middle arm's trim"),
+        ],
+        [], [],
+        Mirrored: ["B4", "T4", "T4B", "S1", "S4", "S5"],
+        Sweep: "start=1.5 stop=3.5 npts=81 Unit=GHz");
+
     // ══ 2. Spurline: a spurline bandstop, one drawn polygon ═══════════════════════════════════════════════════════════
     //
     // A 50 Ω line 16 mm long with an L-shaped slit: a slot g wide along the axis from x = 2 mm, turning out through the top
@@ -158,7 +219,8 @@ internal static class Pcd9Cells
             CellRef = CircuitRF.Core.RefPath.ToStored(Path.GetRelativePath(dir, cellDir)),
         });
         foreach (var (n, v, u) in x1 ?? [])
-            model.Components[^1].Parameters.Add(new EditableParameter { Name = n, Expression = v, Unit = u, Dimension = UnitDimension.Length });
+            model.Components[^1].Parameters.Add(new EditableParameter { Name = n, Expression = v, Unit = u,
+                Dimension = u == "Ohm" ? UnitDimension.Resistance : UnitDimension.Length });
         var merged = CellNetlistMerge.Merge(model, text);
         Assert.True(merged.Schematic is not null, string.Join("\n", merged.Refusals));
         var bench = merged.Schematic!;
@@ -175,6 +237,25 @@ internal static class Pcd9Cells
         Port:P3  n3  0  Num=3  Z=50 Ohm
         Port:P4  n4  0  Num=4  Z=50 Ohm
         """, new FrequencySpec("1.5", "3.5", 41, SweepKind.Linear, "GHz", "GHz"), byEm: false);
+
+    public static string WilkinsonSymBench(string ws, string cell) => Bench(ws, cell, "Wilkinson3SymBench", """
+        Port:P1  n1  0  Num=1  Z=50 Ohm
+        Wilkinson3Sym:X1  n1  n2  n3  n4
+        Port:P2  n2  0  Num=2  Z=50 Ohm
+        Port:P3  n3  0  Num=3  Z=50 Ohm
+        Port:P4  n4  0  Num=4  Z=50 Ohm
+        """, new FrequencySpec("1.5", "3.5", 41, SweepKind.Linear, "GHz", "GHz"), byEm: false);
+
+    /// <summary>The same cell with the bridge left off: the two end resistors at √3·Z0 = 86.6 Ω, their best single value,
+    /// and R24 at 1 GΩ, which stands for no part.</summary>
+    public static string WilkinsonSym2RBench(string ws, string cell) => Bench(ws, cell, "Wilkinson3Sym2RBench", """
+        Port:P1  n1  0  Num=1  Z=50 Ohm
+        Wilkinson3Sym:X1  n1  n2  n3  n4  Re=86.6 Ohm  Rb=1e9 Ohm
+        Port:P2  n2  0  Num=2  Z=50 Ohm
+        Port:P3  n3  0  Num=3  Z=50 Ohm
+        Port:P4  n4  0  Num=4  Z=50 Ohm
+        """, new FrequencySpec("1.5", "3.5", 41, SweepKind.Linear, "GHz", "GHz"), byEm: false,
+        x1: [("Re", "86.6", "Ohm"), ("Rb", "1e9", "Ohm")]);
 
     /// <summary>The spurline's bench places X1 at the optimised Ls = 9.21 mm (the cell's own default, 8.5 mm, notches at
     /// 5.38 GHz) and carries the optimisation that found it: X1.Ls tuned by EM itself (em=direct, pattern search), S21 at

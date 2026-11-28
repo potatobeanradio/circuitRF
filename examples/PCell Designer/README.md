@@ -1,9 +1,9 @@
 # PCell Designer
 
 Parameterised cells made in the **PCell Designer** from the parts in the Library, placed in benches, laid out, checked
-by LVS and simulated: a pad on a tee placed twice (§1-4), and four showcase cells, a 3-way Wilkinson divider (§5), a
-spurline bandstop (§6), a dual-mode patch bandpass (§7) and a slotline divider (§8). The **PCell Designer** reference
-page describes every control.
+by LVS and simulated: a pad on a tee placed twice (§1-4), and five showcase cells, a 3-way Wilkinson divider (§5), a
+spurline bandstop (§6), a dual-mode patch bandpass (§7), a slotline divider (§8) and a symmetric 3-way divider with a
+resistor delta (§9). The **PCell Designer** reference page describes every control.
 
 ## The cells
 
@@ -13,6 +13,9 @@ page describes every control.
 | **Bench** | `PadTee` placed twice, `X1` with `Lpad = 200 um` and `X2` with `Lpad = 400 um`, joined by a 50 Ω line between two Ports, swept 1–12 GHz |
 | **Wilkinson3** | A 3-way in-phase divider for 2.45 GHz in two Wilkinson stages: an `MWPD` with `K` = 1.4142, an equal `MWPD` on its port 3 and a phase line on its port 2, every line an `MDLY` stated at F. Parameters `F` and `Th` (the phase line's straight run) |
 | **Wilkinson3Bench** | `Wilkinson3` between four Ports, swept 1.5–3.5 GHz by circuit models |
+| **Wilkinson3Sym** | A symmetric 3-way divider for 2.45 GHz: a cross feeding three quarter-wave arms of 86.6 Ω, the middle one a serpentine, and a delta of resistors across the outputs, two 0603s between neighbours and a 2010 bridging the middle output line. Parameters `F`, `Re` (the end resistors), `Rb` (the bridge) and `Lm` (the serpentine's leg) |
+| **Wilkinson3SymBench** | `Wilkinson3Sym` between four Ports, swept 1.5–3.5 GHz by circuit models |
+| **Wilkinson3Sym2RBench** | The same, placed at `Re = 86.6 Ω` and `Rb = 1 GΩ`, which stands for the bridge left off |
 | **Spurline** | A 50 Ω line with an L-shaped slit, one drawn polygon, EM only (`Model="none"`). Parameters `Ls` (slit length, a drag handle), `g` (slit gap) and `W` |
 | **SpurlineBench** | `Spurline` between two Ports, placed at `Ls = 9.21 mm`, swept 4.6–5.6 GHz in 25 MHz steps by Planar EM, with the optimisation that moved its notch to 5 GHz |
 | **DualModePatch** | A square patch with one corner cut, fed along two adjacent edges across a gap, EM only. Parameters `a`, `d` (corner cut) and `s` (gap) |
@@ -201,5 +204,55 @@ mostly radiation:
 The outputs are also poorly matched (S22 ≈ −5 dB): a lossless three-port cannot be matched at every port, and this one
 has no isolation network. The transitions are centred above 5 GHz (S21 is still rising at 6 GHz), and longer `Lss` and
 `Lms` move the centre down.
+
+## 9. A symmetric 3-way divider
+
+`Wilkinson3Sym` splits 2.45 GHz three ways from a cross `X1`, mirror-symmetric about the input's axis. One arm turns
+up and back to the right, one turns down, and the middle one runs straight on through a serpentine. Each arm is a
+quarter wave of √3·Z0 = 86.6 Ω, and the outputs leave the right-hand side 3.5 mm apart, 2, 3, 4 from the top.
+
+**Two resistors between neighbours are not enough.** With only `R23` (ports 2-3) and `R34` (ports 3-4), two odd
+excitations of the outputs need different values:
+- ports 2 and 4 in anti-phase make port 3 a virtual ground, so each outer port sees its end resistor alone, which must
+  be Z0;
+- port 3 against ports 2 and 4 together puts three times the port voltage across each end resistor, which must then be
+  3·Z0.
+
+The best single value, √3·Z0 = 86.6 Ω, leaves S33 and S42 near −15 dB.
+
+**The bridge.** A third resistor between ports 2 and 4 makes the three a delta, and three resistors of 3·Z0 = 150 Ω
+match and isolate every port at f0. It has to cross the middle output line. `R24` is a 2010 whose pads sit on the
+branches of the tees `T2B` and `T4B`, 5.9 mm apart outside, and whose body spans the middle line `O3`; nothing else
+crosses. `R23` and `R34` are 0603s on the branches of `T2`, `T4` and the cross `X3`, which sit right at the arm ends.
+The bridge is 2.05 mm (about 10° of 50 Ω line) further on, and that offset is what S22 and S42 keep of the mismatch.
+
+**Every loop closes at every F.** Each resistor closes a loop, and a loop in the layout closes only where its lengths
+agree exactly. So everything a resistor spans is copper of fixed size:
+- the outer arms' risers `V2`, `V4` and bends;
+- the serpentine `S1`-`S6`, as wide as an outer arm's bend and its run `E2` together.
+
+The rest of each arm is one `MDLY` stated at `F`, the same for all three: the quarter wave less the fixed copper's
+share, 38° at 2.45 GHz, scaled with `F` (`Theta=(90-38*F/2.45e9)*pi/180`, in radians). So a change of `F` moves no
+joint. `Lm`, the serpentine's leg, trims the middle arm against the outer two; 0.9 mm was found in the designer's live
+response, where the outputs are in phase and S33 is lowest. Placed at `F` = 2.0 or 3.0 GHz, the cell is matched to
+−21 dB or better at its own `F`, every isolation is below −22 dB there, and the outputs are within 0.1°. **Check**
+finds no error at the defaults or at any parameter's minimum or maximum (`F` 1.5-3.5 GHz, `Re` 50-200 Ω, `Rb`
+50 Ω-1 GΩ, `Lm` 0.6-1.4 mm), and **LVS** finds none on the cell's own layout.
+
+Simulate `Wilkinson3SymBench` and `Wilkinson3Sym2RBench`; each `.cdd` shows the transmission, the match and, on its own
+plot, the isolation between outputs. `Wilkinson3Sym2RBench` is the same cell at `Re = 86.6 Ω` and `Rb = 1 GΩ`, which
+stands for the bridge left off. At 2.45 GHz, by circuit models, with the two-stage `Wilkinson3` (§5) for comparison:
+
+| | S11 | S21 | S31 | S41 | S22 | S33 | S44 | S32 | S42 | S43 | isolation below −20 dB |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `Wilkinson3`, two stages | −40.2 | −5.03 dB, 54.7° | −5.02 dB, 54.9° | −5.02 dB, 54.9° | −35.1 | −30.4 | −30.4 | −39.1 | −39.1 | −41.0 | 2.13-2.89 GHz |
+| `Wilkinson3Sym`, with the bridge | −31.6 | −4.95 dB, −117.0° | −4.79 dB, −117.0° | −4.95 dB, −117.0° | −29.9 | −38.2 | −29.9 | −38.0 | −31.1 | −38.0 | 1.96-2.83 GHz |
+| `Wilkinson3Sym`, two end resistors | −31.6 | −4.93 dB, −117.0° | −4.82 dB, −117.0° | −4.93 dB, −117.0° | −21.0 | −14.7 | −21.0 | −21.5 | −15.0 | −21.5 | none |
+
+Matches and isolations are in dB. With the bridge, every isolation is below −31 dB at 2.45 GHz: S42's null is at
+2.31 GHz and S32's at 2.51 GHz. Without it, S42 stays between −12.5 and −15.1 dB across the whole sweep, so no band
+is isolated; S32 and S43 alone pass −20 dB from 2.23 to 2.77 GHz. The middle output takes 0.16 dB more than the outer
+two. The outputs leave in phase in both cases: driven from port 1, the outputs are at nearly one voltage, so the
+resistors carry almost no current.
 
 No results ship with this example.

@@ -1,0 +1,143 @@
+{
+  "FormatVersion": 6,
+  "GridSize": 100,
+  "PortCount": 4,
+  "Primitives": [
+    {
+      "$type": "Rect",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "Filled": false,
+      "Cx": 0,
+      "Cy": 0,
+      "W": 160,
+      "H": 360
+    },
+    {
+      "$type": "Rect",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Thin",
+      "Filled": false,
+      "Cx": 0,
+      "Cy": 0,
+      "W": 140,
+      "H": 340
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": -80,
+      "Y1": -100,
+      "X2": -200,
+      "Y2": -100
+    },
+    {
+      "$type": "Text",
+      "Content": "1",
+      "AnchorX": -60,
+      "AnchorY": -100,
+      "FontSize": 18,
+      "FontStyle": "Regular",
+      "Align": "Left",
+      "VAlign": "Middle",
+      "Rotation": "R0",
+      "ForceReadable": true,
+      "ColorRole": "SymbolLine"
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": -80,
+      "Y1": 100,
+      "X2": -200,
+      "Y2": 100
+    },
+    {
+      "$type": "Text",
+      "Content": "3",
+      "AnchorX": -60,
+      "AnchorY": 100,
+      "FontSize": 18,
+      "FontStyle": "Regular",
+      "Align": "Left",
+      "VAlign": "Middle",
+      "Rotation": "R0",
+      "ForceReadable": true,
+      "ColorRole": "SymbolLine"
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": 80,
+      "Y1": -100,
+      "X2": 200,
+      "Y2": -100
+    },
+    {
+      "$type": "Text",
+      "Content": "2",
+      "AnchorX": 60,
+      "AnchorY": -100,
+      "FontSize": 18,
+      "FontStyle": "Regular",
+      "Align": "Right",
+      "VAlign": "Middle",
+      "Rotation": "R0",
+      "ForceReadable": true,
+      "ColorRole": "SymbolLine"
+    },
+    {
+      "$type": "Line",
+      "ColorRole": "SymbolLine",
+      "StrokeTier": "Normal",
+      "X1": 80,
+      "Y1": 100,
+      "X2": 200,
+      "Y2": 100
+    },
+    {
+      "$type": "Text",
+      "Content": "4",
+      "AnchorX": 60,
+      "AnchorY": 100,
+      "FontSize": 18,
+      "FontStyle": "Regular",
+      "Align": "Right",
+      "VAlign": "Middle",
+      "Rotation": "R0",
+      "ForceReadable": true,
+      "ColorRole": "SymbolLine"
+    }
+  ],
+  "Pins": [
+    {
+      "LocalX": -200,
+      "LocalY": -100,
+      "PortIndex": 0,
+      "Name": "1"
+    },
+    {
+      "LocalX": -200,
+      "LocalY": 100,
+      "PortIndex": 2,
+      "Name": "3"
+    },
+    {
+      "LocalX": 200,
+      "LocalY": -100,
+      "PortIndex": 1,
+      "Name": "2",
+      "NameAlign": "Right"
+    },
+    {
+      "LocalX": 200,
+      "LocalY": 100,
+      "PortIndex": 3,
+      "Name": "4",
+      "NameAlign": "Right"
+    }
+  ]
+}

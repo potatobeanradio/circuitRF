@@ -40,9 +40,9 @@
 <p><strong>File ▸ New ▸ Examples ▸ PCell Designer</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
 </div>
 <p>Parameterised cells made in the <strong>PCell Designer</strong> from the parts in the Library, placed in benches, laid out, checked
-by LVS and simulated: a pad on a tee placed twice (§1-4), and four showcase cells, a 3-way Wilkinson divider (§5), a
-spurline bandstop (§6), a dual-mode patch bandpass (§7) and a slotline divider (§8). The <strong>PCell Designer</strong> reference
-page describes every control.</p>
+by LVS and simulated: a pad on a tee placed twice (§1-4), and five showcase cells, a 3-way Wilkinson divider (§5), a
+spurline bandstop (§6), a dual-mode patch bandpass (§7), a slotline divider (§8) and a symmetric 3-way divider with a
+resistor delta (§9). The <strong>PCell Designer</strong> reference page describes every control.</p>
 <h2 id="the-cells">The cells</h2>
 <table>
 <thead>
@@ -67,6 +67,18 @@ page describes every control.</p>
 <tr>
 <td><strong>Wilkinson3Bench</strong></td>
 <td><code>Wilkinson3</code> between four Ports, swept 1.5–3.5 GHz by circuit models</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3Sym</strong></td>
+<td>A symmetric 3-way divider for 2.45 GHz: a cross feeding three quarter-wave arms of 86.6 Ω, the middle one a serpentine, and a delta of resistors across the outputs, two 0603s between neighbours and a 2010 bridging the middle output line. Parameters <code>F</code>, <code>Re</code> (the end resistors), <code>Rb</code> (the bridge) and <code>Lm</code> (the serpentine's leg)</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3SymBench</strong></td>
+<td><code>Wilkinson3Sym</code> between four Ports, swept 1.5–3.5 GHz by circuit models</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3Sym2RBench</strong></td>
+<td>The same, placed at <code>Re = 86.6 Ω</code> and <code>Rb = 1 GΩ</code>, which stands for the bridge left off</td>
 </tr>
 <tr>
 <td><strong>Spurline</strong></td>
@@ -346,6 +358,107 @@ board.</li>
 <p>The outputs are also poorly matched (S22 ≈ −5 dB): a lossless three-port cannot be matched at every port, and this one
 has no isolation network. The transitions are centred above 5 GHz (S21 is still rising at 6 GHz), and longer <code>Lss</code> and
 <code>Lms</code> move the centre down.</p>
+<h2 id="a-symmetric-3-way-divider">9. A symmetric 3-way divider</h2>
+<p><code>Wilkinson3Sym</code> splits 2.45 GHz three ways from a cross <code>X1</code>, mirror-symmetric about the input's axis. One arm turns
+up and back to the right, one turns down, and the middle one runs straight on through a serpentine. Each arm is a
+quarter wave of √3·Z0 = 86.6 Ω, and the outputs leave the right-hand side 3.5 mm apart, 2, 3, 4 from the top.</p>
+<p><strong>Two resistors between neighbours are not enough.</strong> With only <code>R23</code> (ports 2-3) and <code>R34</code> (ports 3-4), two odd
+excitations of the outputs need different values:</p>
+<ul>
+<li>ports 2 and 4 in anti-phase make port 3 a virtual ground, so each outer port sees its end resistor alone, which must
+be Z0;</li>
+<li>port 3 against ports 2 and 4 together puts three times the port voltage across each end resistor, which must then be
+3·Z0.</li>
+</ul>
+<p>The best single value, √3·Z0 = 86.6 Ω, leaves S33 and S42 near −15 dB.</p>
+<p><strong>The bridge.</strong> A third resistor between ports 2 and 4 makes the three a delta, and three resistors of 3·Z0 = 150 Ω
+match and isolate every port at f0. It has to cross the middle output line. <code>R24</code> is a 2010 whose pads sit on the
+branches of the tees <code>T2B</code> and <code>T4B</code>, 5.9 mm apart outside, and whose body spans the middle line <code>O3</code>; nothing else
+crosses. <code>R23</code> and <code>R34</code> are 0603s on the branches of <code>T2</code>, <code>T4</code> and the cross <code>X3</code>, which sit right at the arm ends.
+The bridge is 2.05 mm (about 10° of 50 Ω line) further on, and that offset is what S22 and S42 keep of the mismatch.</p>
+<p><strong>Every loop closes at every F.</strong> Each resistor closes a loop, and a loop in the layout closes only where its lengths
+agree exactly. So everything a resistor spans is copper of fixed size:</p>
+<ul>
+<li>the outer arms' risers <code>V2</code>, <code>V4</code> and bends;</li>
+<li>the serpentine <code>S1</code>-<code>S6</code>, as wide as an outer arm's bend and its run <code>E2</code> together.</li>
+</ul>
+<p>The rest of each arm is one <code>MDLY</code> stated at <code>F</code>, the same for all three: the quarter wave less the fixed copper's
+share, 38° at 2.45 GHz, scaled with <code>F</code> (<code>Theta=(90-38*F/2.45e9)*pi/180</code>, in radians). So a change of <code>F</code> moves no
+joint. <code>Lm</code>, the serpentine's leg, trims the middle arm against the outer two; 0.9 mm was found in the designer's live
+response, where the outputs are in phase and S33 is lowest. Placed at <code>F</code> = 2.0 or 3.0 GHz, the cell is matched to
+−21 dB or better at its own <code>F</code>, every isolation is below −22 dB there, and the outputs are within 0.1°. <strong>Check</strong>
+finds no error at the defaults or at any parameter's minimum or maximum (<code>F</code> 1.5-3.5 GHz, <code>Re</code> 50-200 Ω, <code>Rb</code>
+50 Ω-1 GΩ, <code>Lm</code> 0.6-1.4 mm), and <strong>LVS</strong> finds none on the cell's own layout.</p>
+<p>Simulate <code>Wilkinson3SymBench</code> and <code>Wilkinson3Sym2RBench</code>; each <code>.cdd</code> shows the transmission, the match and, on its own
+plot, the isolation between outputs. <code>Wilkinson3Sym2RBench</code> is the same cell at <code>Re = 86.6 Ω</code> and <code>Rb = 1 GΩ</code>, which
+stands for the bridge left off. At 2.45 GHz, by circuit models, with the two-stage <code>Wilkinson3</code> (§5) for comparison:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>S11</th>
+<th>S21</th>
+<th>S31</th>
+<th>S41</th>
+<th>S22</th>
+<th>S33</th>
+<th>S44</th>
+<th>S32</th>
+<th>S42</th>
+<th>S43</th>
+<th>isolation below −20 dB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Wilkinson3</code>, two stages</td>
+<td>−40.2</td>
+<td>−5.03 dB, 54.7°</td>
+<td>−5.02 dB, 54.9°</td>
+<td>−5.02 dB, 54.9°</td>
+<td>−35.1</td>
+<td>−30.4</td>
+<td>−30.4</td>
+<td>−39.1</td>
+<td>−39.1</td>
+<td>−41.0</td>
+<td>2.13-2.89 GHz</td>
+</tr>
+<tr>
+<td><code>Wilkinson3Sym</code>, with the bridge</td>
+<td>−31.6</td>
+<td>−4.95 dB, −117.0°</td>
+<td>−4.79 dB, −117.0°</td>
+<td>−4.95 dB, −117.0°</td>
+<td>−29.9</td>
+<td>−38.2</td>
+<td>−29.9</td>
+<td>−38.0</td>
+<td>−31.1</td>
+<td>−38.0</td>
+<td>1.96-2.83 GHz</td>
+</tr>
+<tr>
+<td><code>Wilkinson3Sym</code>, two end resistors</td>
+<td>−31.6</td>
+<td>−4.93 dB, −117.0°</td>
+<td>−4.82 dB, −117.0°</td>
+<td>−4.93 dB, −117.0°</td>
+<td>−21.0</td>
+<td>−14.7</td>
+<td>−21.0</td>
+<td>−21.5</td>
+<td>−15.0</td>
+<td>−21.5</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>Matches and isolations are in dB. With the bridge, every isolation is below −31 dB at 2.45 GHz: S42's null is at
+2.31 GHz and S32's at 2.51 GHz. Without it, S42 stays between −12.5 and −15.1 dB across the whole sweep, so no band
+is isolated; S32 and S43 alone pass −20 dB from 2.23 to 2.77 GHz. The middle output takes 0.16 dB more than the outer
+two. The outputs leave in phase in both cases: driven from port 1, the outputs are at nearly one voltage, so the
+resistors carry almost no current.</p>
 <p>No results ship with this example.</p>
 
 </main>
