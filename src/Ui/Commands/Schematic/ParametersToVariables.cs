@@ -7,8 +7,9 @@ namespace CircuitRF.Ui.Commands.Schematic;
 /// <summary>
 /// Parameters to Variables (the schematic context menu): every plain-number parameter of the chosen parts becomes a row
 /// <c>&lt;Designator&gt;_&lt;Param&gt;</c> of ONE new VAR block, holding the value and unit the part had, and the part's
-/// parameter then reads that name. A placed cell (a kit PCell, a designed cell) converts its instance's parameter list as
-/// any primitive does. Words, choices, files and values already written as expressions are left as they are.
+/// parameter then reads that name. A placed cell (a kit PCell, a designed cell) also converts every parameter its
+/// <c>.ccell</c> declares that the instance does not override: the row takes the declared default and unit, and the
+/// instance gains the override. Words, choices, files and values already written as expressions are left as they are.
 /// </summary>
 internal static class ParametersToVariables
 {
@@ -44,20 +45,28 @@ internal static class ParametersToVariables
                 string stem = Regex.Replace($"{part.InstanceName}_{p.Name}", @"\W", "_"), name = stem;
                 for (int k = 2; !taken.Add(name); k++) name = $"{stem}_{k}";
                 block.Parameters.Add(new EditableParameter { Name = name, Expression = p.Expression.Trim(), Unit = p.Unit, Dimension = p.Dimension });
-                edits.Add(new EditParameterCommand(model, p, name, p.Unit));
+                edits.Add(part.Parameters.Contains(p)
+                    ? new EditParameterCommand(model, p, name, p.Unit)
+                    : new AddParameterCommand(model, part, new EditableParameter
+                        { Name = p.Name, Expression = name, Unit = p.Unit, Dimension = p.Dimension, ShowOnSchematic = p.ShowOnSchematic }));
             }
         if (edits.Count == 0) return null;
         Place(model, block, parts[0]);
         return new CommandBatch($"Parameters to Variables ({edits.Count})", [new PlaceComponentCommand(model, block), .. edits]);
     }
 
+    /// <summary>The part's own parameters to convert, then (a placed cell) a stand-in for each declared one it does not
+    /// override, carrying the <c>.ccell</c> default; a stand-in is not on the part, which is how Command tells them apart.</summary>
     private static IEnumerable<EditableParameter> Convertible(SchematicEditModel model, EditableComponent part)
     {
         if (part.Symbol is SymbolKind.Var or SymbolKind.Meas) return [];
         var declared = part.CellRef is { Length: > 0 } cellRef
             ? CellSymbolResolver.ResolveCcell(cellRef, model.SchematicDirectory ?? "", model.HostWorkspaceRoot)?.Parameters
             : null;
-        return part.Parameters.Where(p =>
+        var inherited = (declared ?? []).Where(d => part.Parameters.All(p => p.Name != d.Name))
+            .Select(d => new EditableParameter
+                { Name = d.Name, Expression = d.DefaultExpression, Unit = d.Unit, Dimension = d.Dimension, ShowOnSchematic = d.ShowOnSchematic });
+        return part.Parameters.Concat(inherited).Where(p =>
             !p.Name.StartsWith("__", StringComparison.Ordinal) && !Identities.Contains(p.Name)
             && !ComponentTypeRegistry.IsFilePathParameter(part.Symbol, p.Name)
             && declared?.FirstOrDefault(d => d.Name == p.Name) is not ({ Choices: not null } or { IsFilePath: true })

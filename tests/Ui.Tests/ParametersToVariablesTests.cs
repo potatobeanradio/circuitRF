@@ -4,7 +4,8 @@ using CircuitRF.Ui.Commands.Schematic;
 
 namespace CircuitRF.Ui.Tests;
 
-/// <summary>Parameters to Variables on the PCell Designer example bench: a designed cell (X1) and an MLIN (TL1).</summary>
+/// <summary>Parameters to Variables on the PCell Designer example bench: a designed cell (X1, overriding only Lpad of the
+/// four parameters PadTee declares) and an MLIN (TL1).</summary>
 public sealed class ParametersToVariablesTests
 {
     private static string Bench([CallerFilePath] string here = "") =>
@@ -41,20 +42,22 @@ public sealed class ParametersToVariablesTests
         cmd!.Execute();
 
         var block = Assert.Single(model.Components, c => c.Symbol == SymbolKind.Var);
-        Assert.Equal(["X1_Lpad 200 um", "TL1_W 1.1 mm", "TL1_L 5 mm"],
+        Assert.Equal(["X1_Lpad 200 um", "X1_W 1.1 mm", "X1_L1 3 mm", "X1_Lstub 4 mm", "TL1_W 1.1 mm", "TL1_L 5 mm"],
                      block.Parameters.Select(p => $"{p.Name} {p.Expression} {p.Unit}"));
-        Assert.Equal("X1_Lpad", x1.Parameters.Single(p => p.Name == "Lpad").Expression);
+        Assert.Equal(["Lpad=X1_Lpad um", "W=X1_W mm", "L1=X1_L1 mm", "Lstub=X1_Lstub mm"],
+                     x1.Parameters.Select(p => $"{p.Name}={p.Expression} {p.Unit}"));
         Assert.Equal(["TL1_W", "TL1_L"], tl1.Parameters.Where(p => p.Name is "W" or "L").Select(p => p.Expression));
 
         var after = Evaluated(model);
         foreach (var (key, value) in before) Assert.Equal(value, after[key], 12);
         Assert.Equal(1.1e-3, after["TL1.W"], 12);
+        Assert.Equal(4e-3, after["X1.Lstub"], 12);   // the declared default, now an override reading X1_Lstub
 
         // Already expressions now: a second run on the same parts has nothing to convert.
         Assert.Null(ParametersToVariables.Command(model, [x1, tl1]));
 
         cmd.Undo();
         Assert.Equal(count, model.Components.Count);
-        Assert.Equal("200", x1.Parameters.Single(p => p.Name == "Lpad").Expression);
+        Assert.Equal(["Lpad=200"], x1.Parameters.Select(p => $"{p.Name}={p.Expression}"));
     }
 }
