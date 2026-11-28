@@ -10,6 +10,8 @@
 //   W5  The spectrum at 4x fits inside the variant's mask.
 //   W6  The data field's PAPR at 0.01 % is 9 to 12 dB at 4x oversampling; the idle gap adds -10 log10(duty) ungated.
 //   W7  The pilot polarity sequence starts 1 1 1 1 -1 -1 -1 1; refusals name the field.
+//   W8  The HT-LTF (20 MHz) and VHT-LTF (80 MHz) carry the standard's sequence: the HT fill tones ±27, ±28 and the VHT
+//       fill tones round DC and at the band edges, read off the record; the HT MCS 7 limit is -28 dB, VHT's -27 dB.
 
 using System;
 using System.Linq;
@@ -150,5 +152,29 @@ public class WlanTests
         Assert.Contains("MCS", Assert.Throws<WlanRefusal>(() => Wlan.Generate(new WlanSpec(WlanFormat.Ht, Mcs: 8))).Message);
         Assert.Contains("GI", Assert.Throws<WlanRefusal>(() => Wlan.Generate(new WlanSpec(WlanFormat.He, GuardS: 0.4e-6))).Message);
         Assert.Contains("Window", Assert.Throws<WlanRefusal>(() => Wlan.Generate(new WlanSpec(GuardS: 0.4e-6, WindowS: 0.5e-6))).Message);
+    }
+
+    /// <summary>The LTF's tones relative to tone <paramref name="refTone"/>: HT/VHT-LTF useful part starts 656 base samples
+    /// in (L-STF 160, L-LTF 160, L-SIG 80, two SIG 160, STF 80, the LTF's 0.8 µs GI 16).</summary>
+    private static Func<int, double> LtfRelative(WlanSpec s, int refTone)
+    {
+        var nm = Wlan.Numerology(s);
+        int n = nm.Fft, at = 656 * n / 64;
+        var b = Fft.Forward(Wlan.Generate(s).AsSpan(at, n));
+        Complex Bin(int k) => b[(k % n + n) % n];
+        return k => { var r = Bin(k) / Bin(refTone); Assert.True(Math.Abs(r.Imaginary) < 1e-9); return Math.Round(r.Real, 9); };
+    }
+
+    [Fact]
+    public void W8_ht_vht_ltf()
+    {
+        var ht = LtfRelative(new WlanSpec(WlanFormat.Ht, 20e6, DataSymbols: 1, WindowS: 0), 1);
+        Assert.Equal(new double[] { 1, 1, 1, 1, -1, -1 }, new[] { -28, -27, -26, 26, 27, 28 }.Select(ht));
+        // VHT 80: the subchannels above -20 MHz rotated by -1 (γ), so the lowest two tones read -1 against tone 2
+        var vht = LtfRelative(new WlanSpec(WlanFormat.Vht, 80e6, DataSymbols: 1, WindowS: 0), 2);
+        Assert.Equal(new double[] { 1, -1, 1, -1, 1, -1, -1, 1 }, new[] { -5, -4, -3, -2, 2, 3, 4, 5 }.Select(vht));
+        Assert.Equal(new double[] { -1, -1, 1, 1 }, new[] { -122, -121, 121, 122 }.Select(vht));
+        Assert.Equal(-28, Wlan.EvmLimitDb(new WlanSpec(WlanFormat.Ht, Mcs: 7)));
+        Assert.Equal(-27, Wlan.EvmLimitDb(new WlanSpec(WlanFormat.Vht, Mcs: 7)));
     }
 }

@@ -5,7 +5,12 @@
 //  the channel's base rate (20 MS/s per 20 MHz). The packet is unit
 //  mean power over its own length (gated); the gap is zeros.
 //
-//  Formats (IEEE Std 802.11-2020 unless noted):
+//  Formats (IEEE Std 802.11-2020 unless noted). Its subclause numbers
+//  here are inferred from IEEE Std 802.11-2012's, where the OFDM, HT
+//  and VHT PHYs were Clauses 18, 20 and 22 (mask 18.3.9.3 / 20.3.20.1
+//  / 22.3.18.1, constellation error 18.3.9.7.4 / 20.3.20.7.3 /
+//  22.3.18.4.3), one clause number lower: unverified against the 2020
+//  text. The 802.11ax-2021 numbers are from its table of contents.
 //    Legacy  11a/g, Clause 17: 20 MHz, 64-point, 312.5 kHz, 48 data +
 //            4 pilots (±7, ±21), 4 µs symbols, GI 0.8 µs.
 //    HT      11n, Clause 19: 20/40 MHz, 56 / 114 tones, GI 0.8/0.4 µs.
@@ -16,7 +21,7 @@
 //    EHT     11be, Clause 36: the HE tone plan, plus 320 MHz as four
 //            996-tone segments, up to 4096QAM.
 //  Packet: L-STF, L-LTF, L-SIG (duplicated per 20 MHz with the tone
-//  rotation γ of 21.3.7.5), then the format's own fields: HT-SIG x2,
+//  rotation γ of 21.3.7.5; 802.11be-2024 Eq. 36-12 at 320 MHz), then the format's own fields: HT-SIG x2,
 //  HT-STF, HT-LTF | VHT-SIG-A x2, VHT-STF, VHT-LTF, VHT-SIG-B | RL-SIG,
 //  HE-SIG-A x2, HE-STF, HE-LTF | RL-SIG, U-SIG x2, EHT-SIG, EHT-STF,
 //  EHT-LTF; then the data symbols. One spatial stream, one LTF.
@@ -26,24 +31,27 @@
 //      random point of the MCS's constellation from the seed;
 //    - SIG fields carry random BPSK / QBPSK, not an encoded rate and
 //      length; L-SIG has no extra ±27, ±28 tones;
-//    - every STF is the L-STF pattern (0.8 µs period) per 20 MHz; the
-//      HT/VHT/HE/EHT LTF is ±1 from the pilot polarity sequence on the
-//      format's tone plan, not the standard's sequence; HE/EHT use one
-//      4x LTF with the data GI;
+//    - every STF is the L-STF pattern (0.8 µs period) per 20 MHz;
+//    - the HT/VHT-LTF is the standard's sequence (the L-LTF halves with
+//      fill tones; at 160 MHz the 80 MHz one at ±128); the HE/EHT-LTF is ±1 from the pilot polarity sequence
+//      on the tone plan, not the tabulated 4x HE-LTF (27.3.11.10), and
+//      HE/EHT use one 4x LTF with the data GI;
 //    - legacy pilots are exact (17.3.5.10); the others are the polarity
 //      sequence p_n shifted by one per pilot, not the Ψ rotation;
 //    - no packet extension, no 2x/1x LTF compression, no puncturing;
-//      the 320 MHz γ is from Clause 36 as recalled, not checked.
+//      γ rotates every field, where EHT rotates the pre-EHT fields only.
 //  Window: a raised-cosine overlap of WindowS (17.3.2.5's T_TR, 100 ns
 //  default) inside each guard interval, so the FFT never sees it.
 //
-//  EVM (17.3.9.7, 19.3.18.7, 21.3.17.4, 802.11ax-2021 27.3.19.4):
+//  EVM (17.3.9.7.4, 19.3.18.7.3, 21.3.17.4.3, 802.11ax-2021 27.3.19.4):
 //  the frequency offset from the L-LTF's two copies taken out, the
 //  channel from the LTF (L-LTF's two copies averaged for Legacy),
 //  each data symbol equalised, its common phase from the pilots taken
 //  out, each data tone decided to the nearest point; rms error over
-//  the constellation's mean power. Limits by MCS from Tables 17-18,
-//  19-?, 21-37 and 27-49 (EHT -38 dB for 4096QAM).
+//  the constellation's mean power. Limits by MCS from the allowed
+//  relative constellation error tables of those subclauses (HT 64QAM
+//  5/6 -28 dB, VHT -27 dB) and 802.11ax-2021 Table 27-49; EHT 4096QAM
+//  -38 dB (802.11be-2024, unverified).
 // ================================================================
 
 using System;
@@ -107,14 +115,31 @@ namespace RfCore.Signals
         private static readonly int[] Bits = [1, 2, 2, 4, 4, 6, 6, 6, 8, 8, 10, 10, 12, 12];
         private static readonly int[] LegacyBits = [1, 1, 2, 2, 4, 4, 6, 6];
         private static readonly int[] EvmDb = [-5, -10, -13, -16, -19, -22, -25, -27, -30, -32, -35, -35, -38, -38];
+        private static readonly int[] HtEvmDb = [-5, -10, -13, -16, -19, -22, -25, -28];
         private static readonly int[] LegacyEvmDb = [-5, -8, -10, -13, -16, -19, -22, -25];
 
         /// <summary>The pilot polarity p_0..p_126 (17.3.5.10): the scrambler x^7 + x^4 + 1 from all ones, 0 -> +1.</summary>
         public static readonly int[] Polarity = [.. Fsk.Prbs(7, 4).Select(b => 1 - 2 * b)];
 
-        private static readonly double[] Lltf =
-            [1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 0,
-             1, -1, -1, 1, 1, -1, 1, -1, 1, -1, -1, -1, -1, -1, 1, 1, -1, -1, 1, -1, 1, -1, 1, 1, 1, 1];
+        // the L-LTF's halves (k = -26..-1 and 1..26), and the HT/VHT-LTF built from them
+        private static readonly double[] LtfL = [1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1, -1, 1, 1, -1, 1, -1, 1, 1, 1, 1];
+        private static readonly double[] LtfR = [1, -1, -1, 1, 1, -1, 1, -1, 1, -1, -1, -1, -1, -1, 1, 1, -1, -1, 1, -1, 1, -1, 1, 1, 1, 1];
+        private static readonly double[] Lltf = [.. LtfL, 0, .. LtfR];
+        private static readonly double[] VltfL = [.. LtfL, 1, .. LtfR, -1, -1, -1, 1];
+        private static readonly double[] VltfR = [-1, 1, 1, -1, .. LtfL, 1, .. LtfR];
+        private static readonly double[] Ltf20 = [1, 1, .. Lltf, -1, -1];                                       // k = -28..28
+        private static readonly double[] Ltf40 = [.. VltfL, 0, 0, 0, .. VltfR];                                 // k = -58..58
+        private static readonly double[] Ltf80 = [.. VltfL, 1, -1, 1, .. VltfR, 1, -1, 1, -1, 0, 0, 0, 1, -1, -1, 1,
+                                                  .. VltfL, 1, -1, 1, .. VltfR];                               // k = -122..122
+
+        /// <summary>The HT/VHT-LTF at tone k of an n x 20 MHz channel.</summary>
+        private static double HtLtf(int n, int k) => n switch
+        {
+            1 => Ltf20[k + 28],
+            2 => Ltf40[k + 58],
+            4 => Ltf80[k + 122],
+            _ => Ltf80[k - Math.Sign(k) * 128 + 122],
+        };
         private static readonly int[] LstfSign = [1, -1, 1, -1, -1, 1, -1, -1, 1, 1, 1, 1];   // k = -24..24 step 4, no 0
         private static readonly int[] LegacyPilots = [-21, -7, 7, 21];
         private static readonly int[] LegacyPilotSign = [1, 1, 1, -1];
@@ -139,7 +164,8 @@ namespace RfCore.Signals
         public static int BitsPerTone(WlanSpec s) => (s.Format == WlanFormat.Legacy ? LegacyBits : Bits)[s.Mcs];
 
         /// <summary>The EVM limit (dB) of the MCS.</summary>
-        public static double EvmLimitDb(WlanSpec s) => (s.Format == WlanFormat.Legacy ? LegacyEvmDb : EvmDb)[s.Mcs];
+        public static double EvmLimitDb(WlanSpec s)
+            => (s.Format switch { WlanFormat.Legacy => LegacyEvmDb, WlanFormat.Ht => HtEvmDb, _ => EvmDb })[s.Mcs];
 
         public static WlanSpec Validate(WlanSpec s)
         {
@@ -190,7 +216,7 @@ namespace RfCore.Signals
             return new WlanNumerology(s.BandwidthHz / fft, fft, [.. occ.Except(pil)], pil);
         }
 
-        /// <summary>The tone rotation γ of the 20 MHz subchannel holding <paramref name="fHz"/> (21.3.7.5; Clause 36 for 320 MHz).</summary>
+        /// <summary>The tone rotation γ of the 20 MHz subchannel holding <paramref name="fHz"/> (21.3.7.5; 802.11be-2024 Eq. 36-12 at 320 MHz).</summary>
         private static Complex Gamma(WlanSpec s, double fHz)
         {
             int n = SubChannels(s), i = Math.Clamp((int)Math.Floor((fHz + s.BandwidthHz / 2) / 20e6), 0, n - 1);
@@ -251,8 +277,10 @@ namespace RfCore.Signals
             Complex G(int k) => Gamma(s, k * nm.SubcarrierSpacingHz);
             if (kind == Kind.Ltf)
             {
-                int j = 0;
-                foreach (int k in nm.DataTones.Concat(nm.PilotTones).Order()) x[Mod(k, nm.Fft)] = Polarity[j++ % 127] * G(k);
+                int j = 0, n = SubChannels(s);
+                bool ht = s.Format is WlanFormat.Ht or WlanFormat.Vht;
+                foreach (int k in nm.DataTones.Concat(nm.PilotTones).Order())
+                    x[Mod(k, nm.Fft)] = (ht ? HtLtf(n, k) : Polarity[j++ % 127]) * G(k);
             }
             else
             {
@@ -424,8 +452,10 @@ namespace RfCore.Signals
                 WlanFormat.Legacy => ("IEEE Std 802.11-2020, 17.3.9.3", h - 1e6, h + 1e6),
                 WlanFormat.Ht => ("IEEE Std 802.11-2020, 19.3.18.1 (5 GHz; -45 dBr floor at 2.4 GHz)", h - 1e6, h + 1e6),
                 WlanFormat.Vht => ("IEEE Std 802.11-2020, 21.3.17.1", h - 1e6, h + 1e6),
+                // HE 20 MHz: -20 dBr at 10.5 MHz as Draft 4.0 states it; an early-draft summary has 10.25 MHz, and no public
+                // copy of the final text was found (unverified). The 0.5 MHz step past the 0 dBr edge holds at 40-160 MHz.
                 WlanFormat.He => ("IEEE Std 802.11ax-2021, 27.3.19.1", h - (b == 20e6 ? 0.25e6 : 0.5e6), h + 0.5e6),
-                _ => ("IEEE Std 802.11be-2024, Clause 36 (the HE mask scaled)", h - (b == 20e6 ? 0.25e6 : 0.5e6), h + 0.5e6),
+                _ => ("IEEE Std 802.11be-2024, 36.3.20.1", h - (b == 20e6 ? 0.25e6 : 0.5e6), h + 0.5e6),
             };
             return new WlanMask(clause, [inner, outer, b, 1.5 * b], [0, -20, -28, -40]);
         }
