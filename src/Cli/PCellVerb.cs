@@ -1,8 +1,8 @@
-// `circuitrf pcell new | check | render | export | import` — the PCell Designer with no window (brief-pcd-7).
+// `circuitrf pcell new | check | render | export | import | ops` — the PCell Designer with no window (brief-pcd-7, PCD-13).
 //
 // ONE verb with nouns, as `new`, `model` and `yield` are, and it owns no designing: every noun calls the src/Design
 // function the window's own command calls — PCellDesign.Create, PCellDesignCheck.Run, DesignedCellLayout.At (drawn by
-// `render`'s own layout path), PCellPackage.Export and PCellPackage.Import. What is here is argument parsing, refusals
+// `render`'s own layout path), PCellPackage.Export, PCellPackage.Import and PCellOperations.Listing. What is here is argument parsing, refusals
 // and reporting, on Authoring.cs' terms. Pcd7PCellVerbTests scans this file, comments stripped, for exactly that.
 
 using CircuitRF.Core.Expressions;
@@ -10,6 +10,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.SchematicSync;
 using CircuitRF.Design.PCellDesigner;
+using CircuitRF.Design.PCellDesigner.Operations;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 
@@ -21,7 +22,7 @@ internal static class PCellVerb
     {
         if (args.Length == 0 || args[0] is "--help" or "-h")
         {
-            if (args.Length == 0) JsonRun.Report(Error("pcell.args.noun-required", "pcell: say what to do: new, check, render, export or import."));
+            if (args.Length == 0) JsonRun.Report(Error("pcell.args.noun-required", "pcell: say what to do: new, check, render, export, import or ops."));
             return Usage();
         }
         string noun = args[0].ToLowerInvariant();
@@ -33,7 +34,8 @@ internal static class PCellVerb
             "render" => RenderAt(args[1..]),
             "export" => Export(args[1..]),
             "import" => Import(args[1..]),
-            _        => Refused(Error("pcell.args.unknown-noun", $"pcell: '{noun}' is not a noun: new, check, render, export or import.")),
+            "ops"    => Ops(args[1..]),
+            _        => Refused(Error("pcell.args.unknown-noun", $"pcell: '{noun}' is not a noun: new, check, render, export, import or ops.")),
         };
     }
 
@@ -169,6 +171,19 @@ internal static class PCellVerb
         return Published(PCellPackage.Import(Path.GetFullPath(pos[0]), libraryDir), "cell");
     }
 
+    // ── ops ──────────────────────────────────────────────────────────────────
+
+    /// <summary>brief-pcd-13 D10: the cell's operation history, one <see cref="PCellOperations.Describe"/> line each.</summary>
+    private static int Ops(string[] args)
+    {
+        if (Positionals(args, 1, [], out _) is not { } pos) return Usage();
+        if (DesignedCell(pos, "ops") is not { } cellDir) return 1;
+        var lines = PCellOperations.Listing(cellDir);
+        foreach (string line in lines) Console.WriteLine(line);
+        if (lines.Count == 0) Console.Error.WriteLine($"note: {Path.GetFileName(cellDir)} has no operations.");
+        return 0;
+    }
+
     private static int Published(PCellPackageOutcome outcome, string kind)
     {
         Forward(outcome.Findings);
@@ -253,7 +268,8 @@ internal static class PCellVerb
             "       circuitrf pcell render <cell> -o <out.svg|.pdf|.png> [--set name=value]... [render's viewport, layer\n" +
             "                        and theme flags: --fit | --window | --center --span, --size, --layers, --theme, ...]\n" +
             "       circuitrf pcell export <cell> -o <file.cpcell>\n" +
-            "       circuitrf pcell import <file.cpcell> --into <workspace-or-library-folder>");
+            "       circuitrf pcell import <file.cpcell> --into <workspace-or-library-folder>\n" +
+            "       circuitrf pcell ops <cell>");
         return 1;
     }
 }

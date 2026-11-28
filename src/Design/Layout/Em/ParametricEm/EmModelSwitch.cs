@@ -144,6 +144,7 @@ public static class EmModelSwitch
         bool Empty(Instance i) => (NamesEmCell(i) && lib.Find(i.Reference) is { Instances.Count: 0 }) || DrawnWithoutModel(i);
         return tb.Instances.Where(Empty).Select(i => i.InstanceName)
             .Concat(lib.Cells.SelectMany(c => c.Instances.Where(Empty).Select(i => $"{c.Name}:{i.InstanceName}")))
+            .Concat(PCellDesigner.Operations.PCellOperations.WithoutCircuitModelIn(tb, lib))   // brief-pcd-13 R-pcd13-4
             .ToList();
     }
 
@@ -151,8 +152,13 @@ public static class EmModelSwitch
     /// (brief-pcd-0 §4.3).</summary>
     private static bool DrawnWithoutModel(Instance i) =>
         i.Reference.Equals(DrawnMetal.GeneratorId, StringComparison.OrdinalIgnoreCase)
+        && !IsTool(i)   // brief-pcd-13 D2: a tool is a cutter, not a part of the circuit
         && i.Overrides.LastOrDefault(o => o.Name.Equals(DrawnMetal.Model, StringComparison.OrdinalIgnoreCase))
                ?.Expression.Trim().Trim('"').Trim().ToLowerInvariant() is not (DrawnMetal.ModelOpen or DrawnMetal.ModelShort);
+
+    private static bool IsTool(Instance i) =>
+        i.Overrides.LastOrDefault(o => o.Name.Equals(DrawnMetal.Role, StringComparison.OrdinalIgnoreCase))
+            ?.Expression.Trim().Trim('"').Trim().Equals(DrawnMetal.RoleTool, StringComparison.OrdinalIgnoreCase) == true;
 
     /// <summary>The refusal of a run by circuit models of <paramref name="names"/> (<see cref="WithoutCircuitModel"/>).</summary>
     public static string NoCircuitModelSentence(IReadOnlyList<string> names) =>

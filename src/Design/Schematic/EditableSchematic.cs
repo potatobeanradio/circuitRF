@@ -1984,6 +1984,9 @@ public sealed class SchematicEditModel
     /// </summary>
     public string? TechRef { get; set; }
 
+    /// <summary>brief-pcd-13 D1: a designed cell's operation history, in order; null for every other schematic.</summary>
+    public List<CircuitRF.Design.PCellDesigner.Operations.PCellOperation>? PCellOperations { get; set; }
+
     /// <summary>Where a schematic Create Schematic from Artwork wrote came from (D12); null for every other
     /// schematic. Its presence is what lets a re-run replace this schematic (D4).</summary>
     public ArtworkProvenance? ArtworkSource { get; set; }

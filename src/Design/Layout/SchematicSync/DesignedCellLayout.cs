@@ -69,6 +69,8 @@ public static class DesignedCellLayout
             plan.ApplyTo(layout);
 
             var lines = new List<SchematicLayoutPlanner.ReportLine>(plan.Lines);
+            // brief-pcd-13 R-pcd13-3: the cell's operation history, applied to what the planner drew.
+            lines.AddRange(PCellDesigner.Operations.PCellOperationsEngine.Apply(layout, model, layoutDir, workspaceRootDir, technology));
             lines.AddRange(plan.NoLayoutWarnings.Select(w => new SchematicLayoutPlanner.ReportLine(
                 "", w, SchematicLayoutPlanner.ReportSeverity.Warning)));
             // brief-pcd-2 R-pcd2-3: which chain everything else hangs from.

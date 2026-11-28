@@ -173,7 +173,7 @@ canvas. **Make tool** on an `MSHAPE` sets its `Role` row to `"tool"` (and `Model
   next). `PCellDimensions.Of` draws them with its own labels (one hook line reading `TraceOf(layout).Spans`). No
   generator handle: a grow has no drag direction a parent placement could hold.
 - **D10 — The CLI.** `circuitrf pcell ops <cell>` prints `PCellOperations.Listing(cellDir)`, one line per operation
-  (`--json` outputs `operations`), and exits 0; a cell that is not designed is `pcell.cell.not-designed`. The verb holds
+  and exits 0; a cell that is not designed is `pcell.cell.not-designed`. The verb holds
   no logic (PCD-7's gate gains the call).
 
 ## 4. Tests

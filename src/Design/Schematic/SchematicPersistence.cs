@@ -62,6 +62,9 @@ public sealed class CschFile
     /// <summary>The provenance block of a schematic created from artwork (R-as6-5); absent otherwise.</summary>
     public ArtworkProvenance? ArtworkSource { get; set; }
 
+    /// <summary>brief-pcd-13 D1: a designed cell's operation history; omitted when it has none.</summary>
+    public List<CircuitRF.Design.PCellDesigner.Operations.PCellOperation>? PCellOperations { get; set; }
+
     /// <summary>The provenance block of a schematic created from a picture (brief-img-2 R-im2-5); absent otherwise.</summary>
     public Imaging.ImageProvenance? ImageSource { get; set; }
 
@@ -701,6 +704,7 @@ public static class SchematicPersistence
         file.Tuning = CschTuning.From(m.Tuning);
         file.TechRef = string.IsNullOrEmpty(m.TechRef) ? null : m.TechRef;
         file.ArtworkSource = m.ArtworkSource;
+        file.PCellOperations = m.PCellOperations is { Count: > 0 } ops ? ops : null;
         file.ImageSource = m.ImageSource;
         file.SchematicImportSource = m.SchematicImportSource;
 
@@ -813,6 +817,7 @@ public static class SchematicPersistence
 
         m.TechRef = string.IsNullOrWhiteSpace(file.TechRef) ? null : file.TechRef;
         m.ArtworkSource = file.ArtworkSource;
+        m.PCellOperations = file.PCellOperations is { Count: > 0 } ops ? ops : null;
         m.ImageSource = file.ImageSource;
         m.SchematicImportSource = file.SchematicImportSource;
 

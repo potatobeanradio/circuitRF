@@ -3218,7 +3218,7 @@ static int PrintHelp()
     Console.WriteLine("  import part <file>     (a footprint and its symbol, as a cell)");
     Console.WriteLine("  import schematic <file> (a .kicad_sch, EDIF or binary .DSN design, as a new cell)");
     Console.WriteLine("  export part <cell> --library <dir>  (a cell as a model in a model library)");
-    Console.WriteLine("  pcell   new|check|render|export|import <cell>  (the PCell Designer: a designed cell, its check,");
+    Console.WriteLine("  pcell   new|check|render|export|import|ops <cell>  (the PCell Designer: a designed cell, its check,");
     Console.WriteLine("                          its layout at values, its .cpcell package)");
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");
     Console.WriteLine("  explain <path>         (what did circuitRF resolve it to, and by which walk)");
@@ -3374,6 +3374,8 @@ static int PrintHelp()
     Console.WriteLine("                          render option a .clay takes");
     Console.WriteLine("  pcell export <cell> -o <file.cpcell>   the PCell package; runs the check first");
     Console.WriteLine("  pcell import <file.cpcell> --into <workspace-or-library-folder>");
+    Console.WriteLine("  pcell ops <cell>        the cell's operation history (merge, subtract, grow, repeat ...),");
+    Console.WriteLine("                          one line each, as the designer's history panel lists it");
     Console.WriteLine();
     Console.WriteLine("check options:");
     Console.WriteLine("  <path>                  a workspace, a cell folder, or one .csch .csym");

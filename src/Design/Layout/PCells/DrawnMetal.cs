@@ -14,6 +14,8 @@ public static class DrawnMetal
     public const string Form = "Form", FormPolygon = "polygon", FormPath = "path", Width = "W";
     public const string Model = "Model", ModelNone = "none", ModelOpen = "open", ModelShort = "short";
     public const string SignalLayer = "SignalLayer", GroundReference = "GroundReference";
+    /// <summary>brief-pcd-13 D2: <c>Role="tool"</c> makes the shape a cutter for the cell's operations, never copper.</summary>
+    public const string Role = "Role", RoleTool = "tool";
     public static string X(int i)      => $"X[{i}]";
     public static string Y(int i)      => $"Y[{i}]";
     public static string PinX(int k)   => $"PinX[{k}]";
@@ -25,7 +27,7 @@ public static class DrawnMetal
 
     /// <summary>The words among MSHAPE's parameters, <see cref="Form"/> and <see cref="Model"/>: text for the generator, never
     /// an expression to evaluate (brief-pcd-3 D1). What a reader of its parameters hands on as text.</summary>
-    public static bool IsWord(string parameterName) => parameterName is Form or Model;
+    public static bool IsWord(string parameterName) => parameterName is Form or Model or Role;
 
     /// <summary>A copy of shape whose Moving vertices follow binding.Parameter along binding.AxisDeg from binding.Anchor:
     /// unchanged at the current values, moved by δ when the parameter grows by δ; binding appended to Stretch.</summary>

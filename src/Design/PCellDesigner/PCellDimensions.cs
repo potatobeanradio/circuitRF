@@ -84,6 +84,9 @@ public static class PCellDimensions
                     Add(p.Expression, p.Unit, LayoutInstanceTransform.TransformPoint(h.AnchorX, h.AnchorY, placed, 0, 0),
                         LayoutInstanceTransform.TransformPoint(h.X, h.Y, placed, 0, 0));
         }
+        // brief-pcd-13 D9: a Grow amount or a Repeat pitch that names a parameter.
+        foreach (var span in Operations.PCellOperations.TraceOf(layout)?.Spans ?? [])
+            if (Names(span.Expression, parameters)) Add(span.Expression, span.Unit, (span.FromX, span.FromY), (span.ToX, span.ToY));
         return list;
     }
 
