@@ -1711,6 +1711,8 @@ public static partial class SchematicLayoutPlanner
             var at = fromCell?.Contains(p.Name) == true ? cellScope : scope;
             if (NonPCellParamNames.Contains(p.Name)) continue;
             if (IsInactiveMklopfEntryParam(comp, p.Name)) continue; // R-L5f-3
+            // A word reaches its generator as the word: the netlist quotes it ("Straight"), as a bare word would be a name.
+            string text = Unquote(p.Expression.Trim()).Trim();
 
             // A via's layer choices are conductor NAMES, handed to its generator as text; a dimension
             // left empty follows the technology, which the generator resolves itself; and the two
@@ -1719,7 +1721,7 @@ public static partial class SchematicLayoutPlanner
             {
                 if (ViaSubstrateInjection.LayerParams.Contains(p.Name))
                 {
-                    if (p.Expression.Trim() is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
+                    if (text is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
                     continue;
                 }
                 if (string.IsNullOrWhiteSpace(p.Expression) || p.Name is "IncludeC" or "C") continue;
@@ -1731,7 +1733,7 @@ public static partial class SchematicLayoutPlanner
             {
                 if (p.Name is not ("D" or "FeedW" or "Drill" or "ClearD" or "InnerPadD" or "AntipadD"))
                 {
-                    if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                    if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                     continue;
                 }
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
@@ -1747,34 +1749,34 @@ public static partial class SchematicLayoutPlanner
                 || (comp.Symbol, p.Name) is (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization")
                     or (SymbolKind.Mwpd, "Arm") or (SymbolKind.Mrpad, "Form"))
             {
-                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
 
             // Drawn metal's Form and Model are words for its generator (brief-pcd-0 §4.3).
             if (DrawnMetal.Is(comp) && DrawnMetal.IsWord(p.Name))
             {
-                if (p.Expression.Trim().Trim('"').Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
 
             // A coupled-resonator filter's Shape, Profile, Feed, Form, Arrangement and Coupling are words for its generator.
             if (comp.Symbol == SymbolKind.Mcrc && p.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement" or "Coupling")
             {
-                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
             // A ladder's Sections is its list, text for its generator.
             if (comp.Symbol == SymbolKind.Mlad && p.Name == "Sections")
             {
-                if (p.Expression.Trim() is { Length: > 0 } list) resolved[p.Name] = PCellValue.Text(list);
+                if (text is { Length: > 0 } list) resolved[p.Name] = PCellValue.Text(list);
                 continue;
             }
             // A coupled array's Form and Feed are names and its Ends a pattern of letters: words for its generator, Ends
             // without its spaces, as the netlist writes it, so LVS reads the same word on both sides.
             if (comp.Symbol == SymbolKind.Mcla && p.Name is "Form" or "Feed" or "Ends")
             {
-                if (string.Concat(p.Expression.Where(c => !char.IsWhiteSpace(c))) is { Length: > 0 } word)
+                if (string.Concat(text.Where(c => !char.IsWhiteSpace(c))) is { Length: > 0 } word)
                     resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
@@ -1783,7 +1785,7 @@ public static partial class SchematicLayoutPlanner
             // hashes to the cell it always did.
             if (comp.Symbol == SymbolKind.Tfr && p.Name == MmicPassiveInjection.FilmParam)
             {
-                if (p.Expression.Trim() is { Length: > 0 } film) resolved[p.Name] = PCellValue.Text(film);
+                if (text is { Length: > 0 } film) resolved[p.Name] = PCellValue.Text(film);
                 continue;
             }
 
@@ -1794,7 +1796,7 @@ public static partial class SchematicLayoutPlanner
             {
                 if (BroadsideSubstrateInjection.LayerParams.Contains(p.Name))
                 {
-                    if (p.Expression.Trim() is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
+                    if (text is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
                     continue;
                 }
                 if (p.Name is not ("W" or "O" or "L")) continue;
@@ -2265,6 +2267,9 @@ public static partial class SchematicLayoutPlanner
     /// to the simulator as an expression and fails there, a long way from here. Saying it at the point the
     /// value is used is the difference between a fixable row and a mystery at Run.</para>
     /// </summary>
+    private static string Unquote(string raw) =>
+        raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"' ? raw[1..^1] : raw;
+
     internal static string TextForDeclaredString(
         EditableParameter p, Scope scope, Evaluator evaluator, out string? note)
     {
@@ -2272,7 +2277,7 @@ public static partial class SchematicLayoutPlanner
         if (TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out double v, out _, p.Dimension))
             return v.ToString("R", CultureInfo.InvariantCulture);
 
-        string raw = p.Expression.Trim();
+        string raw = Unquote(p.Expression.Trim());
         if (LooksLikeASuffixedNumber(raw))
             note = $"\"{raw}\" was passed to the kit's cell as written — circuitRF cannot evaluate it, " +
                    "because the letters after the number are not a unit it knows. The artwork is correct; " +

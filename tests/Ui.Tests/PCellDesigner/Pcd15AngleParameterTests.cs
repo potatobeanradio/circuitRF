@@ -54,6 +54,24 @@ public sealed class Pcd15AngleParameterTests : IDisposable
         }
     }
 
+    /// <summary>`Style="Straight"`, the netlist's quoted form of a word, plans the same copper as `Style=Straight`, and both
+    /// straight MDLYs keep their two pins (the quotes once reached the generator, which drew a pinless meander).</summary>
+    [Fact]
+    public void AQuotedWord_PlansTheSameAsTheBareWord()
+    {
+        var quoted = Pcd9Cells.Wilkinson with { Cell = "Wilkinson3Quoted", Text = Pcd9Cells.Wilkinson.Text.Replace("Style=Straight", "Style=\"Straight\"") };
+        Assert.NotEqual(Pcd9Cells.Wilkinson.Text, quoted.Text);
+
+        var (bare, bareDir) = Plan(Pcd9Cells.Wilkinson);
+        var (inQuotes, quotedDir) = Plan(quoted);
+        Assert.Equal(Geometry(bare, bareDir), Geometry(inQuotes, quotedDir));
+        foreach (string id in new[] { "DS", "D3" })
+        {
+            var inst = inQuotes.Instances.Single(i => i.SchematicId == id);
+            Assert.Equal(2, CellLayoutResolver.Resolve(inst.CellRef, quotedDir).View!.Pins.Count);
+        }
+    }
+
     private (CircuitRF.Design.Layout.LayoutView Layout, string LayoutDir) Plan(Pcd9Spec spec)
     {
         string cell = Pcd9Cells.Design(_ws, spec);
