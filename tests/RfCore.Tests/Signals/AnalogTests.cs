@@ -1,7 +1,8 @@
-// The analog carriers (AM, DSB-SC, SSB, FM, PM) and the navigation composites of ICAO Annex 10 Vol. I, 7th edition
-// (2018; no DOI): VOR 3.3.5, ILS localizer 3.1.3.5 and glide path 3.1.5.5. Bessel lines: the generating function at t = e^{jθ},
+// The analog carriers (AM, DSB-SC, SSB, FM, PM) and the navigation composites of ICAO Annex 10 Vol. I, 8th edition
+// (2023; no DOI): VOR 3.3.5, ILS localizer 3.1.3.5 and glide path 3.1.5.5 (clause numbers checked against the 7th
+// edition, unverified for the 8th). Bessel lines: the generating function at t = e^{jθ},
 // e^{jβ sin θ} = Σ J_k(β) e^{jkθ} (NIST DLMF 10.12.1), and Bessel's integral for J_k (DLMF 10.9.2)
-// (https://dlmf.nist.gov/10.12, https://dlmf.nist.gov/10.9; no DOI).
+// (no DOI).
 //
 //   A1  AM: the carrier and the two sidebands at m/2 of it; the depth read back.
 //   A2  FM at index 2.405: the carrier nulled (J0's first zero), the lines at J_k(2.405); the deviation read back.

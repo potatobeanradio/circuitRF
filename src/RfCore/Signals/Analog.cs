@@ -19,19 +19,30 @@
 //            peak deviation, or Index × the top message frequency
 //    PM      exp(j φpk msg)
 //
-//  Navigation composites, ICAO Annex 10 Vol. I, 7th edition (2018):
-//    VOR (3.3.5)    AM 30 % by the 30 Hz reference, and 30 % by a
-//                   9960 Hz subcarrier FM ±480 Hz (index 16) by the
-//                   30 Hz variable signal, which leads the reference by
-//                   the bearing: the Doppler-VOR form; a conventional
-//                   VOR swaps which tone is called reference, the
-//                   receiver reads the same phase difference.
-//    ILS LOC (3.1.3.5) and GS (3.1.5.5)  AM by 90 and 150 Hz,
-//                   zero-crossing together every 1/30 s; SDM = m90 +
-//                   m150 (0.40 LOC, 0.80 GS on course), DDM = m90 − m150.
-//    Ident (3.3.6, 3.1.3.9)  a 1020 Hz tone at 10 % depth keyed in
-//                   Morse at 7 words per minute (VOR, LOC). The record
-//                   holds the code once plus a word gap.
+//  Navigation composites, ICAO Annex 10 Vol. I, 8th edition (2023).
+//  The clause numbers were checked against the 7th edition (2018) and
+//  national copies of 2024 that follow it, not against the 8th
+//  edition's own text; they are unverified for the 8th edition.
+//    VOR (3.3.5)    AM 30 % (28 to 32 %, 3.3.5.3) by the 30 Hz
+//                   reference, and 30 % by a 9960 Hz subcarrier FM
+//                   ±480 Hz (deviation ratio 16) by the 30 Hz variable
+//                   signal: the Doppler-VOR form. The two differ in
+//                   phase by the bearing and are in phase on the
+//                   magnetic meridian (3.3.1.3). Here the variable leads
+//                   the reference; a conventional VOR swaps which tone
+//                   is called reference and the receiver reads the same
+//                   phase difference (lead or lag: unverified in the
+//                   Annex text, taken from receiver practice).
+//    ILS LOC (3.1.3.5.1) 20 % and GS (3.1.5.5.1) 40 % AM by each of
+//                   90 and 150 Hz, zero-crossing together every 1/30 s
+//                   (GS 3.1.5.5.3; the LOC clause: unverified); SDM =
+//                   m90 + m150 (0.40 LOC, 0.80 GS on course), DDM =
+//                   m90 − m150.
+//    Ident (VOR 3.3.6.5 and 3.3.6.6, LOC 3.1.3.9.2 and 3.1.3.9.4)
+//                   a 1020 Hz tone at 10 % depth (VOR: close to but not
+//                   over 10 %; LOC: 5 to 15 %) keyed in Morse at about
+//                   7 words per minute. The record holds the code once
+//                   plus a word gap.
 //  DME pulse pairs (3.5) are pulsed, not analog: they are not made here.
 //
 //  The record is whole 100 ms (it holds the 30, 90, 150, 1020 and
@@ -82,7 +93,7 @@ namespace RfCore.Signals
         public const double Step = 0.1;
         public const int Oversample = 4;
 
-        // ICAO Annex 10 Vol. I (7th ed. 2018): VOR 3.3.5, ident 3.3.6, LOC 3.1.3.5, GS 3.1.5.5
+        // ICAO Annex 10 Vol. I (8th ed. 2023): VOR 3.3.5, ident 3.3.6 / 3.1.3.9, LOC 3.1.3.5, GS 3.1.5.5
         public const double VorToneHz = 30, VorSubcarrierHz = 9960, VorDeviationHz = 480, VorDepth = 0.3;
         public const double IlsLowHz = 90, IlsHighHz = 150, LocSdm = 0.4, GsSdm = 0.8;
         public const double IdentHz = 1020, IdentDepth = 0.1, IdentUnitSeconds = 1.2 / 7;   // 7 words per minute
