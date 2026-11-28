@@ -166,7 +166,8 @@ public static class PCellOperations
     public static string Describe(PCellOperation op)
     {
         string a = string.Join(" + ", op.A), b = string.Join(" + ", op.B ?? []);
-        string length(string? e) => string.IsNullOrWhiteSpace(e) ? "0" : e.Trim() + (op.Unit.Length > 0 ? " " + op.Unit : "");
+        string length(string? e) => string.IsNullOrWhiteSpace(e) ? "0"
+            : e.Trim() + (op.Unit.Length > 0 && Optimization.TunableValue.Split(e, null).Unit is null ? " " + op.Unit : "");   // "100 um" carries its own
         string what = op.Kind switch
         {
             PCellOperationKind.Merge     => $"{a} + {b}",
