@@ -72,6 +72,40 @@ public sealed class Pcd15AngleParameterTests : IDisposable
         }
     }
 
+    /// <summary>`Theta=(90-38*F/2.45e9) deg` is −36.4 rad by the unit rule (expressions.md §8: F carries a unit, so only the 90 is
+    /// read in degrees). The circuit model refuses it, and the layout now refuses the same parts with the same sentence instead
+    /// of placing three MDLYs with no pins.</summary>
+    [Fact]
+    public void ANegativeTheta_IsRefusedOnBothSides_NotDrawnWithoutPins()
+    {
+        const string Refusal = "Delay line: θ = -36.4292036732051 must be positive.";
+        var sym = Pcd9Cells.WilkinsonSym;
+        var deg = sym with { Cell = "Wilkinson3SymDeg", Text = sym.Text.Replace("Theta=(90-38*F/2.45e9)*pi/180", "Theta=(90-38*F/2.45e9) deg") };
+        Assert.NotEqual(sym.Text, deg.Text);
+
+        string cell = Pcd9Cells.Design(_ws, deg);
+        var tech = TechPersistence.LoadFromFile(Path.Combine(_ws, "tech", Pcd8PadTee.Tech));
+        var at = DesignedCellLayout.At(cell, new Dictionary<string, Value>(), _ws, tech, null);
+        Assert.True(at.Layout is not null, at.Refusal);
+        foreach (string id in new[] { "H2", "H3", "H4" })
+        {
+            Assert.DoesNotContain(at.Layout!.Instances, i => i.SchematicId == id);
+            Assert.Contains(at.Lines, l => l.Text.Contains(id, StringComparison.Ordinal) && l.Text.Contains(Refusal, StringComparison.Ordinal));
+        }
+
+        var (lib, tb) = new CircuitRF.Core.Netlist.CnlReader().Read("""
+            define CELLX ( a b )
+            parameters  F=2.45 GHz
+            MDLY:H1 a b Z0=50 Ohm F=F Theta=(90-38*F/2.45e9) deg Style=Straight
+            end CELLX
+            CELLX:X1 n1 n2
+            Port:P1 n1 0 Num=1 Z=50 Ohm
+            Port:P2 n2 0 Num=2 Z=50 Ohm
+            """);
+        var refused = Assert.ThrowsAny<Exception>(() => new CircuitRF.Core.Elaboration.Elaborator(lib).Elaborate(tb));
+        Assert.Contains(Refusal, refused.Message, StringComparison.Ordinal);
+    }
+
     private (CircuitRF.Design.Layout.LayoutView Layout, string LayoutDir) Plan(Pcd9Spec spec)
     {
         string cell = Pcd9Cells.Design(_ws, spec);

@@ -139,8 +139,13 @@ public static class GeneratedCellStore
         // pcell-contract.md R3 already requires a generated pin's name to match the symbol's pin, and
         // until now nothing checked it. A generator that disagrees produced a cell that silently could
         // not be compared, and the mismatch surfaced — if at all — as wrong connectivity much later.
-        var terminals = TerminalMap.FromGeneratorPins(
-            [.. result.Pins.Select(p => p.Name)], SymbolPinNamesOf(generatorId, parameters, result.Pins.Count), out string? refusal);
+        // A built-in part that drew nothing and said why has refused its parameters (PassivePlanPCells.DrawOrRefuse: an MDLY
+        // at θ ≤ 0, the circuit model's own refusal). Written, it was a cell with no pins, placed, and its reason reached
+        // nobody; a kit's cell that draws nothing is not a built-in and still says so as a note (brief-icp-10).
+        string? refusal = result is { Shapes.Count: 0, Pins.Count: 0, Diagnostics: { Count: > 0 } said }
+                          && Lvs.DeviceTypes.TryGetSymbolKind(generatorId, out _) ? string.Join(" ", said) : null;
+        var terminals = refusal is not null ? null : TerminalMap.FromGeneratorPins(
+            [.. result.Pins.Select(p => p.Name)], SymbolPinNamesOf(generatorId, parameters, result.Pins.Count), out refusal);
 
         if (refusal is not null)
             throw new InvalidOperationException(
