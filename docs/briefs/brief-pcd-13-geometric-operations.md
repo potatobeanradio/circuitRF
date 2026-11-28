@@ -41,9 +41,8 @@ solves are one result.
   EM-only unless it carries `KeepModel`: `EmModelSwitch.WithoutCircuitModel` names it (`PadTee:op2 (Subtract)`), so a
   run by circuit models is refused and an optimisation selects `em=direct`. An operation only on non-conductor layers
   (mask, silk, keep-out) keeps the model; `KeepModel` accepts the circuit model as an approximation (D7).
-- **`R-pcd13-5` — LVS.** A placed designed cell stays a leaf (`cpcell:<Name>` and its `Terminals`, PCD-5). The cell's
-  own layout is compared part by part as before, and its operations by its ports' connectivity on the final copper
-  (D8).
+- **`R-pcd13-5` — LVS.** A placed designed cell stays a leaf (`cpcell:<Name>` and its `Terminals`, PCD-5). A cell
+  with operations is compared by its ports' connectivity on the final copper, which the engine enforces (D8).
 - **`R-pcd13-6` — dimensions.** A Grow amount or a Repeat pitch that names a cell parameter is a dimension line on the
   canvas through `PCellDimensions.Of` (D9).
 - **`R-pcd13-7` — where the history is seen.** Operations are geometry, so they are not in the `.cnl` text view. They
@@ -137,7 +136,8 @@ canvas. **Make tool** on an `MSHAPE` sets its `Role` row to `"tool"` (and `Model
   `.csch` bytes (PCD-0 §4.4), so an edited history regenerates every placement; and the package carries it unchanged.
 - **D2 — Tools.** A tool is an `MSHAPE` with `Role="tool"`, a word written quoted as `Form` and `Model` are (PCD-3 D1),
   and `Model="open"`. It is placed like any `MSHAPE` (an offset from a pin, its own pin 1 the reference), so its outline
-  is a function of the parameters; its copper is never drawn and it never makes the cell EM-only by itself.
+  is a function of the parameters; its copper is never drawn and it never makes the cell EM-only by itself. The planner's overlap warnings for a tool are dropped:
+  overlapping the copper it cuts is what a tool is for.
 - **D3 — One layer per operation.** `Layer` names the layer an operation reads and writes (null: the technology's top
   conductor, as `MSHAPE` draws). A part operand is the part's copper on that layer; a tool operand is its outline,
   whatever layer it is drawn on.
@@ -165,9 +165,12 @@ canvas. **Make tool** on an `MSHAPE` sets its `Role` row to `"tool"` (and `Model
   `<Cell>:op<k> (<Kind>)`. A designed cell is resolvable wherever a workspace is open or a layout or EM run is made
   (seam 12); a bare circuit run outside one sees no operation and runs the model.
 - **D8 — LVS.** A placed designed cell is a leaf: `cpcell:<Name>`, its generator's pins and its `Terminals`, operations
-  or none. The cell's own layout keeps every part as an instance (D5), so it compares part by part as before. What
-  the operations may not change is checked where they are applied: the ports joined by one piece of copper on the
-  final layout (`CopperPieces`) must be the ports joined on the planned one, else the operation is refused (D6).
+  or none, so a bench compares it exactly as before. The cell itself, once an operation changes its copper, is compared
+  by its **ports' connectivity on the final copper**: the ports one piece of copper joins (`CopperPieces`) must be the
+  ports joined on the planned copper, which the planner made to match the schematic; an operation that changes that is
+  refused (D6). A part-by-part `circuitrf lvs` of the cell's own saved layout reads the copper a merge or a cut leaves as
+  plain artwork, not as the parts' bodies, so it reports shorts across them: that comparison is not the one for such a
+  cell (§5).
 - **D9 — Dimensions.** The engine records a span for a Grow whose `Amount` names a cell parameter (from A's outline
   outward by the amount, at the right of its bounds) and for a Repeat pitch that names one (from the first copy to the
   next). `PCellDimensions.Of` draws them with its own labels (one hook line reading `TraceOf(layout).Spans`). No
@@ -181,10 +184,13 @@ canvas. **Make tool** on an `MSHAPE` sets its `Role` row to `"tool"` (and `Model
 `tests/Ui.Tests/PCellDesigner/Pcd13*.cs` on `Pcd5Workspace`'s designed through line: Merge (a tool's area becomes
 copper), Subtract with a tool `MSHAPE`, Intersect, Grow onto a mask layer, Repeat; the model-honesty rule (conductor
 Subtract named, mask Grow and `KeepModel` not); the pin-removal refusal; LVS of a bench placing a cell with a Subtract,
-and of the cell's own layout. Plus PCD-7's gate and help for `pcell ops`.
+and a cut that severs the ports refused. Plus PCD-7's gate and help for `pcell ops`.
 
 ## 5. Possible enhancements
 
+- **`circuitrf lvs` on a cell with operations, by port connectivity.** D8's rule lives in the engine; LVS reading a
+  designed cell with an applied history through the same rule would make `lvs` on its own layout clean instead of
+  reporting the parts' merged copper as shorts.
 - **An EM-only mark carried in the netlist.** D7 finds a placed cell's operations through the registered resolver; a
   key on the cell's `define` would let a bare circuit run outside a workspace see them too, at the cost of a Core
   grammar change.

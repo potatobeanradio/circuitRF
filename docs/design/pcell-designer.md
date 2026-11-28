@@ -150,6 +150,35 @@ output at the instance's values, whose circuit model is its own schematic, and w
   Planar cannot solve it: its ground is the unbroken plane of the Green's function. A 3D view turns the drawn ground into
   solids.
 
+### PCD-13 — geometric operations
+
+- A designed cell has an ordered **operation history** (`PCellOperation`, `src/Design/PCellDesigner/Operations/`):
+  Merge, Subtract, Intersect and Exclusive over parts (by designator), layers (`layer:<name>`) and **tools** (an `MSHAPE`
+  with `Role="tool"`, a cutter whose outline is never copper); Grow/Shrink by an expression onto the same or another
+  layer (a mask opening, a keep-out); Repeat in rows and columns at expression pitches. Each step can be suppressed, and
+  `KeepModel` keeps the circuit model as an approximation.
+- **The history is in the `.csch`** (`SchematicEditModel.PCellOperations`, additive), not the `.ccell`: the designer's
+  unsaved schematic reaches `DesignedCellLayout.At`, so a history previews and undoes like any edit; the generator's
+  content key already hashes the `.csch`, so an edited history regenerates every placement; the package carries it.
+- **One engine, after the planner**, in `DesignedCellLayout.At`, on Clipper2 regions per layer through `LayoutClipper`.
+  The result of a step replaces its first operand on its layer, `F ← (F − A) ∪ op(A, B)`; B is never consumed.
+- **How it is drawn.** A part whose copper changes stays placed as itself (instance, pins, `PCellOrigin`) on a copy of its
+  generated cell with no shapes (`<cell>~ops`), and its remaining copper is drawn in the cell's own layout tagged
+  `Generated = "pcell-ops"`, `Component = <designator>`. So the canvas, Save, the generator for a parent and EM see one
+  result, and pins, handles, gestures and LVS identity are untouched.
+- **Refusals.** A step that removes the copper under a part's pin, or changes which ports one piece of copper joins
+  (`CopperPieces`), is not applied and says so as a planner warning; the design check makes that an error, so Export
+  refuses it.
+- **Model honesty.** A step writing a conductor layer (a Merge of copper with copper excepted) makes the cell EM-only
+  unless it carries `KeepModel`; `EmModelSwitch.WithoutCircuitModel` names it (`Cell:op2 (Subtract)`) for every
+  registered designed cell, so circuit runs are refused and optimisation runs `em=direct`. Mask, silk and keep-out steps
+  keep the model.
+- **LVS.** A placed designed cell stays a leaf, so a bench compares it as before. The cell itself, once an operation
+  changes its copper, is compared by its ports' connectivity on the final copper, the rule above. A part-by-part `lvs` of
+  its own saved layout reads merged or cut copper as plain artwork and reports shorts across it.
+- **Seen where.** Not in the `.cnl` (operations are geometry): the designer's history panel (PCD-14) and
+  `circuitrf pcell ops <cell>`. A Grow amount or Repeat pitch that names a parameter is a dimension line.
+
 ## 3. The acceptance check and the real EM run
 
 `Pcd8AcceptanceTests` runs the six steps of PCD-0 §8 in one test, and all six pass (about 40 s, the EM solver a
@@ -196,6 +225,13 @@ The real Planar runs on the example are recorded in §5.
   a glance at three times the cost of the live response.
 - **Nets from Update Schematic from Layout outside the designer**, for pins that meet in any layout. `PinDrop` is the
   seam it would call.
+- **Operations seen by a bare circuit run.** A placed cell's operations are found through the registered resolver, so a
+  run outside any workspace runs the circuit model; a key on the cell's `define` would carry the EM-only mark everywhere,
+  at the cost of a Core grammar change.
+- **Fillet and chamfer as operations.** A grow out and back in with round joins rounds a corner by a radius expression;
+  worth adding when a cell needs smooth current paths at high frequency.
+- **A generator handle for a Grow or a Repeat pitch.** The designer draws them as dimensions; a parent placement could
+  drag them too once a grow has an axis to drag along.
 
 ## 5. The real Planar runs
 

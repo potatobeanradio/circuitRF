@@ -37,13 +37,19 @@ internal static class PCellOperationsEngine
 
     /// <summary>
     /// Applies <paramref name="model"/>'s history to <paramref name="layout"/> (the planner's output for it, values already
-    /// applied) and returns the report lines. A cell with no history is left exactly as planned.
+    /// applied), adding its report lines to <paramref name="lines"/>. A cell with no history and no tool is left exactly as
+    /// planned.
     /// </summary>
-    public static IReadOnlyList<ReportLine> Apply(LayoutView layout, SchematicEditModel model, string layoutDir,
-                                                  string workspaceRootDir, Technology technology)
+    public static void Apply(LayoutView layout, SchematicEditModel model, string layoutDir, string workspaceRootDir,
+                             Technology technology, List<ReportLine> lines)
     {
-        if (model.PCellOperations is not { Count: > 0 } ops) return [];
-        var lines = new List<ReportLine>();
+        var ops = model.PCellOperations ?? [];
+        var tools = model.Components.Where(PCellOperations.IsTool).Select(c => c.InstanceName).ToHashSet(StringComparer.Ordinal);
+        if (ops.Count == 0 && tools.Count == 0) return;
+        // A tool is drawn over the copper it cuts: that overlap is its purpose, not a placement fault (D2).
+        lines.RemoveAll(l => l.Severity == ReportSeverity.Warning && (l.Text.Contains(" overlaps ") || l.Text.Contains(" touches "))
+                             && tools.Any(t => l.InstanceName == t || l.Text.StartsWith(t + " ", StringComparison.Ordinal)
+                                               || l.Text.Contains(" " + t + " ", StringComparison.Ordinal)));
         var steps = new List<PCellOperationStep>();
         var spans = new List<PCellOperationSpan>();
 
@@ -52,7 +58,6 @@ internal static class PCellOperationsEngine
             scope.Bind(v.Name, v.Expression, v.Unit);
         var evaluator = new Evaluator();
         double dbuPerMetre = layout.DbuPerMicron * 1e6;
-        var tools = model.Components.Where(PCellOperations.IsTool).Select(c => c.InstanceName).ToHashSet(StringComparer.Ordinal);
 
         // ── The parts' copper, the pins and the ports, as planned ─────────────
         var parts = new List<Part>();
@@ -234,9 +239,8 @@ internal static class PCellOperationsEngine
         }
         layout.Shapes.AddRange(drawn);
         PCellOperations.Record(layout, new PCellOperationTrace(steps, spans));
-        int applied = steps.Count(s => s.Applied);
-        lines.Add(new ReportLine("", $"Operations: {applied} of {ops.Count} applied.", ReportSeverity.Info));
-        return lines;
+        if (ops.Count > 0)
+            lines.Add(new ReportLine("", $"Operations: {steps.Count(s => s.Applied)} of {ops.Count} applied.", ReportSeverity.Info));
 
         // ── helpers over this cell ──
         double Si(string? expression, string unit)

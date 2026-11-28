@@ -110,6 +110,24 @@ public sealed class Pcd7PCellVerbTests : IDisposable
         AssertSameTree(imported!, Path.Combine(cliWs, "Line"));
     }
 
+    /// <summary>brief-pcd-13 D10: <c>pcell ops</c> prints <see cref="CircuitRF.Design.PCellDesigner.Operations.PCellOperations.Listing"/>.</summary>
+    [Fact]
+    public void Ops_PrintsTheListing()
+    {
+        string cell = DesignedLine(Path.Combine(_root, "o"));
+        string csch = Path.Combine(cell, "schematic", "Line.csch");
+        var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+        model.PCellOperations = [new CircuitRF.Design.PCellDesigner.Operations.PCellOperation
+            { Id = "op1", Kind = CircuitRF.Design.PCellDesigner.Operations.PCellOperationKind.Grow, A = ["TL1"], Amount = "50", Unit = "um",
+              Onto = "Soldermask Top", Suppressed = true }];
+        SchematicPersistence.SaveToFile(csch, model, "Line");
+        var run = RunCli("pcell", "ops", cell);
+        Assert.True(run.ExitCode == 0, run.StdErr);
+        var listing = CircuitRF.Design.PCellDesigner.Operations.PCellOperations.Listing(cell);
+        Assert.Equal("op1  Grow  TL1 by 50 um onto Soldermask Top  on top conductor  (suppressed)", Assert.Single(listing));
+        Assert.Equal(string.Join(Environment.NewLine, listing) + Environment.NewLine, run.StdOut);
+    }
+
     /// <summary>R-pcd7-5: the MCP tool's render call is the verb's argv.</summary>
     [Fact]
     public void TheMcpTool_TranslatesToTheVerbsArgv()
@@ -133,7 +151,7 @@ public sealed class Pcd7PCellVerbTests : IDisposable
     {
         var run = RunCli("pcell", "--help");
         Assert.Equal(0, run.ExitCode);
-        foreach (string s in new[] { "pcell options:", "pcell new", "pcell check", "pcell render", "pcell export", "pcell import" })
+        foreach (string s in new[] { "pcell options:", "pcell new", "pcell check", "pcell render", "pcell export", "pcell import", "pcell ops" })
             Assert.Contains(s, run.StdOut, StringComparison.Ordinal);
     }
 
@@ -143,7 +161,8 @@ public sealed class Pcd7PCellVerbTests : IDisposable
     {
         string code = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Cli", "PCellVerb.cs")));
         foreach (string call in new[] { "PCellDesign.Create(", "PCellDesignCheck.Run(", "DesignedCellLayout.At(",
-                                        "PCellPackage.Export(", "PCellPackage.Import(", "Render.RunLayout(" })
+                                        "PCellPackage.Export(", "PCellPackage.Import(", "Render.RunLayout(",
+                                        "PCellOperations.Listing(" })
             Assert.Contains(call, code, StringComparison.Ordinal);
         foreach (string inside in new[] { "ZipArchive", "ZipFile", "SHA256", "SchematicLayoutPlanner.Plan", "EmEvaluation",
                                           "CellCreate.", "CellPersistence.", "SchematicPersistence.", "LayoutRenderer",
