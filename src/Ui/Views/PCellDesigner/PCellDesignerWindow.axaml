@@ -6,6 +6,7 @@
         xmlns:vm="using:CircuitRF.Ui.PCellDesigner"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:mi="using:Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.PCellDesigner.PCellDesignerWindow"
         x:DataType="vm:PCellDesignerViewModel"
         Title="{Binding Title}"
@@ -92,24 +93,39 @@
                         <Button Content="Stretch by Parameter" Click="OnStretch"
                                 ToolTip.Tip="The selected vertices follow the parameter along the axis (degrees, the part's own frame)"/>
                     </StackPanel>
-                    <!-- The operations (brief-pcd-14 R-pcd14-2, -4): each on the selection, one undo step. -->
+                    <!-- The operations (brief-pcd-14 R-pcd14-2, -4): each on the selection, one undo step. Icon buttons with the
+                         operation named in the tooltip, as the layout editor's toolbar. -->
                     <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
                         <WrapPanel.Styles>
                             <Style Selector="WrapPanel > :is(Control)"><Setter Property="Margin" Value="0,0,4,4"/></Style>
                         </WrapPanel.Styles>
-                        <Button Content="Merge" Command="{Binding MergeCommand}" ToolTip.Tip="The first selected joined with the rest"/>
-                        <Button Content="Subtract" Command="{Binding SubtractCommand}" ToolTip.Tip="The first selected minus the rest"/>
-                        <Button Content="Intersect" Command="{Binding IntersectCommand}" ToolTip.Tip="The first selected inside the rest"/>
-                        <Button Content="Exclusive" Command="{Binding ExclusiveCommand}" ToolTip.Tip="Where exactly one of the first and the rest is"/>
-                        <Button Content="Grow" Command="{Binding GrowCommand}" ToolTip.Tip="The selection grown by the amount (negative shrinks), onto the layer named or its own"/>
+                        <Button Command="{Binding MergeCommand}" ToolTip.Tip="Merge — the first selected joined with the rest" Padding="6,3">
+                            <mi:MaterialIcon Kind="SetAll" Width="16" Height="16"/>
+                        </Button>
+                        <Button Command="{Binding SubtractCommand}" ToolTip.Tip="Subtract — the first selected minus the rest" Padding="6,3">
+                            <mi:MaterialIcon Kind="SetLeft" Width="16" Height="16"/>
+                        </Button>
+                        <Button Command="{Binding IntersectCommand}" ToolTip.Tip="Intersect — the first selected inside the rest" Padding="6,3">
+                            <mi:MaterialIcon Kind="SetCenter" Width="16" Height="16"/>
+                        </Button>
+                        <Button Command="{Binding ExclusiveCommand}" ToolTip.Tip="Exclusive — where exactly one of the first and the rest is" Padding="6,3">
+                            <mi:MaterialIcon Kind="SetLeftRight" Width="16" Height="16"/>
+                        </Button>
+                        <Button Command="{Binding GrowCommand}" ToolTip.Tip="Grow — the selection grown by the amount (negative shrinks), onto the layer named or its own" Padding="6,3">
+                            <mi:MaterialIcon Kind="ArrowExpandAll" Width="16" Height="16"/>
+                        </Button>
                         <TextBox Text="{Binding GrowAmount}" Width="70" ToolTip.Tip="Grow amount, an expression"/>
                         <TextBox Text="{Binding GrowOnto}" Width="70" Watermark="onto" ToolTip.Tip="The layer the grown copper goes to; empty is its own"/>
-                        <Button Content="Repeat" Command="{Binding RepeatCommand}" ToolTip.Tip="Copies of the selection in rows and columns at the pitches"/>
+                        <Button Command="{Binding RepeatCommand}" ToolTip.Tip="Repeat — copies of the selection in rows and columns at the pitches" Padding="6,3">
+                            <mi:MaterialIcon Kind="ViewGridOutline" Width="16" Height="16"/>
+                        </Button>
                         <TextBox Text="{Binding RepeatRows}" Width="40" ToolTip.Tip="Rows"/>
                         <TextBox Text="{Binding RepeatColumns}" Width="40" ToolTip.Tip="Columns"/>
                         <TextBox Text="{Binding RepeatPitchX}" Width="60" ToolTip.Tip="Pitch X"/>
                         <TextBox Text="{Binding RepeatPitchY}" Width="60" ToolTip.Tip="Pitch Y"/>
-                        <Button Content="Make tool" Command="{Binding MakeToolOfSelectionCommand}" ToolTip.Tip="The selected MSHAPE becomes a cutter: an operand, never copper"/>
+                        <Button Command="{Binding MakeToolOfSelectionCommand}" ToolTip.Tip="Make tool — the selected MSHAPE becomes a cutter: an operand, never copper" Padding="6,3">
+                            <mi:MaterialIcon Kind="ContentCut" Width="16" Height="16"/>
+                        </Button>
                     </WrapPanel>
                     <!-- The operands (brief-pcd-14 R-pcd14-1): the selection, and a layer to add to it. -->
                     <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
@@ -117,7 +133,9 @@
                         <TextBlock Text="{Binding SelectionText}" VerticalAlignment="Center" MinWidth="120"/>
                         <ComboBox Name="LayerPicker" MinWidth="110" ItemsSource="{Binding LayerNames}"
                                   ToolTip.Tip="A layer to add as an operand"/>
-                        <Button Content="Add layer" Click="OnAddLayer"/>
+                        <Button Click="OnAddLayer" ToolTip.Tip="Add layer — the layer picked joins the operands" Padding="6,3">
+                            <mi:MaterialIcon Kind="LayersPlus" Width="16" Height="16"/>
+                        </Button>
                     </StackPanel>
                     <TextBlock DockPanel.Dock="Bottom" Classes="note" Text="{Binding LayoutNote}"/>
                     <TextBlock DockPanel.Dock="Top" Classes="note"
