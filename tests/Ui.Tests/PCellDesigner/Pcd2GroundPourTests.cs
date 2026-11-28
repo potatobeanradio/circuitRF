@@ -3,6 +3,7 @@
 using System.Runtime.CompilerServices;
 using Clipper2Lib;
 using CircuitRF.Design.Layout.Lvs;
+using CircuitRF.Design.PCellDesigner;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.PCellDesigner;
@@ -86,6 +87,51 @@ public sealed class Pcd2GroundPourTests : IDisposable
     {
         var findings = LvsRun.Run(Path.Combine(_ws, "SpurlineBench")).Findings;
         Assert.DoesNotContain(findings, f => f.Id == "lvs.ground.no-reference-conductor");
+    }
+
+    /// <summary>A regression: PadTee authored again as the example is (Create, the text applied, Stretch, Save) keeps
+    /// every part in its saved layout — TL2, the stub to its MSHAPE pad, went missing — and is LVS clean on its own layout.</summary>
+    [Fact]
+    public void PadTee_AuthoredAgain_KeepsEveryPart_AndIsLvsClean()
+    {
+        foreach (bool shipped in new[] { true, false })
+        {
+            // The shipped cell opened in the designer and saved; and the cell authored afresh, as the example is.
+            string ws = shipped ? _ws : Pcd8PadTee.Workspace(Path.Combine(_ws, "authored"));
+            string cellDir = Path.Combine(ws, Pcd8PadTee.Cell);
+            if (shipped) Assert.Null(new CircuitRF.Ui.PCellDesigner.PCellDesignerViewModel(cellDir, ws).Save());
+            else Pcd8PadTee.Design(ws);
+            Check(ws, cellDir);
+        }
+    }
+
+    /// <summary>The cause of the PadTee regression: two writers of one file at once each move their own temp file over it,
+    /// so neither fails (a shared temp name let one move the other's away).</summary>
+    [Fact]
+    public void TwoWritersOfOneFile_BothSucceed()
+    {
+        Directory.CreateDirectory(_ws);
+        string path = Path.Combine(_ws, "same.clay");
+        Parallel.For(0, 400, new ParallelOptions { MaxDegreeOfParallelism = 8 }, i => AtomicFile.WriteAllText(path, "x"));
+        Assert.Equal("x", File.ReadAllText(path));
+        var left = Directory.GetFiles(_ws, "same.clay*").Where(f => f != path).Select(Path.GetFileName).ToList();   // no temp left
+        Assert.True(left.Count == 0, string.Join(", ", left));
+    }
+
+    private static void Check(string ws, string cellDir)
+    {
+        var schematic = SchematicPersistence.LoadFromFile(PCellDesignSave.SchematicPath(cellDir)).model;
+        var at = DesignedCellLayout.At(cellDir, new Dictionary<string, CircuitRF.Core.Expressions.Value>(), ws,
+                                       TechPersistence.LoadFromFile(Path.Combine(ws, "tech", Pcd8PadTee.Tech)),
+                                       Path.Combine(ws, "tech", Pcd8PadTee.Tech), schematic);
+        string lines = string.Join("\n", at.Lines.Select(l => $"{l.Severity} {l.InstanceName} {l.Text}"));
+
+        var placed = LayoutPersistence.LoadFromFile(PCellDesignSave.ClayPath(cellDir)).Instances
+                                      .Select(i => i.SchematicId).ToHashSet(StringComparer.Ordinal);
+        foreach (string id in new[] { "TL1", "B1", "T1", "TL2", "TL3", "SH1" })
+            Assert.True(placed.Contains(id), $"{id} is not in the saved layout:\n{lines}");
+        var errors = LvsRun.Run(cellDir).Findings.Where(f => !f.Waived && f.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error).ToList();
+        Assert.True(errors.Count == 0, string.Join("\n", errors.Select(f => f.Render())) + "\n" + lines);
     }
 
     private static string RepoRoot([CallerFilePath] string here = "")
