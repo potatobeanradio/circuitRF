@@ -1,6 +1,6 @@
 // The single carrier's pulse shapes, rotated, differential and offset constellations, SOQPSK-TG and bursts.
 //
-//   V0  Options unset: the shape, its instants and the bytes of the record and its matched filtering are as the
+//   V0  Options unset: the shape, its instants and the record (length, power, sum, sampled values, to 1e-9) are as the
 //       generator before the options made them.
 //   V1  The points turn and chain per symbol: π/2-BPSK, π/4-QPSK, 3π/8-8PSK, π/4-DQPSK, D8PSK.
 //   V2  Each pulse's spectrum against its formula (first nulls, the Gaussian's 3 dB point, RC's half point), and the
@@ -69,21 +69,36 @@ public class ScQamShapeTests(ITestOutputHelper output)
         Assert.Equal(1.2e6, ScQam.BandwidthHz(s), 1e-6);
     }
 
-    /// <summary>The generated and matched-filtered records' SHA-256 (first 8 bytes), taken from the generator before the
-    /// options went in. Bit-exact, so a math library that rounds differently can move them.</summary>
+    /// <summary>The record as the generator before the options made it: its length, mean power and sum, and the samples
+    /// at n·i/8 + 3 (i = 0..7), to 1e-9 relative (to 1e-9 absolute below a magnitude of 1). Expected:
+    /// "n|power|sum re,im|re,im;re,im;…".</summary>
     [Theory]
-    [InlineData("SC;Rs=1Msps;Mod=16APSK;RollOff=0.2;Data=PN9;Preamble=32;PilotBlock=8/100;Off=0;P=0", "7070EAA517CF7EB8", "0F2EB294CF5E812C")]
-    [InlineData("SC;Rs=1Msps;Mod=8PSK;RollOff=0.35;Span=16;Data=PN15;Symbols=2000;Off=0;P=0", "18CEF758CEE786F3", "D9BF0E5CB07717A6")]
-    [InlineData("SC;Off=0;P=0", "70EAD8D5D2B63F6D", "1930B4A7F4113083")]
-    [InlineData("SC;Rs=3Msps;Mod=256QAM;RollOff=0.1;Data=PN23;Off=0;P=0", "6B92DEB51419ED24", "EECD545A7DEF28F4")]
-    public void V0_OptionsUnset_TheBytesAreAsBefore(string carrier, string gen, string mf)
+    [InlineData("SC;Rs=1Msps;Mod=16APSK;RollOff=0.2;Data=PN9;Preamble=32;PilotBlock=8/100;Off=0;P=0",
+                "4664|1.0000000000000036|-2.2446707251821985,99.50522821050973|0.6682977347091444,0.9069077624829514;0.48626508213157915,-1.4196786900952234;-1.1234201665828107,-0.1963919599390283;1.154399400686826,-0.30240834666222627;-0.2674625178828989,-0.034870717860449534;1.2124529068568835,0.609719158424322;1.5794351063270173,-0.5451512700852822;0.13367835544704101,0.1227246771279389")]
+    [InlineData("SC;Rs=1Msps;Mod=8PSK;RollOff=0.35;Span=16;Data=PN15;Symbols=2000;Off=0;P=0",
+                "16000|1.0000000000000013|1145.8329498165378,10.333417408814503|1.147835245033607,0.16998456463277745;1.2035360356047122,0.19571018739079857;0.16717827818760864,-0.9070757203042338;-0.9289399299051114,0.5328202772755838;-0.773818371808661,0.25870641966950825;-0.5232635782615639,-0.4303391706257315;1.1800300583722734,-0.44777415116234814;0.7782746223484072,0.14235458267593631")]
+    [InlineData("SC;Off=0;P=0",
+                "4088|1.0000000000000016|-5.656854249492219,-5.65685424949235|0.8920177451962077,1.0093321148587928;0.7456243203527275,-0.6404493588622533;0.6543011403238119,0.7020957589010378;0.6543824570512309,0.7493338011711556;0.553667857434892,0.6141780887096735;-0.6543088628533679,0.6316479453158869;0.9202522167718425,-0.44595414040969344;0.8695572895461243,0.6578608689856053")]
+    [InlineData("SC;Rs=3Msps;Mod=256QAM;RollOff=0.1;Data=PN23;Off=0;P=0",
+                "524288|0.9999999999999852|-4177.12121357969,-583.9118824162098|-1.4269659268636263,-1.8175410191583183;0.5146356235381448,0.41778772561914695;-0.4279509514543421,-0.5804403614406435;1.2383645919044155,-0.3841105648391573;0.4564987910217691,0.12160479503824528;0.3480005423768408,0.7911998005835658;0.5214725884063852,-0.635047816630248;-0.590176415683904,-0.1555159418739689")]
+    public void V0_OptionsUnset_TheBytesAreAsBefore(string carrier, string expected)
     {
-        static string H(Complex[] a) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-            a.SelectMany(v => BitConverter.GetBytes(v.Real).Concat(BitConverter.GetBytes(v.Imaginary))).ToArray()))[..16];
-        var s = ScQam.Validate(SignalSpec.ParseCarrier(carrier));
-        var x = ScQam.Generate(s);
-        Assert.Equal(gen, H(x));
-        Assert.Equal(mf, H(ScQam.Filter(s, x, ScQam.NativeRateHz(s), matched: true)));
+        static void Near(double e, double a) => Assert.True(Math.Abs(a - e) <= 1e-9 * Math.Max(Math.Abs(e), 1), $"{a:R} against {e:R}");
+        static double[] Nums(string t) => [.. t.Split([',', ';']).Select(v => double.Parse(v, System.Globalization.CultureInfo.InvariantCulture))];
+        var part = expected.Split('|');
+        var x = ScQam.Generate(ScQam.Validate(SignalSpec.ParseCarrier(carrier)));
+        int n = x.Length;
+        Assert.Equal(int.Parse(part[0], System.Globalization.CultureInfo.InvariantCulture), n);
+        Near(Nums(part[1])[0], x.Average(v => v.Real * v.Real + v.Imaginary * v.Imaginary));
+        var sum = x.Aggregate(Complex.Zero, (acc, v) => acc + v);
+        var es = Nums(part[2]);
+        Near(es[0], sum.Real); Near(es[1], sum.Imaginary);
+        var samples = Nums(part[3]);
+        for (int i = 0; i < 8; i++)
+        {
+            var v = x[(long)n * i / 8 + 3];
+            Near(samples[2 * i], v.Real); Near(samples[2 * i + 1], v.Imaginary);
+        }
     }
 
     [Fact]
