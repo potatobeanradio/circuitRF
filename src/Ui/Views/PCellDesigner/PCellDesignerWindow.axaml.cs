@@ -27,6 +27,8 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
 
     private readonly List<(string Instance, int Vertex)> _selected = [];
     private (string Instance, int Pin, long GrabDx, long GrabDy)? _offsetDrag;
+    private (long X, long Y)? _pressAt;
+    private bool _pressedVertex;
     private (string Instance, int Vertex, long X, long Y)? _vertexDrag;
 
     public PCellDesignerWindow()
@@ -239,6 +241,7 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
     {
         if (Vm is not { } vm || !e.GetCurrentPoint(DesignCanvas).Properties.IsLeftButtonPressed) return;
         var (x, y) = World(e);
+        _pressAt = (x, y);
         if (DrawToggle.IsChecked == true)
         {
             // The MSHAPE draw tool (brief-pcd-11 R-pcd11-4): a click is a corner, a double-click the last one.
@@ -247,8 +250,10 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
             else ShowPending();
             return;
         }
+        _pressedVertex = false;
         if (VertexAt(x, y) is { } v)
         {
+            _pressedVertex = true;
             if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
             {
                 if (!_selected.Remove((v.Instance, v.Vertex))) _selected.Add((v.Instance, v.Vertex));
@@ -265,11 +270,14 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
 
     private void OnCanvasReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (Vm is not { } vm || DrawToggle.IsChecked == true) return;
+        if (Vm is not { } vm || DrawToggle.IsChecked == true || _pressAt is not { } at) return;
         var (x, y) = World(e);
-        if (_offsetDrag is { } d) vm.DragOffset(d.Instance, x + d.GrabDx, y + d.GrabDy);
-        if (_vertexDrag is { } v && (v.X, v.Y) != (x, y)) vm.DragVertex(v.Instance, v.Vertex, v.X, v.Y, x, y);
-        (_offsetDrag, _vertexDrag) = (null, null);
+        // A press and release in place is a click: it selects the operand under it (brief-pcd-14 R-pcd14-1).
+        bool moved = Math.Max(Math.Abs(x - at.X), Math.Abs(y - at.Y)) > Tolerance;
+        if (moved && _offsetDrag is { } d) vm.DragOffset(d.Instance, x + d.GrabDx, y + d.GrabDy);
+        if (moved && _vertexDrag is { } v) vm.DragVertex(v.Instance, v.Vertex, v.X, v.Y, x, y);
+        if (!moved && !_pressedVertex) vm.SelectAt(x, y, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        (_offsetDrag, _vertexDrag, _pressAt) = (null, null, null);
     }
 
     private static PaletteDragPayload? PayloadOf(DragEventArgs e)
@@ -331,6 +339,17 @@ public partial class PCellDesignerWindow : Window, ICrfMenuWindow
             _selected.Clear();
             ShowSelection();
         }
+    }
+
+    private static PCellOperationRow? RowOf(object? sender) => (sender as Control)?.DataContext as PCellOperationRow;
+    private void OnOperationApply(object? sender, RoutedEventArgs e) => Vm?.ApplyOperationRowCommand.Execute(RowOf(sender));
+    private void OnOperationDelete(object? sender, RoutedEventArgs e) => Vm?.DeleteOperationRowCommand.Execute(RowOf(sender));
+    private void OnOperationUp(object? sender, RoutedEventArgs e) => Vm?.MoveOperationUpCommand.Execute(RowOf(sender));
+    private void OnOperationDown(object? sender, RoutedEventArgs e) => Vm?.MoveOperationDownCommand.Execute(RowOf(sender));
+
+    private void OnAddLayer(object? sender, RoutedEventArgs e)
+    {
+        if (LayerPicker.SelectedItem is string layer) Vm?.AddLayerOperand(layer);
     }
 
     private void OnRemoveParameter(object? sender, RoutedEventArgs e)

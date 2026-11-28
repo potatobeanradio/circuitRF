@@ -92,6 +92,33 @@
                         <Button Content="Stretch by Parameter" Click="OnStretch"
                                 ToolTip.Tip="The selected vertices follow the parameter along the axis (degrees, the part's own frame)"/>
                     </StackPanel>
+                    <!-- The operations (brief-pcd-14 R-pcd14-2, -4): each on the selection, one undo step. -->
+                    <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                        <WrapPanel.Styles>
+                            <Style Selector="WrapPanel > :is(Control)"><Setter Property="Margin" Value="0,0,4,4"/></Style>
+                        </WrapPanel.Styles>
+                        <Button Content="Merge" Command="{Binding MergeCommand}" ToolTip.Tip="The first selected joined with the rest"/>
+                        <Button Content="Subtract" Command="{Binding SubtractCommand}" ToolTip.Tip="The first selected minus the rest"/>
+                        <Button Content="Intersect" Command="{Binding IntersectCommand}" ToolTip.Tip="The first selected inside the rest"/>
+                        <Button Content="Exclusive" Command="{Binding ExclusiveCommand}" ToolTip.Tip="Where exactly one of the first and the rest is"/>
+                        <Button Content="Grow" Command="{Binding GrowCommand}" ToolTip.Tip="The selection grown by the amount (negative shrinks), onto the layer named or its own"/>
+                        <TextBox Text="{Binding GrowAmount}" Width="70" ToolTip.Tip="Grow amount, an expression"/>
+                        <TextBox Text="{Binding GrowOnto}" Width="70" Watermark="onto" ToolTip.Tip="The layer the grown copper goes to; empty is its own"/>
+                        <Button Content="Repeat" Command="{Binding RepeatCommand}" ToolTip.Tip="Copies of the selection in rows and columns at the pitches"/>
+                        <TextBox Text="{Binding RepeatRows}" Width="40" ToolTip.Tip="Rows"/>
+                        <TextBox Text="{Binding RepeatColumns}" Width="40" ToolTip.Tip="Columns"/>
+                        <TextBox Text="{Binding RepeatPitchX}" Width="60" ToolTip.Tip="Pitch X"/>
+                        <TextBox Text="{Binding RepeatPitchY}" Width="60" ToolTip.Tip="Pitch Y"/>
+                        <Button Content="Make tool" Command="{Binding MakeToolOfSelectionCommand}" ToolTip.Tip="The selected MSHAPE becomes a cutter: an operand, never copper"/>
+                    </WrapPanel>
+                    <!-- The operands (brief-pcd-14 R-pcd14-1): the selection, and a layer to add to it. -->
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                        <TextBlock Text="Operands:" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SelectionText}" VerticalAlignment="Center" MinWidth="120"/>
+                        <ComboBox Name="LayerPicker" MinWidth="110" ItemsSource="{Binding LayerNames}"
+                                  ToolTip.Tip="A layer to add as an operand"/>
+                        <Button Content="Add layer" Click="OnAddLayer"/>
+                    </StackPanel>
                     <TextBlock DockPanel.Dock="Bottom" Classes="note" Text="{Binding LayoutNote}"/>
                     <TextBlock DockPanel.Dock="Top" Classes="note"
                                Text="Drop a Library part on a pin (a tee on a joint) or anywhere (placed by an offset); drag an offset part by its pin; drag an MSHAPE vertex."/>
@@ -103,7 +130,7 @@
                           ResizeDirection="Columns"/>
 
             <!-- Parameters (R-pcd6-3) over the response (R-pcd6-5) -->
-            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,*,Auto">
+            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,Auto,*,Auto">
                 <Border Classes="pane" Grid.Row="0">
                     <StackPanel>
                         <DockPanel>
@@ -140,7 +167,42 @@
                         </ItemsControl>
                     </StackPanel>
                 </Border>
-                <Border Classes="pane" Grid.Row="1">
+                <!-- The history (brief-pcd-14 R-pcd14-3): one row per operation, edited in place. -->
+                <Border Classes="pane" Grid.Row="1" IsVisible="{Binding HasOperations}">
+                    <StackPanel>
+                        <TextBlock Classes="panelhdr" Text="Operations"/>
+                        <ScrollViewer MaxHeight="200">
+                            <ItemsControl ItemsSource="{Binding Operations}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:PCellOperationRow">
+                                        <StackPanel Margin="0,0,0,6">
+                                            <DockPanel>
+                                                <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Suppressed}" ToolTip.Tip="Suppressed: kept in the history, not applied"/>
+                                                <Button DockPanel.Dock="Right" Content="✕" Click="OnOperationDelete" ToolTip.Tip="Delete"/>
+                                                <Button DockPanel.Dock="Right" Content="↓" Click="OnOperationDown" ToolTip.Tip="Later"/>
+                                                <Button DockPanel.Dock="Right" Content="↑" Click="OnOperationUp" ToolTip.Tip="Earlier"/>
+                                                <TextBlock Text="{Binding Description}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                            <TextBlock Classes="note" Text="{Binding Refusal}" IsVisible="{Binding Refused}"
+                                                       Foreground="{DynamicResource SystemErrorTextColor}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBox Text="{Binding Operands}" MinWidth="120" ToolTip.Tip="Operands: A, then | and B"/>
+                                                <TextBox Text="{Binding Amount}" Width="70" IsVisible="{Binding IsGrow}" ToolTip.Tip="Amount"/>
+                                                <TextBox Text="{Binding Amount2}" Width="70" IsVisible="{Binding IsGrow}" ToolTip.Tip="Onto layer"/>
+                                                <TextBox Text="{Binding Amount}" Width="40" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Rows"/>
+                                                <TextBox Text="{Binding Amount2}" Width="40" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Columns"/>
+                                                <TextBox Text="{Binding PitchX}" Width="60" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Pitch X"/>
+                                                <TextBox Text="{Binding PitchY}" Width="60" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Pitch Y"/>
+                                                <Button Content="Apply" Click="OnOperationApply"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+                <Border Classes="pane" Grid.Row="2">
                     <ctl:AspectRatioPanel>
                         <ddc:PlotControl Name="ResponsePlotControl"
                                          Plot="{Binding Plot}"
@@ -149,7 +211,7 @@
                     </ctl:AspectRatioPanel>
                 </Border>
                 <!-- A cell made from filter synthesis: its metrics (brief-pcd-12), from the response or the last EM run. -->
-                <Border Classes="pane" Grid.Row="2" IsVisible="{Binding IsFilterCell}">
+                <Border Classes="pane" Grid.Row="3" IsVisible="{Binding IsFilterCell}">
                     <vm:FilterMetricsPanel Metrics="{Binding FilterMetrics}"/>
                 </Border>
             </Grid>

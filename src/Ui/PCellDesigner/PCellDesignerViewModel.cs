@@ -7,6 +7,7 @@ using CircuitRF.Core.Synthesis.Filters;
 using CircuitRF.Design.Layout.Em.ParametricEm;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Design.PCellDesigner;
+using CircuitRF.Design.PCellDesigner.Operations;
 using CircuitRF.Engine;
 using CircuitRF.Ui.DataDisplay.ViewModels;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -44,6 +45,52 @@ public sealed partial class PCellParameterRow(Action changed) : ObservableObject
     {
         var (e, u) = TunableValue.Split(Value, Unit);
         return (e, u ?? "");
+    }
+}
+
+/// <summary>One row of the history panel (brief-pcd-14 R-pcd14-3): the operation, its line, whether its step was applied,
+/// and its fields as text to edit in place. Apply writes them back through the host.</summary>
+public sealed partial class PCellOperationRow(PCellOperation operation, string? refusal, Action<PCellOperationRow> suppress) : ObservableObject
+{
+    public PCellOperation Operation { get; } = operation;
+    public string Id => Operation.Id;
+    public string Description => PCellOperations.Describe(Operation);
+
+    /// <summary>Why its step was not applied on the last plan, or null.</summary>
+    public string? Refusal { get; } = refusal;
+    public bool Refused => Refusal is not null;
+
+    [ObservableProperty] private bool _suppressed = operation.Suppressed;
+    partial void OnSuppressedChanged(bool value) { if (value != Operation.Suppressed) suppress(this); }
+
+    /// <summary>The operands, space-separated: A, then "|" and B for the two-set kinds (D3).</summary>
+    [ObservableProperty] private string _operands = string.Join(" ", operation.A)
+        + (operation.B is { Count: > 0 } b ? " | " + string.Join(" ", b) : "");
+    [ObservableProperty] private string _amount = operation.Amount ?? operation.Rows ?? "";
+    [ObservableProperty] private string _amount2 = operation.Columns ?? operation.Onto ?? "";
+    [ObservableProperty] private string _pitchX = operation.PitchX ?? "";
+    [ObservableProperty] private string _pitchY = operation.PitchY ?? "";
+
+    public bool IsGrow => Operation.Kind == PCellOperationKind.Grow;
+    public bool IsRepeat => Operation.Kind == PCellOperationKind.Repeat;
+
+    /// <summary>The operation with the row's text written back.</summary>
+    public PCellOperation Edited()
+    {
+        var parts = Operands.Split('|');
+        List<string> Ids(string t) => [.. t.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        string? Text(string t) => PCellDesignerViewModel.OperationText(t);
+        return Operation with
+        {
+            A = Ids(parts[0]),
+            B = parts.Length > 1 ? Ids(parts[1]) : Operation.B,
+            Amount = IsGrow ? Text(Amount) : Operation.Amount,
+            Onto = IsGrow ? Text(Amount2) : Operation.Onto,
+            Rows = IsRepeat ? Text(Amount) : Operation.Rows,
+            Columns = IsRepeat ? Text(Amount2) : Operation.Columns,
+            PitchX = IsRepeat ? Text(PitchX) : Operation.PitchX,
+            PitchY = IsRepeat ? Text(PitchY) : Operation.PitchY,
+        };
     }
 }
 
@@ -165,8 +212,10 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
                 Value = p.DefaultExpression,
             });
         Parameters.CollectionChanged += (_, _) => OnTableChanged();
+        Selection.CollectionChanged += (_, _) => OnPropertyChanged(nameof(SelectionText));
         _container = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 0, width: 640, height: 400);
         CnlText = CnlOf(Schematic);
+        RebuildOperations();
         _ready = true;
     }
 
@@ -244,6 +293,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         var values = ValuesRowOf();
         string? sweep = CellFolder.ReadCcell(CellDir)?.PCellDesign?.Sweep;
         var (tech, techId) = (Technology, TechIdentity);
+        var emOnly = PCellOperations.WithoutCircuitModel(Schematic, Technology);
         DesignedCellLayoutResult? plan;
         PCellDesignResponseResult response;
         try
@@ -258,7 +308,11 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
                     p = DesignedCellLayout.At(CellDir, new Dictionary<string, Value>(), WorkspaceRoot, tech, techId, copy);
                 }
                 cts.Token.ThrowIfCancellationRequested();
-                return (p, PCellDesignResponse.Run(Copy(text), sets, sweep, WorkspaceRoot, cts.Token));
+                // R-pcd14-5: an operation that changes the copper makes the cell EM-only; its circuit model is not run.
+                return (p, emOnly.Count > 0
+                    ? new PCellDesignResponseResult(null, $"no circuit model: {string.Join(", ", emOnly)} "
+                        + $"{(emOnly.Count == 1 ? "changes" : "change")} the copper, so the cell is simulated by EM only. Run EM for its response.")
+                    : PCellDesignResponse.Run(Copy(text), sets, sweep, WorkspaceRoot, cts.Token));
             }, cts.Token);
         }
         catch (OperationCanceledException) { return; }
@@ -276,6 +330,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         Response = response.S;
         Em = null;   // the EM result was for the values before this change
         if (response.Refusal is { } why) Status = "Response: " + why;
+        RebuildOperations();
         // A filter cell's metrics, read off the response just computed (PCellFilter.CircuitMetrics's own two steps, so
         // the response is not run twice).
         if (_filterSpec is { } spec)
@@ -425,6 +480,7 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         Schematic = next;
         Schematic.SchematicDirectory = _schematicDir;
         CnlText = CnlOf(Schematic);
+        RebuildOperations();
         Dirty = true;
         OnPropertyChanged(nameof(Schematic));
         OnPropertyChanged(nameof(CanUndo));
@@ -643,6 +699,176 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
             var (next, name) = PCellAuthoring.OffsetPlaced(Schematic, shape, near.Instance, near.Pin, near.Pose,
                                                           corners[0].X, corners[0].Y, Layout.DbuPerMicron, LengthUnit);
             return (next, $"{name} drawn, placed by an offset from {near.Instance} pin {near.Pin}.");
+        });
+    }
+
+    // ══ Operands (brief-pcd-14 R-pcd14-1) ══════════════════════════════════════════════════════════════════════
+
+    /// <summary>The selected operands, first selected first: designators, and <c>layer:&lt;name&gt;</c> for a layer.</summary>
+    public ObservableCollection<string> Selection { get; } = [];
+
+    /// <summary>The selection as the window lists it.</summary>
+    public string SelectionText => Selection.Count == 0 ? "Click a part to select it; Shift-click adds or removes." : string.Join("  ", Selection);
+
+    /// <summary>The technology's layers, for the layer picker.</summary>
+    public IReadOnlyList<string> LayerNames => Technology?.Layers.Select(l => l.Name).Where(n => n.Length > 0).ToList() ?? [];
+
+    /// <summary>The placement under (<paramref name="x"/>, <paramref name="y"/>), the smallest box first (D2): a part by its
+    /// instance's box, an <c>MSHAPE</c> (a tool draws no copper) by its corners'.</summary>
+    public string? PartAt(long x, long y)
+    {
+        if (Layout is null) return null;
+        Bbox BoxOf(LayoutInstance inst)
+        {
+            var box = CellHierarchy.InstanceBbox(inst, _layoutDir);
+            if (!box.IsEmpty || Schematic.Components.FirstOrDefault(c => c.InstanceName == inst.SchematicId) is not { } comp
+                || !DrawnMetal.Is(comp)) return box;
+            foreach (var v in PCellDimensions.Vertices(comp, inst, Layout.DbuPerMicron, ScopeAtValues()))
+                box = box.Union(new Bbox(v.X, v.Y, v.X, v.Y));
+            return box;
+        }
+        return Layout.Instances.Where(i => i.SchematicId is { Length: > 0 })
+            .Select(i => (Id: i.SchematicId!, Box: BoxOf(i)))
+            .Where(b => b.Box.Contains(x, y))
+            .OrderBy(b => (double)(b.Box.MaxX - b.Box.MinX) * (b.Box.MaxY - b.Box.MinY))
+            .Select(b => b.Id).FirstOrDefault();
+    }
+
+    /// <summary>A click on the canvas: the part under it becomes the selection, or, with <paramref name="additive"/>
+    /// (Shift), is added or removed. A click on nothing clears a plain selection.</summary>
+    public void SelectAt(long x, long y, bool additive)
+    {
+        string? id = PartAt(x, y);
+        if (!additive) Selection.Clear();
+        if (id is null) return;
+        if (additive && Selection.Remove(id)) return;
+        Selection.Add(id);
+    }
+
+    /// <summary>The layer picker: <c>layer:&lt;name&gt;</c> added to the selection.</summary>
+    public void AddLayerOperand(string layer)
+    {
+        string operand = "layer:" + layer;
+        if (layer.Length > 0 && !Selection.Contains(operand)) Selection.Add(operand);
+    }
+
+    // ══ Operations (brief-pcd-14 R-pcd14-2 to -5) ══════════════════════════════════════════════════════════════
+
+    /// <summary>The history, one row per operation in order; rebuilt after every edit and plan.</summary>
+    public ObservableCollection<PCellOperationRow> Operations { get; } = [];
+
+    /// <summary>Grow: the amount (an expression; negative shrinks) and the layer the result goes to (empty: the same).</summary>
+    [ObservableProperty] private string _growAmount = "50 um";
+    [ObservableProperty] private string _growOnto = "";
+
+    /// <summary>Repeat: the counts and pitches, expressions.</summary>
+    [ObservableProperty] private string _repeatRows = "1";
+    [ObservableProperty] private string _repeatColumns = "2";
+    [ObservableProperty] private string _repeatPitchX = "1 mm";
+    [ObservableProperty] private string _repeatPitchY = "0";
+
+    public bool HasOperations => Operations.Count > 0;
+
+    /// <summary>An operation field as the engine reads it: a value typed with a spaced unit (<c>20 um</c>) glued into a
+    /// unit literal (<c>20um</c>); empty is null.</summary>
+    internal static string? OperationText(string text)
+    {
+        if (text.Trim().Length == 0) return null;
+        var (e, u) = TunableValue.Split(text, null);
+        return u is { Length: > 0 } ? $"{e.Trim()}{u}" : e.Trim();
+    }
+
+    private void RebuildOperations()
+    {
+        var steps = Layout is null ? null : PCellOperations.TraceOf(Layout)?.Steps.ToDictionary(t => t.Id, StringComparer.Ordinal);
+        Operations.Clear();
+        foreach (var op in PCellOperations.Of(Schematic))
+            Operations.Add(new PCellOperationRow(op, steps?.GetValueOrDefault(op.Id) is { Applied: false } step ? step.Refusal ?? "not applied" : null,
+                                                 row => SuppressOperation(row.Id, row.Suppressed)));
+        OnPropertyChanged(nameof(HasOperations));
+    }
+
+    private bool OperationGesture(string what, Func<PCellOperationEdit> edit) => Gesture(what, () =>
+    {
+        var e = edit();
+        return (e.Schematic, e.Schematic is null ? e.Refusal ?? "refused" : $"{what}: done. The canvas and the response follow.");
+    });
+
+    /// <summary>R-pcd14-2: Merge, Subtract (the first selected minus the rest), Intersect, Exclusive, Grow or Repeat on the
+    /// selection, added to the history as one undo step.</summary>
+    public bool AddOperation(PCellOperationKind kind)
+    {
+        var ids = Selection.ToList();
+        bool twoSets = kind is PCellOperationKind.Merge or PCellOperationKind.Subtract or PCellOperationKind.Intersect or PCellOperationKind.Exclusive;
+        if (ids.Count < (twoSets ? 2 : 1))
+        {
+            Status = $"{kind}: select {(twoSets ? "two operands or more (the first is the one worked on)" : "an operand")} first.";
+            return false;
+        }
+        string? Text(string t) => PCellDesignerViewModel.OperationText(t);
+        var op = kind switch
+        {
+            PCellOperationKind.Grow => new PCellOperation { Kind = kind, A = ids, Amount = Text(GrowAmount), Onto = Text(GrowOnto), Unit = LengthUnit },
+            PCellOperationKind.Repeat => new PCellOperation
+            {
+                Kind = kind, A = ids, Rows = Text(RepeatRows), Columns = Text(RepeatColumns),
+                PitchX = Text(RepeatPitchX), PitchY = Text(RepeatPitchY), Unit = LengthUnit,
+            },
+            _ => new PCellOperation { Kind = kind, A = [ids[0]], B = [.. ids.Skip(1)], Unit = LengthUnit },
+        };
+        return OperationGesture(kind.ToString(), () => PCellOperations.Add(Schematic, op));
+    }
+
+    [RelayCommand] private void Merge() => AddOperation(PCellOperationKind.Merge);
+    [RelayCommand] private void Subtract() => AddOperation(PCellOperationKind.Subtract);
+    [RelayCommand] private void Intersect() => AddOperation(PCellOperationKind.Intersect);
+    [RelayCommand] private void Exclusive() => AddOperation(PCellOperationKind.Exclusive);
+    [RelayCommand] private void Grow() => AddOperation(PCellOperationKind.Grow);
+    [RelayCommand] private void Repeat() => AddOperation(PCellOperationKind.Repeat);
+
+    /// <summary>R-pcd14-3: the row's edited fields written back (<see cref="PCellOperations.Edit"/>).</summary>
+    public bool EditOperation(string id, PCellOperation operation) =>
+        OperationGesture($"Edit {id}", () => PCellOperations.Edit(Schematic, id, operation));
+
+    public bool MoveOperation(string id, int index) =>
+        OperationGesture($"Move {id}", () => PCellOperations.Move(Schematic, id, index));
+
+    public bool SuppressOperation(string id, bool suppressed) =>
+        OperationGesture($"{(suppressed ? "Suppress" : "Unsuppress")} {id}", () => PCellOperations.Suppress(Schematic, id, suppressed));
+
+    public bool DeleteOperation(string id) =>
+        OperationGesture($"Delete {id}", () => PCellOperations.Delete(Schematic, id));
+
+    [RelayCommand] private void ApplyOperationRow(PCellOperationRow? row) { if (row is not null) EditOperation(row.Id, row.Edited()); }
+    [RelayCommand] private void DeleteOperationRow(PCellOperationRow? row) { if (row is not null) DeleteOperation(row.Id); }
+    [RelayCommand] private void MoveOperationUp(PCellOperationRow? row) { if (row is not null) MoveOperation(row.Id, Math.Max(0, Operations.IndexOf(row) - 1)); }
+    [RelayCommand] private void MoveOperationDown(PCellOperationRow? row) { if (row is not null) MoveOperation(row.Id, Operations.IndexOf(row) + 1); }
+
+    /// <summary>R-pcd14-4: the selected <c>MSHAPE</c> becomes a cutter (<c>Role = "tool"</c>, <c>Model = "open"</c>), one
+    /// undo step.</summary>
+    [RelayCommand]
+    private void MakeToolOfSelection() => MakeTool();
+
+    public bool MakeTool()
+    {
+        if (Selection.FirstOrDefault(id => Schematic.Components.Any(c => c.InstanceName == id && DrawnMetal.Is(c))) is not { } shape)
+        {
+            Status = "Make tool: select an MSHAPE first.";
+            return false;
+        }
+        return Gesture("Make tool", () =>
+        {
+            var next = Copy(SchematicPersistence.Serialize(Schematic, CellName));
+            var comp = next.Components.First(c => c.InstanceName == shape);
+            void Set(string name, string word)
+            {
+                var row = comp.Parameters.FirstOrDefault(p => p.Name == name);
+                if (row is null) comp.Parameters.Add(row = new EditableParameter { Name = name });
+                row.Expression = $"\"{word}\"";
+            }
+            Set(DrawnMetal.Role, DrawnMetal.RoleTool);
+            Set(DrawnMetal.Model, DrawnMetal.ModelOpen);
+            return (next, $"{shape} is a tool: it cuts, merges or bounds in an operation, and is never copper itself.");
         });
     }
 
