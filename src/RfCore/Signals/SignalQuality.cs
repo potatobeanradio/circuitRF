@@ -25,6 +25,12 @@
 //           (unit). The preamble and pilot symbols are not measured: they
 //           train the pilot equalizer.
 //
+//    Record kinds (Wi-Fi, ...): the window is brought to the carrier's
+//           rate as whole records (a shorter run is refused), the record
+//           from its sample 0 cut out of it, its delay taken out as below,
+//           and the family's own measurement reads it as it reads the
+//           record the source plays (Wlan.Measure, ...).
+//
 //  Common to the three. The received and the sent record pass through
 //  ONE measurement filter, a cos² roll-off from the channel edge, so
 //  the measurement bandwidth is the channel's and the reference carries
@@ -44,7 +50,7 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css, Sc }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse, Ofdm }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
@@ -58,6 +64,10 @@ namespace RfCore.Signals
         /// <summary>SC: the instants of the known (preamble and pilot) symbols the window holds, and their points.</summary>
         public int[]? KnownAt { get; init; }
         public Complex[]? KnownIdeal { get; init; }
+        /// <summary>SC: the record symbol each of <see cref="At"/> is (its rotation's and differential chain's place).</summary>
+        public int[]? SymbolIndex { get; init; }
+        /// <summary>FSK: the instants of a switched DPSK payload's symbols the window holds (Bluetooth EDR).</summary>
+        public int[]? SwitchAt { get; init; }
     }
 
     /// <summary>A carrier's received quality. <see cref="ErrorPercent"/> is the EVM (DBPSK), the FSK error or the de-chirped
@@ -65,7 +75,25 @@ namespace RfCore.Signals
     /// <see cref="FreqRefHz"/> FSK's frequency at each bit centre (the offset taken out) and the frequency sent there.</summary>
     public sealed record WaveformQuality(QualityKind Kind, double ErrorPercent, double PeakPercent, double DeviationHz,
                                          double OffsetHz, Complex[]? Points, Complex[]? Reference, double[]? FreqHz,
-                                         double[]? FreqRefHz, double DelayS);
+                                         double[]? FreqRefHz, double DelayS)
+    {
+        /// <summary>The family's EVM limit (%), where it states one (Wi-Fi: the MCS's); NaN otherwise.</summary>
+        public double LimitPercent { get; init; } = double.NaN;
+        /// <summary>GNSS: each satellite's acquisition, in the order the carrier lists them.</summary>
+        public GnssCorrelation[]? Gnss { get; init; }
+        /// <summary>WCDMA: the composite EVM's companions, the peak code-domain error and each channel's code-domain power.</summary>
+        public WcdmaQuality? Wcdma { get; init; }
+        /// <summary>802.11b: the worst margin against the transmit mask (dB, positive inside); NaN otherwise.</summary>
+        public double MaskMarginDb { get; init; } = double.NaN;
+        /// <summary>FSK: a switched DPSK payload's EVM, read as the SC carrier is (matched filter, the sent record's points).</summary>
+        public EvmResult? Switched { get; init; }
+        /// <summary>Analog: what the demodulator reads back (depth, deviation, bearing, DDM, SDM).</summary>
+        public AnalogReading? Analog { get; init; }
+        /// <summary>Tones and noise: the noise power ratio in the notch (dB); NaN otherwise.</summary>
+        public double NprDb { get; init; } = double.NaN;
+        /// <summary>A coded or chirped pulse: the received first pulse through the matched filter of the one sent.</summary>
+        public CompressionResult? Compression { get; init; }
+    }
 
     public static class SignalQuality
     {
@@ -76,8 +104,34 @@ namespace RfCore.Signals
             CarrierStandard.Fsk => QualityKind.Fsk,
             CarrierStandard.Css => QualityKind.Css,
             CarrierStandard.Sc => QualityKind.Sc,
+            CarrierStandard.Wlan => QualityKind.Wlan,
+            CarrierStandard.Gnss => QualityKind.Gnss,
+            CarrierStandard.Wcdma => QualityKind.Wcdma,
+            CarrierStandard.Wlan11b => QualityKind.Wlan11b,
+            CarrierStandard.Oqpsk154 => QualityKind.Oqpsk154,
+            CarrierStandard.Analog => QualityKind.Analog,
+            CarrierStandard.Tones => QualityKind.Npr,
+            CarrierStandard.Pcw => QualityKind.Pulse,
             _ => null,
         };
+
+        /// <summary>The kind <paramref name="c"/> is measured as: an LTE / NR carrier with options, and an OFDM preset, are read
+        /// as one record against their grid (OfdmEvm); a plain LTE / NR carrier is SignalEvm's (null here).</summary>
+        public static QualityKind? KindOf(CarrierSpec c)
+            => c.Standard == CarrierStandard.Ofdm || SignalSpec.OfdmOptionsOf(c) is not null ? QualityKind.Ofdm : KindOf(c.Standard);
+
+        /// <summary>Whether <paramref name="c"/> has a quality to read: a kind, and for tones and noise a notch, for a pulse a
+        /// code or a chirp to compress.</summary>
+        public static bool Reads(CarrierSpec c) => KindOf(c) switch
+        {
+            null => false,
+            QualityKind.Npr => SignalSpec.ResolveTones(c).NotchWidthHz > 0,
+            QualityKind.Pulse => c.PulseCode is not null || c.ChirpHz is not null,
+            _ => true,
+        };
+
+        /// <summary>A kind read as one whole record by its family's own measurement.</summary>
+        public static bool IsRecordKind(QualityKind k) => k >= QualityKind.Wlan;
 
         /// <summary>
         /// Brings <paramref name="y"/> (sample 0 at record sample <paramref name="startSample"/> at <paramref name="fsHz"/>,
@@ -90,7 +144,7 @@ namespace RfCore.Signals
         {
             why = null;
             var c = carrier.Spec;
-            if (KindOf(c.Standard) is not { } kind)
+            if (KindOf(c) is not { } kind)
             {
                 why = c.Standard switch
                 {
@@ -101,18 +155,25 @@ namespace RfCore.Signals
                 };
                 return null;
             }
+            if (!Reads(c))
+            {
+                why = kind == QualityKind.Pulse ? "a pulse has no symbols, and without Code= or Chirp= nothing to compress"
+                    : "tones and noise carry no symbols, and without Notch= there is no NPR to read";
+                return null;
+            }
+            if (IsRecordKind(kind)) return ReceiveRecord(carrier, kind, recordSeconds, y, fsHz, startSample, offsetHz, out why, driftHzps);
             double native = carrier.NativeRateHz;
             int nTot = carrier.Native.Length;
             // the instants of one record (window-independent) and the samples each reads; the channel's edge
             int[] instants; int span; double pass;
-            ScShape? sc = null; ScSymbols? scSyms = null;
+            ScShape? sc = null; ScSymbols? scSyms = null; int[]? switchInstants = null;
             switch (kind)
             {
                 case QualityKind.Sc:
                 {
                     sc = ScQam.Resolve(c);
                     scSyms = ScQam.Symbols(sc);
-                    instants = [.. Enumerable.Range(0, scSyms.Points.Length).Select(k => k * ScQam.SamplesPerSymbol)];
+                    instants = scSyms.At;                       // k·sps, but for the guards of a burst
                     span = 1;
                     pass = ScQam.BandwidthHz(sc) / 2;
                     break;
@@ -129,11 +190,17 @@ namespace RfCore.Signals
                 case QualityKind.Fsk:
                 {
                     var f = Fsk.Resolve(c);
-                    int sps = (int)Math.Round(native / f.BitRate);
-                    // the frequency at a bit centre is read from the samples either side of it
-                    instants = [.. Enumerable.Range(0, nTot / sps).Select(k => k * sps + sps / 2 - 1)];
+                    // the frequency at a symbol centre is read from the samples either side of it; ramps, guards and a
+                    // switched payload are not read
+                    instants = Fsk.SymbolCentres(f, native);
                     span = 3;
-                    pass = f.Deviation + f.BitRate;
+                    pass = f.Deviation + f.SymbolRate;
+                    if (f.Burst?.Then is { } t)
+                    {
+                        var l = Fsk.Layout(f, native);
+                        double per = native / t.SymbolRate;
+                        switchInstants = [.. Enumerable.Range(0, t.Symbols).Select(k => l.PayloadStart + (int)Math.Round(k * per))];
+                    }
                     break;
                 }
                 default:
@@ -205,19 +272,25 @@ namespace RfCore.Signals
             // and of the matched filter's own ringing: its span, or ~4/α symbols of a whole-record filter's tail
             if (!whole && sc is not null)
                 guard += ScQam.SamplesPerSymbol * (sc.Span is int sp ? sp / 2 + 1 : (int)Math.Ceiling(4 / Math.Max(sc.RollOff, 0.1)));
-            var at = new List<int>(); var which = new List<int>();
-            if (whole)
+            // each instant of the record at its place in the window (every copy a run longer than one record holds)
+            (List<int> At, List<int> Which) Place(int[] instants, int span)
             {
-                for (long r = 0; r < m / nTot; r++)
-                    for (int j = 0; j < instants.Length; j++) { at.Add((int)(((instants[j] - w0 + r * nTot) % m + m) % m)); which.Add(j); }
+                var at = new List<int>(); var which = new List<int>();
+                if (whole)
+                {
+                    for (long r = 0; r < m / nTot; r++)
+                        for (int j = 0; j < instants.Length; j++) { at.Add((int)(((instants[j] - w0 + r * nTot) % m + m) % m)); which.Add(j); }
+                }
+                else
+                    for (long r = (long)Math.Floor((double)n0 / nTot); r * nTot < n0 + m; r++)
+                        for (int j = 0; j < instants.Length; j++)
+                        {
+                            long i0 = r * nTot + instants[j] - n0;
+                            if (i0 >= guard && i0 + span <= m - guard) { at.Add((int)i0); which.Add(j); }
+                        }
+                return (at, which);
             }
-            else
-                for (long r = (long)Math.Floor((double)n0 / nTot); r * nTot < n0 + m; r++)
-                    for (int j = 0; j < instants.Length; j++)
-                    {
-                        long i0 = r * nTot + instants[j] - n0;
-                        if (i0 >= guard && i0 + span <= m - guard) { at.Add((int)i0); which.Add(j); }
-                    }
+            var (at, which) = Place(instants, span);
             if (scSyms is not null)
             {
                 // the data symbols are measured; the known ones are kept apart, for the pilot equalizer
@@ -231,6 +304,7 @@ namespace RfCore.Signals
                 return new ReceivedWaveform(carrier, kind, x, sw, [.. data.Select(i => at[i])], span, guard, m - guard, native, tau, whole)
                 {
                     Ideal = [.. data.Select(i => scSyms.Points[which[i]])],
+                    SymbolIndex = [.. data.Select(i => which[i])],
                     KnownAt = [.. known.Select(i => at[i])],
                     KnownIdeal = [.. known.Select(i => scSyms.Points[which[i]])],
                 };
@@ -240,7 +314,50 @@ namespace RfCore.Signals
                 why = $"the run holds no whole {(kind == QualityKind.Css ? "chirp" : "bit")} clear of its ends; lengthen Stop";
                 return null;
             }
-            return new ReceivedWaveform(carrier, kind, x, sw, [.. at], span, guard, m - guard, native, tau, whole);
+            return new ReceivedWaveform(carrier, kind, x, sw, [.. at], span, guard, m - guard, native, tau, whole)
+            {
+                SwitchAt = switchInstants is null ? null : [.. Place(switchInstants, 1).At],
+            };
+        }
+
+        /// <summary>A record kind's window as one record at the carrier's rate, from its sample 0, the delay against the record
+        /// the source played fitted over the occupied band and taken out; <see cref="ReceivedWaveform.S"/> is that record.</summary>
+        private static ReceivedWaveform? ReceiveRecord(CarrierRecord carrier, QualityKind kind, double recordSeconds, ReadOnlySpan<Complex> y,
+                                                       double fsHz, long startSample, double offsetHz, out string? why, double driftHzps)
+        {
+            double native = carrier.NativeRateHz;
+            int nTot = carrier.Native.Length;
+            if (!SignalEvm.ToNative(y, fsHz, startSample, offsetHz, native, recordSeconds, nTot, native / 2, native / 2, filterWhole: false,
+                                    out var x, out long n0, out bool whole, out why, driftHzps))
+                return null;
+            if (!whole)
+            {
+                why = $"its measurement reads a whole record ({recordSeconds * 1e6:0.#} us) and the run holds less; lengthen Stop";
+                return null;
+            }
+            int m = x.Length, a = (int)((nTot - ((n0 % nTot) + nTot) % nTot) % nTot);
+            var rec = new Complex[nTot];
+            for (int k = 0; k < nTot; k++) rec[k] = x[(a + k) % m];
+            var xs = Fft.Forward(rec);
+            var ss = Fft.Forward(carrier.Native);
+            double pass = Math.Min(carrier.OccupiedBwHz / 2, native / 2);
+            var h = new List<Complex>(); var hz = new List<double>();
+            for (int k = -(nTot - 1) / 2; k <= nTot / 2; k++)
+            {
+                double f = k * native / nTot;
+                if (Math.Abs(f) > pass) continue;
+                int b = (k % nTot + nTot) % nTot;
+                h.Add(xs[b] * Complex.Conjugate(ss[b]));
+                hz.Add(f);
+            }
+            double tau = h.Count > 1 ? SignalEvm.Delay([.. h], [.. hz]) : 0, period = nTot / native;
+            tau -= Math.Round(tau / period) * period;
+            if (tau != 0)
+            {
+                for (int b = 0; b < nTot; b++) xs[b] *= Complex.FromPolarCoordinates(1.0, 2 * Math.PI * (b <= nTot / 2 ? b : b - nTot) * native / nTot * tau);
+                rec = Fft.Inverse(xs);
+            }
+            return new ReceivedWaveform(carrier, kind, rec, carrier.Native, [], nTot, 0, nTot, native, tau, true);
         }
 
         /// <summary>The quality of <paramref name="r"/>, as its kind is measured (the file header).</summary>
@@ -249,8 +366,85 @@ namespace RfCore.Signals
             int m = r.X.Length;
             Complex X(int i) => r.X[(i % m + m) % m];
             Complex S(int i) => r.S[(i % m + m) % m];
+            var spec = r.Carrier.Spec;
             switch (r.Kind)
             {
+                case QualityKind.Wlan:
+                {
+                    // the packet from the record's sample 0: L-LTF frequency offset, LTF channel, pilot phase, nearest point
+                    var e = Wlan.Measure(Wlan.Resolve(spec), r.X);
+                    return new WaveformQuality(r.Kind, e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Received, e.Ideal,
+                                               null, null, r.DelayS) { LimitPercent = e.LimitPercent };
+                }
+                case QualityKind.Gnss:
+                {
+                    // a receiver's acquisition of each satellite: code phase, peak and C/N0, in place of an EVM
+                    var g = Gnss.Resolve(spec);
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { Gnss = [.. g.Satellites.Select(sv => Gnss.Correlate(g, r.X, sv.Prn))] };
+                }
+                case QualityKind.Wcdma:
+                {
+                    // composite EVM after the matched filter; code-domain power and PCDE descrambled (TS 25.141 6.7.1:
+                    // 17.5 % QPSK, 12.5 % 16QAM, 8 % 64QAM)
+                    var (model, code) = Wcdma.Resolve(spec);
+                    var q = Wcdma.Measure(model, r.X, code);
+                    return new WaveformQuality(r.Kind, q.EvmPercent, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    {
+                        Wcdma = q,
+                        LimitPercent = model switch { WcdmaModel.Tm6 => 8, WcdmaModel.Tm5x8 or WcdmaModel.Tm5x4 or WcdmaModel.Tm5x2 => 12.5, _ => 17.5 },
+                    };
+                }
+                case QualityKind.Wlan11b:
+                {
+                    // chip EVM after the matched filter, and the transmit mask over the whole native band
+                    var (rms, pk) = Ieee80211b.Evm(Ieee80211b.Resolve(spec), r.X);
+                    return new WaveformQuality(r.Kind, rms, pk, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { MaskMarginDb = Ieee80211b.MaskMarginDb(r.X, r.NativeHz) };
+                }
+                case QualityKind.Oqpsk154:
+                {
+                    // chip EVM at each half-sine's peak; the PHY's limit is 35 %
+                    var (rms, pk) = Ieee802154.Evm(Ieee802154.Resolve(spec), r.X);
+                    return new WaveformQuality(r.Kind, rms, pk, double.NaN, double.NaN, null, null, null, null, r.DelayS) { LimitPercent = 35 };
+                }
+                case QualityKind.Ofdm:
+                {
+                    // the grid's own demodulation: pilot-aided where it has pilots, one gain on the data where it has none
+                    var g = SignalSpec.OfdmGridOf(spec, (int)Math.Round(m / r.NativeHz / 0.5e-3));
+                    var e = OfdmEvm.Measure(g, r.X);
+                    double peak = 0, refp = 0;
+                    for (int i = 0; i < e.Ideal.Length; i++)
+                    {
+                        peak = Math.Max(peak, (e.Received[i] - e.Ideal[i]).Magnitude);
+                        refp += e.Ideal[i].Real * e.Ideal[i].Real + e.Ideal[i].Imaginary * e.Ideal[i].Imaginary;
+                    }
+                    return new WaveformQuality(r.Kind, e.RmsPercent, 100 * peak / Math.Sqrt(refp / Math.Max(1, e.Ideal.Length)), double.NaN, double.NaN,
+                                               e.Received, e.Ideal, null, null, r.DelayS)
+                    { LimitPercent = spec.Standard == CarrierStandard.Ofdm ? double.NaN : SignalEvm.LimitPercent(spec.Modulation) };
+                }
+                case QualityKind.Pulse:
+                {
+                    // the record's first pulse (slot 0 of a train) against the one sent: the matched filter's output
+                    var p = SignalSpec.ResolvePulse(spec);
+                    var sent = PulsedCw.OnePulse(p, r.NativeHz);
+                    int i0 = (int)Math.Floor(p.Delay * r.NativeHz);
+                    var got = new Complex[sent.Length];
+                    for (int i = 0; i < sent.Length; i++) got[i] = r.X[(i0 + i) % m];
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { Compression = Compress(got, sent, r.NativeHz) };
+                }
+                case QualityKind.Npr:
+                {
+                    // the band's density outside the notch over the density in its middle half, over one whole record
+                    var t = SignalSpec.ResolveTones(spec);
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { NprDb = Multitone.NprDb(r.X, r.NativeHz, 0, Multitone.SpanHz(t), t.NotchCentreHz, t.NotchWidthHz) };
+                }
+                case QualityKind.Analog:
+                    // demodulated as a receiver reads it: the message, and the depth, deviation, bearing or DDM it carries
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { Analog = Analog.Measure(Analog.Resolve(spec), r.X) };
                 case QualityKind.Sc:
                 {
                     // against the ideal points, normalised to the constellation's mean power (unit)
@@ -287,8 +481,20 @@ namespace RfCore.Signals
                         err += e * e;
                         peak = Math.Max(peak, Math.Abs(e));
                     }
+                    EvmResult? switched = null;
+                    if (r.SwitchAt is { Length: > 0 } sa)
+                    {
+                        // the DPSK payload as the SC carrier is read: matched filter, the sent record's points at unit power
+                        var ps = ScQam.DpskShape(shape.Burst!.Then!, shape.Data);
+                        var xm = ScQam.Filter(ps, r.X, r.NativeHz, matched: true);
+                        var sm = ScQam.Filter(ps, r.S, r.NativeHz, matched: true);
+                        var id = sa.Select(i => sm[(i % m + m) % m]).ToArray();
+                        double rms = Math.Sqrt(id.Average(v => v.Real * v.Real + v.Imaginary * v.Imaginary));
+                        for (int k = 0; k < id.Length; k++) id[k] /= rms;
+                        switched = SignalEvm.Score(spec, [.. sa.Select(i => xm[(i % m + m) % m])], id, id.Length, 1);
+                    }
                     return new WaveformQuality(r.Kind, 100 * Math.Sqrt(err / n) / shape.Deviation, 100 * peak / shape.Deviation,
-                                               a * shape.Deviation, b, null, null, [.. fr.Select(v => v - b)], fs, r.DelayS);
+                                               a * shape.Deviation, b, null, null, [.. fr.Select(v => v - b)], fs, r.DelayS) { Switched = switched };
                 }
                 default:
                 {
@@ -312,6 +518,37 @@ namespace RfCore.Signals
                                                null, null, r.DelayS);
                 }
             }
+        }
+
+        /// <summary>The mainlobe, PSL and ISL of <paramref name="y"/> through the filter matched to <paramref name="s"/>, read
+        /// either side of the output's peak as <see cref="PulseCompression.Measure(ReadOnlySpan{Complex}, double)"/> reads an
+        /// autocorrelation (which it is, exactly, when y is s).</summary>
+        internal static CompressionResult Compress(Complex[] y, Complex[] s, double rateHz)
+        {
+            int n = s.Length, len = 1;
+            while (len < 2 * n) len <<= 1;
+            var a = new Complex[len]; var b = new Complex[len];
+            Array.Copy(y, a, n); Array.Copy(s, b, n);
+            Fft.Transform(a, inverse: false);
+            Fft.Transform(b, inverse: false);
+            for (int i = 0; i < len; i++) a[i] *= Complex.Conjugate(b[i]);
+            Fft.Transform(a, inverse: true);
+            var r = new double[2 * n - 1];                                   // lag -(n-1) .. n-1
+            for (int k = -(n - 1); k < n; k++) r[k + n - 1] = a[(k + len) % len].Magnitude / len;
+            int pk = 0;
+            for (int i = 1; i < r.Length; i++) if (r[i] > r[pk]) pk = i;
+            double peak = r[pk], half = peak / Math.Sqrt(2), w3 = 0, nulls = 0, psl = 0, isl = 0;
+            foreach (int dir in new[] { 1, -1 })
+            {
+                double R(int k) => pk + dir * k is int i && i >= 0 && i < r.Length ? r[i] : 0;
+                int far = dir > 0 ? r.Length - 1 - pk : pk, k1 = 1, k3 = 0;
+                while (k1 < far && R(k1 + 1) < R(k1)) k1++;
+                while (k3 + 1 <= far && R(k3 + 1) >= half) k3++;
+                w3 += k3 + 1 <= far ? k3 + (R(k3) - half) / (R(k3) - R(k3 + 1)) : k3;
+                nulls += k1;
+                for (int k = k1; k <= far; k++) { psl = Math.Max(psl, R(k)); isl += R(k) * R(k); }
+            }
+            return new(w3 / rateHz, nulls / rateHz, 20 * Math.Log10(psl / peak), 10 * Math.Log10(isl / (peak * peak)));
         }
 
         /// <summary>

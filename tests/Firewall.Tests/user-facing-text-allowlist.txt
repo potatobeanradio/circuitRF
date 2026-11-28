@@ -1519,6 +1519,17 @@ src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': Stop must be positive
 src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': cannot evaluate '{expr}': {ex.Message}
 src/Engine/Envelope/EnvelopeRunner.cs|envelope: {fundamentals} widely spaced carrier groups would need {fundamentals} fundamentals; up to 2 are supported
 src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': Envelope must be auto, single or lattice (got '{a.Envelope}')
+src/RfCore/Signals/Analog.cs|analog carrier: a tone is frequency@level@phase (got '{t}')
+src/RfCore/Signals/Analog.cs|analog carrier: '{f[i]}' in tone '{t}' is not a number
+src/RfCore/Signals/Analog.cs|analog carrier: Kind must be AM, DSB-SC, USB, LSB, FM, PM, VOR, LOC or GS (got '{v}')
+src/RfCore/Signals/Analog.cs|{who}: Bearing must be a number of degrees
+src/RfCore/Signals/Analog.cs|{who}: Depth must be above 0 and at most 1 (got {s.Depth.ToString(inv)})
+src/RfCore/Signals/Analog.cs|{who}: Ident belongs to a VOR or ILS LOC carrier
+src/RfCore/Signals/Analog.cs|{who}: Ident must be letters and digits (got '{s.Ident}')
+src/RfCore/Signals/Analog.cs|{who}: Record must be a positive time (got {s.RecordSeconds.ToString(inv)} s)
+src/RfCore/Signals/Analog.cs|{who}: the deviation (or Index) must be positive (got {s.DeviationHz.ToString(inv)} Hz)
+src/RfCore/Signals/Analog.cs|{who}: the message needs a tone or a noise bandwidth
+src/RfCore/Signals/Analog.cs|{who}: the peak phase must be positive (got {s.PeakPhaseRad.ToString(inv)} rad)
 src/RfCore/Signals/ModulatedSignal.cs|I/Q file not found: {path}
 src/RfCore/Signals/ModulatedSignal.cs|a FILE carrier needs File=<path>
 src/RfCore/Signals/ModulatedSignal.cs|a signal needs at least one carrier
@@ -1528,9 +1539,9 @@ src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: no '# sample_rat
 src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: the sample rate must be positive
 src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: no I Q samples
 src/RfCore/Signals/OfdmGenerator.cs|LTE channel bandwidth {c.BandwidthHz / 1e6:0.###} MHz is not one of 1.4, 3, 5, 10, 15, 20 MHz
-src/RfCore/Signals/OfdmGenerator.cs|NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60 kHz
 src/RfCore/Signals/OfdmGenerator.cs|NR {bw} MHz is not defined at {scsK} kHz
 src/RfCore/Signals/OfdmGenerator.cs|numerology is defined only for LTE and NR carriers
+src/RfCore/Signals/OfdmGenerator.cs|NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60, 120, 480, 960 kHz
 src/RfCore/Signals/SignalCache.cs|carrier count mismatch
 src/RfCore/Signals/SignalEvm.cs|{c.Label}: the record holds {native.Length} samples, not the {nm.SamplesPerHalfMs * halfMs} its numerology gives
 src/RfCore/Signals/SignalSpec.cs|carrier field '{p}' is not key=value
@@ -1554,6 +1565,17 @@ src/RfCore/Signals/PulsedCw.cs|pCW carrier: PRI {FormatTime(s.Pri)} is not a who
 src/RfCore/Signals/PulsedCw.cs|pCW carrier: PW ({T(s.Width)}) must be shorter than PRI ({T(s.Pri)})
 src/RfCore/Signals/PulsedCw.cs|pCW carrier: Rise ({T(s.Rise)}) is longer than half of PW ({T(s.Width / 2)})
 src/RfCore/Signals/PulsedCw.cs|pCW carrier: {field} must be a positive time (got {T(v)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: a train needs at least one pulse and one frequency step
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: a train's PRIs and Dwell must be whole numbers of samples at a 1.92 MHz x 2^k rate
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: ChipSmoothing is a fraction of a chip, 0 to 1 (got {s.ChipSmoothing.ToString(CultureInfo.InvariantCulture)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Chirp must be a finite frequency
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Code must hold at least one finite chip phase
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Dwell and the pair spacing are times of 0 or more
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Jitter is a fraction of the PRI, 0 <= Jitter < 1 (got {t.Jitter.ToString(CultureInfo.InvariantCulture)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: the pulse{(t.PairSpacing > 0 ? 
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: the sine NLFM's k must lie in 0 <= k < 1 (got {s.FmShape.ToString(CultureInfo.InvariantCulture)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: the tangent NLFM's beta must lie between 0 and pi/2 rad (got {s.FmShape.ToString(CultureInfo.InvariantCulture)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: the train's PRIs must be positive times
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to a PCW carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a fraction of the pulse top
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a time: a number with s, ms, us or ns
@@ -1561,6 +1583,11 @@ src/RfCore/Signals/Fsk.cs|FSK carrier: BT must be positive, or 0 for no filter (
 src/RfCore/Signals/Fsk.cs|FSK carrier: Data must be PN9, PN15 or a pattern of 0s and 1s (got '{c.Data}')
 src/RfCore/Signals/Fsk.cs|FSK carrier: Dev must be a positive frequency deviation (got {s.Deviation.ToString(inv)} Hz)
 src/RfCore/Signals/Fsk.cs|FSK carrier: Rb must be a positive bit rate (got {s.BitRate.ToString(inv)} b/s)
+src/RfCore/Signals/Fsk.cs|FSK carrier: Mapping is the odd level of each symbol, comma-separated (got '{text}')
+src/RfCore/Signals/Fsk.cs|FSK carrier: no generator for the {t.Modulation} payload
+src/RfCore/Signals/Fsk.cs|FSK carrier: the {t.Modulation} payload is {p.Length} samples, not {l.Payload}
+src/RfCore/Signals/Fsk.cs|FSK carrier: unknown preset '{name}' ({string.Join(
+src/RfCore/Signals/Fsk.cs|FSK carrier: unknown pulse '{v}' ({string.Join(
 src/RfCore/Signals/ModulatedSignal.cs|an FSK carrier has a constant envelope and is not clipped: remove Clip from the source
 src/RfCore/Signals/ModulatedSignal.cs|an FSK carrier must be the source's only carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a bit rate: a number with bps, kbps or Mbps
@@ -1568,12 +1595,31 @@ src/RfCore/Signals/Css.cs|CSS carrier: BW must be a chirp bandwidth up to 2 MHz 
 src/RfCore/Signals/Css.cs|CSS carrier: SF must be {MinSf} to {MaxSf} (got {s.Sf.ToString(inv)})
 src/RfCore/Signals/Dbpsk.cs|DBPSK carrier: Data must be PN9, PN15 or a pattern of 0s and 1s (got '{c.Data}')
 src/RfCore/Signals/Dbpsk.cs|DBPSK carrier: Rb must be a positive bit rate (got {s.BitRate.ToString(inv)} b/s)
+src/RfCore/Signals/Dsss.cs|802.11b carrier: Rb must be 1, 2, 5.5 or 11 Mbps (got {r / 1e6} Mb/s)
+src/RfCore/Signals/Dsss.cs|802.11b carrier: the PSDU must be 1 to 4095 bytes (got {bytes})
+src/RfCore/Signals/Dsss.cs|802.11b carrier: the PSDU must be 1 to 4095 bytes (got {s.PsduBytes})
+src/RfCore/Signals/Dsss.cs|802.15.4 carrier: the PSDU must be 1 to 127 bytes (got {bytes})
+src/RfCore/Signals/Dsss.cs|802.15.4 carrier: the PSDU must be 1 to 127 bytes (got {s.PsduBytes})
+src/RfCore/Signals/Dsss.cs|WCDMA carrier: Model must be one of {string.Join(
+src/RfCore/Signals/Dsss.cs|WCDMA carrier: the scrambling code must be 0 to 7 (group 0; got {code})
+src/RfCore/Signals/Dsss.cs|WCDMA carrier: the scrambling code must be 0 to 7 (group 0; got {scramblingCode})
+src/RfCore/Signals/Gnss.cs|a {b.Name} correlation needs at least one code period ({len} samples)
+src/RfCore/Signals/Gnss.cs|{b.Name} PRN must be 1 to {b.MaxPrn} (got {prn})
+src/RfCore/Signals/Gnss.cs|GNSS carrier: a satellite is PRN@Doppler@code phase@power (got '{sv}')
+src/RfCore/Signals/Gnss.cs|GNSS carrier: {b.Name} needs at least one satellite
+src/RfCore/Signals/Gnss.cs|GNSS carrier: {b.Name} PRN must be 1 to {b.MaxPrn} (got {sat.Prn})
+src/RfCore/Signals/Gnss.cs|GNSS carrier: {b.Name} Record must be a whole number of {b.FrameMs} ms frames (got {s.RecordMs} ms)
+src/RfCore/Signals/Gnss.cs|GNSS carrier: C/N0 must be 0 to 100 dB-Hz (got {c.ToString(inv)})
+src/RfCore/Signals/Gnss.cs|GNSS carrier: each satellite needs its own PRN
+src/RfCore/Signals/Gnss.cs|GNSS carrier: '{f[i]}' in satellite '{sv}' is not a number
+src/RfCore/Signals/Gnss.cs|GNSS carrier: PRN {sat.Prn} code phase and power must be numbers
+src/RfCore/Signals/Gnss.cs|GNSS carrier: PRN {sat.Prn} Doppler must be within ±{MaxDopplerHz / 1e3:0} kHz (got {sat.DopplerHz.ToString(inv)} Hz)
+src/RfCore/Signals/Gnss.cs|GNSS carrier: Signal must be L1CA, L5, E1 or B1I (got '{v}')
 src/RfCore/Signals/ModulatedSignal.cs|{what} is not clipped ({whyNoClip}): remove Clip from the source
 src/RfCore/Signals/ModulatedSignal.cs|{what} must be the source's only carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to a CSS carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an FSK{(alsoDbpsk ? 
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a spreading factor: a whole number, 7 to 12
-src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC or FILE)
 src/Engine/Em3d/Em3dStaticResult.cs|The floating bodies' block of the matrix is singular.
 src/Engine/Em3d/Em3dStaticResult.cs|The matrix and the floating flags disagree in size.
 src/Core/Expressions/Evaluator.cs|{cl.Name}: no IProbe named '{probe}' in '{analysisName}'. IProbes: [{string.Join(
@@ -1832,10 +1878,73 @@ src/RfCore/Signals/SignalEqualizer.cs|only a DBPSK carrier is equalized here
 # beside — a netlist field that belongs to another carrier or does not parse, the one-carrier rule every carrier with
 # its own record states, and one internal invariant no user reaches.
 src/RfCore/Signals/ModulatedSignal.cs|an SC carrier must be the source's only carrier
+src/RfCore/Signals/ModulatedSignal.cs|an OFDM carrier must be the source's only carrier
+src/RfCore/Signals/ModulatedSignal.cs|a tones-and-noise (TONES) carrier must be the source's only carrier
+src/RfCore/Signals/ModulatedSignal.cs|a WCDMA carrier must be the source's only carrier
+src/RfCore/Signals/Multitone.cs|NPR: the band or the notch holds no frequency bin at this rate and length
+src/RfCore/Signals/Multitone.cs|tones: a notched tone index is outside 0 .. N-1
+src/RfCore/Signals/Multitone.cs|tones: a tone at {f:R} Hz is not on the record's 1 / Record grid; make Record a multiple of 2 / Spacing
+src/RfCore/Signals/Multitone.cs|tones: {db.Length} powers for {s.Tones} tones
+src/RfCore/Signals/Multitone.cs|tones: N must be 0 to {MaxTones} (got {s.Tones})
+src/RfCore/Signals/Multitone.cs|tones: NoiseBW must be 0 or a positive frequency
+src/RfCore/Signals/Multitone.cs|tones: no tones and no noise band
+src/RfCore/Signals/Multitone.cs|tones: Record must be a positive time
+src/RfCore/Signals/Multitone.cs|tones: Spacing must be a positive frequency
+src/RfCore/Signals/Multitone.cs|tones: the notch width must be 0 or positive
+src/RfCore/Signals/Multitone.cs|tones: the record needs more than 2^24 samples; shorten Record
+src/RfCore/Signals/Ofdm3gpp.cs|3.75 kHz NB-IoT is single-tone
+src/RfCore/Signals/Ofdm3gpp.cs|a DFT-spread allocation of {nrb} RB is not 2^a 3^b 5^c RB; use {lo} or {hi}
+src/RfCore/Signals/Ofdm3gpp.cs|a TDD E-TM uses UL/DL configuration 3 with special subframe 8 (\"{EtmTdd}\" or \"TM\")
+src/RfCore/Signals/Ofdm3gpp.cs|E-TMs are defined for 1.4..20 MHz, not {nRb} RB
+src/RfCore/Signals/Ofdm3gpp.cs|NB-IoT: {tones} tones from tone {firstTone} is not an allocation of the {nsc} subcarriers
+src/RfCore/Signals/Ofdm3gpp.cs|NB-IoT uplink subcarrier spacing is 3.75 or 15 kHz
+src/RfCore/Signals/Ofdm3gpp.cs|no low-PAPR base sequence of length {m}
+src/RfCore/Signals/Ofdm3gpp.cs|no LTE base sequence of length {m}
+src/RfCore/Signals/Ofdm3gpp.cs|{nRb} RB has narrowbands 0..{nnb - 1}
+src/RfCore/Signals/Ofdm3gpp.cs|{o.TestModel} is a downlink test model; turn Uplink off
+src/RfCore/Signals/Ofdm3gpp.cs|pi/2-BPSK is defined for NR uplink DFT-s-OFDM only (TS 38.211 cl. 6.3.1.4)
+src/RfCore/Signals/Ofdm3gpp.cs|RB allocation {s}+{n} does not fit the carrier's {nRb} RB
+src/RfCore/Signals/Ofdm3gpp.cs|TDD pattern \"{pattern}\": an S slot is \"DL,UL\" symbols, at most {perSlot} in all
+src/RfCore/Signals/Ofdm3gpp.cs|TDD pattern \"{pattern}\": give the S slot's DL,UL symbols after ':'
+src/RfCore/Signals/Ofdm3gpp.cs|TDD pattern \"{pattern}\": slots are D, S or U
+src/RfCore/Signals/Ofdm3gpp.cs|{tm} is an FR1 test model (15, 30 or 60 kHz), not {scsK} kHz
+src/RfCore/Signals/Ofdm3gpp.cs|unknown E-UTRA test model \"{tm}\"; one of {string.Join(
+src/RfCore/Signals/Ofdm3gpp.cs|unknown NR test model \"{tm}\"; one of {string.Join(
+src/RfCore/Signals/Ofdm3gpp.cs|uplink, allocation, test-model and TDD options apply to LTE and NR carriers only
+src/RfCore/Signals/OfdmGrid.cs|{Label}: the record holds {rec.Length} samples, not the {Length} its grid gives
+src/RfCore/Signals/OfdmPresets.cs|{Name}: at least one symbol
+src/RfCore/Signals/RadarWaveforms.cs|FMCW: a triangle has no idle time: its reset is the down-ramp
+src/RfCore/Signals/RadarWaveforms.cs|FMCW: Idle must be 0 or a positive time (got {Idle.ToString(inv)} s)
+src/RfCore/Signals/RadarWaveforms.cs|FMCW: Ramp must be a positive time (got {Ramp.ToString(inv)} s)
+src/RfCore/Signals/RadarWaveforms.cs|FMCW: Ramp {PulsedCw.FormatTime(Ramp)} and Idle {PulsedCw.FormatTime(Idle)} are not whole numbers of samples at any 1.92 MHz x 2^k rate
+src/RfCore/Signals/RadarWaveforms.cs|FMCW: the bandwidth must be a non-zero frequency
+src/RfCore/Signals/RadarWaveforms.cs|radar code: an m-sequence degree is 2 to {MlsTaps.Length - 1} (got {m})
+src/RfCore/Signals/RadarWaveforms.cs|radar code: a P2 code needs an even M (got {m})
+src/RfCore/Signals/RadarWaveforms.cs|radar code: a Zadoff-Chu root must be coprime with the length (got N={n}, u={u})
+src/RfCore/Signals/RadarWaveforms.cs|radar code: M must be 2 or more (got {m})
+src/RfCore/Signals/RadarWaveforms.cs|radar code: the length must be 1 or more (got {n})
+src/RfCore/Signals/RadarWaveforms.cs|radar code: there is no Barker code of length {n} (2, 3, 4, 5, 7, 11 or 13)
+src/RfCore/Signals/ScQam.cs|FSK carrier: the switched payload is PI/4-DQPSK or 8DPSK (got '{t.Modulation}')
+src/RfCore/Signals/ScQam.cs|FSK carrier: the switched payload needs more than its 11 known symbols (got {t.Symbols})
 src/RfCore/Signals/SignalEqualizer.cs|only an SC carrier is equalized here
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an SC carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a symbol rate: a number with sps, ksps or Msps
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a whole number
+src/RfCore/Signals/SignalSpec.cs|carrier field {k} belongs to a CW carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {k} belongs to a PCW carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to {(
+src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is 1 or 0
+src/RfCore/Signals/SignalSpec.cs|carrier field {k}={v} is centre/width: 0/1MHz
+src/RfCore/Signals/SignalSpec.cs|carrier field {k}={v} is UL or DL
+src/RfCore/Signals/SignalSpec.cs|OFDM carrier: {e.Message}
+src/RfCore/Signals/SignalSpec.cs|OFDM carrier: Preset= names its numerology (
+src/RfCore/Signals/SignalSpec.cs|OFDM carrier: unknown preset '{name}' ({string.Join(
+src/RfCore/Signals/SignalSpec.cs|pCW carrier: Code is kind:length[:root], the kind one of {string.Join(
+src/RfCore/Signals/SignalSpec.cs|pCW carrier: Code {text}: {e.Message}
+src/RfCore/Signals/SignalSpec.cs|pCW carrier: Fm must be Linear, Tangent or Sine (got '{v}')
+src/RfCore/Signals/SignalSpec.cs|tones: {key} must be numbers, comma-separated (got '{text}')
+src/RfCore/Signals/SignalSpec.cs|tones: Phase must be Zero, Newman, Schroeder or Random (got '{v}')
+src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, TONES, FMCW, OFDM or FILE)
 src/Core/Devices/PhasedArrayFeedModel.cs|{from.Elements} weights for {Elements} elements.
 src/Core/Devices/WaveformSourceModel.cs|'{typeName}' is not a waveform source type.
 src/Core/Devices/WaveformSourceModel.cs|{TypeLabel}: {key} is not a finite number.

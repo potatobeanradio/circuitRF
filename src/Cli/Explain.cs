@@ -1616,9 +1616,19 @@ internal static class Explain
                                  .Select(x => (x.InstancePath, x.k, what: x.k.Standard switch
                                  {
                                      RfCore.Signals.CarrierStandard.Lte or RfCore.Signals.CarrierStandard.Nr
-                                         or RfCore.Signals.CarrierStandard.Dbpsk or RfCore.Signals.CarrierStandard.Sc => "EVM",
+                                         or RfCore.Signals.CarrierStandard.Dbpsk or RfCore.Signals.CarrierStandard.Sc
+                                         or RfCore.Signals.CarrierStandard.Wlan or RfCore.Signals.CarrierStandard.Oqpsk154 => "EVM",
+                                     RfCore.Signals.CarrierStandard.Ofdm => "EVM against its grid",
+                                     RfCore.Signals.CarrierStandard.Wcdma => "EVM, peak code-domain error and code-domain power",
+                                     RfCore.Signals.CarrierStandard.Wlan11b => "EVM and mask margin",
+                                     RfCore.Signals.CarrierStandard.Pcw when RfCore.Signals.SignalQuality.Reads(x.k) => "pulse compression (mainlobe, PSL, ISL)",
+                                     RfCore.Signals.CarrierStandard.Tones when RfCore.Signals.SignalSpec.ResolveTones(x.k).NotchWidthHz > 0 => "NPR",
+                                     RfCore.Signals.CarrierStandard.Analog => "demodulated reading (depth, deviation, bearing, DDM)",
+                                     RfCore.Signals.CarrierStandard.Fsk when RfCore.Signals.Fsk.Resolve(x.k).Burst?.Then is not null
+                                         => "FSK error and the DPSK payload's EVM",
                                      RfCore.Signals.CarrierStandard.Fsk => "FSK error",
                                      RfCore.Signals.CarrierStandard.Css => "de-chirped error",
+                                     RfCore.Signals.CarrierStandard.Gnss => "correlation (code phase and C/N0 per PRN)",
                                      _ => null,
                                  }))
                                  .Where(x => x.what is not null)

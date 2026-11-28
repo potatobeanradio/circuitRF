@@ -101,6 +101,14 @@
             <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
             <Setter Property="BorderThickness" Value="1.5"/>
         </Style>
+        <!-- A card's Advanced expander: its header at a row's height, not Fluent's 48 (as the image-reading panel's). -->
+        <Style Selector="Expander.compact">
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="Expander.compact /template/ ToggleButton">
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Padding" Value="8,0"/>
+        </Style>
         <Style Selector="Button.small">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Padding"  Value="10,4"/>
@@ -108,6 +116,39 @@
     </Window.Styles>
 
     <Grid RowDefinitions="*,Auto" Margin="4">
+        <!-- On the content, not the window, so a capture that hosts the content alone keeps them. -->
+        <Grid.Resources>
+            <!-- A preset menu's line: its header, and the command that sets it. -->
+            <ControlTheme x:Key="PresetMenuItem" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:PresetItem">
+                <Setter Property="Header" Value="{Binding Header}"/>
+                <Setter Property="Command" Value="{Binding Command}"/>
+            </ControlTheme>
+        </Grid.Resources>
+
+        <Grid.DataTemplates>
+            <!-- One preset button with its menu (one item per mode), as the IoT row's buttons are. -->
+            <DataTemplate x:DataType="vm:PresetMenu">
+                <Button Classes="small" Margin="0,0,6,4" ToolTip.Tip="{Binding Tip}" Tag="preset-menu">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="{Binding Name}"/>
+                        <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14"/>
+                    </StackPanel>
+                    <Button.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedLeft" ItemsSource="{Binding Items}" ItemContainerTheme="{StaticResource PresetMenuItem}"/>
+                    </Button.Flyout>
+                </Button>
+            </DataTemplate>
+            <!-- One carrier key on a card: a label and the value as the netlist writes it, picked or typed; empty is the default. -->
+            <DataTemplate x:DataType="vm:SignalField">
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,12,6" ToolTip.Tip="{Binding Tip}">
+                    <TextBlock Classes="lbl" Text="{Binding Label}" Width="104"/>
+                    <ComboBox IsEditable="True" Width="150" ItemsSource="{Binding Options}" Text="{Binding Text}" PlaceholderText="{Binding Default}"
+                              IsVisible="{Binding HasOptions}"/>
+                    <TextBox Width="150" Text="{Binding Text}" PlaceholderText="{Binding Default}" IsVisible="{Binding IsText}"/>
+                </StackPanel>
+            </DataTemplate>
+        </Grid.DataTemplates>
+
         <!-- the two panes resize by the gap between them: an Auto column holding a 4 px transparent GridSplitter, the
              arrangement the Match Designer, railRF and the Phased Array tool share -->
         <Grid>
@@ -168,12 +209,14 @@
                                 <TextBlock Classes="cardhdr" Text="Presets"/>
                                 <!-- One row per family, its name on the left. A family of several standards is one button with
                                      a menu (one item per mode), so a row does not grow by a button per mode. -->
-                                <Grid ColumnDefinitions="64,*" RowDefinitions="Auto,Auto,Auto" Tag="preset-rows">
+                                <Grid ColumnDefinitions="84,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Tag="preset-rows">
                                     <TextBlock Classes="lbl" Text="Cellular" VerticalAlignment="Top" Margin="0,5,0,0"/>
                                     <WrapPanel Grid.Column="1">
                                         <Button Classes="small" Margin="0,0,6,4" Content="LTE 20 MHz" Command="{Binding PresetLte20Command}"/>
                                         <Button Classes="small" Margin="0,0,6,4" Content="NR 20 MHz (30 kHz)" Command="{Binding PresetNr20Command}"/>
                                         <Button Classes="small" Margin="0,0,6,4" Content="NR 100 MHz (30 kHz)" Command="{Binding PresetNr100Command}"/>
+                                        <Button Classes="small" Margin="0,0,6,4" Content="NR 100 MHz (120 kHz, FR2)" Command="{Binding PresetNr100Fr2Command}"
+                                                ToolTip.Tip="One NR 100 MHz carrier at 120 kHz subcarrier spacing (FR2, TS 38.101-2), 64QAM"/>
                                         <Button Classes="small" Margin="0,0,6,4" Content="4 x LTE 20 contiguous" Command="{Binding PresetFourCarrierLteCommand}"/>
                                         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
                                             <Button Classes="small" Content="2C NR 20 at spacing" Command="{Binding PresetTwoCarrierCommand}"
@@ -182,13 +225,55 @@
                                                            ToolTip.Tip="Centre-to-centre spacing of the 2C preset's two carriers"/>
                                             <TextBlock Classes="lbl" Text="MHz apart"/>
                                         </StackPanel>
+                                        <ItemsControl ItemsSource="{Binding CellularMenus}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        </ItemsControl>
                                     </WrapPanel>
-                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Radar" Margin="0,2,0,4"/>
-                                    <Button Grid.Row="1" Grid.Column="1" Classes="small" Margin="0,2,0,4" HorizontalAlignment="Left" Content="Pulsed CW"
-                                            Command="{Binding PresetPulseCommand}"
-                                            ToolTip.Tip="One pulsed-CW carrier, for a pulsed-radar amplifier: set its PRI, width, edges and delay on the card"/>
-                                    <TextBlock Grid.Row="2" Classes="lbl" Text="IoT" Margin="0,2,0,0"/>
-                                    <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,2,0,0">
+                                    <!-- The families added later, each a row of menus; a menu item sets one carrier and moves Centre
+                                         Fc to its channel where it has one (unless Fc is an expression). -->
+                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Connectivity" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <ItemsControl Grid.Row="1" Grid.Column="1" ItemsSource="{Binding ConnectivityMenus}" Tag="connectivity-presets">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="3" Classes="lbl" Text="Navigation" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding NavigationMenus}" Margin="0,2,0,0">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="4" Classes="lbl" Text="Broadcast" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <ItemsControl Grid.Row="4" Grid.Column="1" ItemsSource="{Binding BroadcastMenus}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="5" Classes="lbl" Text="Radio / LMR" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <ItemsControl Grid.Row="5" Grid.Column="1" ItemsSource="{Binding RadioMenus}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="6" Classes="lbl" Text="Radar" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <WrapPanel Grid.Row="6" Grid.Column="1">
+                                        <Button Classes="small" Margin="0,0,6,4" Content="Pulsed CW"
+                                                Command="{Binding PresetPulseCommand}"
+                                                ToolTip.Tip="One pulsed-CW carrier, for a pulsed-radar amplifier: set its PRI, width, edges and delay on the card"/>
+                                        <ItemsControl ItemsSource="{Binding RadarMenus}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </WrapPanel>
+                                    <TextBlock Grid.Row="7" Classes="lbl" Text="Tones, noise" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <WrapPanel Grid.Row="7" Grid.Column="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,6,4">
+                                        <Button Classes="small" Content="N tones" Command="{Binding PresetNToneCommand}"
+                                                ToolTip.Tip="N equal CW tones centred on Fc, for intermodulation and intercept tests. Two tones start in phase; three or more start at Newman's phases, which keep the PAPR low."/>
+                                        <NumericUpDown Value="{Binding PresetTones}" Increment="1" Minimum="2" Maximum="64" FormatString="0" MinWidth="70"
+                                                       ToolTip.Tip="How many tones"/>
+                                        <TextBlock Classes="lbl" Text="tones"/>
+                                        <NumericUpDown Value="{Binding PresetToneSpacingMHz}" Increment="0.1" Minimum="0.001" FormatString="0.###" MinWidth="90"
+                                                       ToolTip.Tip="Tone-to-tone spacing. Offsets snap to 1 / Record (1 kHz at 1 ms)."/>
+                                        <TextBlock Classes="lbl" Text="MHz apart"/>
+                                    </StackPanel>
+                                        <ItemsControl ItemsSource="{Binding TonesMenus}">
+                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </WrapPanel>
+                                    <TextBlock Grid.Row="2" Classes="lbl" Text="IoT" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,4">
                                         <!-- Each sets one carrier and moves Centre Fc to the mode's channel (unless Fc is an expression). -->
                                         <Button Classes="small" Margin="0,0,6,0" Tag="wmbus-presets"
                                                 ToolTip.Tip="Wireless M-Bus (EN 13757-4): one FSK carrier on PN9 data at a mode's chip rate and deviation. Sets Centre Fc unless it is an expression.">
@@ -319,7 +404,7 @@
                                 <DataTemplate x:DataType="vm:CarrierRowViewModel">
                                     <Border Classes="card" Classes.selected="{Binding IsSelected}" Tag="carrier-card" Background="Transparent"
                                             ToolTip.Tip="Click a carrier to show its EVM on the EVM tab">
-                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
                                             <Border Background="{DynamicResource SystemListLowColor}" CornerRadius="3" Padding="5,1" VerticalAlignment="Center" Margin="0,0,6,0">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="{Binding Index, StringFormat='C{0}'}"/>
                                             </Border>
@@ -369,7 +454,7 @@
                                             </Grid>
                                             <!-- Pulsed CW: the pulse's timing, each typed with its unit (a bare number is µs) and outlined
                                                  when it does not parse or when the pulse it makes cannot be generated. -->
-                                            <Grid Grid.Row="3" Grid.ColumnSpan="4" ColumnDefinitions="Auto,110,Auto,Auto,110,Auto" RowDefinitions="Auto,Auto,Auto"
+                                            <Grid Grid.Row="3" Grid.ColumnSpan="4" ColumnDefinitions="Auto,110,Auto,Auto,110,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
                                                   Margin="0,6,0,0" IsVisible="{Binding IsPcw}" Tag="pulse-fields">
                                                 <TextBlock Classes="lbl" Text="PRI (µs)" Margin="0,0,6,0"/>
                                                 <TextBox Grid.Column="1" Text="{Binding PriText}" Classes.error="{Binding HasPriError}"
@@ -389,6 +474,10 @@
                                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Text="{Binding DelayText}" Classes.error="{Binding HasDelayError}"
                                                          ToolTip.Tip="{Binding DelayError, TargetNullValue='Off-time before the rising edge, greater than 0 so the run starts at the quiescent point. Empty centres the pulse in the PRI.'}"/>
                                                 <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="4" Classes="lbl" Margin="6,6,0,0" Text="{Binding DelayInfo}"/>
+                                                <TextBlock Grid.Row="3" Classes="lbl" Text="Chirp (MHz)" Margin="0,6,6,0"/>
+                                                <NumericUpDown Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" Value="{Binding ChirpMHz}" Increment="1" FormatString="0.######"
+                                                               ToolTip.Tip="A linear-FM sweep over the pulse width, centred on the carrier: positive sweeps up, negative down, 0 is a plain pulse"/>
+                                                <TextBlock Grid.Row="3" Grid.Column="2" Grid.ColumnSpan="4" Classes="lbl" Margin="6,6,0,0" Text="+ up, − down, 0 none"/>
                                             </Grid>
                                             <!-- FSK: rate, deviation, filter and data. A Gaussian filter makes it GFSK (GMSK at h = 0.5);
                                                  the data is one period of a PN sequence or a fixed pattern, and that period is the record. -->
@@ -490,6 +579,23 @@
                                                 <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding ScRefusal}" TextWrapping="Wrap"
                                                            Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding ScRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                                             </Grid>
+                                            <!-- A family's card (Wi-Fi, GNSS, WCDMA, …): its carrier keys as the netlist writes them, an
+                                                 empty field the default; the rarely used ones, and the LTE / NR, SC, FSK and pulse options,
+                                                 behind Advanced. The line under them is the carrier's label, or why it does not parse. -->
+                                            <ItemsControl Grid.Row="5" Grid.ColumnSpan="4" Margin="0,6,0,0" ItemsSource="{Binding MainFields}"
+                                                          IsVisible="{Binding HasMainFields}" Tag="family-fields">
+                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                            </ItemsControl>
+                                            <StackPanel Grid.Row="6" Grid.ColumnSpan="4">
+                                                <Expander Classes="compact fill" Header="Advanced" FontSize="12" Padding="4" Margin="0,4,0,0" IsVisible="{Binding HasAdvancedFields}">
+                                                    <ItemsControl ItemsSource="{Binding AdvancedFields}">
+                                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                    </ItemsControl>
+                                                </Expander>
+                                                <TextBlock Classes="note" Margin="0,4,0,0" Text="{Binding FieldsInfoText}" IsVisible="{Binding IsFamily}"/>
+                                                <TextBlock Classes="note" Margin="0,4,0,0" Text="{Binding FieldsError}" TextWrapping="Wrap"
+                                                           Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding FieldsError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                            </StackPanel>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -611,6 +717,11 @@
                                         <StackPanel Spacing="2" VerticalAlignment="Center">
                                             <TextBlock Classes="caption" Text="Measured signal (select a carrier on the left)"/>
                                             <TextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding EvmSignalText}"/>
+                                            <!-- the family's own reading: Wi-Fi EVM against its MCS limit, GNSS per PRN, WCDMA code-domain power, NPR, … -->
+                                            <ScrollViewer Margin="0,4,0,0" MaxHeight="160" Tag="quality-text"
+                                                          IsVisible="{Binding QualityText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                <SelectableTextBlock FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="11" Text="{Binding QualityText}" TextWrapping="Wrap"/>
+                                            </ScrollViewer>
                                         </StackPanel>
                                         <Button Grid.Column="1" Classes="small" Margin="8,0,0,0" VerticalAlignment="Center"
                                                 Command="{Binding CalculateEvmCommand}" ToolTip.Tip="Generate the signal on the left and measure its EVM">
@@ -623,7 +734,7 @@
                                 </Border>
 
                                 <!-- the constellation, square and centred, with its key -->
-                                <StackPanel Grid.Row="2" Width="250" HorizontalAlignment="Center" Margin="0,2">
+                                <StackPanel Grid.Row="2" Width="250" HorizontalAlignment="Center" Margin="0,2" IsVisible="{Binding HasConstellation}">
                                     <ctl:AspectRatioPanel Ratio="1">
                                         <ddc:PlotControl Name="ConstellationPlotControl" Plot="{Binding ConstellationPlot}" Library="{Binding PlotHost.Library}"
                                                          CanDeletePlot="False" CanEditPlotProperties="False"/>

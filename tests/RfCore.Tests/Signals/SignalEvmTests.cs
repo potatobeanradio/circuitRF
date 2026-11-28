@@ -15,6 +15,9 @@
 //   E7  A window shorter than the record reads only the symbols it holds whole, clear of its ends: an unclipped record
 //       reads within 0.01 pp of zero shaped, 0.02 pp unshaped, so the roll-off's ringing stays out of them.
 //   E8  A carrier with no symbols (CW) is refused with its reason, never measured.
+//   E9  NR in FR2 (TS 38.101-2): 100 MHz at 120 kHz is 66 RB on a 1024-point FFT at 122.88 MS/s, 56 symbols (four
+//       0.125 ms slots) in each 0.5 ms; the record still rounds to whole 0.5 ms, the 99 % band is the 95.04 MHz the
+//       resource blocks occupy, and the unclipped record reads ~0 % EVM.
 
 using System;
 using System.Linq;
@@ -155,5 +158,23 @@ public class SignalEvmTests
         var rec = sig.Carriers[0];
         Assert.Null(SignalEvm.Demodulate(rec, sig.RecordSeconds, rec.Native, rec.NativeRateHz, 0, 0, out var why));
         Assert.Contains("CW", why);
+    }
+
+    [Fact]
+    public void E9_Nr120kHz_HasFr2Numerology_RecordRule_BandAndZeroEvm()
+    {
+        var c = new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 100e6, ScsHz = 120e3, Modulation = QamOrder.Qam64 };
+        var nm = OfdmGenerator.Numerology(c);
+        Assert.Equal((66, 1024, 122.88e6, 56), (nm.NRb, nm.Nfft, nm.SampleRateHz, nm.SymbolsPerHalfMs));
+        Assert.Equal(61440, nm.SamplesPerHalfMs);
+        Assert.Equal([50, 100, 200, 400], OfdmGenerator.NrBandwidthsMHz(120e3));
+
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c], RecordSeconds = 0.7e-3, ShapingFloorDbc = null });
+        Assert.Equal(0.5e-3, sig.RecordSeconds, 12);                 // whole 0.5 ms
+        var x = sig.Carriers[0].Native;
+        Assert.Equal(61440, x.Length);
+        var (f, psd) = SignalMeasure.Welch(x, nm.SampleRateHz);
+        Assert.InRange(SignalMeasure.Obw(f, psd), 93e6, 96e6);
+        Assert.True(SignalEvm.Measure(c, x, sig.RecordSeconds).RmsPercent < 1e-6);
     }
 }

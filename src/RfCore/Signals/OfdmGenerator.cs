@@ -12,7 +12,9 @@
 //    LTE   15 kHz, N_RB {6,15,25,50,75,100} for {1.4,3,5,10,15,20} MHz,
 //          FFT {128..2048}, CP 160/144 x N/2048 (7 symbols / 0.5 ms),
 //          DC subcarrier unused.
-//    NR    SCS 15/30/60 kHz, N_RB from the transmission-bandwidth table,
+//    NR    SCS 15/30/60/120 kHz, N_RB from the transmission-bandwidth
+//          tables (TS 38.101-1 for FR1; TS 38.101-2 for FR2: 50-400 MHz;
+//          FR2-2 at 480 and 960 kHz: 400-2000 MHz),
 //          FFT = smallest power of two >= N_sc/0.85 (min 128),
 //          CP 144 x N/2048, long CP (144+16*2^mu) x N/2048 on the first
 //          symbol of every 0.5 ms; DC subcarrier used.
@@ -20,6 +22,8 @@
 //  cyclic over the record so the loop seam is as smooth as any symbol
 //  boundary.  Optional spectral shaping: a per-bin magnitude ceiling
 //  outside the occupied band (in-band bins untouched).
+//  Uplink (DFT-s-OFDM, SC-FDMA), RB allocation, the 3GPP test models
+//  and TDD gating: the OfdmOptions overload, through Ofdm3gpp's grid.
 // ================================================================
 
 using System;
@@ -44,14 +48,20 @@ namespace RfCore.Signals
             [10e6] = (50, 1024), [15e6] = (75, 1536), [20e6] = (100, 2048),
         };
 
-        // Maximum transmission bandwidth configuration N_RB, FR1, by SCS then channel BW (MHz).
+        // Maximum transmission bandwidth configuration N_RB, by SCS then channel BW (MHz): FR1 (TS 38.101-1 Table 5.3.2-1)
+        // and FR2 (TS 38.101-2 Table 5.3.2-1). FR2 allows 60 kHz at 50, 100 and 200 MHz and 120 kHz at 50 to 400 MHz;
+        // at 60 kHz, 50 and 100 MHz are FR1's too and keep FR1's N_RB (65, 135; FR2's are 66, 132), and 200 MHz is FR2's.
         private static readonly Dictionary<int, Dictionary<int, int>> NrTable = new()
         {
             [15] = new() { [5] = 25, [10] = 52, [15] = 79, [20] = 106, [25] = 133, [30] = 160, [40] = 216, [50] = 270 },
             [30] = new() { [5] = 11, [10] = 24, [15] = 38, [20] = 51, [25] = 65, [30] = 78, [40] = 106, [50] = 133,
                            [60] = 162, [70] = 189, [80] = 217, [90] = 245, [100] = 273 },
             [60] = new() { [10] = 11, [15] = 18, [20] = 24, [25] = 31, [30] = 38, [40] = 51, [50] = 65, [60] = 79,
-                           [70] = 93, [80] = 107, [90] = 121, [100] = 135 },
+                           [70] = 93, [80] = 107, [90] = 121, [100] = 135, [200] = 264 },
+            [120] = new() { [50] = 32, [100] = 66, [200] = 132, [400] = 264 },
+            // FR2-2 (TS 38.101-2 V19.5.0 Table 5.3.2-1; 480 and 960 kHz are optional SCS there)
+            [480] = new() { [400] = 66, [800] = 124, [1600] = 248 },
+            [960] = new() { [400] = 33, [800] = 62, [1600] = 124, [2000] = 148 },
         };
 
         public static IReadOnlyCollection<double> LteBandwidths => LteTable.Keys;
@@ -76,7 +86,7 @@ namespace RfCore.Signals
             {
                 int scsK = (int)Math.Round(c.ScsHz / 1e3);
                 if (!NrTable.TryGetValue(scsK, out var t))
-                    throw new ArgumentException($"NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60 kHz");
+                    throw new ArgumentException($"NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60, 120, 480, 960 kHz");
                 int bw = (int)Math.Round(c.BandwidthHz / 1e6);
                 if (!t.TryGetValue(bw, out int nrb))
                     throw new ArgumentException($"NR {bw} MHz is not defined at {scsK} kHz");
@@ -105,9 +115,7 @@ namespace RfCore.Signals
             int bitsPerAxis = (int)c.Modulation / 2;
             int levels = 1 << bitsPerAxis;
             double qamNorm = 1.0 / Math.Sqrt(2.0 * (levels * levels - 1) / 3.0);
-            int wlen = Math.Max(0, (int)Math.Round(windowFraction * nm.CpNormal));
-            var ramp = new double[wlen];
-            for (int i = 0; i < wlen; i++) ramp[i] = 0.5 * (1 - Math.Cos(Math.PI * (i + 0.5) / wlen));
+            var ramp = Ramp(Math.Max(0, (int)Math.Round(windowFraction * nm.CpNormal)));
 
             var bins = new Complex[n];
             var row = new Complex[nsc];
@@ -120,17 +128,8 @@ namespace RfCore.Signals
                 Fft.Transform(bins, inverse: true);                               // unnormalised: sum over bins
                 double sc = 1.0 / Math.Sqrt(n);
                 int cp = (s % nm.SymbolsPerHalfMs == 0) ? nm.CpLong : nm.CpNormal;
-                int len = cp + n;
-                // symbol with CP, plus a cyclic suffix for the window tail
-                for (int i = 0; i < len + wlen; i++)
-                {
-                    int src = ((i - cp) % n + n) % n;
-                    double w = 1.0;
-                    if (i < wlen) w = ramp[i];
-                    else if (i >= len) w = ramp[wlen - 1 - (i - len)];
-                    rec[(pos + i) % total] += bins[src] * (sc * w);
-                }
-                pos += len;
+                AddSymbol(rec, pos, bins, cp, ramp, sc);
+                pos += cp + n;
             }
             Normalise(rec);
             if (shapingFloorDbc is double floor)
@@ -139,6 +138,52 @@ namespace RfCore.Signals
                 Normalise(rec);
             }
             return rec;
+        }
+
+        /// <summary>
+        /// The carrier with the uplink, allocation, test-model and TDD options of <paramref name="o"/> (see
+        /// <see cref="Ofdm3gpp"/>). With every option unset this is <see cref="Generate(CarrierSpec, int, double, double?)"/>,
+        /// sample for sample.
+        /// </summary>
+        public static Complex[] Generate(CarrierSpec c, int halfMsCount, double windowFraction, double? shapingFloorDbc, OfdmOptions? o)
+        {
+            if (o is null || o.IsDefault) return Generate(c, halfMsCount, windowFraction, shapingFloorDbc);
+            var nm = Numerology(c);
+            var rec = Ofdm3gpp.Grid(c, o, halfMsCount).Synthesize(windowFraction);
+            if (shapingFloorDbc is double floor)
+            {
+                Shape(rec, nm.SampleRateHz, nm.OccupiedBwHz + 2 * nm.ScsHz, c.BandwidthHz, floor);
+                Normalise(rec);
+            }
+            return rec;
+        }
+
+        /// <summary>The raised-cosine WOLA ramp of <paramref name="wlen"/> samples, rising.</summary>
+        internal static double[] Ramp(int wlen)
+        {
+            var ramp = new double[wlen];
+            for (int i = 0; i < wlen; i++) ramp[i] = 0.5 * (1 - Math.Cos(Math.PI * (i + 0.5) / wlen));
+            return ramp;
+        }
+
+        /// <summary>
+        /// Adds one symbol to the periodic record at <paramref name="pos"/>: the IFFT output <paramref name="bins"/> with
+        /// its cyclic prefix and a cyclic suffix for the window tail, scaled by <paramref name="sc"/> and the ramp. A
+        /// <paramref name="shift"/> (subcarriers) moves every subcarrier by that much, its phase referred to the end of the
+        /// cyclic prefix (the LTE uplink's e^(j2π(k+1/2)Δf(t-N_CP T_s)), TS 36.211 cl. 5.6).
+        /// </summary>
+        internal static void AddSymbol(Complex[] rec, int pos, Complex[] bins, int cp, double[] ramp, double sc, double shift = 0)
+        {
+            int n = bins.Length, wlen = ramp.Length, len = cp + n, total = rec.Length;
+            for (int i = 0; i < len + wlen; i++)
+            {
+                int src = ((i - cp) % n + n) % n;
+                double w = 1.0;
+                if (i < wlen) w = ramp[i];
+                else if (i >= len) w = ramp[wlen - 1 - (i - len)];
+                if (shift == 0) rec[(pos + i) % total] += bins[src] * (sc * w);
+                else rec[(pos + i) % total] += bins[src] * (sc * w) * Complex.FromPolarCoordinates(1, 2 * Math.PI * shift * (i - cp) / n);
+            }
         }
 
         /// <summary>FFT bin of subcarrier <paramref name="i"/> (0 = lowest occupied), DC skipped when unused.</summary>

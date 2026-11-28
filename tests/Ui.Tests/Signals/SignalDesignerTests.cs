@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using CircuitRF.Ui.Signals;
@@ -114,6 +115,10 @@ public class SignalDesignerTests : FirstLaunchUserState
 
         d.PresetNr100Command.Execute(null);
         Assert.Equal((1, "NR", 100.0), (d.Carriers.Count, d.Carriers[0].Standard, d.Carriers[0].BandwidthMHz));
+        d.PresetNr100Fr2Command.Execute(null);
+        Assert.Equal((1, "NR", 100.0, 120.0), (d.Carriers.Count, d.Carriers[0].Standard, d.Carriers[0].BandwidthMHz, d.Carriers[0].ScsKHz));
+        Assert.Contains(400.0, d.Carriers[0].BandwidthOptions);
+        d.PresetNr100Command.Execute(null);
 
         d.AddCarrierCommand.Execute(null);
         Assert.Equal(2, d.Carriers.Count);
@@ -575,6 +580,24 @@ public class SignalDesignerTests : FirstLaunchUserState
     }
 
     [Fact]
+    public void NTonePreset_SetsEqualCwTonesCentredOnFc_WithNewmanPhasesFromThree()
+    {
+        var (vm, s) = Bench();
+        using var d = new SignalDesignerViewModel();
+        d.SetTarget(vm, s, preview: false);
+        d.PresetToneSpacingMHz = 2;
+        d.PresetNToneCommand.Execute(null);
+        Assert.Equal(new[] { -1.0, 1.0 }, d.Carriers.Select(c => c.OffsetMHz));
+        Assert.All(d.Carriers, c => Assert.Equal(("CW", 0.0), (c.Standard, c.PowerDb)));
+        Assert.All(d.Carriers, c => Assert.Null(c.ToSpec().PhaseDeg));
+
+        d.PresetTones = 3;
+        d.PresetNToneCommand.Execute(null);
+        Assert.Equal(new[] { -2.0, 0.0, 2.0 }, d.Carriers.Select(c => c.OffsetMHz));
+        Assert.Equal(new double?[] { null, 60, 240 }, d.Carriers.Select(c => c.ToSpec().PhaseDeg));
+    }
+
+    [Fact]
     public void PulsePreset_IsOnePulsedCarrier()
     {
         var (vm, s) = Bench();
@@ -720,6 +743,186 @@ public class SignalDesignerTests : FirstLaunchUserState
 
         c.PilotBlockText = "16";                                             // not L/P: refused on the card
         Assert.Contains("PilotBlock", c.ScRefusal);
+    }
+
+    // ── the signal families: one card, one preset menu row and one readout each ──
+
+    private static SignalDesignerViewModel Designer()
+    {
+        var (vm, s) = Bench(fc: "2", fcUnit: "GHz");
+        var d = new SignalDesignerViewModel();
+        d.SetTarget(vm, s, preview: false);
+        return d;
+    }
+
+    /// <summary>Runs the item of <paramref name="row"/>'s menu <paramref name="menu"/> whose line starts with <paramref name="item"/>.</summary>
+    private static CarrierRowViewModel Pick(SignalDesignerViewModel d, IReadOnlyList<PresetMenu> row, string menu, string item)
+    {
+        row.Single(m => m.Name == menu).Items.First(i => i.Header.StartsWith(item, System.StringComparison.Ordinal)).Command.Execute(null);
+        return Assert.Single(d.Carriers);
+    }
+
+    private static string Field(CarrierRowViewModel c, string key) => c.Fields.Single(f => f.Key == key).Text;
+
+    /// <summary>The card's carrier, read back onto a new card, makes the same carrier: the netlist text is the same.</summary>
+    private static string RoundTrip(CarrierRowViewModel c)
+    {
+        string text = SignalSpec.FormatCarrier(c.ToSpec());
+        Assert.Equal(text, SignalSpec.FormatCarrier(CarrierRowViewModel.FromSpec(SignalSpec.ParseCarrier(text), 1).ToSpec()));
+        return text;
+    }
+
+    private static (RfCore.Data.DataSet ds, string stats) Analysed(CarrierRowViewModel c)
+        => SignalDesignerViewModel.Analyse(SignalComposer.Generate(new SignalSpec { Carriers = [c.ToSpec()] }));
+
+    [Fact]
+    public void WifiPreset_SetsTheCard_AndReadsEvmAgainstTheMcsLimit_UnderItsMask()
+    {
+        using var d = Designer();
+        var c = Pick(d, d.ConnectivityMenus, "Wi-Fi", "802.11ax 80 MHz");
+        Assert.Equal("5.21", d.FcText);
+        Assert.Equal(("WLAN", "ax", "80MHz", "11", "4"), (c.Standard, Field(c, "Std"), Field(c, "BW"), Field(c, "MCS"), Field(c, "Oversample")));
+        Assert.Contains("Std=ax;BW=80MHz;MCS=11;Oversample=4", RoundTrip(c));
+        Assert.True(d.IsSingleCarrier && !d.CanClip && d.HasEvmTab);
+        Assert.Equal("Packet power (dBm)", d.PowerLabel);
+        d.ShowPreview(SignalComposer.Generate(new SignalSpec { Carriers = [c.ToSpec()] }));
+        Assert.True(d.HasConstellation);
+        var (ds, stats) = Analysed(c);
+        Assert.Matches(@"Wi-Fi EVM \d\.\d\d %.* limit .*\(MCS11, -35 dB\)   PASS", stats);
+        Assert.True(ds.Contains("Mask"));
+        c.Fields.Single(f => f.Key == "MCS").Text = "12";                    // not an ax MCS: refused on the card, the carrier kept
+        Assert.Contains("MCS", c.FieldsError);
+        Assert.Equal(11, c.ToSpec().Mcs);
+        c.Standard = "WLAN";                                                  // a new Wi-Fi card starts at 4x
+        Assert.Equal("4", Field(c, "Oversample"));
+    }
+
+    [Fact]
+    public void GnssPreset_SetsTheCard_AndReadsEachPrnsCodePhaseAndCn0()
+    {
+        using var d = Designer();
+        var c = Pick(d, d.NavigationMenus, "GNSS", "GPS L1 C/A");
+        Assert.Equal("1.57542", d.FcText);
+        Assert.Equal(("GNSS", "L1CA", SignalDesignerViewModel.GnssPresetSatellites, "45"), (c.Standard, Field(c, "Signal"), Field(c, "Sats"), Field(c, "CN0")));
+        RoundTrip(c);
+        Assert.Equal("Quality", d.SecondTabHeader);
+        d.ShowPreview(SignalComposer.Generate(new SignalSpec { Carriers = [c.ToSpec()] }));
+        Assert.False(d.HasConstellation);                                     // a per-PRN reading, no points to draw
+        Assert.Contains("PRN 5", d.QualityText);
+        var (ds, stats) = Analysed(c);
+        Assert.Matches(@"PRN 1 +code phase 12\.\d\d chips.*C/N0 4\d\.\d dB-Hz", stats);
+        Assert.Contains("PRN 5", stats);
+        Assert.True(ds.Contains("Expected"));
+    }
+
+    [Fact]
+    public void DsssPresets_WcdmaElevenBAndFifteenFour_ReadTheirEvm()
+    {
+        using var d = Designer();
+        var w = Pick(d, d.CellularMenus, "WCDMA", "TM1x64");
+        Assert.Equal(("2.14", "WCDMA", "Tm1x64"), (d.FcText, w.Standard, Field(w, "Model")));
+        RoundTrip(w);
+        Assert.True(d.CanClip);
+        Assert.Matches(@"WCDMA EVM \d+\.\d+ %   limit 17\.5 %   PASS   peak code-domain error", Analysed(w).stats);
+
+        var b = Pick(d, d.ConnectivityMenus, "802.11b", "11 Mb/s");
+        Assert.Equal(("2.412", "WLAN11B", "11Mbps"), (d.FcText, b.Standard, Field(b, "Rb")));
+        RoundTrip(b);
+        Assert.Contains("mask margin", Analysed(b).stats);
+
+        var z = Pick(d, d.ConnectivityMenus, "802.15.4", "O-QPSK 2.4 GHz");
+        Assert.Equal(("2.405", "OQPSK154"), (d.FcText, z.Standard));
+        RoundTrip(z);
+        Assert.Matches(@"802\.15\.4 EVM .*limit 35\.0 %   PASS", Analysed(z).stats);
+    }
+
+    [Fact]
+    public void EdgePreset_SetsTheScCardsNewFields_AndReadsItsEvm()
+    {
+        using var d = Designer();
+        var c = Pick(d, d.RadioMenus, "GSM / EDGE", "EDGE 8PSK");
+        Assert.Equal(("SC", "8PSK"), (c.Standard, c.ScModulation));
+        Assert.Equal(("LinearGMSK", "67.5", "122", "8.25", "4"),
+                     (Field(c, "Pulse"), Field(c, "Rotation"), Field(c, "FrameData"), Field(c, "Guard"), Field(c, "Ramp")));
+        Assert.Contains("Pulse=LinearGMSK;Rotation=67.5;FrameData=122;Guard=8.25;Ramp=4", RoundTrip(c));
+        Assert.Matches(@"\nEVM \d", Analysed(c).stats);
+    }
+
+    [Fact]
+    public void BluetoothEdrPreset_SetsTheFskCardsPreset_AndReadsTheDeviationAndThePayloadEvm()
+    {
+        using var d = Designer();
+        var c = Pick(d, d.ConnectivityMenus, "Bluetooth BR / EDR", "EDR 2 Mb/s");
+        Assert.Equal(("2.441", "FSK", "Bluetooth EDR 2 Mb/s"), (d.FcText, c.Standard, Field(c, "Preset")));
+        Assert.Contains("Preset=Bluetooth EDR 2 Mb/s", RoundTrip(c));
+        string stats = Analysed(c).stats;
+        Assert.Contains("FSK error", stats);
+        Assert.Contains("EDR payload EVM", stats);
+    }
+
+    [Fact]
+    public void AnalogPresets_SetTheCard_AndReadTheDeviationAndTheBearing()
+    {
+        using var d = Designer();
+        var fm = Pick(d, d.RadioMenus, "FM / AM / SSB", "FM broadcast");
+        Assert.Equal(("0.098", "ANALOG", "FM", "75kHz"), (d.FcText, fm.Standard, Field(fm, "Kind"), Field(fm, "Dev")));
+        RoundTrip(fm);
+        Assert.Matches(@"deviation 7\d(\.\d+)? kHz", Analysed(fm).stats);
+
+        var vor = Pick(d, d.NavigationMenus, "VOR / ILS", "VOR 45");
+        Assert.Equal(("VOR", "45"), (Field(vor, "Kind"), Field(vor, "Bearing")));
+        RoundTrip(vor);
+        Assert.Matches(@"bearing 45\.0°", Analysed(vor).stats);
+    }
+
+    [Fact]
+    public void NprPreset_SetsTheTonesCard_ReadsTheNpr_AndDrawsTheGaussianReference()
+    {
+        using var d = Designer();
+        var c = Pick(d, d.TonesMenus, "Multitone / NPR / AWGN", "100-tone NPR");
+        Assert.Equal(("TONES", "100", "100kHz", "Random", "0/1MHz"), (c.Standard, Field(c, "N"), Field(c, "Spacing"), Field(c, "Phase"), Field(c, "Notch")));
+        RoundTrip(c);
+        Assert.True(d.CanClip && d.IsSingleCarrier);
+        var (ds, stats) = Analysed(c);
+        Assert.Matches(@"NPR \d+\.\d dB", stats);
+        Assert.True(ds.Contains("Gaussian"));
+    }
+
+    [Fact]
+    public void RadarPresets_SetThePulseCardsCode_AndTheFmcwCard_AndReadTheCompression()
+    {
+        using var d = Designer();
+        var c = Pick(d, d.RadarMenus, "Codes", "Barker 13");
+        Assert.Equal(("PCW", "Barker:13"), (c.Standard, Field(c, "Code")));
+        Assert.Contains("Code=Barker:13", RoundTrip(c));
+        Assert.Matches(@"compression   mainlobe .* PSL -22\.\d dB", Analysed(c).stats);    // Barker 13: 20 log 1/13
+
+        var f = Pick(d, d.RadarMenus, "FMCW", "FMCW sawtooth");
+        Assert.Equal("FMCW 250MHz 50us 12.5us", $"{f.Standard} {Field(f, "BW")} {Field(f, "Ramp")} {Field(f, "Idle")}");
+        RoundTrip(f);
+        Assert.Equal("Frequency", d.SecondTabHeader);
+        Assert.True(Analysed(f).ds.Contains("Frequency"));
+    }
+
+    [Fact]
+    public void OfdmPresets_SetTheNrOptionsAndTheNumerologyCard_AndReadTheirEvm()
+    {
+        using var d = Designer();
+        var ul = Pick(d, d.CellularMenus, "Uplink", "NR 20 MHz uplink, DFT-s-OFDM π/2-BPSK, RB 10");
+        Assert.Equal(("NR", "UL", "1", "1", "10", "24"),
+                     (ul.Standard, Field(ul, "Link"), Field(ul, "DFTs"), Field(ul, "Pi2BPSK"), Field(ul, "RbStart"), Field(ul, "RbCount")));
+        Assert.Contains("Link=UL;DFTs=1;Pi2BPSK=1;RbStart=10;RbCount=24", RoundTrip(ul));
+        var row = Assert.Single(SignalDesignerViewModel.AnalyseEvm(SignalComposer.Generate(new SignalSpec { Carriers = [ul.ToSpec()] })));
+        Assert.True(row.Result.RmsPercent < 0.2);
+
+        var dvb = Pick(d, d.BroadcastMenus, "DVB-T / ISDB-T / DAB", "DVB-T 2K");
+        Assert.Equal(("OFDM", "DVB-T 2K"), (dvb.Standard, Field(dvb, "Preset")));
+        RoundTrip(dvb);
+        Assert.Matches(@"\nEVM 0\.\d\d %", Analysed(dvb).stats);
+
+        var nb = Pick(d, d.CellularMenus, "NB-IoT / LTE-M", "NB-IoT uplink, single tone at 3.75 kHz");
+        Assert.Equal(("NB-IoT UL", "3.75kHz", "1"), (Field(nb, "Preset"), Field(nb, "SCS"), Field(nb, "NbTones")));
+        RoundTrip(nb);
     }
 
     // ── Tools ▸ Signal Designer ─────────────────────────────────────────────

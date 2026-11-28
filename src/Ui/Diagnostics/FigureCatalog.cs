@@ -819,6 +819,12 @@ public static class FigureCatalog
           + "over the ideal 64QAM points, and a few envelope swings of power around the peak with the "
           + "average and peak lines."),
 
+        new("signal-designer-gnss", DocSignalFixtures.DesignerGnss, 1199, 1300,
+            WindowFrame.Titled("Signal Designer — SRC1"),
+            "A GNSS card: two GPS L1 C/A satellites at C/N0 45 dB-Hz, its fields as the netlist writes them, the spectrum "
+          + "against the signal's expected PSD, and under the plots each PRN's code phase and C/N0 read as a receiver's "
+          + "acquisition reads them."),
+
         new("signal-designer-custom", DocSignalFixtures.DesignerCustom, 1199, 800,
             WindowFrame.Titled("Signal Designer — SRC1"),
             "A custom I/Q file as the whole signal: the file stored relative to the workspace, the file sample "

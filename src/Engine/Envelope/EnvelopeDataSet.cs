@@ -373,6 +373,8 @@ public static class EnvelopeDataSet
                 ds.Add("DE_pct", new DataCube([branchAxis], [.. pf.Select((x, b) => pdc > 0 && !noRf[b] ? 100 * x / pdc : double.NaN)]));
             if (pulse is not null) note?.Invoke(EnvelopePulse.Add(ds, r, pulse, plan.Params.StartS, branchAxis, noRf));
             else if (!multi) AddAmAm(ds, r, t0, drive, reZ, branchAxis, noRf, ProbeV, ProbeI);
+            // a coded or chirped pulse's compression (PSL, ISL, mainlobe), read as the other carriers' quality is
+            if (pulse is not null && carSpecs.Any(SignalQuality.Reads)) AddEvm(ds, r, quiet, plan, t0, branchAxis, carSpecs, noRf, ProbeV, reads, note);
         }
 
         ds.Add("__EnvStep_s", DataCube.Scalar(r.StepS));
@@ -402,7 +404,7 @@ public static class EnvelopeDataSet
     public const int ConstMaxSamples = 6000;
 
     /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
-    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc }
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse, OfdmGrid }
 
     private static Meter MeterOf(CarrierStandard s) => s switch
     {
@@ -411,6 +413,14 @@ public static class EnvelopeDataSet
         CarrierStandard.Fsk => Meter.Fsk,
         CarrierStandard.Css => Meter.Css,
         CarrierStandard.Sc => Meter.Sc,
+        CarrierStandard.Wlan => Meter.Wlan,
+        CarrierStandard.Gnss => Meter.Gnss,
+        CarrierStandard.Wcdma => Meter.Wcdma,
+        CarrierStandard.Wlan11b => Meter.Wlan11b,
+        CarrierStandard.Oqpsk154 => Meter.Oqpsk154,
+        CarrierStandard.Analog => Meter.Analog,
+        CarrierStandard.Tones => Meter.Npr,
+        CarrierStandard.Pcw => Meter.Pulse,
         _ => Meter.None,
     };
 
@@ -424,6 +434,8 @@ public static class EnvelopeDataSet
         public ErrorCount? Errors { get; init; }
         public double BerEst { get; init; } = double.NaN;
         public Equalized? Eq { get; init; }
+        /// <summary>A record kind's own readout (code-domain power, correlations, ...).</summary>
+        public WaveformQuality? Q { get; init; }
     }
 
     /// <summary>
@@ -492,7 +504,7 @@ public static class EnvelopeDataSet
             var shape = ScQam.Resolve(rec.Spec);
             return new Reading(e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Points, e.Ideal, null, null, w)
             {
-                Offset = cfo, Errors = SignalDecisions.Sc(ScQam.Constellation(shape), e.Points, e.Ideal), Eq = e,
+                Offset = cfo, Errors = ScErrors(shape, e, eq.Mode == EqualizerMode.None ? w : moved), Eq = e,
                 BerEst = SignalDecisions.SemiAnalytic(e.Sinr, g => ScQam.Ber(shape, g)),
             };
         }
@@ -500,8 +512,28 @@ public static class EnvelopeDataSet
         return new Reading(q.ErrorPercent, q.PeakPercent, q.DeviationHz, q.OffsetHz, q.Points, q.Reference, q.FreqHz, q.FreqRefHz, w)
         {
             Offset = meter == Meter.Fsk ? new CarrierOffset(q.OffsetHz, double.NaN) : null,
-            Errors = meter == Meter.Fsk ? SignalDecisions.Fsk(q.FreqHz!, q.FreqRefHz!) : SignalDecisions.Css(w),
+            // a record kind decides against its own decisions (Wi-Fi's nearest point): no count to make
+            Errors = meter switch { Meter.Fsk => SignalDecisions.Fsk(q.FreqHz!, q.FreqRefHz!), Meter.Css => SignalDecisions.Css(w), _ => null },
+            Q = q,
         };
+    }
+
+    /// <summary>A single carrier's counted errors: each point turned back by its symbol's rotation, and a differential carrier
+    /// decided on the step from the symbol before, p_k·conj(p_k−1), as its receiver reads it. A carrier read against its
+    /// clean waveform decides that waveform's points too, so the count is relative to the reference.</summary>
+    private static ErrorCount ScErrors(ScShape s, Equalized e, ReceivedWaveform w)
+    {
+        var cons = ScQam.Constellation(s);
+        if (s.RotationDeg == 0 && !s.Differential) return SignalDecisions.Sc(cons, e.Points, e.Ideal);
+        var index = new Dictionary<int, int>();
+        for (int i = 0; i < w.At.Length; i++) index[w.At[i]] = w.SymbolIndex![i];
+        var k = e.Instants!.Select(i => index[i]).ToArray();
+        Complex Back(Complex v, int i) => v * Complex.FromPolarCoordinates(1, -Math.IEEERemainder(k[i] * s.RotationDeg, 360) * Math.PI / 180);
+        var p = e.Points.Select(Back).ToArray();
+        var q = e.Ideal.Select(Back).ToArray();
+        if (!s.Differential) return SignalDecisions.Sc(cons, p, q);
+        var steps = Enumerable.Range(1, Math.Max(0, p.Length - 1)).Where(i => k[i] == k[i - 1] + 1).ToArray();
+        return SignalDecisions.Sc(cons, [.. steps.Select(i => p[i] * Complex.Conjugate(p[i - 1]))], [.. steps.Select(i => q[i] * Complex.Conjugate(q[i - 1]))]);
     }
 
     private static double Snr(object noisy, object quiet) => noisy switch
@@ -523,7 +555,10 @@ public static class EnvelopeDataSet
                                Axis branchAxis, List<CarrierSpec> carSpecs, bool[] noRf, Func<int, int, Complex[]> probeV,
                                CarrierRead[,] reads, Action<string>? note)
     {
-        var meters = carSpecs.Select(c => MeterOf(c.Standard)).ToArray();
+        // a plain pulse, and tones with no notch, are not read here (the pulse cubes and the spectrum are their measures)
+        // an LTE / NR carrier with options is read as one record against its grid, as an OFDM preset is
+        var meters = carSpecs.Select(c => SignalQuality.KindOf(c) == QualityKind.Ofdm ? Meter.OfdmGrid
+                                          : c.Standard is CarrierStandard.Lte or CarrierStandard.Nr || SignalQuality.Reads(c) ? MeterOf(c.Standard) : Meter.None).ToArray();
         if (meters.All(m => m == Meter.None)) return;
         var recs = r.Sources.SelectMany(s => s.Signal.Carriers.Select(c => (rec: c, record: s.Signal.RecordSeconds, hz: s.FcHz + c.OffsetHz))).ToList();
         int nb = branchAxis.Length, nc = recs.Count;
@@ -555,6 +590,7 @@ public static class EnvelopeDataSet
         var cfo = Nan(nb * nc); var cfoDrift = Nan(nb * nc); var ser = Nan(nb * nc); var ber = Nan(nb * nc);
         var bitErr = Nan(nb * nc); var bits = Nan(nb * nc); var berLo = Nan(nb * nc); var berHi = Nan(nb * nc); var berEst = Nan(nb * nc);
         var sinr = new Equalized?[nb, nc];
+        var quals = new WaveformQuality?[nb, nc];
         var farFromGauss = new List<string>();
         var eqNotes = new HashSet<string>();
         double[]? dist = quiet is null ? null : Nan(nb * nc), noise = quiet is null ? null : Nan(nb * nc), snr = quiet is null ? null : Nan(nb * nc);
@@ -593,6 +629,7 @@ public static class EnvelopeDataSet
                     (berLo[at], berHi[at]) = ec.BerInterval;
                 }
                 berEst[at] = e.BerEst;
+                quals[b, c] = e.Q;
                 sinr[b, c] = e.Eq;
                 if (e.Eq?.Note is { } en) eqNotes.Add($"{labels[c]}: {en}");
                 if (e.Points is { } ep) points[b, c] = [.. Enumerable.Range(0, kept).Select(i => ep[i * stride])];
@@ -640,7 +677,7 @@ public static class EnvelopeDataSet
             ds.Add(noiseName, new DataCube([branchAxis, carrierAxis], Only(noise!, kinds)) { Unit = "%" });
         }
 
-        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk, Meter.Sc];
+        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk, Meter.Sc, Meter.Wlan, Meter.Wcdma, Meter.Wlan11b, Meter.Oqpsk154, Meter.OfdmGrid];
         if (meters.Any(qam.Contains))
         {
             Family("EVM_pct", "%", qam, "EVMdist_pct", "EVMnoise_pct");
@@ -670,6 +707,17 @@ public static class EnvelopeDataSet
             Family("FSKerr_pct", "%", [Meter.Fsk], "FSKerrDist_pct", "FSKerrNoise_pct");
             ds.Add("FreqDev_Hz", new DataCube([branchAxis, carrierAxis], Only(dev, Meter.Fsk)) { Unit = "Hz" });
             ds.Add("FreqOffset_Hz", new DataCube([branchAxis, carrierAxis], Only(offs, Meter.Fsk)) { Unit = "Hz" });
+            // a burst that switches to a DPSK payload (Bluetooth EDR): the payload's EVM, read as the SC carrier's
+            bool switched = false;
+            foreach (var q in quals) switched |= q?.Switched is not null;
+            if (switched)
+            {
+                var v = Nan(nb * nc);
+                for (int b = 0; b < nb; b++)
+                    for (int c = 0; c < nc; c++)
+                        if (quals[b, c]?.Switched is { } e) v[b * nc + c] = e.RmsPercent;
+                ds.Add("PayloadEVM_pct", new DataCube([branchAxis, carrierAxis], v) { Unit = "%" });
+            }
             int ns = Math.Max(1, freqRef.Max(x => x?.Length ?? 0));
             var pts = Nan(nb * nc * ns);
             var fref = Nan(nc * ns);
@@ -685,6 +733,61 @@ public static class EnvelopeDataSet
         }
         if (meters.Contains(Meter.Css))
             Family("CSSerr_pct", "%", [Meter.Css], "CSSerrDist_pct", "CSSerrNoise_pct");
+        // a record kind's own readout, one value per item it lists (a satellite, a code channel), the items labelled as the
+        // first carrier that has them names them; the rest NaN
+        void PerItem(string name, string unit, string axis, Func<WaveformQuality, (string Label, double Value)[]?> pick)
+        {
+            var rows = new (string Label, double Value)[nb, nc][];
+            int n = 0; string[]? names = null;
+            for (int b = 0; b < nb; b++)
+                for (int c = 0; c < nc; c++)
+                    if (quals[b, c] is { } q && pick(q) is { } v)
+                    {
+                        rows[b, c] = v;
+                        if (v.Length > n) { n = v.Length; names = [.. v.Select(x => x.Label)]; }
+                    }
+            if (n == 0) return;
+            var cube = Nan(nb * nc * n);
+            for (int b = 0; b < nb; b++)
+                for (int c = 0; c < nc; c++)
+                    if (rows[b, c] is { } v)
+                        for (int i = 0; i < v.Length; i++) cube[(b * nc + c) * n + i] = v[i].Value;
+            ds.Add(name, new DataCube([branchAxis, carrierAxis, new Axis(axis, Index(n), "", names!)], cube) { Unit = unit });
+        }
+        void PerCarrier(string name, string unit, Func<WaveformQuality, double> pick)
+        {
+            var v = Nan(nb * nc);
+            for (int b = 0; b < nb; b++)
+                for (int c = 0; c < nc; c++)
+                    if (quals[b, c] is { } q) v[b * nc + c] = pick(q);
+            ds.Add(name, new DataCube([branchAxis, carrierAxis], v) { Unit = unit });
+        }
+        if (meters.Contains(Meter.Wcdma))
+        {
+            PerCarrier("PCDE_dB", "dB", q => q.Wcdma?.PeakCdeDb ?? double.NaN);
+            PerItem("CDP_dB", "dB", "channel", q => q.Wcdma is { } w ? [.. w.Channels.Select(x => (x.Channel.Name, x.PowerDb))] : null);
+        }
+        if (meters.Contains(Meter.Wlan11b)) PerCarrier("MaskMargin_dB", "dB", q => q.MaskMarginDb);
+        if (meters.Contains(Meter.Npr)) PerCarrier("NPR_dB", "dB", q => q.NprDb);
+        if (meters.Contains(Meter.Pulse))
+        {
+            PerCarrier("PSL_dB", "dB", q => q.Compression?.PslDb ?? double.NaN);
+            PerCarrier("ISL_dB", "dB", q => q.Compression?.IslDb ?? double.NaN);
+            PerCarrier("Mainlobe_s", "s", q => q.Compression?.MainlobeSeconds ?? double.NaN);
+        }
+        if (meters.Contains(Meter.Analog))
+            PerItem("Analog", "", "quantity", q => q.Analog is { } a
+                ? [("MessageHz", a.MessageHz), ("MessageLevel", a.MessageLevel), ("Depth", a.Depth), ("DeviationHz", a.DeviationHz),
+                   ("PeakPhaseRad", a.PeakPhaseRad), ("BearingDeg", a.BearingDeg), ("DDM", a.Ddm), ("SDM", a.Sdm)]
+                : null);
+        if (meters.Contains(Meter.Gnss))
+        {
+            static (string, double)[]? Sv(WaveformQuality q, Func<GnssCorrelation, double> f)
+                => q.Gnss is { } g ? [.. g.Select(x => ($"PRN {x.Prn}", f(x)))] : null;
+            PerItem("GnssCN0_dBHz", "dB-Hz", "satellite", q => Sv(q, x => x.Cn0DbHz));
+            PerItem("GnssCodePhase_chips", "chips", "satellite", q => Sv(q, x => x.CodePhaseChips));
+            PerItem("GnssPeakToFloor_dB", "dB", "satellite", q => Sv(q, x => x.PeakToFloorDb));
+        }
         if (snr is not null)
             ds.Add("SNR_dB", new DataCube([branchAxis, carrierAxis], snr) { Unit = "dB" });
 
