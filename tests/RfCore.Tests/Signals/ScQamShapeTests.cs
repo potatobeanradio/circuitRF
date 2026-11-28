@@ -1,7 +1,7 @@
 // The single carrier's pulse shapes, rotated, differential and offset constellations, SOQPSK-TG and bursts.
 //
-//   V0  Options unset: the shape and its instants are as before (the bytes were compared against the previous
-//       generator when the options went in).
+//   V0  Options unset: the shape, its instants and the bytes of the record and its matched filtering are as the
+//       generator before the options made them.
 //   V1  The points turn and chain per symbol: π/2-BPSK, π/4-QPSK, 3π/8-8PSK, π/4-DQPSK, D8PSK.
 //   V2  Each pulse's spectrum against its formula (first nulls, the Gaussian's 3 dB point, RC's half point), and the
 //       generated record's 99 % power bandwidth against BandwidthHz (SOQPSK-TG: 0.78 times the bit rate, IRIG 106).
@@ -67,6 +67,23 @@ public class ScQamShapeTests(ITestOutputHelper output)
         Assert.Equal(s.RecordSymbols / s.SymbolRate, s.RecordSeconds);
         Assert.Equal(Enumerable.Range(0, s.RecordSymbols).Select(k => k * ScQam.SamplesPerSymbol), ScQam.Symbols(s).At);
         Assert.Equal(1.2e6, ScQam.BandwidthHz(s), 1e-6);
+    }
+
+    /// <summary>The generated and matched-filtered records' SHA-256 (first 8 bytes), taken from the generator before the
+    /// options went in. Bit-exact, so a math library that rounds differently can move them.</summary>
+    [Theory]
+    [InlineData("SC;Rs=1Msps;Mod=16APSK;RollOff=0.2;Data=PN9;Preamble=32;PilotBlock=8/100;Off=0;P=0", "7070EAA517CF7EB8", "0F2EB294CF5E812C")]
+    [InlineData("SC;Rs=1Msps;Mod=8PSK;RollOff=0.35;Span=16;Data=PN15;Symbols=2000;Off=0;P=0", "18CEF758CEE786F3", "D9BF0E5CB07717A6")]
+    [InlineData("SC;Off=0;P=0", "70EAD8D5D2B63F6D", "1930B4A7F4113083")]
+    [InlineData("SC;Rs=3Msps;Mod=256QAM;RollOff=0.1;Data=PN23;Off=0;P=0", "6B92DEB51419ED24", "EECD545A7DEF28F4")]
+    public void V0_OptionsUnset_TheBytesAreAsBefore(string carrier, string gen, string mf)
+    {
+        static string H(Complex[] a) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            a.SelectMany(v => BitConverter.GetBytes(v.Real).Concat(BitConverter.GetBytes(v.Imaginary))).ToArray()))[..16];
+        var s = ScQam.Validate(SignalSpec.ParseCarrier(carrier));
+        var x = ScQam.Generate(s);
+        Assert.Equal(gen, H(x));
+        Assert.Equal(mf, H(ScQam.Filter(s, x, ScQam.NativeRateHz(s), matched: true)));
     }
 
     [Fact]
