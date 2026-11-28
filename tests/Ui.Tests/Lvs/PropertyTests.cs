@@ -270,6 +270,18 @@ public sealed class PropertyTests
         if (finding is not null) Assert.Equal("1 nm", finding.Arguments["tolerance"]);
     }
 
+    // An angle crosses a degree/radian conversion each way, and its round-off is not a difference; two degrees are one.
+
+    [Theory]
+    [InlineData(0.0, null)]                          // 48° and the same 48° a bit off in its last digit
+    [InlineData(2.0, "lvs.property.mismatch")]       // 48° against 50°
+    public void AnAnglesRoundOffIsSilentAndARealDifferenceIsOneFinding(double moreDeg, string? expected)
+    {
+        double asked = 48 * Math.PI / 180, drawn = moreDeg == 0 ? Math.BitIncrement(Math.BitIncrement(asked)) : (48 + moreDeg) * Math.PI / 180;
+        var finding = AssertOnly(expected, Pass(Two(("Theta", asked, UnitDimension.Angle)), Two(("Theta", drawn, UnitDimension.None))));
+        if (finding is not null) Assert.Equal("1E-06 deg", finding.Arguments["tolerance"]);
+    }
+
     // ══ 10 — a technology override changes the verdict and the printed number ═══════════════════
 
     [Fact]
