@@ -382,12 +382,14 @@ and saves exactly as before.
 | File | Field | Meaning |
 |---|---|---|
 | `.ccell` | `"PCellDesign": { "Sweep": "start=1 stop=20 npts=201 Unit=GHz" }` | The designed marker; its presence is the marker. `Sweep` is the designer's response sweep, in the netlist's spelling, when the schematic has no S-parameter analysis |
+| `.ccell` | `"PCellDesign": { "Filter": { "Response": "Chebyshev", "Band": "Bandpass", "Order": 5, "F1Hz": 9.5e9, "F2Hz": 10.5e9, "RippleDb": 0.1, "StopAttenuationDb": 40, "Z0": 50, "Realiser": "…" } }` | The filter specification a cell made by the Filter Designer's **Make PCell…** was realised to, frequencies in Hz, with `TransmissionZerosHz` when it has zeros. The cell's filter metrics are checked against it. Omitted for any other designed cell |
 | `.ccell` | `"LayoutGenerator": "cpcell:PadTee"` | The generator that draws the cell wherever it is placed: its own schematic, planned at the instance's values |
 | `.ccell` | `"EmCopper": true` | The generator's layout is metal: EM solves a placed copy as copper (see [EM cells](em-cells.html#placed)) |
 | `.ccell` | `"Minimum"`, `"Maximum"` on a parameter | Its range, in base SI (m, degrees). The design check plans the cell at both ends, and a drag handle stops there |
 | `.ccell` | `"Terminals"` | One per Port: `{ "Port": 1, "Name": "P1", "LayoutPin": "1" }`, so LVS pairs each schematic pin with the generator's pin |
 | `.csch` | `"Offset": {"Anchor":"TL1.2","Pin":1,"Dx":"g","Dy":"0","Unit":"um","Angle":"0"}` on a component | An offset placement: this part's pin `Pin` placed from the anchor pin, `Dx` along its outward direction and `Dy` 90° counter-clockwise from it, turned by `Angle` degrees. All zero is a joint |
 | `.csch` | `"Stretch": [{"Parameter":"Lpad","Anchor":1,"Moving":[2,3],"AxisDeg":0}]` on an MSHAPE | A Stretch by Parameter binding: the corners `Moving` follow `Parameter` along `AxisDeg` from corner `Anchor`. The corners' expressions already say so; the binding is what the drag handle reads |
+| `.csch` | `"PCellOperations": [{"Id":"op1","Kind":"Subtract","A":["TL3"],"B":["SH9"],"Unit":"um"}]` | The [operation history](pcell-designer.html#operations), applied in order after the parts are placed. `Kind` is `Merge`, `Subtract`, `Intersect`, `Exclusive`, `Grow` or `Repeat`; `A` and `B` (the first operands and the rest) name parts by designator, a whole layer as `layer:<name>`, or a tool (an MSHAPE whose `Role` is `"tool"`). Grow adds `Amount` and `Onto`; Repeat adds `Rows`, `Columns`, `PitchX` and `PitchY`. Each is an expression, a length in `Unit` when it carries none of its own. `Suppressed` and `KeepModel` are written only when true. Omitted when the cell has no history |
 
 **The package.** `<Name>.cpcell` is a ZIP, entries sorted by name and every timestamp 1980-01-01, so the same cell
 gives the same bytes:

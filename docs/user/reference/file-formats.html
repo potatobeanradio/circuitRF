@@ -691,6 +691,11 @@ and saves exactly as before.</p>
 </tr>
 <tr>
 <td><code>.ccell</code></td>
+<td><code>&quot;PCellDesign&quot;: { &quot;Filter&quot;: { &quot;Response&quot;: &quot;Chebyshev&quot;, &quot;Band&quot;: &quot;Bandpass&quot;, &quot;Order&quot;: 5, &quot;F1Hz&quot;: 9.5e9, &quot;F2Hz&quot;: 10.5e9, &quot;RippleDb&quot;: 0.1, &quot;StopAttenuationDb&quot;: 40, &quot;Z0&quot;: 50, &quot;Realiser&quot;: &quot;…&quot; } }</code></td>
+<td>The filter specification a cell made by the Filter Designer's <strong>Make PCell…</strong> was realised to, frequencies in Hz, with <code>TransmissionZerosHz</code> when it has zeros. The cell's filter metrics are checked against it. Omitted for any other designed cell</td>
+</tr>
+<tr>
+<td><code>.ccell</code></td>
 <td><code>&quot;LayoutGenerator&quot;: &quot;cpcell:PadTee&quot;</code></td>
 <td>The generator that draws the cell wherever it is placed: its own schematic, planned at the instance's values</td>
 </tr>
@@ -718,6 +723,11 @@ and saves exactly as before.</p>
 <td><code>.csch</code></td>
 <td><code>&quot;Stretch&quot;: [{&quot;Parameter&quot;:&quot;Lpad&quot;,&quot;Anchor&quot;:1,&quot;Moving&quot;:[2,3],&quot;AxisDeg&quot;:0}]</code> on an MSHAPE</td>
 <td>A Stretch by Parameter binding: the corners <code>Moving</code> follow <code>Parameter</code> along <code>AxisDeg</code> from corner <code>Anchor</code>. The corners' expressions already say so; the binding is what the drag handle reads</td>
+</tr>
+<tr>
+<td><code>.csch</code></td>
+<td><code>&quot;PCellOperations&quot;: [{&quot;Id&quot;:&quot;op1&quot;,&quot;Kind&quot;:&quot;Subtract&quot;,&quot;A&quot;:[&quot;TL3&quot;],&quot;B&quot;:[&quot;SH9&quot;],&quot;Unit&quot;:&quot;um&quot;}]</code></td>
+<td>The <a href="pcell-designer.html#operations">operation history</a>, applied in order after the parts are placed. <code>Kind</code> is <code>Merge</code>, <code>Subtract</code>, <code>Intersect</code>, <code>Exclusive</code>, <code>Grow</code> or <code>Repeat</code>; <code>A</code> and <code>B</code> (the first operands and the rest) name parts by designator, a whole layer as <code>layer:&lt;name&gt;</code>, or a tool (an MSHAPE whose <code>Role</code> is <code>&quot;tool&quot;</code>). Grow adds <code>Amount</code> and <code>Onto</code>; Repeat adds <code>Rows</code>, <code>Columns</code>, <code>PitchX</code> and <code>PitchY</code>. Each is an expression, a length in <code>Unit</code> when it carries none of its own. <code>Suppressed</code> and <code>KeepModel</code> are written only when true. Omitted when the cell has no history</td>
 </tr>
 </tbody>
 </table>
