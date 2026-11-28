@@ -24,7 +24,9 @@ public partial class ParameterEditorViewModel
                     try
                     {
                         var c = SignalSpec.ParseCarrier(p.Expression.Trim().Trim('"'));
+                        // the label is the family's one-line summary; Pavg means the pulse top or the packet where it is gated
                         if (c.Standard == CarrierStandard.Pcw) return $"{c.Label}, Pavg is the pulse-top power";
+                        if (c.Standard == CarrierStandard.Wlan) return $"{c.Label}, Pavg is the packet power";
                         return c.OffsetHz == 0 ? c.Label : $"{c.Label} @ {c.OffsetHz / 1e6:+0.##;-0.##} MHz";
                     }
                     catch (FormatException ex) { return $"{p.Name}: {ex.Message}"; }
