@@ -1503,7 +1503,7 @@ public static partial class SchematicLayoutPlanner
         foreach (var dp in defaults)
         {
             if (NonPCellParamNames.Contains(dp.Name)) continue;
-            if (TryResolveSiValue(dp.Expression, dp.Unit, scope, evaluator, out var value, out _))
+            if (TryResolveSiValue(dp.Expression, dp.Unit, scope, evaluator, out var value, out _, dp.Dimension))
                 resolved[dp.Name] = value;
         }
         return resolved;
@@ -1813,7 +1813,7 @@ public static partial class SchematicLayoutPlanner
                 continue;
             }
 
-            if (!TryResolveSiValue(p.Expression, p.Unit, at, evaluator, out var value, out var error))
+            if (!TryResolveSiValue(p.Expression, p.Unit, at, evaluator, out var value, out var error, p.Dimension))
             {
                 resolveWarning = $"parameter '{p.Name}': {error}";
                 return null;
@@ -1871,11 +1871,10 @@ public static partial class SchematicLayoutPlanner
         {
             var si = resolved.Where(kv => kv.Key is "W" or "G" or "E" or "F")
                              .ToDictionary(kv => kv.Key, kv => resolved.Real(kv.Key), StringComparer.Ordinal);
-            // TryResolveSiValue hands an angle stated in degrees back IN DEGREES — the unit PCell generators take
-            // a bend in — while LengthMeters reads E in radians. Passed through as it was, a 90° line at 10 GHz
-            // was drawn 57× too long (designer report, 2026-10-20: a quarter-wave stub came out 252 mm).
-            if (string.Equals(UnitNormalizer.ToEngineUnit(comp.Parameters.FirstOrDefault(p => p.Name == "E")?.Unit),
-                              "deg", StringComparison.Ordinal))
+            // TryResolveSiValue hands an angle back IN DEGREES — the unit PCell generators take a bend in — while
+            // LengthMeters reads E in radians. Passed through as it was, a 90° line at 10 GHz was drawn 57× too long
+            // (designer report, 2026-10-20: a quarter-wave stub came out 252 mm).
+            if (comp.Parameters.FirstOrDefault(p => p.Name == "E") is { } eRow && IsAngle(eRow.Unit, eRow.Dimension))
                 si["E"] *= Math.PI / 180.0;
             if (LineEntryConversion.LengthMeters(comp.Symbol, si, signalOverride, groundOverride, technology) is { } lengthM)
                 resolved["L"] = lengthM;
@@ -2183,8 +2182,14 @@ public static partial class SchematicLayoutPlanner
     /// exact trap (<c>unit.Length &gt; 0 ? unit : null</c>) — this is that same guard, applied here.
     /// R-L5f-4: the real exception message is returned via <paramref name="error"/> rather than
     /// swallowed, so a genuine failure (a blank/malformed expression, an unresolvable variable) is
-    /// diagnosable instead of a uniform "could not be resolved."</summary>
-    internal static bool TryResolveSiValue(string expression, string? unit, Scope scope, Evaluator evaluator, out double value, out string? error)
+    /// diagnosable instead of a uniform "could not be resolved."
+    ///
+    /// <para><b>An angle is known by its <paramref name="dimension"/> as well as by a "deg" unit.</b> The value is SI, radians,
+    /// whatever the row's unit: <c>Theta=Th</c> with <c>Th</c> a parameter in degrees carries no unit of its own and is still
+    /// radians (var-unit-wins), as the circuit model reads it. Keyed on the unit alone, it reached the generator as
+    /// radians read as degrees, a 49° line drawn 0.86° long.</para></summary>
+    internal static bool TryResolveSiValue(string expression, string? unit, Scope scope, Evaluator evaluator, out double value, out string? error,
+                                           UnitDimension dimension = UnitDimension.None)
     {
         string normalized = UnitNormalizer.ToEngineUnit(unit);
         string? engineUnit = normalized.Length > 0 ? normalized : null;
@@ -2210,7 +2215,7 @@ public static partial class SchematicLayoutPlanner
                 error = $"expected a numeric value, got {v.Kind}";
                 return false;
             }
-            value = string.Equals(engineUnit, "deg", StringComparison.Ordinal) ? raw * 180.0 / Math.PI : raw;
+            value = IsAngle(unit, dimension) ? raw * 180.0 / Math.PI : raw;
             error = null;
             return true;
         }
@@ -2221,6 +2226,10 @@ public static partial class SchematicLayoutPlanner
             return false;
         }
     }
+
+    /// <summary>Whether <see cref="TryResolveSiValue"/> hands this row to a generator in degrees.</summary>
+    internal static bool IsAngle(string? unit, UnitDimension dimension)
+        => dimension == UnitDimension.Angle || UnitNormalizer.ToEngineUnit(unit) == "deg";
 
     /// <summary>
     /// A schematic parameter as a generator that declared it a STRING has to receive it.
@@ -2260,7 +2269,7 @@ public static partial class SchematicLayoutPlanner
         EditableParameter p, Scope scope, Evaluator evaluator, out string? note)
     {
         note = null;
-        if (TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out double v, out _))
+        if (TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out double v, out _, p.Dimension))
             return v.ToString("R", CultureInfo.InvariantCulture);
 
         string raw = p.Expression.Trim();

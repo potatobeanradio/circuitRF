@@ -448,7 +448,7 @@ public static class LayoutToSchematicGenerator
                     continue;
                 }
                 if (param is null) continue;
-                if (!SchematicLayoutPlanner.TryResolveSiValue(param.Expression, param.Unit, scope, evaluator, out var schematicVal, out _))
+                if (!SchematicLayoutPlanner.TryResolveSiValue(param.Expression, param.Unit, scope, evaluator, out var schematicVal, out _, param.Dimension))
                     continue;
 
                 // The schematic side can only ever produce a number (a parameter is an expression),
