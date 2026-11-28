@@ -143,7 +143,8 @@ parameters.
 - **Repeat** copies the selection into rows and columns at the pitches. The copies are copper only, with no pins and
   no circuit model.
 
-Amounts, counts and pitches are expressions (`g/2`, `2*W`), and one that names a parameter is drawn as a dimension.
+Amounts, counts and pitches are written as any value is: `20 um`, `20um`, or an expression such as `Lmid/30`. One
+that names a parameter is drawn as a dimension.
 Each press adds one step, as one undo step. In the panel, change a step's operands (the first set, then `|` and the
 rest), amount or pitches and press **Apply**; move it earlier or later with the arrows; tick **Suppressed** to keep it
 in the history without applying it; or delete it. Each change is one undo step, and the canvas, the response and the
@@ -154,7 +155,10 @@ row says why. A step that changes copper on a conductor layer makes the cell **E
 with `em=direct`, and the response line says so, naming the step (`no circuit model: op1 (Subtract) changes the
 copper`). Steps on mask, silk or keep-out layers keep the circuit model. Tick **Keep model** on a step to accept the
 circuit model as an approximation. Operations are geometry, so they are not in the netlist text;
-`circuitrf pcell ops <cell>` lists them.
+`circuitrf pcell ops <cell>` lists them, as the MCP `pcell` tool does with `what=ops`.
+
+LVS compares a cell with operations by which ports each piece of its copper joins. Placed in another design, the cell is
+compared as one part, like any PCell.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/operations.png" alt="The PCell Designer on a copy of the PadTee cell with a square tool on the line TL3 and one operation, op1 Subtract TL3 minus SH9, in the Operations panel; the line has a square notch where the tool was, and the response line says the cell has no circuit model." style="width:100%;height:auto">
@@ -321,8 +325,9 @@ estimate of 5.45 GHz. Two `em=direct` passes on `X1.Ls`, the second over a narro
 
 **A dual-mode patch bandpass** (`DualModePatch`). A square patch with one corner cut, fed along two adjacent edges
 across a gap. No net joins the feeds and the patch, so they are placed by offset: the patch from the first feed's end,
-the second feed from the patch's pin. A coarse Planar sweep shows the two modes the cut splits, at 5.10 and 5.32 GHz,
-either side of the unperturbed patch's 5.22 GHz.
+the second feed from the patch's pin. A Planar sweep shows the two modes the cut splits, at 5.10 and 5.35 GHz,
+either side of the unperturbed patch's 5.22 GHz. The feeds couple across a gap at the board's spacing rule, which
+leaves them under-coupled: S21 peaks at −7.3 dB, and `em=direct` on the gap and the cut gained only 1 dB.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/dual-mode-patch.png" alt="The PCell Designer on the dual-mode patch: a square patch with its top right corner cut, a feed along its left edge and a feed along its bottom edge." style="width:100%;height:auto">
@@ -335,7 +340,7 @@ its middle and two outputs either side, each crossing a quarter-wave microstrip-
 crosses it the other way round, so the outputs are 180° apart. The ground is drawn copper: two `MSHAPE`s on the ground
 layer, since a polygon has no hole. Planar's ground is an unbroken plane, so the bench solves in its 3D view, which
 turns the drawn ground into copper with the slot in it. An EMerge solve on its Standard mesh (11 points over 4-6 GHz,
-40 s) gives −5.92 and −6.01 dB at 5 GHz, 180° ± 1° apart across the band. Most of the loss is the slot radiating.
+60 s) gives −5.89 dB on both outputs at 5 GHz, 178-179° apart across the band. Most of the loss is the slot radiating.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/slotline.png" alt="The PCell Designer on the slotline divider: three microstrips crossing a long slot in the drawn ground, the input in the middle and an output at each side." style="width:100%;height:auto">

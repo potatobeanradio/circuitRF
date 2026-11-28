@@ -109,7 +109,7 @@ public sealed class Pcd14OperationsTests : IDisposable
         var grow = vm.Operations[0];
         grow.Amount = "30 um";
         Assert.True(vm.EditOperation(grow.Id, grow.Edited()), vm.Status);
-        Assert.Equal("30um", PCellOperations.Of(vm.Schematic)[0].Amount);
+        Assert.Equal("30 um", PCellOperations.Of(vm.Schematic)[0].Amount);
 
         Assert.True(vm.MoveOperation(vm.Operations[1].Id, 0), vm.Status);
         Assert.Equal(PCellOperationKind.Repeat, PCellOperations.Of(vm.Schematic)[0].Kind);

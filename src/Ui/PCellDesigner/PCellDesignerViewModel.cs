@@ -774,14 +774,8 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
 
     public bool HasOperations => Operations.Count > 0;
 
-    /// <summary>An operation field as the engine reads it: a value typed with a spaced unit (<c>20 um</c>) glued into a
-    /// unit literal (<c>20um</c>); empty is null.</summary>
-    internal static string? OperationText(string text)
-    {
-        if (text.Trim().Length == 0) return null;
-        var (e, u) = TunableValue.Split(text, null);
-        return u is { Length: > 0 } ? $"{e.Trim()}{u}" : e.Trim();
-    }
+    /// <summary>An operation field as typed (the engine reads <c>20 um</c>, <c>20um</c> or an expression); empty is null.</summary>
+    internal static string? OperationText(string text) => text.Trim().Length > 0 ? text.Trim() : null;
 
     private void RebuildOperations()
     {
