@@ -269,4 +269,33 @@ public class SignalFamiliesTests
         var vor = Own(SignalComposer.Generate(new SignalSpec { Carriers = [SignalSpec.ParseCarrier("ANALOG;Kind=VOR;Bearing=45;Off=0;P=0;Seed=1")] })).Analog!;
         Assert.Equal(45, vor.BearingDeg, 0.01);
     }
+
+    [Fact]
+    public void T1_Tones_ParseRoundTripLabelsAndRefusals_CwPhaseUnchanged()
+    {
+        var c = RoundTrip("TONES;N=100;Spacing=100kHz;Phase=Random;Notch=0/1MHz;Off=0;P=0;Seed=1", CarrierStandard.Tones);
+        Assert.Equal((10e6, "100 tones × 100 kHz, notch 1 MHz"), (c.BandwidthHz, c.Label));
+        var n = RoundTrip("TONES;N=0;Notch=0/0.36MHz;NoiseBW=36MHz;Record=1ms;Off=0;P=0;Seed=1", CarrierStandard.Tones);
+        Assert.Equal((36e6, "noise 36 MHz, notch 360 kHz"), (n.BandwidthHz, n.Label));
+        Assert.Equal(90, RoundTrip("CW;Phase=90;Off=0.5MHz;P=0;Seed=1", CarrierStandard.Cw).PhaseDeg);
+        Refuses(("TONES;Phase=Odd", "Phase must be Zero"), ("TONES;Notch=1MHz", "is centre/width"),
+                ("LTE;Spacing=1MHz", "SPACING belongs to a TONES carrier"), ("TONES;N=3;Spacing=1MHz;Powers=0,1", "2 powers for 3 tones"),
+                ("PCW;Phase=Random", "PHASE belongs to a CW carrier"));
+    }
+
+    [Fact]
+    public void T2_Tones_ComposeAtTheirRate_ReadNpr_AndClipFillsTheNotch()
+    {
+        var c = SignalSpec.ParseCarrier("TONES;N=0;Notch=0/0.1MHz;NoiseBW=1MHz;Record=1ms;Off=0;P=0;Seed=1");
+        Assert.Contains("only carrier", Assert.Throws<ArgumentException>(() =>
+            SignalComposer.Generate(new SignalSpec { Carriers = [c, new CarrierSpec()] })).Message);
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var s = SignalSpec.ResolveTones(c);
+        Assert.Equal((Multitone.NativeRateHz(s), 1e-3), (sig.Carriers.Single().NativeRateHz, sig.RecordSeconds));
+        double clean = Own(sig).NprDb, clipped = Own(SignalComposer.Generate(new SignalSpec { Carriers = [c], ClipPaprDb = 5 })).NprDb;
+        Assert.True(clean > 100 && clipped < 60, $"NPR clean {clean:0.#} dB, clipped to 5 dB {clipped:0.#} dB");
+        var plain = SignalComposer.Generate(new SignalSpec { Carriers = [SignalSpec.ParseCarrier("TONES;N=2;Off=0;P=0;Seed=1")] }).Carriers.Single();
+        Assert.Null(SignalQuality.Receive(plain, 2e-6, plain.Native, plain.NativeRateHz, 0, 0, out string? why));
+        Assert.Contains("Notch=", why);
+    }
 }

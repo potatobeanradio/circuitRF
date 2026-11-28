@@ -205,7 +205,8 @@ namespace RfCore.Signals
                                    .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk
                                                                  or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
                                                                  or CarrierStandard.Wlan or CarrierStandard.Gnss or CarrierStandard.Wcdma
-                                                                 or CarrierStandard.Wlan11b or CarrierStandard.Oqpsk154 or CarrierStandard.Analog)
+                                                                 or CarrierStandard.Wlan11b or CarrierStandard.Oqpsk154 or CarrierStandard.Analog
+                                                                 or CarrierStandard.Tones)
                                    .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r).ToList();
             if (needHz < LadderBaseHz)
                 foreach (double fs in fileRates)
@@ -253,11 +254,13 @@ namespace RfCore.Signals
             var w11b = Wlan11bOf(spec);
             var o154 = Oqpsk154Of(spec);
             var analog = AnalogOf(spec);
+            var tones = TonesOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
             double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds
                             ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? gnss?.RecordSeconds
-                            ?? (wcdma is null ? (double?)null : Wcdma.RecordSeconds) ?? w11b?.RecordSeconds ?? o154?.RecordSeconds ?? analog?.RecordSeconds ?? iq?.DurationSeconds
+                            ?? (wcdma is null ? (double?)null : Wcdma.RecordSeconds) ?? w11b?.RecordSeconds ?? o154?.RecordSeconds ?? analog?.RecordSeconds
+                            ?? (tones is null ? (double?)null : Multitone.RecordSeconds(tones)) ?? iq?.DurationSeconds
                             ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
@@ -375,6 +378,17 @@ namespace RfCore.Signals
                         raw.Add((c with { BandwidthHz = Ieee802154.ChannelBandwidthHz }, Ieee802154.Generate(o154!),
                                  Ieee802154.NativeRateHz, 1.2 * Ieee802154.ChipRateHz));
                         break;
+                    case CarrierStandard.Tones:
+                    {
+                        // unit mean power; Clip applies (noise has peaks) over the occupied span, and fills a notch as a
+                        // transmitter's crest-factor reduction would
+                        var shape = tones!;
+                        double rate = Multitone.NativeRateHz(shape), occ = Multitone.SpanHz(shape);
+                        var x = Multitone.Generate(shape);
+                        if (spec.ClipPaprDb is double t) OfdmGenerator.Clip(x, rate, occ, t);
+                        raw.Add((c with { BandwidthHz = Multitone.BandwidthHz(shape) }, x, rate, occ));
+                        break;
+                    }
                     case CarrierStandard.Analog:
                     {
                         // unit mean power at its own rate, as DBPSK's
@@ -520,6 +534,17 @@ namespace RfCore.Signals
             return c is null ? null : Analog.Validate(Analog.Resolve(c));
         }
 
+        /// <summary>The tones-and-noise carrier (null when there is none): its record is its own grid's, so it is the only
+        /// carrier; Clip applies to it.</summary>
+        public static MultitoneShape? TonesOf(SignalSpec spec)
+        {
+            var c = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.Tones);
+            if (c is null) return null;
+            if (spec.Carriers.Count > 1)
+                throw new ArgumentException("a tones-and-noise (TONES) carrier must be the source's only carrier");
+            return Multitone.Validate(SignalSpec.ResolveTones(c));
+        }
+
         private static CarrierSpec? OwnRecordCarrier(SignalSpec spec, CarrierStandard standard, string what, string whyNoClip)
         {
             var c = spec.Carriers.FirstOrDefault(c => c.Standard == standard);
@@ -537,7 +562,7 @@ namespace RfCore.Signals
             => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null
                || ScOf(spec) is not null || WlanOf(spec) is not null || GnssOf(spec) is not null
                || WcdmaOf(spec) is not null || Wlan11bOf(spec) is not null || Oqpsk154Of(spec) is not null
-               || AnalogOf(spec) is not null;
+               || AnalogOf(spec) is not null || TonesOf(spec) is not null;
     }
 
     /// <summary>

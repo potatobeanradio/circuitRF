@@ -402,7 +402,7 @@ public static class EnvelopeDataSet
     public const int ConstMaxSamples = 6000;
 
     /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
-    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog }
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr }
 
     private static Meter MeterOf(CarrierStandard s) => s switch
     {
@@ -417,6 +417,7 @@ public static class EnvelopeDataSet
         CarrierStandard.Wlan11b => Meter.Wlan11b,
         CarrierStandard.Oqpsk154 => Meter.Oqpsk154,
         CarrierStandard.Analog => Meter.Analog,
+        CarrierStandard.Tones => Meter.Npr,
         _ => Meter.None,
     };
 
@@ -761,6 +762,7 @@ public static class EnvelopeDataSet
             PerItem("CDP_dB", "dB", "channel", q => q.Wcdma is { } w ? [.. w.Channels.Select(x => (x.Channel.Name, x.PowerDb))] : null);
         }
         if (meters.Contains(Meter.Wlan11b)) PerCarrier("MaskMargin_dB", "dB", q => q.MaskMarginDb);
+        if (meters.Contains(Meter.Npr)) PerCarrier("NPR_dB", "dB", q => q.NprDb);
         if (meters.Contains(Meter.Analog))
             PerItem("Analog", "", "quantity", q => q.Analog is { } a
                 ? [("MessageHz", a.MessageHz), ("MessageLevel", a.MessageLevel), ("Depth", a.Depth), ("DeviationHz", a.DeviationHz),

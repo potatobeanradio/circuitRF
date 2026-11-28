@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Tones }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -169,6 +169,20 @@ namespace RfCore.Signals
         public double? Sdm { get; init; }
         public string? Ident { get; init; }
 
+        // A tones-and-noise (TONES) carrier's settings; null = MultitoneShape's default (two tones 1 MHz apart, Newman
+        // phases). Its noise band is NoiseBandwidthHz, its record RecordS, its random phases' and noise's draw Seed.
+        public int? ToneCount { get; init; }
+        public double? ToneSpacingHz { get; init; }
+        public TonePhase? TonePhase { get; init; }
+        /// <summary>Each tone's power (dB, relative), comma-separated; null = equal.</summary>
+        public string? TonePowers { get; init; }
+        /// <summary>With tones: the noise's total over the tones' total (dB).</summary>
+        public double? NoiseDb { get; init; }
+        public double? NotchCentreHz { get; init; }
+        public double? NotchWidthHz { get; init; }
+        /// <summary>The notch as tone indices (0-based), comma-separated.</summary>
+        public string? NotchTones { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
@@ -185,6 +199,7 @@ namespace RfCore.Signals
             CarrierStandard.Wcdma => $"WCDMA {Signals.Wcdma.ModelName(Signals.Wcdma.Resolve(this).Model)}" + (ScramblingCode is int sc ? $" code {sc}" : ""),
             CarrierStandard.Wlan11b => $"802.11b {Ieee80211b.Resolve(this).RateMbps.ToString(CultureInfo.InvariantCulture)} Mb/s {Ieee80211b.Resolve(this).PsduBytes} B",
             CarrierStandard.Oqpsk154 => $"802.15.4 O-QPSK {Ieee802154.Resolve(this).PsduBytes} B",
+            CarrierStandard.Tones => TonesLabel(SignalSpec.ResolveTones(this)),
             CarrierStandard.Analog => $"{Signals.Analog.Label(Signals.Analog.Resolve(this).Kind)} {Fsk.FormatHz(Signals.Analog.BandwidthHz(Signals.Analog.Validate(Signals.Analog.Resolve(this))))}",
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
@@ -206,6 +221,14 @@ namespace RfCore.Signals
 
         private static string GnssLabel(GnssShape s)
             => $"{s.Band.Name} {s.Satellites.Length} SV" + (s.Cn0DbHz is double n ? $" {n.ToString("0.#", CultureInfo.InvariantCulture)} dB-Hz" : "");
+
+        private static string TonesLabel(MultitoneShape s)
+            => string.Join(" + ", new[]
+               {
+                   s.Tones > 0 ? $"{s.Tones} tone{(s.Tones == 1 ? "" : "s")}" + (s.Tones > 1 ? $" × {Fsk.FormatHz(s.SpacingHz)}" : "") : null,
+                   s.NoiseBandwidthHz > 0 ? $"noise {Fsk.FormatHz(s.NoiseBandwidthHz)}" : null,
+               }.Where(t => t is not null))
+               + (s.NotchWidthHz > 0 ? $", notch {Fsk.FormatHz(s.NotchWidthHz)}" : s.NotchTones is { Length: > 0 } nt ? $", {nt.Length} tones out" : "");
 
         public static string ModName(QamOrder m) => m switch
         {
@@ -348,7 +371,8 @@ namespace RfCore.Signals
                     "WLAN11B" => CarrierStandard.Wlan11b,
                     "OQPSK154" => CarrierStandard.Oqpsk154,
                     "ANALOG" => CarrierStandard.Analog,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG or FILE)"),
+                    "TONES" => CarrierStandard.Tones,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, TONES or FILE)"),
                 },
             };
             bool bwStated = parts.Skip(1).Any(p => p.Split('=')[0].Trim().Equals("BW", StringComparison.OrdinalIgnoreCase));
@@ -403,10 +427,18 @@ namespace RfCore.Signals
                     "SIGNAL" => c with { GnssSignal = Only(c, k, () => Signals.Gnss.ParseSignal(v), CarrierStandard.Gnss) },
                     "SATS" => c with { Satellites = Only(c, k, () => v, CarrierStandard.Gnss) },
                     "CN0" => c with { Cn0DbHz = Only(c, k, () => double.Parse(v.Replace("dBHz", "", StringComparison.OrdinalIgnoreCase), NumberStyles.Float, CultureInfo.InvariantCulture), CarrierStandard.Gnss) },
-                    "RECORD" => c with { RecordS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Gnss, CarrierStandard.Analog) },
+                    "RECORD" => c with { RecordS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Gnss, CarrierStandard.Analog, CarrierStandard.Tones) },
                     "KIND" => c with { AnalogKind = Only(c, k, () => Signals.Analog.ParseKind(v), CarrierStandard.Analog) },
                     "TONES" => c with { Tones = Only(c, k, () => v, CarrierStandard.Analog) },
-                    "NOISEBW" => c with { NoiseBandwidthHz = Only(c, k, () => ParseHz(k, v), CarrierStandard.Analog) },
+                    "NOISEBW" => c with { NoiseBandwidthHz = Only(c, k, () => ParseHz(k, v), CarrierStandard.Analog, CarrierStandard.Tones) },
+                    "N" => c with { ToneCount = Only(c, k, () => WholeField(k, v), CarrierStandard.Tones) },
+                    "SPACING" => c with { ToneSpacingHz = Only(c, k, () => ParseHz(k, v), CarrierStandard.Tones) },
+                    "POWERS" => c with { TonePowers = Only(c, k, () => v, CarrierStandard.Tones) },
+                    "NOISEDB" => c with { NoiseDb = Only(c, k, Num, CarrierStandard.Tones) },
+                    "NOTCH" => Only(c, k, () => v.Split('/') is [var nc, var nw]
+                        ? c with { NotchCentreHz = ParseHz(k, nc.Trim()), NotchWidthHz = ParseHz(k, nw.Trim()) }
+                        : throw new FormatException($"carrier field {k}={v} is centre/width: 0/1MHz"), CarrierStandard.Tones),
+                    "NOTCHTONES" => c with { NotchTones = Only(c, k, () => v, CarrierStandard.Tones) },
                     "DEPTH" => c with { Depth = Only(c, k, Num, CarrierStandard.Analog) },
                     "INDEX" => c with { ModIndex = Only(c, k, Num, CarrierStandard.Analog) },
                     "PEAKPHASE" => c with { PeakPhaseRad = Only(c, k, Num, CarrierStandard.Analog) },
@@ -433,6 +465,7 @@ namespace RfCore.Signals
                     "WINDOW" => c with { WindowS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
                     "SF" => c with { SpreadingFactor = CssField(c, k, v) },
                     "PHASE" when c.Standard == CarrierStandard.Cw => c with { PhaseDeg = Num() },
+                    "PHASE" when c.Standard == CarrierStandard.Tones => c with { TonePhase = ParseTonePhase(v) },
                     "PHASE" => throw new FormatException($"carrier field {k} belongs to a CW carrier"),
                     _ => throw new FormatException($"unknown carrier field '{k}'"),
                 };
@@ -460,6 +493,8 @@ namespace RfCore.Signals
             if (c.Standard == CarrierStandard.Oqpsk154) { Ieee802154.Resolve(c); c = c with { BandwidthHz = Ieee802154.ChannelBandwidthHz }; }
             // an analog carrier's is its occupied band (Carson's for FM and PM)
             if (c.Standard == CarrierStandard.Analog) c = c with { BandwidthHz = Signals.Analog.BandwidthHz(Signals.Analog.Validate(Signals.Analog.Resolve(c))) };
+            // tones and noise: the tones' extent plus a spacing, or the noise band
+            if (c.Standard == CarrierStandard.Tones) c = c with { BandwidthHz = Multitone.BandwidthHz(Multitone.Validate(ResolveTones(c))) };
             if (c.Standard == CarrierStandard.Gnss) c = c with { BandwidthHz = Signals.Gnss.BandwidthHz(Signals.Gnss.Validate(Signals.Gnss.Resolve(c))) };
             return c;
         }
@@ -647,6 +682,33 @@ namespace RfCore.Signals
             return !scaled.Contains('E') && ParseHz("", scaled + unit) == hz ? scaled + unit : hz.ToString("R", inv);
         }
 
+        /// <summary>A TONES carrier's shape: each field it states, MultitoneShape's default for the rest.</summary>
+        public static MultitoneShape ResolveTones(CarrierSpec c)
+        {
+            var d = new MultitoneShape();
+            return new MultitoneShape
+            {
+                Tones = c.ToneCount ?? d.Tones, SpacingHz = c.ToneSpacingHz ?? d.SpacingHz, Phase = c.TonePhase ?? d.Phase,
+                TonePowersDb = NumberList(c.TonePowers, "Powers", double.Parse), NoiseBandwidthHz = c.NoiseBandwidthHz ?? 0,
+                NoiseDb = c.NoiseDb ?? 0, NotchCentreHz = c.NotchCentreHz ?? 0, NotchWidthHz = c.NotchWidthHz ?? 0,
+                NotchTones = NumberList(c.NotchTones, "NotchTones", int.Parse), RecordSeconds = c.RecordS, Seed = (ulong)c.Seed,
+            };
+        }
+
+        private static T[]? NumberList<T>(string? text, string key, Func<string, IFormatProvider, T> parse)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            try { return [.. text.Split(',', StringSplitOptions.TrimEntries).Select(v => parse(v, CultureInfo.InvariantCulture))]; }
+            catch (FormatException) { throw new FormatException($"tones: {key} must be numbers, comma-separated (got '{text}')"); }
+        }
+
+        private static TonePhase ParseTonePhase(string v)
+        {
+            foreach (var p in Enum.GetValues<TonePhase>())
+                if (p.ToString().Equals(v.Trim(), StringComparison.OrdinalIgnoreCase)) return p;
+            throw new FormatException($"tones: Phase must be Zero, Newman, Schroeder or Random (got '{v}')");
+        }
+
         public static QamOrder ParseMod(string v) => v.ToUpperInvariant() switch
         {
             "QPSK" => QamOrder.Qpsk,
@@ -767,6 +829,18 @@ namespace RfCore.Signals
                 if (c.DeviationHz is double adev) sb.Append(";Dev=").Append(FormatHz(adev, "kHz"));
                 if (c.Ident is { } id) sb.Append(";Ident=").Append(id);
                 if (c.RecordS is double ar) sb.Append(";Record=").Append(FormatSeconds(ar, "ms"));
+            }
+            if (c.Standard == CarrierStandard.Tones)
+            {
+                if (c.ToneCount is int n) sb.Append(";N=").Append(n.ToString(inv));
+                if (c.ToneSpacingHz is double sp) sb.Append(";Spacing=").Append(FormatHz(sp, "kHz"));
+                if (c.TonePhase is { } tph) sb.Append(";Phase=").Append(tph.ToString());
+                if (c.TonePowers is { } pw) sb.Append(";Powers=").Append(pw);
+                if (c.NotchWidthHz is double nw) sb.Append(";Notch=").Append(FormatHz(c.NotchCentreHz ?? 0, "MHz")).Append('/').Append(FormatHz(nw, "MHz"));
+                if (c.NotchTones is { } nts) sb.Append(";NotchTones=").Append(nts);
+                if (c.NoiseBandwidthHz is double nbw) sb.Append(";NoiseBW=").Append(FormatHz(nbw, "MHz"));
+                if (c.NoiseDb is double ndb) sb.Append(";NoiseDb=").Append(ndb.ToString("R", inv));
+                if (c.RecordS is double tr) sb.Append(";Record=").Append(FormatSeconds(tr, "ms"));
             }
             if (c.Standard == CarrierStandard.Cw && c.PhaseDeg is double phase) sb.Append(";Phase=").Append(phase.ToString("R", inv));
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));

@@ -50,7 +50,7 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
@@ -89,6 +89,8 @@ namespace RfCore.Signals
         public EvmResult? Switched { get; init; }
         /// <summary>Analog: what the demodulator reads back (depth, deviation, bearing, DDM, SDM).</summary>
         public AnalogReading? Analog { get; init; }
+        /// <summary>Tones and noise: the noise power ratio in the notch (dB); NaN otherwise.</summary>
+        public double NprDb { get; init; } = double.NaN;
     }
 
     public static class SignalQuality
@@ -106,6 +108,7 @@ namespace RfCore.Signals
             CarrierStandard.Wlan11b => QualityKind.Wlan11b,
             CarrierStandard.Oqpsk154 => QualityKind.Oqpsk154,
             CarrierStandard.Analog => QualityKind.Analog,
+            CarrierStandard.Tones => QualityKind.Npr,
             _ => null,
         };
 
@@ -132,6 +135,11 @@ namespace RfCore.Signals
                     CarrierStandard.File => "an imported I/Q file carries no symbol data",
                     _ => $"{c.Standard} is measured by its own EVM",
                 };
+                return null;
+            }
+            if (kind == QualityKind.Npr && SignalSpec.ResolveTones(c).NotchWidthHz <= 0)
+            {
+                why = "tones and noise carry no symbols, and without Notch= there is no NPR to read";
                 return null;
             }
             if (IsRecordKind(kind)) return ReceiveRecord(carrier, kind, recordSeconds, y, fsHz, startSample, offsetHz, out why, driftHzps);
@@ -380,6 +388,13 @@ namespace RfCore.Signals
                     // chip EVM at each half-sine's peak; the PHY's limit is 35 %
                     var (rms, pk) = Ieee802154.Evm(Ieee802154.Resolve(spec), r.X);
                     return new WaveformQuality(r.Kind, rms, pk, double.NaN, double.NaN, null, null, null, null, r.DelayS) { LimitPercent = 35 };
+                }
+                case QualityKind.Npr:
+                {
+                    // the band's density outside the notch over the density in its middle half, over one whole record
+                    var t = SignalSpec.ResolveTones(spec);
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { NprDb = Multitone.NprDb(r.X, r.NativeHz, 0, Multitone.SpanHz(t), t.NotchCentreHz, t.NotchWidthHz) };
                 }
                 case QualityKind.Analog:
                     // demodulated as a receiver reads it: the message, and the depth, deviation, bearing or DDM it carries

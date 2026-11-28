@@ -142,6 +142,7 @@ namespace RfCore.Signals
                     CarrierStandard.Cw => "a CW carrier has no symbols",
                     CarrierStandard.Pcw => "a pulse has no symbols",
                     CarrierStandard.File => "an imported I/Q file carries no symbol data",
+                    CarrierStandard.Tones => "tones and noise carry no symbols; a notch is read as NPR",
                     _ => $"{c.Standard} carries no QAM symbols",
                 };
                 return null;
