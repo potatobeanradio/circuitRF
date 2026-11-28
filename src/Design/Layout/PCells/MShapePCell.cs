@@ -12,11 +12,25 @@ public static class MShapePCell
 {
     public const string GeneratorId = DrawnMetal.GeneratorId;
 
+    /// <summary>The placed defaults of brief-pcd-0 §4.3 in SI: a 100 um square right of the origin, pin 1 at its left edge's
+    /// middle, as wide as that edge, facing -X (ComponentTypeRegistry.DefaultParameters).</summary>
+    private static readonly Dictionary<string, PCellValue> PlacedDefaults = new(StringComparer.Ordinal)
+    {
+        ["X[1]"] = 0.0, ["Y[1]"] = -50e-6, ["X[2]"] = 100e-6, ["Y[2]"] = -50e-6,
+        ["X[3]"] = 100e-6, ["Y[3]"] = 50e-6, ["X[4]"] = 0.0, ["Y[4]"] = 50e-6,
+        ["PinX[1]"] = 0.0, ["PinY[1]"] = 0.0, ["PinW[1]"] = 100e-6, ["PinDir[1]"] = 180.0,
+    };
+
     public static PCellResult Generate(
         IReadOnlyDictionary<string, PCellValue> parameters,
         Technology? technology,
         PCellLayerSelection layerSelection)
     {
+        // Handed no vertex and no pin rows at all (a caller with no instance: a palette tile, a gate over the registry), it
+        // draws the placed default part, so its pins agree with the symbol's default count.
+        if (!parameters.ContainsKey(DrawnMetal.X(1)) && !parameters.ContainsKey(DrawnMetal.PinX(1)))
+            parameters = new Dictionary<string, PCellValue>(PlacedDefaults.Concat(parameters.Where(kv => !PlacedDefaults.ContainsKey(kv.Key))),
+                                                            StringComparer.Ordinal);
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
         long Dbu(string name) => PCellUnits.MetresToDbu(parameters.Real(name), dbuPerMicron);
         var layer = SubstrateResolver.ResolveSignalLayerKey(technology, layerSelection, out _);
