@@ -1,7 +1,7 @@
 // M-ary FSK, frequency pulses, bursts and the FSK-to-DPSK packet, with the FSK quality numbers.
 //
 //   M1  4FSK holds +-Dev/3 and +-Dev at the symbol centres, mapped 00 +1, 01 +3, 10 -1, 11 -3 (TIA-102.BAAA-A,
-//       ETSI TS 102 361-1 cl. 10.2.1).
+//       ETSI TS 102 361-1, ETSI TS 102 490 Table 12.1).
 //   M2  The pulse narrows the spectrum: C4FM (TIA-102.BAAA-A) and 3RC CPM keep far less power outside the channel than
 //       rectangular FSK of the same deviation.
 //   M3  Every preset that is FSK alone is a constant envelope while on: PAPR 0 dB.
@@ -118,7 +118,7 @@ public class FskMaryTests
     [InlineData("P25 Phase 1 C4FM")]
     [InlineData("DMR")]
     [InlineData("Mode 1a 50 kb/s h 0.5")]
-    [InlineData("4FSK 200 kb/s h 0.33")]
+    [InlineData("4FSK 400 kb/s h 0.33")]
     public void M5_DeviationReadsWithinATenthOfAPercent(string name)
     {
         var s = Preset(name);
@@ -157,7 +157,8 @@ public class FskMaryTests
         Assert.Equal("00100101110000100010010111", string.Concat(bits.Skip(61).Take(26)));
         Assert.Equal(156.25 / gsm.BitRate, gsm.RecordSeconds, 12);
         Assert.Equal(1120, Fsk.RecordBits(Preset("POCSAG 1200 b/s")).Length);   // 576 preamble + 32 sync + 16 x 32
-        Assert.Equal(1022, Fsk.RecordBits(Preset("R1 9.6 kb/s")).Length);       // Manchester: two chips a bit
+        Assert.Equal(2 * (80 + 8 + 511), Fsk.RecordBits(Preset("R1 9.6 kb/s")).Length);   // G.9959: 10-byte preamble, SOF, data; Manchester
+        Assert.Equal(40 * 8 + 8 + 511, Fsk.RecordBits(Preset("R3 100 kb/s")).Length);
 
         foreach (var (s, fragment) in new[]
         {

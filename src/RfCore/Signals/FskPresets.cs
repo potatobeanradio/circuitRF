@@ -17,9 +17,10 @@ namespace RfCore.Signals
 
     public static class FskPresets
     {
-        // dibit (MSB first) 00 -> +1, 01 -> +3, 10 -> -1, 11 -> -3: TIA-102.BAAA-A, ETSI TS 102 361-1 cl. 10.2.1,
-        // ETSI TS 102 490 (the 4FSK default, so the LMR rows leave Mapping null)
-        // 802.15.4 SUN 4-FSK: 00 -> -1, 01 -> -3, 10 -> +1, 11 -> +3 (IEEE 802.15.4-2020 cl. 19.3)
+        // dibit (MSB first) 00 -> +1, 01 -> +3, 10 -> -1, 11 -> -3: TIA-102.BAAA-A, ETSI TS 102 361-1, ETSI TS 102 490
+        // Table 12.1 (the 4FSK default, so the LMR rows leave Mapping null)
+        // SUN 4-FSK: 01 -> -Dev, 00 -> -Dev/3, 10 -> +Dev/3, 11 -> +Dev, Dev = 3 h Rs / 2 (IEEE 802.15.4 SUN FSK symbol
+        // encoding; checked against working-group drafts, not the published table: unverified)
         private static readonly int[] Sun4Fsk = [-1, -3, 1, 3];
 
         // stand-in sync word: a Bluetooth sync word is coded from the device address (Core Vol 2 Part B cl. 6.3.3)
@@ -35,6 +36,17 @@ namespace RfCore.Signals
                { Levels = levels, Mapping = levels == 4 ? Sun4Fsk : null };
 
         private static FskShape Lmr(double rb, double dev, FskPulse pulse) => new(rb, dev, 0, "PN9") { Levels = 4, Pulse = pulse };
+
+        // ITU-T G.9959 cl. 7.1.3: preamble of 0x55 bytes, then the start of frame 0xF0 (bits 7..0 = 11110000; sent MSB
+        // first: unverified); NRZ 0 is the upper frequency (Table 7-5). R1 is Manchester throughout, 0 rising, 1 falling
+        // (Table 7-6), which is the default chip mapping; its end-of-frame delimiter of code violations is left out.
+        private static FskShape ZWave(double rb, double dev, double bt, int preambleBytes, bool manchester)
+            => new(rb, dev, bt, "PN9")
+            {
+                Manchester = manchester,
+                Mapping = manchester ? null : [1, -1],
+                Burst = new(Preamble: "01010101", PreambleBits: 8 * preambleBytes, Sync: "11110000"),
+            };
 
         private static FskShape Pocsag(double rb) => new(rb, 4.5e3, 0, "PN9")
         {
@@ -56,20 +68,25 @@ namespace RfCore.Signals
             new("Bluetooth", "EDR 3 Mb/s", "Bluetooth Core v5.4 Vol 2 Part A cl. 3.2, Part B cl. 6.7", 2.441e9,
                 Bt(BtSlot(54, 625 - 126 - 5 - 245, new FskSwitch("8DPSK", 1e6, 245)))),
 
-            // ETSI EN 300 175-2 cl. 4 / 5: GFSK BT 0.5, 1.152 Mb/s, 288 kHz (h 0.5); a P32 packet (S 32, D 388, Z 4) in a 480-bit
-            // slot; RFP preamble and sync word
-            new("DECT", "DECT", "ETSI EN 300 175-2 cl. 4.4, 5.2", 1.897344e9, new FskShape(1.152e6, 288e3, 0.5, "PN9")
+            // ETSI EN 300 175-2: 1.152 Mb/s, 24 slots of 480 bits a frame (cl. 4.2.1); GFSK BT 0.5, nominal peak deviation
+            // 288 kHz (cl. 5.4); RFP S-field 1010...1010 1110 1001 1000 1010 (cl. 4.6); a P32 packet with the Z field
+            // (S 32, D 388, Z 4); carrier c = 0 of F0 - c x 1.728 MHz, F0 = 1897.344 MHz (cl. 5.1)
+            new("DECT", "DECT", "ETSI EN 300 175-2 cl. 4.2, 4.6, 5.1, 5.4", 1.897344e9, new FskShape(1.152e6, 288e3, 0.5, "PN9")
             {
                 Burst = new(Preamble: "10", PreambleBits: 16, Sync: "1110100110001010", PayloadBits: 392, RampSymbols: 2, GuardSymbols: 56),
             }),
 
-            // ITU-T G.9959 cl. 7.1: R1 9.6 kb/s Manchester (19.2 kchip/s) FSK +-20 kHz, R2 40 kb/s NRZ FSK +-20 kHz,
-            // R3 100 kb/s GFSK BT 0.6 +-29 kHz
-            new("Z-Wave", "R1 9.6 kb/s", "ITU-T G.9959 cl. 7.1", 868.42e6, new FskShape(19.2e3, 20e3, 0, "PN9") { Manchester = true }),
-            new("Z-Wave", "R2 40 kb/s", "ITU-T G.9959 cl. 7.1", 868.40e6, new FskShape(40e3, 20e3, 0, "PN9")),
-            new("Z-Wave", "R3 100 kb/s", "ITU-T G.9959 cl. 7.1", 869.85e6, new FskShape(100e3, 29e3, 0.6, "PN9")),
+            // ITU-T G.9959 (01/2015) cl. 7.1.2: R1 9.6 kb/s Manchester (19.2 kbaud) FSK, R2 40 kb/s NRZ FSK, both 40 kHz
+            // separation (+-20 kHz); R3 100 kb/s GFSK BT 0.6, 58 kHz separation (+-29 kHz) (Tables 7-2, 7-4). Preamble of
+            // channel configuration 2 (EU), singlecast: 10, 10, 40 bytes (Table 7-10). Centres: R3 on f_EU1, R1 / R2 on
+            // f_EU2, R1 20 kHz above it (its frequency offset, Table 7-4); f_EU1 = 869.85 MHz and f_EU2 = 868.40 MHz are the
+            // regional values, not stated in G.9959: unverified
+            new("Z-Wave", "R1 9.6 kb/s", "ITU-T G.9959 cl. 7.1.2, 7.1.3", 868.42e6, ZWave(19.2e3, 20e3, 0, 10, manchester: true)),
+            new("Z-Wave", "R2 40 kb/s", "ITU-T G.9959 cl. 7.1.2, 7.1.3", 868.40e6, ZWave(40e3, 20e3, 0, 10, manchester: false)),
+            new("Z-Wave", "R3 100 kb/s", "ITU-T G.9959 cl. 7.1.2, 7.1.3", 869.85e6, ZWave(100e3, 29e3, 0.6, 40, manchester: false)),
 
-            // IEEE 802.15.4-2020 cl. 19 (SUN FSK) operating modes as the Wi-SUN PHY lists them, GFSK BT 0.5
+            // IEEE 802.15.4-2020 cl. 19 (SUN FSK) operating modes #1a-#5 as the Wi-SUN FAN PHY lists them (2-FSK, Dev = h Rb / 2);
+            // the Gaussian filter's BT 0.5: unverified
             new("Wi-SUN", "Mode 1a 50 kb/s h 0.5", "IEEE 802.15.4-2020 cl. 19.3", null, Sun(50e3, 0.5)),
             new("Wi-SUN", "Mode 1b 50 kb/s h 1", "IEEE 802.15.4-2020 cl. 19.3", null, Sun(50e3, 1)),
             new("Wi-SUN", "Mode 2a 100 kb/s h 0.5", "IEEE 802.15.4-2020 cl. 19.3", null, Sun(100e3, 0.5)),
@@ -78,12 +95,15 @@ namespace RfCore.Signals
             new("Wi-SUN", "Mode 4a 200 kb/s h 0.5", "IEEE 802.15.4-2020 cl. 19.3", null, Sun(200e3, 0.5)),
             new("Wi-SUN", "Mode 4b 200 kb/s h 1", "IEEE 802.15.4-2020 cl. 19.3", null, Sun(200e3, 1)),
             new("Wi-SUN", "Mode 5 300 kb/s h 0.5", "IEEE 802.15.4-2020 cl. 19.3", null, Sun(300e3, 0.5)),
-            new("Wi-SUN", "4FSK 200 kb/s h 0.33", "IEEE 802.15.4-2020 cl. 19.3", null, Sun(200e3, 0.33, 4)),
+            // 4-FSK 400 kb/s, h 0.33: the 920 MHz band's SUN FSK modes #4 / #5 (from a working-group copy of the table: unverified)
+            new("Wi-SUN", "4FSK 400 kb/s h 0.33", "IEEE 802.15.4 SUN FSK, 920 MHz band", null, Sun(400e3, 0.33, 4)),
 
-            // 4FSK land mobile radio: +-3 symbols at the stated deviation, +-1 at a third of it
+            // 4FSK land mobile radio: +-3 symbols at the stated deviation, +-1 at a third of it. P25: 4800 sym/s, +-1800 / +-600 Hz,
+            // raised cosine 0.2 then the inverse-sinc shaping filter. DMR: 4800 sym/s, +-1944 / +-648 Hz, RRC 0.2. dPMR: 2400
+            // sym/s, h 0.29, +-1050 / +-350 Hz, RRC 0.2
             new("LMR", "P25 Phase 1 C4FM", "TIA-102.BAAA-A (C4FM modulator)", null, Lmr(9600, 1800, FskPulse.C4fm)),
-            new("LMR", "DMR", "ETSI TS 102 361-1 cl. 10.2", null, Lmr(9600, 1944, FskPulse.RootRaisedCosine)),
-            new("LMR", "dPMR", "ETSI TS 102 490 cl. 6.2", null, Lmr(4800, 1050, FskPulse.RootRaisedCosine)),
+            new("LMR", "DMR", "ETSI TS 102 361-1 (4FSK modulation)", null, Lmr(9600, 1944, FskPulse.RootRaisedCosine)),
+            new("LMR", "dPMR", "ETSI TS 102 490 Table 12.1", null, Lmr(4800, 1050, FskPulse.RootRaisedCosine)),
 
             // ITU-R M.584-2: 2FSK +-4.5 kHz NRZ; 576-bit preamble, the sync codeword, one batch of 16 codewords
             new("Paging", "POCSAG 512 b/s", "ITU-R M.584-2 Annex 1", null, Pocsag(512)),
