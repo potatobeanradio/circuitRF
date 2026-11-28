@@ -382,7 +382,7 @@
                                             </Grid>
                                             <!-- Pulsed CW: the pulse's timing, each typed with its unit (a bare number is µs) and outlined
                                                  when it does not parse or when the pulse it makes cannot be generated. -->
-                                            <Grid Grid.Row="3" Grid.ColumnSpan="4" ColumnDefinitions="Auto,110,Auto,Auto,110,Auto" RowDefinitions="Auto,Auto,Auto"
+                                            <Grid Grid.Row="3" Grid.ColumnSpan="4" ColumnDefinitions="Auto,110,Auto,Auto,110,Auto" RowDefinitions="Auto,Auto,Auto,Auto"
                                                   Margin="0,6,0,0" IsVisible="{Binding IsPcw}" Tag="pulse-fields">
                                                 <TextBlock Classes="lbl" Text="PRI (µs)" Margin="0,0,6,0"/>
                                                 <TextBox Grid.Column="1" Text="{Binding PriText}" Classes.error="{Binding HasPriError}"
@@ -402,6 +402,10 @@
                                                 <TextBox Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Text="{Binding DelayText}" Classes.error="{Binding HasDelayError}"
                                                          ToolTip.Tip="{Binding DelayError, TargetNullValue='Off-time before the rising edge, greater than 0 so the run starts at the quiescent point. Empty centres the pulse in the PRI.'}"/>
                                                 <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="4" Classes="lbl" Margin="6,6,0,0" Text="{Binding DelayInfo}"/>
+                                                <TextBlock Grid.Row="3" Classes="lbl" Text="Chirp (MHz)" Margin="0,6,6,0"/>
+                                                <NumericUpDown Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" Value="{Binding ChirpMHz}" Increment="1" FormatString="0.######"
+                                                               ToolTip.Tip="A linear-FM sweep over the pulse width, centred on the carrier: positive sweeps up, negative down, 0 is a plain pulse"/>
+                                                <TextBlock Grid.Row="3" Grid.Column="2" Grid.ColumnSpan="4" Classes="lbl" Margin="6,6,0,0" Text="+ up, − down, 0 none"/>
                                             </Grid>
                                             <!-- FSK: rate, deviation, filter and data. A Gaussian filter makes it GFSK (GMSK at h = 0.5);
                                                  the data is one period of a PN sequence or a fixed pattern, and that period is the record. -->

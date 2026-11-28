@@ -410,7 +410,8 @@ source impedance `Z`.
   the file's `# sample_rate_hz` header when absent). A `PCW` carrier is a pulse train,
   `"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"`: the pulse repetition interval,
   the width (50 % to 50 %), the 10–90 % edge times and the off-time before the rising edge (centred in
-  the PRI when absent). Its time fields take `s`, `ms`, `us` (or `µs`) or `ns`; a bare number is in
+  the PRI when absent); `Chirp=` adds a linear-FM sweep of that bandwidth over the width, up for a positive
+  value and down for a negative one (absent: a plain pulse). Its time fields take `s`, `ms`, `us` (or `µs`) or `ns`; a bare number is in
   seconds. A `PCW` carrier must be the source's only carrier, and **`Pavg` is then the pulse-top power**,
   not the record average: see [Pulsed CW](signal-designer.html#pulse). An `FSK` carrier is binary
   continuous-phase FSK, `"FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"`: the bit rate (`bps`,

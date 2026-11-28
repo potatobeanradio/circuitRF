@@ -58,6 +58,9 @@ namespace RfCore.Signals
         /// <summary>The droop window, as fractions of the flat top (null = 0.1 and 0.9).</summary>
         public double? MeasureStart { get; init; }
         public double? MeasureEnd { get; init; }
+        /// <summary>A linear-FM chirp across the pulse width (Hz): positive sweeps up, negative down, centred on the
+        /// carrier. Null (never 0) for a plain pulse, so its JSON and cache key are what they were.</summary>
+        public double? ChirpHz { get; init; }
 
         // An FSK carrier's settings; null = the default Fsk.Resolve applies, for the same reason as the pulse's.
         /// <summary>Bit (chip) rate, b/s; a DBPSK carrier's too.</summary>
@@ -101,7 +104,8 @@ namespace RfCore.Signals
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
             CarrierStandard.Nr => $"NR {BandwidthHz / 1e6:0.#} MHz {ScsHz / 1e3:0} kHz {ModName(Modulation)}",
             CarrierStandard.Cw => PhaseDeg is double ph ? $"CW {ph.ToString("0.##", CultureInfo.InvariantCulture)}°" : "CW",
-            CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(PulsedCw.Resolve(this).Width)} / {PulsedCw.FormatTime(PulsedCw.Resolve(this).Pri)}",
+            CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(PulsedCw.Resolve(this).Width)} / {PulsedCw.FormatTime(PulsedCw.Resolve(this).Pri)}"
+                                   + (ChirpHz is double ch ? $" chirp {(ch > 0 ? "up" : "down")} {Fsk.FormatHz(Math.Abs(ch))}" : ""),
             CarrierStandard.Fsk => FskLabel(Fsk.Resolve(this)),
             CarrierStandard.Dbpsk => $"DBPSK {Fsk.FormatBitRate(Dbpsk.Resolve(this).BitRate)} {DataLabel(Dbpsk.Resolve(this).Data)}",
             CarrierStandard.Css => $"CSS SF{Css.Resolve(this).Sf} {Fsk.FormatHz(BandwidthHz)}",
@@ -226,7 +230,8 @@ namespace RfCore.Signals
         /// Parses the compact inline carrier form used in netlists:
         /// <c>"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=3"</c>, or for an imported I/Q file
         /// <c>"FILE;File=iq/capture.txt;Fs=122.88MHz;Off=0;P=0"</c>, or for a pulse train
-        /// <c>"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"</c>, or for FSK
+        /// <c>"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"</c> (<c>Chirp=-20MHz</c> adds a linear-FM
+        /// sweep down over the width; <c>Chirp=</c> is a frequency, signed), or for FSK
         /// <c>"FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"</c>, or for DBPSK <c>"DBPSK;Rb=100bps;Data=PN9;Off=0;P=0"</c>,
         /// or for a CW tone with its starting phase in degrees <c>"CW;Phase=90;Off=0.5MHz;P=0;Seed=1"</c>,
         /// or for chirp spread spectrum <c>"CSS;SF=7;BW=125kHz;Off=0;P=0"</c>, or for a single carrier
@@ -280,6 +285,8 @@ namespace RfCore.Signals
                     "DELAY" => c with { DelaySeconds = PulseField(c, k, v) },
                     "MEASURESTART" => c with { MeasureStart = PulseFraction(c, k, v) },
                     "MEASUREEND" => c with { MeasureEnd = PulseFraction(c, k, v) },
+                    "CHIRP" => c with { ChirpHz = c.Standard == CarrierStandard.Pcw ? ParseHz(k, v) is var ch && ch != 0 ? ch : null
+                                                  : throw new FormatException($"carrier field {k} belongs to a PCW carrier") },
                     "RB" => c with { BitRateBps = FskField(c, k, () => ParseBitRate(k, v), alsoDbpsk: true) },
                     "DEV" => c with { DeviationHz = FskField(c, k, () => ParseHz(k, v)) },
                     "BT" => c with { GaussianBt = FskField(c, k, Num) },
@@ -512,6 +519,7 @@ namespace RfCore.Signals
                     if (value is double t) sb.Append(';').Append(key).Append('=').Append(FormatSeconds(t, "us"));
                 if (c.MeasureStart is double ms) sb.Append(";MeasureStart=").Append(ms.ToString("R", inv));
                 if (c.MeasureEnd is double me) sb.Append(";MeasureEnd=").Append(me.ToString("R", inv));
+                if (c.ChirpHz is double ch) sb.Append(";Chirp=").Append(FormatHz(ch, "MHz"));
             }
             if (c.Standard == CarrierStandard.Css)
             {

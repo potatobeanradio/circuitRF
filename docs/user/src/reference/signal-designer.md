@@ -4,7 +4,7 @@ slug: reference/signal-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Signal Designer
 lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK, Bluetooth LE, LoRa, Sigfox, a single PSK, QAM or APSK carrier or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
-keywords: Signal Designer, MOD_Source, FR2, 120 kHz, mmWave, two-tone, N-tone, multitone, intermodulation, IMD, intercept, IP3, Newman phases, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, single carrier, SC, root raised cosine, RRC, roll-off, matched filter, 8PSK, APSK, 16APSK, 32APSK, satellite, PN23, preamble, pilot block, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
+keywords: Signal Designer, MOD_Source, LFM, linear FM, chirped pulse, FR2, 120 kHz, mmWave, two-tone, N-tone, multitone, intermodulation, IMD, intercept, IP3, Newman phases, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, single carrier, SC, root raised cosine, RRC, roll-off, matched filter, 8PSK, APSK, 16APSK, 32APSK, satellite, PN23, preamble, pilot block, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
 ---
 
 <nav class="toc">
@@ -219,6 +219,7 @@ list. The record is one pulse repetition interval, which repeats, so the Envelop
 | **Width** | pulse width, from the 50 % point of the rising edge to the 50 % point of the falling edge. The duty is shown beside it | 10 µs |
 | **Rise**, **Fall** | the 10–90 % times of the raised-cosine edges | 100 ns |
 | **Delay** | the off-time before the rising edge leaves zero. Empty centres the pulse in the PRI, with equal off-time either side | centred |
+| **Chirp (MHz)** | a linear-FM sweep over the width, centred on the carrier: positive sweeps up, negative down. 0 is a plain pulse | 0 |
 
 The envelope is exactly zero in the off-time and exactly one on the flat top. A pulse that cannot be
 generated is refused on the field it names: a width as long as the PRI, an edge longer than half the width,
@@ -232,6 +233,17 @@ source's `Pavg` is the pulse-top available power — the number a radar specific
 `Pin_avg_dBm` and each IProbe's `Pavg_dBm` in the results stay averages over the whole run, off-time included. Harmonic balance
 and loadpull play a MOD_Source as a CW tone at `Pavg`, which for a pulse is the top: the steady state of
 a pulse that never ends.
+
+**A chirp.** With a chirp of B, the frequency moves along a straight line from B/2 below the carrier at the
+rising edge's 50 % point to B/2 above it at the falling edge's, or the other way for a negative B. The phase is
+π B / PW × (t − Tc)², a parabola about the pulse's centre Tc. Only the phase changes. |envelope| is the plain
+pulse's, so the gated CCDF, the PAPR, the power duty and the **Pulse** tab, which plots |envelope|, read the
+same with or without the chirp. In an envelope run the pulse measurements stay what they are. The top, droop,
+rise and fall are read from the delivered power. The phase droop is the output's phase relative to the drive,
+so the chirp itself drops out and what remains is the circuit's own phase across the sweep. The chirp shows in
+the spectrum, which widens to the sweep. The carrier's bandwidth is the sweep plus the edges' band, over 0.9
+(below), and the native rate holds at least twice it. A pulse has no symbols, so with or without a chirp there
+is no EVM.
 
 **Its bandwidth is its edges'.** The faster edge sets the carrier's bandwidth (twice the band holding
 99 % of a raised-cosine edge's power, over 0.9, as an I/Q file's is measured), and the envelope rate, the
@@ -249,12 +261,12 @@ In the netlist the card is
 Carrier[1]="PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"
 ```
 
-and two keys the card does not show set the [droop window](simulations.html#envelope-pulse):
+with `Chirp=20MHz` (or `Chirp=-20MHz`, a frequency) for a chirp, written only when it is not 0. Two keys the
+card does not show set the [droop window](simulations.html#envelope-pulse):
 `MeasureStart` and `MeasureEnd`, fractions of the flat top (0.1 and 0.9 by default).
 
-Not modelled: modulation inside the pulse (linear FM chirps and phase codes, which real radar pulses
-usually carry — the natural next addition), and pulsing the gate or drain bias with the RF, which is a
-pulsed bias source rather than a signal.
+Not modelled: phase codes and nonlinear FM inside the pulse, and pulsing the gate or drain bias with the RF,
+which is a pulsed bias source rather than a signal.
 
 ## FSK {#fsk}
 

@@ -786,7 +786,8 @@ modulation, offset from <code>Fc</code>, relative power (dB) and the random-data
 the file's <code># sample_rate_hz</code> header when absent). A <code>PCW</code> carrier is a pulse train,
 <code>&quot;PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0&quot;</code>: the pulse repetition interval,
 the width (50 % to 50 %), the 10–90 % edge times and the off-time before the rising edge (centred in
-the PRI when absent). Its time fields take <code>s</code>, <code>ms</code>, <code>us</code> (or <code>µs</code>) or <code>ns</code>; a bare number is in
+the PRI when absent); <code>Chirp=</code> adds a linear-FM sweep of that bandwidth over the width, up for a positive
+value and down for a negative one (absent: a plain pulse). Its time fields take <code>s</code>, <code>ms</code>, <code>us</code> (or <code>µs</code>) or <code>ns</code>; a bare number is in
 seconds. A <code>PCW</code> carrier must be the source's only carrier, and <strong><code>Pavg</code> is then the pulse-top power</strong>,
 not the record average: see <a href="signal-designer.html#pulse">Pulsed CW</a>. An <code>FSK</code> carrier is binary
 continuous-phase FSK, <code>&quot;FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0&quot;</code>: the bit rate (<code>bps</code>,

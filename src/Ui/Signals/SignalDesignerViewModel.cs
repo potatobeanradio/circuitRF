@@ -332,6 +332,8 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     [ObservableProperty] private double _riseS = PulsedCw.DefaultEdge;
     [ObservableProperty] private double _fallS = PulsedCw.DefaultEdge;
     [ObservableProperty] private double? _delayS;
+    /// <summary>The linear-FM chirp's sweep over the width (MHz): positive up, negative down, 0 a plain pulse.</summary>
+    [ObservableProperty] private double _chirpMHz;
     /// <summary>The droop window, written in the netlist only; carried through the Designer unchanged.</summary>
     private double? _measureStart, _measureEnd;
     /// <summary>An SC carrier's Symbols= and Span=, written in the netlist only; carried through the Designer unchanged.</summary>
@@ -425,6 +427,7 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     partial void OnRiseSChanged(double value) => PulseChanged();
     partial void OnFallSChanged(double value) => PulseChanged();
     partial void OnDelaySChanged(double? value) => PulseChanged();
+    partial void OnChirpMHzChanged(double value) => PulseChanged();
 
     /// <summary>One value moved: every field's refusal, the PRF, the duty and the centred Delay can move with it.</summary>
     private void PulseChanged()
@@ -506,7 +509,7 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         c = c with
         {
             PriSeconds = PriS, PulseWidthSeconds = WidthS, RiseSeconds = RiseS, FallSeconds = FallS, DelaySeconds = DelayS,
-            MeasureStart = _measureStart, MeasureEnd = _measureEnd,
+            MeasureStart = _measureStart, MeasureEnd = _measureEnd, ChirpHz = ChirpMHz != 0 ? Scaled(ChirpMHz, "e6") : null,
         };
         // the bandwidth is the edges', as the netlist's parse sets it; a pulse that cannot be generated keeps the default
         try { return c with { BandwidthHz = PulsedCw.BandwidthHz(PulsedCw.Validate(c)) }; }
@@ -582,6 +585,7 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         row.PriText = Us(s.Pri); row.WidthText = Us(s.Width); row.RiseText = Us(s.Rise); row.FallText = Us(s.Fall);
         row.DelayText = c.DelaySeconds is double d ? Us(d) : "";
         row._measureStart = c.MeasureStart; row._measureEnd = c.MeasureEnd;
+        row.ChirpMHz = (c.ChirpHz ?? 0) / 1e6;
         return row;
     }
 
@@ -1583,9 +1587,10 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                                          [.. nat.Native.Select(v => v.Magnitude)]));
             sb.AppendLine(string.Format(inv, "pCW   PRI {0}   PRF {1:0.###} kHz   PW {2}   duty {3:0.##} %   power duty {4:0.##} %",
                 PulsedCw.FormatTime(pulse.Pri), pulse.Prf / 1e3, PulsedCw.FormatTime(pulse.Width), 100 * pulse.Duty, 100 * pulse.PowerDuty));
-            sb.AppendLine(string.Format(inv, "rise {0}   fall {1}   delay {2}   bandwidth {3:0.###} MHz   rate {4:0.##} MS/s",
+            sb.AppendLine(string.Format(inv, "rise {0}   fall {1}   delay {2}   bandwidth {3:0.###} MHz   rate {4:0.##} MS/s{5}",
                 PulsedCw.FormatTime(pulse.Rise), PulsedCw.FormatTime(pulse.Fall), PulsedCw.FormatTime(pulse.Delay),
-                nat.Spec.BandwidthHz / 1e6, rate / 1e6));
+                nat.Spec.BandwidthHz / 1e6, rate / 1e6,
+                pulse.ChirpHz == 0 ? "" : string.Format(inv, "   chirp {0} {1:0.###} MHz", pulse.ChirpHz > 0 ? "up" : "down", Math.Abs(pulse.ChirpHz) / 1e6)));
             if (onTime is not null)
                 sb.AppendLine(string.Format(inv, "on-time PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB   whole PRI {2:0.00} dB (1 / power duty)",
                     SignalMeasure.PaprDb(onTime, 1e-4), SignalMeasure.PaprDb(onTime, 0), -10 * Math.Log10(pulse.PowerDuty)));

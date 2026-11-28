@@ -5,6 +5,9 @@
 //   P2  One refusal per rule, each a sentence naming the field.
 //   P3  The record: exactly 0 off, exactly 1 on the top, 10-90 % edges of Rise / Fall and a 50 %-50 % width of PW
 //       to one sample, the analytic power duty, one PRI long, and a bandwidth taken from the edges.
+//   P4  A linear-FM chirp: the instantaneous frequency is a line from -B/2 at the rising edge's 50 % point to +B/2 at
+//       the falling edge's (reversed for Chirp=-B), |envelope| is the plain pulse's, and the bandwidth and rate grow to
+//       hold the sweep. Chirp=0 writes nothing, keeps the cache key, and generates today's record bit for bit.
 
 using System;
 using System.Linq;
@@ -101,5 +104,49 @@ public class PulsedCwTests
         Assert.Equal(s.Fall, Cross(0.1, false, mid) - Cross(0.9, false, mid), dt);
         Assert.Equal(s.Width, Cross(0.5, false, mid) - Cross(0.5, true), dt);
         Assert.Equal(s.PowerDuty, a.Average(x => x * x), 1e-6);
+    }
+
+    [Fact]
+    public void P4_AChirpSweepsItsBandwidthOverTheWidth_AndZeroIsThePlainPulse()
+    {
+        var plain = SignalSpec.ParseCarrier(Text);
+        foreach (double b in new[] { 20e6, -20e6 })
+        {
+            var c = SignalSpec.ParseCarrier(Text + (b > 0 ? ";Chirp=20MHz" : ";Chirp=-20MHz"));
+            Assert.Equal(b, c.ChirpHz);
+            Assert.Equal(c, SignalSpec.ParseCarrier(SignalSpec.FormatCarrier(c)));
+            var s = PulsedCw.Validate(c);
+            double rate = PulsedCw.NativeRateHz(s);
+            Assert.True(rate >= 2 * c.BandwidthHz && c.BandwidthHz > b / 0.9 * Math.Sign(b), $"{rate} {c.BandwidthHz}");
+            var x = PulsedCw.Generate(s, rate);
+            var a = PulsedCw.Generate(PulsedCw.Resolve(plain), rate);
+            Assert.Equal(a.Select(v => v.Real), x.Select(v => v.Magnitude), new Tol(1e-12));
+            // the frequency from one sample to the next, at the 50 % points and the centre
+            double F(double t)
+            {
+                int i = (int)Math.Round(t * rate);
+                return (x[i + 1] * System.Numerics.Complex.Conjugate(x[i])).Phase * rate / (2 * Math.PI);
+            }
+            double t0 = s.Delay + s.RiseSpan / 2, t1 = t0 + s.Width;
+            Assert.Equal(-b / 2, F(t0), 1e-3 * Math.Abs(b));
+            Assert.Equal(0, F(s.Centre), 1e-3 * Math.Abs(b));
+            Assert.Equal(b / 2, F(t1 - 1 / rate), 1e-3 * Math.Abs(b));
+        }
+
+        var zero = SignalSpec.ParseCarrier(Text + ";Chirp=0");
+        Assert.Null(zero.ChirpHz);
+        Assert.Equal(SignalSpec.FormatCarrier(plain), SignalSpec.FormatCarrier(zero));
+        Assert.Equal(new SignalSpec { Carriers = [plain] }.CacheKey(), new SignalSpec { Carriers = [zero] }.CacheKey());
+        var ps = PulsedCw.Resolve(plain);
+        double r0 = PulsedCw.NativeRateHz(ps);
+        var today = Enumerable.Range(0, (int)Math.Round(ps.Pri * r0)).Select(i => new System.Numerics.Complex(ps.At(i / r0), 0)).ToArray();
+        Assert.Equal(today, PulsedCw.Generate(PulsedCw.Resolve(zero), r0));
+        Assert.Equal(today, SignalComposer.Generate(new SignalSpec { Carriers = [zero] }).Carriers[0].Native);
+    }
+
+    private sealed class Tol(double eps) : System.Collections.Generic.IEqualityComparer<double>
+    {
+        public bool Equals(double a, double b) => Math.Abs(a - b) <= eps;
+        public int GetHashCode(double v) => 0;
     }
 }

@@ -1457,6 +1457,11 @@ list. The record is one pulse repetition interval, which repeats, so the Envelop
 <td>the off-time before the rising edge leaves zero. Empty centres the pulse in the PRI, with equal off-time either side</td>
 <td>centred</td>
 </tr>
+<tr>
+<td><strong>Chirp (MHz)</strong></td>
+<td>a linear-FM sweep over the width, centred on the carrier: positive sweeps up, negative down. 0 is a plain pulse</td>
+<td>0</td>
+</tr>
 </tbody>
 </table>
 <p>The envelope is exactly zero in the off-time and exactly one on the flat top. A pulse that cannot be
@@ -1470,6 +1475,16 @@ source's <code>Pavg</code> is the pulse-top available power — the number a rad
 <code>Pin_avg_dBm</code> and each IProbe's <code>Pavg_dBm</code> in the results stay averages over the whole run, off-time included. Harmonic balance
 and loadpull play a MOD_Source as a CW tone at <code>Pavg</code>, which for a pulse is the top: the steady state of
 a pulse that never ends.</p>
+<p><strong>A chirp.</strong> With a chirp of B, the frequency moves along a straight line from B/2 below the carrier at the
+rising edge's 50 % point to B/2 above it at the falling edge's, or the other way for a negative B. The phase is
+π B / PW × (t − Tc)², a parabola about the pulse's centre Tc. Only the phase changes. |envelope| is the plain
+pulse's, so the gated CCDF, the PAPR, the power duty and the <strong>Pulse</strong> tab, which plots |envelope|, read the
+same with or without the chirp. In an envelope run the pulse measurements stay what they are. The top, droop,
+rise and fall are read from the delivered power. The phase droop is the output's phase relative to the drive,
+so the chirp itself drops out and what remains is the circuit's own phase across the sweep. The chirp shows in
+the spectrum, which widens to the sweep. The carrier's bandwidth is the sweep plus the edges' band, over 0.9
+(below), and the native rate holds at least twice it. A pulse has no symbols, so with or without a chirp there
+is no EVM.</p>
 <p><strong>Its bandwidth is its edges'.</strong> The faster edge sets the carrier's bandwidth (twice the band holding
 99 % of a raised-cosine edge's power, over 0.9, as an I/Q file's is measured), and the envelope rate, the
 preview's span and the sample rate follow from it. The native rate is the smallest 1.92 MHz × 2ᵏ that
@@ -1481,11 +1496,11 @@ so its card has no <strong>Seed</strong>.</p>
 <p>In the netlist the card is</p>
 <pre><code>Carrier[1]=&quot;PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0&quot;
 </code></pre>
-<p>and two keys the card does not show set the <a href="simulations.html#envelope-pulse">droop window</a>:
+<p>with <code>Chirp=20MHz</code> (or <code>Chirp=-20MHz</code>, a frequency) for a chirp, written only when it is not 0. Two keys the
+card does not show set the <a href="simulations.html#envelope-pulse">droop window</a>:
 <code>MeasureStart</code> and <code>MeasureEnd</code>, fractions of the flat top (0.1 and 0.9 by default).</p>
-<p>Not modelled: modulation inside the pulse (linear FM chirps and phase codes, which real radar pulses
-usually carry — the natural next addition), and pulsing the gate or drain bias with the RF, which is a
-pulsed bias source rather than a signal.</p>
+<p>Not modelled: phase codes and nonlinear FM inside the pulse, and pulsing the gate or drain bias with the RF,
+which is a pulsed bias source rather than a signal.</p>
 <h2 id="fsk">FSK</h2>
 <p>An <strong>FSK</strong> card is binary frequency-shift keying with continuous phase: each bit holds the frequency at
 <code>Fc + Dev</code> (a 1) or <code>Fc − Dev</code> (a 0) for one bit period, and the phase never jumps. Choose <strong>FSK</strong> in a
