@@ -68,6 +68,8 @@ public partial class ProjectTreeView
         ("Surface _Meshes…", nameof(WorkspaceViewModel.ImportSurfaceMeshesCommand), "{Binding " + nameof(WorkspaceViewModel.ThreeDImportAnatomyTip) + "}"),
         ("_Component…", nameof(WorkspaceViewModel.ImportComponentCommand),
             "Import a component — its symbol, its land pattern(s) and the pin-to-pad map between them — as one cell. Point at a file or a folder; the folder is scanned for files that can be imported, and the formats read are .kicad_sym, .kicad_mod, .lib and .lbr."),
+        ("PCell P_ackage…", nameof(WorkspaceViewModel.ImportPCellPackageCommand),
+            "Import a PCell package (.cpcell) into the workspace as a designed cell: its Library tile, its parameters and its generated layout, like any other PCell. Requires an open workspace."),
         ("_PDK…", nameof(WorkspaceViewModel.ImportPdkCommand), null),
         ("_Model or Subcircuit…", nameof(WorkspaceViewModel.ImportModelCardCommand),
             "Build a cell from a SPICE .model card or .subckt definition. A card becomes the native circuitRF component carrying its parameters, with an editable copy of that component's symbol; a subcircuit becomes its own netlist, wired as the file wires it, with a generic box for a symbol. Anything circuitRF has no model for is refused by name rather than approximated."),
