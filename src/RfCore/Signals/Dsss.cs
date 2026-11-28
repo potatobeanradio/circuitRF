@@ -36,18 +36,27 @@
 //  (SF 256, code 0, βc = 8/15) on Q, PN9 bits on both, scrambled by the
 //  long code n with its HPSK form C1(i)(1 + j(-1)^i C2(2⌊i/2⌋)).
 //
-//  IEEE 802.11b (IEEE Std 802.11-2020 Clauses 15 and 16): 11 Mchip/s;
+//  IEEE 802.11b (IEEE Std 802.11-2020 Clauses 15 and 16; checked against
+//  the HR/DSSS text of IEEE Std 802.11b-1999 clause 18, which Clause 16
+//  carries on: the SFD, SIGNAL values, SERVICE bits, LENGTH and its
+//  extension bit (Table 98), the CRC-16 worked example, the scrambler
+//  and its long-preamble seed Z1..Z7 = 1101100, the DQPSK and CCK
+//  tables 107-110, the transmit mask): 11 Mchip/s;
 //  the long preamble (128 scrambled 1s and the SFD F3A0h) and the PLCP
 //  header (SIGNAL, SERVICE, LENGTH, CRC-16) at 1 Mb/s DBPSK on the
 //  11-chip Barker code, then the PSDU (PN9) at 1 Mb/s DBPSK, 2 Mb/s
 //  DQPSK (Barker) or 5.5 / 11 Mb/s CCK (8 chips a symbol, the odd
 //  symbols turned by π). Everything after the SFD's first bit goes
-//  through the scrambler z^-7 + z^-4 + 1. The standard sets a transmit
+//  through the scrambler z^-7 + z^-4 + 1 (the first bit too: the seed
+//  makes the SYNC field). The standard sets a transmit
 //  mask, not a filter: here RRC α = 0.5 (the band ends at ±8.25 MHz).
 //  Frames follow back to back, with no gap.
 //
 //  IEEE 802.15.4 2.4 GHz O-QPSK (IEEE Std 802.15.4-2020, the 2450 MHz
-//  O-QPSK PHY): each 4-bit symbol (low nibble first) is one of 16 32-chip
+//  O-QPSK PHY; the 16 chip sequences, the SFD and the bit order checked
+//  against IEEE Std 802.15.4-2003 Table 20 and Figure 17 — that later
+//  editions keep them unchanged is unverified): each 4-bit symbol (low
+//  nibble first) is one of 16 32-chip
 //  sequences, 2 Mchip/s, even chips on I and odd chips on Q half a chip
 //  later, each a half-sine pulse two chips long: MSK, constant envelope.
 //  The PPDU: preamble (8 zero symbols), SFD A7h, PHR (length) and the
@@ -522,24 +531,30 @@ namespace RfCore.Signals
 
         private static IEnumerable<int> Lsb(int v, int bits) => Enumerable.Range(0, bits).Select(i => (v >> i) & 1);
 
-        /// <summary>The PLCP header's 48 bits in transmit order: SIGNAL, SERVICE, LENGTH (each least significant bit first)
-        /// and the CRC-16 (x^16 + x^12 + x^5 + 1, preset to 1s, sent inverted, its high bit first).</summary>
-        public static int[] Header(Wlan11bShape s)
+        /// <summary>The PLCP CRC-16 of <paramref name="bits"/> (transmit order): x^16 + x^12 + x^5 + 1, preset to 1s, the
+        /// ones complement, 16 bits in transmit order (the high bit first).</summary>
+        public static int[] Crc16(IEnumerable<int> bits)
         {
-            int signal = (int)Math.Round(s.RateMbps * 10), bits = 8 * s.PsduBytes;
-            int length = (int)Math.Ceiling(bits / s.RateMbps - 1e-9);
-            int service = 0x04 | (s.Rate == Wlan11bRate.Cck11M && length * 11 - bits >= 8 ? 0x80 : 0);
-            var h = Lsb(signal, 8).Concat(Lsb(service, 8)).Concat(Lsb(length, 16)).ToList();
             int reg = 0xFFFF;
-            foreach (int b in h)
+            foreach (int b in bits)
             {
                 int fb = ((reg >> 15) & 1) ^ b;
                 reg = (reg << 1) & 0xFFFF;
                 if (fb == 1) reg ^= 0x1021;
             }
             reg ^= 0xFFFF;
-            for (int i = 15; i >= 0; i--) h.Add((reg >> i) & 1);
-            return [.. h];
+            return [.. Enumerable.Range(0, 16).Select(i => (reg >> (15 - i)) & 1)];
+        }
+
+        /// <summary>The PLCP header's 48 bits in transmit order: SIGNAL (the rate in 100 kb/s), SERVICE (bit 2 locked clocks,
+        /// bit 7 the length extension), LENGTH (µs), each least significant bit first, then the CRC-16.</summary>
+        public static int[] Header(Wlan11bShape s)
+        {
+            int signal = (int)Math.Round(s.RateMbps * 10), bits = 8 * s.PsduBytes;
+            int length = (int)Math.Ceiling(bits / s.RateMbps - 1e-9);
+            int service = 0x04 | (s.Rate == Wlan11bRate.Cck11M && length * 11 - bits >= 8 ? 0x80 : 0);
+            var h = Lsb(signal, 8).Concat(Lsb(service, 8)).Concat(Lsb(length, 16)).ToList();
+            return [.. h, .. Crc16(h)];
         }
 
         /// <summary>The frame's bits before scrambling: SYNC (128 1s), SFD (F3A0h, least significant bit first), header, PSDU.</summary>
@@ -611,7 +626,8 @@ namespace RfCore.Signals
             => Dsss.Evm(Dsss.Matched(x, SamplesPerChip, RollOff), Chips(s));
 
         /// <summary>The worst margin (dB, positive = inside) against the transmit spectrum mask: -30 dBr from 11 to 22 MHz
-        /// off the carrier and -50 dBr beyond, in 100 kHz, relative to the peak.</summary>
+        /// off the carrier and -50 dBr beyond, in a 100 kHz resolution bandwidth. The clause refers dBr to the sin x / x
+        /// peak; here to the measured spectrum's own 100 kHz peak.</summary>
         public static double MaskMarginDb(ReadOnlySpan<Complex> x, double rateHz)
         {
             var X = Fft.Forward(x);

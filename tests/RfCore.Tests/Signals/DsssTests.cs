@@ -7,10 +7,11 @@
 //   W3  Code-domain power reads back every channel's level within 0.1 dB (TM1 64 DPCH; TM5 0.25 dB: 16QAM's frame
 //       power follows its data); a clean record's EVM is 0 and its peak code-domain error far down.
 //   W4  PAPR at 0.01 %: TM1 64 DPCH and the uplink reference channel.
-//   B1  The Barker code's correlation; the CCK word of zero phases.
+//   B1  The Barker code's correlation; the CCK words against Table 109; the CRC-16 worked example and the LENGTH /
+//       length-extension examples of Table 98 (IEEE Std 802.11b-1999 clause 18).
 //   B2  The long preamble despreads, decodes and descrambles to 1s and the SFD F3A0h; the header's SIGNAL is the rate.
 //   B3  Every rate inside the transmit mask, its clean chip EVM 0.
-//   Z1  The 32-chip sequences against the standard's table (symbols 0, 1, 8, 15).
+//   Z1  All 16 32-chip sequences against IEEE Std 802.15.4-2003 Table 20.
 //   Z2  O-QPSK half-sine: constant envelope, clean chip EVM 0, the main lobe (±1.5 MHz) holds over 99 % of the power.
 
 using System;
@@ -109,6 +110,24 @@ public class DsssTests(ITestOutputHelper output)
             Assert.True(Math.Abs(Enumerable.Range(0, 11 - lag).Sum(i => b[i] * b[i + lag])) <= (lag == 0 ? 11 : 1)); // aperiodic
         }
         Assert.Equal(new Complex[] { 1, 1, 1, -1, 1, 1, -1, 1 }, Ieee80211b.Cck(0, 0, 0, 0).Select(c => new Complex(Math.Round(c.Real), Math.Round(c.Imaginary))));
+
+        // Table 109, the 5.5 Mb/s words (φ2 = d2 π + π/2, φ3 = 0, φ4 = d3 π), c0 first
+        var j = Complex.ImaginaryOne;
+        foreach (var (d2, d3, word) in new[]
+        {
+            (0, 0, new[] { j, 1, j, -1, j, 1, -j, 1 }), (0, 1, new[] { -j, -1, -j, 1, j, 1, -j, 1 }),
+            (1, 0, new[] { -j, 1, -j, -1, -j, 1, j, 1 }), (1, 1, new[] { j, -1, j, 1, -j, 1, j, 1 }),
+        })
+            Assert.Equal(word, Ieee80211b.Cck(0, d2 * Math.PI + Math.PI / 2, 0, d3 * Math.PI).Select(c => new Complex(Math.Round(c.Real), Math.Round(c.Imaginary))));
+
+        // the CRC-16 worked example: SIGNAL 0Ah, SERVICE 0, LENGTH 192 µs
+        Assert.Equal("0101101101010111", string.Concat(Ieee80211b.Crc16("01010000000000000000001100000000".Select(c => c - '0'))));
+        // Table 98 at 11 Mb/s: octets -> LENGTH (µs), length extension
+        foreach (var (octets, length, ext) in new[] { (1023, 744, 0), (1024, 745, 0), (1025, 746, 0), (1026, 747, 1) })
+        {
+            var h = Ieee80211b.Header(new Wlan11bShape(Wlan11bRate.Cck11M, octets));
+            Assert.Equal((length, ext), (Enumerable.Range(0, 16).Sum(i => h[16 + i] << i), h[15]));
+        }
     }
 
     [Theory]
@@ -143,13 +162,18 @@ public class DsssTests(ITestOutputHelper output)
     [Fact]
     public void Z1_ChipSequencesAgainstTheTable()
     {
-        foreach (var (sym, chips) in new[]
-        {
-            (0, "11011001110000110101001000101110"), (1, "11101101100111000011010100100010"),
-            (8, "10001100100101100000011101111011"), (15, "11001001011000000111011110111000"),
-        })
-            Assert.Equal(chips, string.Concat(Ieee802154.ChipSequence(sym)));
-        Assert.Equal(16, Enumerable.Range(0, 16).Select(k => string.Concat(Ieee802154.ChipSequence(k))).Distinct().Count());
+        string[] table =
+        [
+            "11011001110000110101001000101110", "11101101100111000011010100100010", "00101110110110011100001101010010",
+            "00100010111011011001110000110101", "01010010001011101101100111000011", "00110101001000101110110110011100",
+            "11000011010100100010111011011001", "10011100001101010010001011101101", "10001100100101100000011101111011",
+            "10111000110010010110000001110111", "01111011100011001001011000000111", "01110111101110001100100101100000",
+            "00000111011110111000110010010110", "01100000011101111011100011001001", "10010110000001110111101110001100",
+            "11001001011000000111011110111000",
+        ];
+        for (int sym = 0; sym < 16; sym++) Assert.Equal(table[sym], string.Concat(Ieee802154.ChipSequence(sym)));
+        // the SFD A7h goes out low nibble first: bits b0..b7 = 11100101 (Figure 17)
+        Assert.Equal([0, 0, 0, 0, 0, 0, 0, 0, 7, 10], Ieee802154.SymbolsOf(new Oqpsk154Shape(1)).Take(10));
     }
 
     [Fact]
