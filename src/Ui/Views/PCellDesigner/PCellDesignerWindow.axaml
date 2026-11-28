@@ -177,7 +177,7 @@
                                     <DataTemplate x:DataType="vm:PCellOperationRow">
                                         <StackPanel Margin="0,0,0,6">
                                             <DockPanel>
-                                                <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Suppressed}" ToolTip.Tip="Suppressed: kept in the history, not applied"/>
+                                                <CheckBox DockPanel.Dock="Left" Content="Suppressed" IsChecked="{Binding Suppressed}" ToolTip.Tip="Kept in the history, not applied"/>
                                                 <Button DockPanel.Dock="Right" Content="✕" Click="OnOperationDelete" ToolTip.Tip="Delete"/>
                                                 <Button DockPanel.Dock="Right" Content="↓" Click="OnOperationDown" ToolTip.Tip="Later"/>
                                                 <Button DockPanel.Dock="Right" Content="↑" Click="OnOperationUp" ToolTip.Tip="Earlier"/>
@@ -193,6 +193,8 @@
                                                 <TextBox Text="{Binding Amount2}" Width="40" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Columns"/>
                                                 <TextBox Text="{Binding PitchX}" Width="60" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Pitch X"/>
                                                 <TextBox Text="{Binding PitchY}" Width="60" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Pitch Y"/>
+                                                <CheckBox Content="Keep model" IsChecked="{Binding KeepModel}"
+                                                          ToolTip.Tip="Accept the circuit model as an approximation: the step no longer makes the cell EM-only"/>
                                                 <Button Content="Apply" Click="OnOperationApply"/>
                                             </StackPanel>
                                         </StackPanel>

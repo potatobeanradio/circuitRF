@@ -126,25 +126,35 @@ parameter's own.
 ## Operations {#operations}
 
 Beside placing parts, a designed cell can be shaped by **operations** on their copper: Merge, Subtract, Intersect,
-Exclusive, Grow (or shrink) and Repeat. They are kept in the cell's history, in order, and applied every time the
-layout is planned, so a cut or a grown edge follows the parameters like everything else.
+Exclusive, Grow (or shrink) and Repeat. The **Operations** panel lists the cell's history in order. Each step changes
+the copper that the parts draw, and it is applied again at every value, so the cell stays a function of its
+parameters.
 
 - **Select operands.** Click a part or a drawn shape on the canvas; Shift-click adds or removes one. The selection is
-  listed under the canvas, first selected first. **Add layer** adds a whole layer as an operand (`layer:<name>`).
-- **Make tool** turns the selected `MSHAPE` into a cutter: it is never copper itself, only an operand (its `Role` is
-  `"tool"`).
-- **Merge**, **Subtract** (the first selected minus the rest), **Intersect** and **Exclusive** work on the first
-  operand with the rest. **Grow** grows the selection by its amount (negative shrinks), onto another layer when one is
-  named. **Repeat** copies the selection in rows and columns at the pitches. Amounts, counts and pitches are
-  expressions (`g/2`, `2*W`), so they can follow the parameters. Each press adds one operation, as one undo step.
-- **The Operations panel** lists the history, each operation on one line. Change its operands, amount or pitches and
-  press **Apply**; move it earlier or later; tick **Suppressed** to keep it without applying it; or delete it. An
-  operation that could not be applied says why on its row. The canvas, the response and the dimensions follow every
-  change.
+  listed under the canvas, first selected first. An operand is a part's copper (its designator), a whole layer
+  (**Add layer** adds `layer:<name>`, for example `layer:Soldermask Top`), or a **tool**.
+- **Make tool** turns the selected `MSHAPE` into a cutter (its `Role` is `"tool"`): its outline is an operand and is
+  never copper.
+- **Merge**, **Subtract**, **Intersect** and **Exclusive** take two operand sets: the first selected, and the rest
+  (Subtract is the first minus the rest). The result replaces the first set on the step's layer, and the second set
+  is left as it is.
+- **Grow** widens the selection by its amount, or narrows it when the amount is negative. Name another layer in
+  **onto** and the result goes there instead, which makes a mask opening, a keep-out or a clearance.
+- **Repeat** copies the selection into rows and columns at the pitches. The copies are copper only, with no pins and
+  no circuit model.
 
-An operation that changes the copper of the conductor makes the cell **EM-only**: its schematic no longer describes it.
-The response line then says so, naming the operation (`no circuit model: op1 (Subtract) changes the copper`), and
-**Run EM** gives the response.
+Amounts, counts and pitches are expressions (`g/2`, `2*W`), and one that names a parameter is drawn as a dimension.
+Each press adds one step, as one undo step. In the panel, change a step's operands (the first set, then `|` and the
+rest), amount or pitches and press **Apply**; move it earlier or later with the arrows; tick **Suppressed** to keep it
+in the history without applying it; or delete it. Each change is one undo step, and the canvas, the response and the
+dimensions follow.
+
+A step that would remove the copper under a part's pin, or would join or separate the ports, is not applied, and its
+row says why. A step that changes copper on a conductor layer makes the cell **EM-only**: it runs by EM and optimises
+with `em=direct`, and the response line says so, naming the step (`no circuit model: op1 (Subtract) changes the
+copper`). Steps on mask, silk or keep-out layers keep the circuit model. Tick **Keep model** on a step to accept the
+circuit model as an approximation. Operations are geometry, so they are not in the netlist text;
+`circuitrf pcell ops <cell>` lists them.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/operations.png" alt="The PCell Designer on a copy of the PadTee cell with a square tool on the line TL3 and one operation, op1 Subtract TL3 minus SH9, in the Operations panel; the line has a square notch where the tool was, and the response line says the cell has no circuit model." style="width:100%;height:auto">

@@ -50,7 +50,8 @@ public sealed partial class PCellParameterRow(Action changed) : ObservableObject
 
 /// <summary>One row of the history panel (brief-pcd-14 R-pcd14-3): the operation, its line, whether its step was applied,
 /// and its fields as text to edit in place. Apply writes them back through the host.</summary>
-public sealed partial class PCellOperationRow(PCellOperation operation, string? refusal, Action<PCellOperationRow> suppress) : ObservableObject
+public sealed partial class PCellOperationRow(PCellOperation operation, string? refusal, Action<PCellOperationRow> suppress,
+                                               Action<PCellOperationRow> keepModel) : ObservableObject
 {
     public PCellOperation Operation { get; } = operation;
     public string Id => Operation.Id;
@@ -62,6 +63,10 @@ public sealed partial class PCellOperationRow(PCellOperation operation, string? 
 
     [ObservableProperty] private bool _suppressed = operation.Suppressed;
     partial void OnSuppressedChanged(bool value) { if (value != Operation.Suppressed) suppress(this); }
+
+    /// <summary>Accept the circuit model as an approximation for this step (brief-pcd-13 R-pcd13-4).</summary>
+    [ObservableProperty] private bool _keepModel = operation.KeepModel;
+    partial void OnKeepModelChanged(bool value) { if (value != Operation.KeepModel) keepModel(this); }
 
     /// <summary>The operands, space-separated: A, then "|" and B for the two-set kinds (D3).</summary>
     [ObservableProperty] private string _operands = string.Join(" ", operation.A)
@@ -784,7 +789,8 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
         Operations.Clear();
         foreach (var op in PCellOperations.Of(Schematic))
             Operations.Add(new PCellOperationRow(op, steps?.GetValueOrDefault(op.Id) is { Applied: false } step ? step.Refusal ?? "not applied" : null,
-                                                 row => SuppressOperation(row.Id, row.Suppressed)));
+                                                 row => SuppressOperation(row.Id, row.Suppressed),
+                                                 row => KeepModelOperation(row.Id, row.KeepModel)));
         OnPropertyChanged(nameof(HasOperations));
     }
 
@@ -835,6 +841,12 @@ public sealed partial class PCellDesignerViewModel : ObservableObject
 
     public bool SuppressOperation(string id, bool suppressed) =>
         OperationGesture($"{(suppressed ? "Suppress" : "Unsuppress")} {id}", () => PCellOperations.Suppress(Schematic, id, suppressed));
+
+    /// <summary>Keep model on a step: its circuit model stands as an approximation, so it no longer makes the cell
+    /// EM-only. One undo step.</summary>
+    public bool KeepModelOperation(string id, bool keep) =>
+        PCellOperations.Of(Schematic).FirstOrDefault(o => o.Id == id) is { } op
+        && OperationGesture($"{(keep ? "Keep model on" : "EM only for")} {id}", () => PCellOperations.Edit(Schematic, id, op with { KeepModel = keep }));
 
     public bool DeleteOperation(string id) =>
         OperationGesture($"Delete {id}", () => PCellOperations.Delete(Schematic, id));

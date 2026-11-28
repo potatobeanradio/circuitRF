@@ -67,6 +67,29 @@ public sealed class Pcd14OperationsTests : IDisposable
         Assert.Contains("Run EM", vm.Status);
     }
 
+    /// <summary>Keep model on a row accepts the circuit model as an approximation: the step no longer makes the cell
+    /// EM-only, and the response is drawn again. One undo step.</summary>
+    [Fact]
+    public async Task KeepModel_OnARow_GivesTheCellItsCircuitModelBack()
+    {
+        var vm = WithPad();
+        vm.Selection.Add("SH1");
+        Assert.True(vm.MakeTool(), vm.Status);
+        vm.Selection.Clear();
+        vm.Selection.Add("TL3");
+        vm.Selection.Add("SH1");
+        Assert.True(vm.AddOperation(PCellOperationKind.Subtract), vm.Status);
+        Assert.NotEmpty(PCellOperations.WithoutCircuitModel(vm.Schematic, vm.Technology));
+
+        vm.Operations[0].KeepModel = true;   // the check box
+        Assert.True(PCellOperations.Of(vm.Schematic)[0].KeepModel);
+        Assert.Empty(PCellOperations.WithoutCircuitModel(vm.Schematic, vm.Technology));
+        await vm.DesignAsync(0);
+        Assert.NotNull(vm.Response);
+        vm.Undo();
+        Assert.False(PCellOperations.Of(vm.Schematic)[0].KeepModel);
+    }
+
     /// <summary>R-pcd14-3: the history edited in place: an edited amount, a move, a suppress and a delete, each one undo
     /// step.</summary>
     [Fact]
