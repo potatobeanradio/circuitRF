@@ -177,9 +177,9 @@
       "Model": "em",
       "Sweeps": [
         {
-          "StartExpr": "3.5",
-          "StopExpr": "7",
-          "NumPoints": 15,
+          "StartExpr": "4.6",
+          "StopExpr": "5.6",
+          "NumPoints": 41,
           "Mode": "PointCount",
           "Kind": "Linear",
           "StartUnit": "GHz",
@@ -205,8 +205,8 @@
         "Analysis": "SP1",
         "Range": {
           "Axis": "freq",
-          "Lo": "4.9 GHz",
-          "Hi": "5.1 GHz"
+          "Lo": "4.99 GHz",
+          "Hi": "5.01 GHz"
         },
         "Type": "Le",
         "Limit": "-30",
@@ -218,7 +218,7 @@
       "Algorithm": "pattern",
       "Seed": 1,
       "Em": "Direct",
-      "EmBudget": 8
+      "EmBudget": 12
     }
   }
 }

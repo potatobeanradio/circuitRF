@@ -13,7 +13,7 @@
     },
     {
       "Name": "d",
-      "DefaultExpression": "3.5",
+      "DefaultExpression": "3.9",
       "Unit": "mm",
       "Dimension": "Length",
       "ShowOnSchematic": true,
@@ -23,7 +23,7 @@
     },
     {
       "Name": "s",
-      "DefaultExpression": "0.2",
+      "DefaultExpression": "0.16",
       "Unit": "mm",
       "Dimension": "Length",
       "ShowOnSchematic": true,

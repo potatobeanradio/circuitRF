@@ -42,7 +42,7 @@
 			"Plane": "YZ",
 			"Offset": 24000000,
 			"Rect": {
-				"Min": [9450000, 35000],
+				"Min": [-10550000, 35000],
 				"Size": [1100000, 508000]
 			},
 			"Z0": "50",
@@ -52,7 +52,7 @@
 				"Taken": {
 					"Plane": "YZ",
 					"Offset": 24000000,
-					"Min": [9450000, 35000],
+					"Min": [-10550000, 35000],
 					"Size": [1100000, 508000]
 				}
 			}
@@ -64,7 +64,7 @@
 			"Plane": "YZ",
 			"Offset": 0,
 			"Rect": {
-				"Min": [-10550000, 35000],
+				"Min": [9450000, 35000],
 				"Size": [1100000, 508000]
 			},
 			"Z0": "50",
@@ -74,7 +74,7 @@
 				"Taken": {
 					"Plane": "YZ",
 					"Offset": 0,
-					"Min": [-10550000, 35000],
+					"Min": [9450000, 35000],
 					"Size": [1100000, 508000]
 				}
 			}
@@ -96,7 +96,7 @@
 				"StartExpr": "4",
 				"StopExpr": "6",
 				"StepExpr": "",
-				"NumPoints": 3,
+				"NumPoints": 11,
 				"Mode": "PointCount",
 				"Kind": "Linear",
 				"StartUnit": "GHz",
@@ -152,7 +152,7 @@
 				"SaveFieldsGHz": []
 			},
 			"EMerge": {
-				"Quality": "Draft",
+				"Quality": "Standard",
 				"SaveFieldsGHz": []
 			}
 		}

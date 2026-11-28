@@ -14,11 +14,11 @@ page describes every control.
 | **Wilkinson3** | A 3-way Wilkinson divider for 2.45 GHz: three 86.6 Ω arms from a cross, three 50 Ω isolation resistors to a drawn star pad (`MSHAPE`, `Model="short"`). Parameters `La`, `Wa`, `Sp` (pad size) and `Riso` |
 | **Wilkinson3Bench** | `Wilkinson3` between four Ports, swept 1.5–3.5 GHz by circuit models |
 | **Spurline** | A 50 Ω line with an L-shaped slit, one drawn polygon, EM only (`Model="none"`). Parameters `Ls` (slit length, a drag handle), `g` (slit gap) and `W` |
-| **SpurlineBench** | `Spurline` between two Ports, swept 3.5–7 GHz by Planar EM, with the optimisation that moves its notch to 5 GHz |
+| **SpurlineBench** | `Spurline` between two Ports, swept 4.6–5.6 GHz in 25 MHz steps by Planar EM, with the optimisation that moves its notch to 5 GHz |
 | **DualModePatch** | A square patch with one corner cut, fed along two adjacent edges across a gap, EM only. Parameters `a`, `d` (corner cut) and `s` (gap) |
-| **PatchBench** | `DualModePatch` between two Ports, swept 4.9–5.4 GHz by Planar EM |
-| **Slotline** | An out-of-phase microstrip-slotline divider: a slot in a drawn ground (two `MSHAPE`s on Bottom Copper), crossed by an input and two output microstrips, EM only. Parameters `Lsl`, `Ws`, `Lss` and `Lms` |
-| **SlotlineBench** | `Slotline` between three Ports, solved at 4, 5 and 6 GHz in its 3D view (EMerge) |
+| **PatchBench** | `DualModePatch` between two Ports, swept 4.9–5.5 GHz by Planar EM |
+| **Slotline** | An out-of-phase microstrip-slotline divider: a slot in a drawn ground (one `MSHAPE` on Bottom Copper), crossed by an input and two output microstrips, EM only. Parameters `Lsl`, `Ws`, `Lss` and `Lms` |
+| **SlotlineBench** | `Slotline` between three Ports, solved at 11 points over 4–6 GHz in its 3D view (EMerge, Standard mesh) |
 
 ## 1. The designed cell
 
@@ -88,11 +88,18 @@ The even- and odd-mode permittivities come from the coupled-line equations of Ki
 this board, εe = 2.84 and εo = 2.41, so εav = 2.62. `Ls = 8.5 mm` gives f0 ≈ 5.45 GHz, and 5 GHz needs `Ls` ≈ 9.26 mm.
 
 The slit's far end follows `Ls` by **Stretch by Parameter**, so `Ls` is a drag handle wherever the cell is placed. The
-cell is EM only. Simulate `SpurlineBench` (Planar, the setup in `em/`); `SpurlineBench.cdd` shows S21 and S11. A coarse
-sweep (3 cells across a strip, one edge cell, 15 points, about a minute) puts the notch at **5.39 GHz**.
+cell is EM only. Simulate `SpurlineBench` (Planar, the setup in `em/`); `SpurlineBench.cdd` shows S21 and S11. The
+sweep runs 4.6-5.6 GHz in 25 MHz steps, because the notch is only about 50 MHz wide at −20 dB and a coarser sweep
+misses its bottom. On the setup's own planar mesh (41 points, about 2 minutes), the notch is at **5.38 GHz**, with S21
+at −33.9 dB at the nearest point.
 
-The bench's **Optimize** runs `em=direct` with pattern search on `X1.Ls`, 8 solves at most, to push S21 down at 5 GHz.
-It stopped at `X1.Ls = 9.31 mm` after 8 solves (9 min 51 s on the coarse mesh), and the notch moved to **4.97 GHz**.
+The bench's **Optimize** runs `em=direct` with pattern search on `X1.Ls`, pushing S21 below −30 dB at 5 GHz:
+- The first pass (12 solves, 14 min) stopped at `X1.Ls = 9.31 mm`, which puts the notch at 4.93 GHz. Its steps were
+  still a quarter of the range when the budget ran out, which is coarse for a notch this sharp.
+- A second pass with the range narrowed to 9-9.4 mm met the goal on its first new solve, at `X1.Ls = 9.21 mm`.
+
+The fine sweep then puts the notch at **4.98 GHz**, −33 dB at the nearest point. The closed-form estimate of 9.26 mm is
+within 0.05 mm of that.
 
 ## 7. A dual-mode patch bandpass
 
@@ -107,11 +114,29 @@ f10 ≈ c / (2 (a + 2ΔL) √εeff),   εeff = (εr + 1)/2 + (εr − 1)/2 · (1
 where ΔL is the open edge's extension of Hammerstad ([doi:10.1109/EUMA.1975.332206](https://doi.org/10.1109/EUMA.1975.332206)).
 With `a = 15 mm`, εeff = 3.45 and ΔL = 0.24 mm, which gives **5.22 GHz**.
 
-Simulate `PatchBench` (Planar); `PatchBench.cdd` shows S21 and S11. A coarse sweep (21 points, about 2 minutes) shows
-the two split modes either side of it: S11 dips at **5.10 GHz** and **5.32 GHz**, where S21 reaches −8.2 dB and −11.2 dB.
-The passband is 5.05-5.33 GHz, with steep skirts down to −20 dB at 4.9 and 5.4 GHz. Across a 0.2 mm gap the feeds are
-under-coupled, which is where the insertion loss comes from. A smaller gap or a longer coupled edge raises the
-coupling, and a larger `d` widens the split.
+Simulate `PatchBench` (Planar); `PatchBench.cdd` shows S21 and S11. The sweep is 25 points over 4.9-5.5 GHz and takes
+about 3 minutes. It shows the two split modes either side of 5.22 GHz:
+
+| | first pole | second pole | between them |
+|---|---|---|---|
+| Where S11 dips | 5.08-5.10 GHz, −5.4 dB | 5.35 GHz, −3.2 dB | |
+| S21 | −7.3 dB | −10.7 dB | −11.7 dB at 5.25 GHz |
+
+The skirts fall to −17.5 dB at 4.9 GHz and −25 dB at 5.5 GHz.
+
+**The feeds are under-coupled, and no gap fixes it.** The first design (`s = 0.2 mm`, `d = 3.5 mm`) peaked at −8.2 and
+−11.2 dB. `em=direct` (pattern search, 12 Planar solves, 25 min) on `s` and `d` asked for S21 above −3 dB over
+5.1-5.3 GHz. It drove `s` to its minimum, 0.16 mm, which is the board's 0.15 mm copper-spacing rule, and `d` to
+3.9 mm, the values the cell now ships with. That gained 1 dB and stopped there.
+
+Why −3 dB is out of reach: at a single pole, S21 = 2Qu / (2Qu + Qe).
+- The −7.3 dB peak puts the external Q at about 2.6 times the patch's unloaded Q.
+- −3 dB needs about 0.8 times, so the coupling would have to grow by a factor of about 1.8.
+- An edge gap at the spacing rule cannot give that.
+- The patch's unloaded Q is low because an open patch on a 0.508 mm board is an antenna: much of its energy radiates.
+
+A usable two-pole passband needs feeds that touch the patch, or an inset feed. Both are a different cell, since the
+patch and its feeds are then joined by a net.
 
 ## 8. A slotline divider
 
@@ -129,22 +154,37 @@ puts the two outputs 180° apart.
 With the quasi-static estimate εs ≈ (εr + 1)/2 = 2.33 for a slot on this thin substrate, λs/4 at 5 GHz is
 c / (4 · 5 GHz · √2.33) ≈ 9.8 mm (`Lss`). The 50 Ω line's εeff = 2.86 gives λm/4 ≈ 8.9 mm (`Lms`).
 
-A polygon has no hole, so the ground is two drawn shapes on net 0: `SH1`, the ground less the slot and the block below
-it, and `SH2`, that block. Both are placed by offset from the input's crossing, and each output line is placed by
-offset from `SH1`'s pin at its crossing. A bench that places only the designed cell draws no ground pour, so the slot
-stays open. Planar cannot solve it, because Planar's ground is an unbroken plane. The bench's EM view is its 3D view
+The ground is one drawn shape on net 0, `SH1`. A polygon has no hole, so its outline runs in to the slot along a
+zero-width cut below the input crossing, around the slot, and back out the same way. The copper is then one piece with
+the slot inside it, and LVS reads its one pin on that piece. `SH1` and both output lines are placed by offset from the
+input's crossing: the outputs at `Dy = ±Lsl`, and output 3 turned by 180°. The bench's ground pour stops at the cell's
+drawn ground, so the slot stays open. Planar cannot solve it, because Planar's ground is an unbroken plane. The bench's EM view is its 3D view
 (`3d/SlotlineBench.c3d`, made by **New 3D View from Layout**), which turns the drawn ground into copper with the slot cut
 in it, with an EMerge setup.
 
-Simulate `SlotlineBench`; `SlotlineBench.cdd` shows the split and the two outputs' phases. The coarse solve (EMerge,
-Draft mesh, about 16,000 tetrahedra, 4, 5 and 6 GHz, 17 s) gives, at 5 GHz:
+Simulate `SlotlineBench`; `SlotlineBench.cdd` shows the split and the two outputs' phases. The solve uses EMerge's
+Standard mesh (36,000 tetrahedra, 5.8 GB). It runs an adaptive sweep of 11 points over 4-6 GHz, fitted from 10 full
+solves, in 42 s:
 
-| S21 | S31 | ∠S21 − ∠S31 | S11 | S32 |
-|---|---|---|---|---|
-| −5.72 dB | −5.87 dB | 179° | −9.8 dB | −11.8 dB |
+| f | S11 | S21 | S31 | ∠S21 − ∠S31 | S32 |
+|---|---|---|---|---|---|
+| 4.0 GHz | −13.2 dB | −7.06 dB | −7.01 dB | 179° | −10.4 dB |
+| 4.6 GHz | −10.4 dB | −6.23 dB | −6.19 dB | 180° | −11.7 dB |
+| 5.0 GHz | −9.8 dB | −5.95 dB | −5.94 dB | 180° | −11.8 dB |
+| 5.4 GHz | −10.3 dB | −5.72 dB | −5.73 dB | 180° | −11.3 dB |
+| 6.0 GHz | −12.3 dB | −5.43 dB | −5.44 dB | 180° | −9.9 dB |
 
-The split is even to 0.15 dB and the outputs are 179° apart across 4-6 GHz. The 2.7 dB beyond −3 dB comes from three
-things: the slot radiates into the open box, the outputs are only 12 dB apart, and the transitions are centred a little
-above 5 GHz (S21 reaches −5.05 dB at 6 GHz). Longer `Lss` and `Lms` move the centre down.
+The split is even to 0.05 dB and the outputs are 179-180° apart across the band. The loss is the board's, and it is
+mostly radiation:
+- At 5 GHz, |S11|² + |S21|² + |S31|² = 0.61, so 39 % of the input power does not come back out of the ports.
+- The dielectric (tanδ = 0.0037) and the copper along the 30-40 mm a wave travels account for about 0.3 dB, or 7 % of
+  it.
+- The rest, about 32 %, leaves through the slot. A slot in a ground plane is a magnetic dipole, and on a 0.508 mm board
+  with εr = 3.66 little of its field is held in the substrate, so it radiates into the open box on both sides of the
+  board.
+
+The outputs are also poorly matched (S22 ≈ −5 dB): a lossless three-port cannot be matched at every port, and this one
+has no isolation network. The transitions are centred above 5 GHz (S21 is still rising at 6 GHz), and longer `Lss` and
+`Lms` move the centre down.
 
 No results ship with this example.

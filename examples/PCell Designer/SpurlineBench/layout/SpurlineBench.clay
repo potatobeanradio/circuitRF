@@ -34,7 +34,7 @@
 		}
 	},
 	"PCellSnapshots": {
-		"cpcell-Spurline_72405a0fd845": {
+		"cpcell-Spurline_09d034509827": {
 			"GeneratorId": "cpcell:Spurline",
 			"Parameters": {
 				"Ls": 0.0085,
@@ -84,11 +84,25 @@
 				"Layer": 1,
 				"Datatype": 0
 			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				24540000, 3090000,
+				-2540000, 3090000,
+				-2540000, -3090000,
+				24540000, -3090000
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
 		}
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/cpcell-Spurline_72405a0fd845",
+			"CellRef": "../../.generated-cells/cpcell-Spurline_09d034509827",
 			"X": 11000000,
 			"Y": -550000,
 			"Rot": "R90",

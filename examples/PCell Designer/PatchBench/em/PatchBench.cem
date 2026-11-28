@@ -4,9 +4,9 @@
   "LayoutRef": "PatchBench/layout/PatchBench.clay",
   "Frequency": {
     "StartExpr": "4.9",
-    "StopExpr": "5.4",
+    "StopExpr": "5.5",
     "StepExpr": "",
-    "NumPoints": 21,
+    "NumPoints": 25,
     "Mode": "PointCount",
     "Kind": "Linear",
     "StartUnit": "GHz",

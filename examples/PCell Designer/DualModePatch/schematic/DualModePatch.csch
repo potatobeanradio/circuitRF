@@ -9,7 +9,7 @@
       "InstanceName": "TL1",
       "Symbol": "Mlin",
       "X": 800,
-      "Y": 200,
+      "Y": 1300,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -40,7 +40,7 @@
       "InstanceName": "SH1",
       "Symbol": "MShape",
       "X": 2100,
-      "Y": 200,
+      "Y": 1300,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -212,7 +212,7 @@
       "InstanceName": "TL2",
       "Symbol": "Mlin",
       "X": 3700,
-      "Y": 200,
+      "Y": 1300,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
@@ -251,7 +251,7 @@
       "InstanceName": "P1",
       "Symbol": "Term",
       "X": 800,
-      "Y": 1400,
+      "Y": 200,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -282,7 +282,7 @@
       "InstanceName": "P2",
       "Symbol": "Term",
       "X": 3700,
-      "Y": 1400,
+      "Y": 2500,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -313,7 +313,7 @@
       "InstanceName": "GND1",
       "Symbol": "Ground",
       "X": 800,
-      "Y": 1600,
+      "Y": 400,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -325,7 +325,7 @@
       "InstanceName": "GND2",
       "Symbol": "Ground",
       "X": 3700,
-      "Y": 1600,
+      "Y": 2700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -346,20 +346,20 @@
           -200
         ],
         [
-          600,
+          500,
           -200
         ],
         [
-          600,
-          1000
+          500,
+          900
         ],
         [
           800,
-          1000
+          900
         ],
         [
           800,
-          1200
+          1100
         ]
       ]
     },
@@ -367,27 +367,27 @@
       "Points": [
         [
           3700,
-          0
+          1100
         ],
         [
           3700,
-          -200
+          900
         ],
         [
           3500,
-          -200
+          900
         ],
         [
           3500,
-          1000
+          2100
         ],
         [
           3700,
-          1000
+          2100
         ],
         [
           3700,
-          1200
+          2300
         ]
       ]
     }
@@ -399,13 +399,13 @@
       "Name": "n1",
       "OwnerWireIndex": 0,
       "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "AlongT": 0.3333333333333333,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
       "X": 800,
-      "Y": 400,
+      "Y": 1500,
       "Name": "f1",
       "SegmentIndex": 0,
       "AlongT": 0,
@@ -414,7 +414,7 @@
     },
     {
       "X": 1900,
-      "Y": 100,
+      "Y": 1200,
       "Name": "q1",
       "SegmentIndex": 0,
       "AlongT": 0,
@@ -423,7 +423,7 @@
     },
     {
       "X": 1900,
-      "Y": 300,
+      "Y": 1400,
       "Name": "q2",
       "SegmentIndex": 0,
       "AlongT": 0,
@@ -432,7 +432,7 @@
     },
     {
       "X": 3600,
-      "Y": -200,
+      "Y": 900,
       "Name": "n2",
       "OwnerWireIndex": 1,
       "SegmentIndex": 1,
@@ -442,7 +442,7 @@
     },
     {
       "X": 3700,
-      "Y": 400,
+      "Y": 1500,
       "Name": "f2",
       "SegmentIndex": 0,
       "AlongT": 0,

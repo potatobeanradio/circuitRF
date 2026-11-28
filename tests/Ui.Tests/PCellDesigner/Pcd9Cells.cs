@@ -112,8 +112,8 @@ internal static class Pcd9Cells
         """,
         [
             ("a", "15",  "mm", "12",   "18", "patch side"),
-            ("d", "3.5", "mm", "0.5",  "5",  "corner cut"),
-            ("s", "0.2", "mm", "0.16", "1",  "feed gap"),
+            ("d", "3.9", "mm", "0.5",  "5",  "corner cut"),
+            ("s", "0.16", "mm", "0.16", "1", "feed gap"),
         ],
         [
             ("SH1", new OffsetPlacement { Anchor = "TL1.2", Pin = 1, Dx = "-a/2", Dy = "s+0.55", Unit = "mm", Angle = "90" }),
@@ -128,18 +128,18 @@ internal static class Pcd9Cells
     // microstrip runs on Lms (a quarter wave) past the slot to an open end, and the slot runs on Lss (a quarter wave)
     // past each output crossing to its shorted end. The slot carries the same voltage both ways from the input, so two
     // outputs crossing it alike would be in phase; TLO3 crosses it the other way round (Angle 180: its port on the input's
-    // side, its stub on the other), so the outputs are 180° apart. A polygon has no hole, so the ground is two drawn shapes
-    // on net 0: SH1, the ground less the
-    // slot and the block below it, and SH2, that block. Both are placed by offset from the input's crossing, and each
-    // output line by offset from SH1's pin at its crossing (Dx, Dy in mm). The ground is drawn copper, so a 3D view of a
-    // bench turns it into solids with the slot open. EM only, in 3D: Planar's ground is an unbroken plane.
+    // side, its stub on the other), so the outputs are 180° apart. The ground is one drawn polygon on net 0 with the slot
+    // inside it: a polygon has no hole, so its outline runs in to the slot along a zero-width cut (x = 0, below the slot)
+    // and back out, and the copper is one piece with one pin (0.55 mm inside it, so LVS finds the copper it is on). It is
+    // placed by offset from the input's crossing, and so is each output line (Dy = ±Lsl; Dx, Dy in mm). The ground is
+    // drawn copper, so a 3D view of a bench turns it into solids with the slot open. EM only, in 3D: Planar's ground is an
+    // unbroken plane.
     public static readonly Pcd9Spec Slotline = new(
         "Slotline",
         """
         MLIN:TLI1  n1  ni  W=1.1 mm  L=12 mm
         MLIN:TLI2  ni  ns1  W=1.1 mm  L=Lms
-        MSHAPE:SH1  0  0  0  Form="polygon"  W=0  X[1]=-(Lsl+Lss+3e-3)  Y[1]=-12e-3  X[2]=-(Lsl+Lss)  Y[2]=-12e-3  X[3]=-(Lsl+Lss)  Y[3]=Ws/2  X[4]=Lsl+Lss  Y[4]=Ws/2  X[5]=Lsl+Lss  Y[5]=-12e-3  X[6]=Lsl+Lss+3e-3  Y[6]=-12e-3  X[7]=Lsl+Lss+3e-3  Y[7]=12e-3  X[8]=-(Lsl+Lss+3e-3)  Y[8]=12e-3  PinX[1]=0  PinY[1]=Ws/2  PinW[1]=1.1 mm  PinDir[1]=90 deg  PinX[2]=Lsl  PinY[2]=Ws/2  PinW[2]=1.1 mm  PinDir[2]=90 deg  PinX[3]=-Lsl  PinY[3]=Ws/2  PinW[3]=1.1 mm  PinDir[3]=90 deg  SignalLayer="Bottom Copper (1 oz)"  Model="none"
-        MSHAPE:SH2  0  Form="polygon"  W=0  X[1]=-(Lsl+Lss)  Y[1]=-12e-3  X[2]=Lsl+Lss  Y[2]=-12e-3  X[3]=Lsl+Lss  Y[3]=-Ws/2  X[4]=-(Lsl+Lss)  Y[4]=-Ws/2  PinX[1]=0  PinY[1]=-Ws/2  PinW[1]=1.1 mm  PinDir[1]=270 deg  SignalLayer="Bottom Copper (1 oz)"  Model="none"
+        MSHAPE:SH1  0  Form="polygon"  W=0  X[1]=-(Lsl+Lss+3e-3)  Y[1]=-12e-3  X[2]=0  Y[2]=-12e-3  X[3]=0  Y[3]=-Ws/2  X[4]=-(Lsl+Lss)  Y[4]=-Ws/2  X[5]=-(Lsl+Lss)  Y[5]=Ws/2  X[6]=Lsl+Lss  Y[6]=Ws/2  X[7]=Lsl+Lss  Y[7]=-Ws/2  X[8]=0  Y[8]=-Ws/2  X[9]=0  Y[9]=-12e-3  X[10]=Lsl+Lss+3e-3  Y[10]=-12e-3  X[11]=Lsl+Lss+3e-3  Y[11]=12e-3  X[12]=-(Lsl+Lss+3e-3)  Y[12]=12e-3  PinX[1]=0  PinY[1]=Ws/2+0.55e-3  PinW[1]=1.1 mm  PinDir[1]=90 deg  SignalLayer="Bottom Copper (1 oz)"  Model="none"
         MLIN:TLO2  n2  no2  W=1.1 mm  L=12 mm
         MLIN:TSO2  no2  ns2  W=1.1 mm  L=Lms
         MLIN:TLO3  n3  no3  W=1.1 mm  L=12 mm
@@ -155,10 +155,9 @@ internal static class Pcd9Cells
             ("Lms", "8.9", "mm", "6",   "12",  "microstrip stub past the slot (a quarter wave)"),
         ],
         [
-            ("SH1",  new OffsetPlacement { Anchor = "TLI1.2", Pin = 1, Dx = "Ws/2",  Dy = "0", Unit = "mm", Angle = "180" }),
-            ("SH2",  new OffsetPlacement { Anchor = "TLI1.2", Pin = 1, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
-            ("TLO2", new OffsetPlacement { Anchor = "SH1.2",  Pin = 2, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "0" }),
-            ("TLO3", new OffsetPlacement { Anchor = "SH1.3",  Pin = 2, Dx = "-Ws/2", Dy = "0", Unit = "mm", Angle = "180" }),
+            ("SH1",  new OffsetPlacement { Anchor = "TLI1.2", Pin = 1, Dx = "Ws/2+0.55", Dy = "0",    Unit = "mm", Angle = "180" }),
+            ("TLO2", new OffsetPlacement { Anchor = "TLI1.2", Pin = 2, Dx = "0",         Dy = "-Lsl", Unit = "mm", Angle = "0" }),
+            ("TLO3", new OffsetPlacement { Anchor = "TLI1.2", Pin = 2, Dx = "0",         Dy = "Lsl",  Unit = "mm", Angle = "180" }),
         ],
         []);
 
@@ -196,18 +195,19 @@ internal static class Pcd9Cells
         """, new FrequencySpec("1.5", "3.5", 41, SweepKind.Linear, "GHz", "GHz"), byEm: false);
 
     /// <summary>The spurline's bench also carries the optimisation that moves its notch to 5 GHz: X1.Ls tuned by EM itself
-    /// (em=direct, pattern search, eight solves), S21 at 5 GHz pushed down.</summary>
+    /// (em=direct, pattern search), S21 at 5 GHz pushed below −30 dB. The sweep's 25 MHz steps resolve the notch, which is
+    /// about 50 MHz wide at −20 dB.</summary>
     public static string SpurlineBench(string ws, string cell) => Bench(ws, cell, "SpurlineBench", """
         Port:P1  n1  0  Num=1  Z=50 Ohm
         Spurline:X1  n1  n2  Ls=8.5 mm
         Port:P2  n2  0  Num=2  Z=50 Ohm
-        """, new FrequencySpec("3.5", "7", 15, SweepKind.Linear, "GHz", "GHz"), byEm: true, x1: [("Ls", "8.5", "mm")],
+        """, new FrequencySpec("4.6", "5.6", 41, SweepKind.Linear, "GHz", "GHz"), byEm: true, x1: [("Ls", "8.5", "mm")],
         tuning: new TuningSetup
         {
             Variables = [new TunableEntry { Key = "X1.Ls", Opt = true, Min = "7 mm", Max = "11 mm", Scale = TuneScale.Lin }],
             Goals = [new OptimizationGoal { Name = "Notch", Expression = "dB(SP1.S(2,1))", Analysis = "SP1", Type = GoalType.Le, Limit = "-30",
-                                            Range = new GoalRange { Axis = "freq", Lo = "4.9 GHz", Hi = "5.1 GHz" } }],
-            Optimizer = new OptimizerSettings { Algorithm = "pattern", Em = OptimizerEmMode.Direct, EmBudget = 8, Seed = 1 },
+                                            Range = new GoalRange { Axis = "freq", Lo = "4.99 GHz", Hi = "5.01 GHz" } }],
+            Optimizer = new OptimizerSettings { Algorithm = "pattern", Em = OptimizerEmMode.Direct, EmBudget = 12, Seed = 1 },
         });
 
     public static string SlotlineBench(string ws, string cell) => Bench(ws, cell, "SlotlineBench", """
@@ -215,13 +215,13 @@ internal static class Pcd9Cells
         Slotline:X1  n1  n2  n3
         Port:P2  n2  0  Num=2  Z=50 Ohm
         Port:P3  n3  0  Num=3  Z=50 Ohm
-        """, new FrequencySpec("4", "6", 3, SweepKind.Linear, "GHz", "GHz"), byEm: true);
+        """, new FrequencySpec("4", "6", 11, SweepKind.Linear, "GHz", "GHz"), byEm: true);
 
     public static string PatchBench(string ws, string cell) => Bench(ws, cell, "PatchBench", """
         Port:P1  n1  0  Num=1  Z=50 Ohm
         DualModePatch:X1  n1  n2
         Port:P2  n2  0  Num=2  Z=50 Ohm
-        """, new FrequencySpec("4.9", "5.4", 21, SweepKind.Linear, "GHz", "GHz"), byEm: true);
+        """, new FrequencySpec("4.9", "5.5", 25, SweepKind.Linear, "GHz", "GHz"), byEm: true);
 
     /// <summary>The spec designed under <paramref name="workspace"/>, as in the window; the cell folder.</summary>
     public static string Design(string workspace, Pcd9Spec spec)

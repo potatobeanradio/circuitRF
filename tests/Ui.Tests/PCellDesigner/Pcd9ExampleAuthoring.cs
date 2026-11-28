@@ -23,7 +23,8 @@ public sealed class Pcd9ExampleAuthoring
         try
         {
             Pcd9Cells.Workspace(scratch);
-            Pcd9Cells.WilkinsonBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Wilkinson));
+            // Every bench ships a layout with its ground pour; the circuit-only one has no EM setup.
+            Assert.Null(LayoutFromSchematic.Run(Pcd9Cells.WilkinsonBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Wilkinson))).Refusal);
             // The two EM-only benches are laid out with their Planar setups, so their SP1 runs by EM as shipped. An example
             // keeps each setup in its cell's em/ folder (the path inside it stays relative to the workspace).
             foreach (string bench in new[] { Pcd9Cells.SpurlineBench(scratch, Pcd9Cells.Design(scratch, Pcd9Cells.Spurline)),
@@ -44,6 +45,7 @@ public sealed class Pcd9ExampleAuthoring
             string cem = Assert.Single(laid.EmSetups);
             var setup = EmSetupPersistence.LoadFromFile(cem);
             setup.Solver3D = Em3dSolverId.Emerge;
+            setup.Emerge = new CemEmerge { Quality = PalaceQuality.Standard, SaveFieldsGHz = [] };
             EmSetupPersistence.SaveToFile(cem, setup);
             string benchDir = Path.GetDirectoryName(Path.GetDirectoryName(slot))!;
             string c3d = Path.Combine(CellFolder.SubFolderPath(benchDir, ViewType.ThreeD), "SlotlineBench" + CircuitRF.Design.ThreeD.C3dPersistence.Extension);
@@ -64,6 +66,9 @@ public sealed class Pcd9ExampleAuthoring
                     File.Copy(f, target);
                 }
             }
+
+            // PCD-8's Bench (rebuilt by its own authoring) gets its layout in place, as Update Layout from Schematic makes it.
+            Assert.Null(LayoutFromSchematic.Run(Path.Combine(example, "Bench", "schematic", "Bench.csch")).Refusal);
         }
         finally
         {

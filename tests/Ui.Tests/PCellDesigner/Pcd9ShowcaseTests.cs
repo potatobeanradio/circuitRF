@@ -18,12 +18,18 @@ public sealed class Pcd9ShowcaseTests : IDisposable
 
     private static string Say(IEnumerable<Diagnostic> findings) => string.Join("\n", findings.Select(f => $"{f.Severity} {f.Id}: {f.Render()}"));
 
-    /// <summary>Designed, check clean, its bench laid out with no warning and LVS clean; the bench's path.</summary>
+    /// <summary>Designed, check clean, LVS clean on its own saved layout, its bench laid out with no warning and LVS clean;
+    /// the bench's path.</summary>
     private string DesignedAndPlaced(Pcd9Spec spec, Func<string, string, string> bench)
     {
         string cell = Pcd9Cells.Design(_ws, spec);
         var check = PCellDesignCheck.Run(cell);
         Assert.True(check.All(f => f.Severity != DiagnosticSeverity.Error), Say(check));
+        using (GeneratedCellsRun.Prepare(Path.Combine(cell, "layout", spec.Cell + ".clay")))
+        {
+            var own = CircuitRF.Design.Layout.Lvs.LvsRun.Run(cell);
+            Assert.True(own.ErrorCount == 0, string.Join("\n", own.Findings.Select(f => f.Diagnostic)));
+        }
         string path = bench(_ws, cell);
         var laid = LayoutFromSchematic.Run(path);
         Assert.True(laid.Refusal is null, laid.Refusal);
@@ -79,7 +85,7 @@ public sealed class Pcd9ShowcaseTests : IDisposable
             Assert.True(PCellRegistry.TryGet("cpcell:Slotline", out var generator));
             var tech = TechPersistence.LoadFromFile(Path.Combine(_ws, "tech", Pcd8PadTee.Tech));
             var shapes = generator(new Dictionary<string, PCellValue>(), tech, PCellLayerSelection.Default).Shapes;
-            Assert.Equal(2, shapes.Count(s => s.Layer == new LayerKey(2, 0)));   // SH1 and SH2
+            Assert.Single(shapes, s => s.Layer == new LayerKey(2, 0));   // SH1, the slotted ground, and no pour
         }
     }
 }

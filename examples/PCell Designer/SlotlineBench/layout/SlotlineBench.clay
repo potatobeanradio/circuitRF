@@ -22,14 +22,14 @@
 		},
 		"P2": {
 			"X": 24000000,
-			"Y": 10000000,
+			"Y": -10000000,
 			"RotationDeg": 180,
 			"Mirror": false,
 			"Text": "2"
 		},
 		"P3": {
 			"X": 0,
-			"Y": -10000000,
+			"Y": 10000000,
 			"RotationDeg": 0,
 			"Mirror": false,
 			"Text": "3"
@@ -42,7 +42,7 @@
 		}
 	},
 	"PCellSnapshots": {
-		"cpcell-Slotline_4c60a230d914": {
+		"cpcell-Slotline_f3e00a70c1c0": {
 			"GeneratorId": "cpcell:Slotline",
 			"Parameters": {
 				"Lsl": 0.01,
@@ -77,7 +77,7 @@
 		{
 			"$type": "Label",
 			"X": 24000000,
-			"Y": 10000000,
+			"Y": -10000000,
 			"Text": "2",
 			"Height": 550000,
 			"Rotation": "R0",
@@ -97,7 +97,7 @@
 		{
 			"$type": "Label",
 			"X": 0,
-			"Y": -10000000,
+			"Y": 10000000,
 			"Text": "3",
 			"Height": 550000,
 			"Rotation": "R0",
@@ -113,11 +113,32 @@
 				"Layer": 1,
 				"Datatype": 0
 			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				26540000, 25340000,
+				-2540000, 25340000,
+				-2540000, -25340000,
+				26540000, -25340000
+			],
+			"Holes": [[
+					0, -22800000,
+					0, 22800000,
+					24000000, 22800000,
+					24000000, -22800000
+				]
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
 		}
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/cpcell-Slotline_4c60a230d914",
+			"CellRef": "../../.generated-cells/cpcell-Slotline_f3e00a70c1c0",
 			"X": 12000000,
 			"Y": -22800000,
 			"Rot": "R90",

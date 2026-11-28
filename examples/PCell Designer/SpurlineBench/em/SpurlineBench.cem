@@ -3,10 +3,10 @@
   "Name": "SpurlineBench",
   "LayoutRef": "SpurlineBench/layout/SpurlineBench.clay",
   "Frequency": {
-    "StartExpr": "3.5",
-    "StopExpr": "7",
+    "StartExpr": "4.6",
+    "StopExpr": "5.6",
     "StepExpr": "",
-    "NumPoints": 15,
+    "NumPoints": 41,
     "Mode": "PointCount",
     "Kind": "Linear",
     "StartUnit": "GHz",

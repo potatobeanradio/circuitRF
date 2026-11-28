@@ -238,7 +238,7 @@
         {
           "StartExpr": "4",
           "StopExpr": "6",
-          "NumPoints": 3,
+          "NumPoints": 11,
           "Mode": "PointCount",
           "Kind": "Linear",
           "StartUnit": "GHz",

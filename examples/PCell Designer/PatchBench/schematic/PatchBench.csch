@@ -170,8 +170,8 @@
       "Sweeps": [
         {
           "StartExpr": "4.9",
-          "StopExpr": "5.4",
-          "NumPoints": 21,
+          "StopExpr": "5.5",
+          "NumPoints": 25,
           "Mode": "PointCount",
           "Kind": "Linear",
           "StartUnit": "GHz",

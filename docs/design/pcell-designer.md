@@ -145,10 +145,12 @@ output at the instance's values, whose circuit model is its own schematic, and w
   it.
 - A planar 3-way Wilkinson with a star of resistors cannot keep all three outputs outside the star (K2,3). One resistor
   is a 1206 whose body bridges the middle arm.
-- A slotted ground is drawn copper: two `MSHAPE`s on the ground layer, on net 0, because a polygon has no hole. A bench
-  placing only a designed cell draws no pour, and the generator leaves the cell's own pour out, so the slot stays open.
-  Planar cannot solve it: its ground is the unbroken plane of the Green's function. A 3D view turns the drawn ground into
-  solids.
+- A slotted ground is drawn copper: one `MSHAPE` on the ground layer, on net 0. A polygon has no hole, so the outline
+  runs in to the slot along a zero-width cut and back out. Two shapes (the ground less the slot, plus the block below
+  it) were the first try: LVS reads each `MSHAPE` pin as its own copper piece, so net 0 came apart into four pieces
+  once the cell's pour no longer covered them. A bench's pour stops at the cell's drawn ground, so the slot stays open.
+  Planar cannot solve it: its ground is the unbroken plane of the Green's function. A 3D view turns the drawn ground
+  into solids.
 
 ### PCD-13 — geometric operations
 
