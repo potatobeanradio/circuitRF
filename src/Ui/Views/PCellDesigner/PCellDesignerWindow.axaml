@@ -33,6 +33,19 @@
             <Setter Property="Opacity"      Value="0.75"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
+        <!-- The set-operation icons: two outlined circles, the result region filled; in the button's own foreground. -->
+        <Style Selector="Panel.seticon Path">
+            <Setter Property="Width"   Value="18"/>
+            <Setter Property="Height"  Value="18"/>
+            <Setter Property="Stretch" Value="None"/>
+        </Style>
+        <Style Selector="Path.setfill">
+            <Setter Property="Fill" Value="{Binding $parent[Button].Foreground}"/>
+        </Style>
+        <Style Selector="Path.setline">
+            <Setter Property="Stroke"          Value="{Binding $parent[Button].Foreground}"/>
+            <Setter Property="StrokeThickness" Value="1.2"/>
+        </Style>
         <Style Selector="StackPanel.bar > Button">
             <Setter Property="Margin" Value="0,0,4,0"/>
         </Style>
@@ -93,38 +106,87 @@
                         <Button Content="Stretch by Parameter" Click="OnStretch"
                                 ToolTip.Tip="The selected vertices follow the parameter along the axis (degrees, the part's own frame)"/>
                     </StackPanel>
-                    <!-- The operations (brief-pcd-14 R-pcd14-2, -4): each on the selection, one undo step. Icon buttons with the
-                         operation named in the tooltip, as the layout editor's toolbar. -->
+                    <!-- The operations (brief-pcd-14 R-pcd14-2, -4): each on the selection, one undo step. Icon-and-name buttons,
+                         the operation explained in the tooltip. -->
                     <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
                         <WrapPanel.Styles>
                             <Style Selector="WrapPanel > :is(Control)"><Setter Property="Margin" Value="0,0,4,4"/></Style>
                         </WrapPanel.Styles>
                         <Button Command="{Binding MergeCommand}" ToolTip.Tip="Merge — the first selected joined with the rest" Padding="6,3">
-                            <mi:MaterialIcon Kind="SetAll" Width="16" Height="16"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Union">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Merge" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
                         <Button Command="{Binding SubtractCommand}" ToolTip.Tip="Subtract — the first selected minus the rest" Padding="6,3">
-                            <mi:MaterialIcon Kind="SetLeft" Width="16" Height="16"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Exclude">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Subtract" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
                         <Button Command="{Binding IntersectCommand}" ToolTip.Tip="Intersect — the first selected inside the rest" Padding="6,3">
-                            <mi:MaterialIcon Kind="SetCenter" Width="16" Height="16"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Intersect">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Intersect" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
                         <Button Command="{Binding ExclusiveCommand}" ToolTip.Tip="Exclusive — where exactly one of the first and the rest is" Padding="6,3">
-                            <mi:MaterialIcon Kind="SetLeftRight" Width="16" Height="16"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Xor">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Exclusive" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
-                        <Button Command="{Binding GrowCommand}" ToolTip.Tip="Grow — the selection grown by the amount (negative shrinks), onto the layer named or its own" Padding="6,3">
-                            <mi:MaterialIcon Kind="ArrowExpandAll" Width="16" Height="16"/>
-                        </Button>
-                        <TextBox Text="{Binding GrowAmount}" Width="70" ToolTip.Tip="Grow amount, an expression"/>
-                        <TextBox Text="{Binding GrowOnto}" Width="70" Watermark="onto" ToolTip.Tip="The layer the grown copper goes to; empty is its own"/>
-                        <Button Command="{Binding RepeatCommand}" ToolTip.Tip="Repeat — copies of the selection in rows and columns at the pitches" Padding="6,3">
-                            <mi:MaterialIcon Kind="ViewGridOutline" Width="16" Height="16"/>
-                        </Button>
-                        <TextBox Text="{Binding RepeatRows}" Width="40" ToolTip.Tip="Rows"/>
-                        <TextBox Text="{Binding RepeatColumns}" Width="40" ToolTip.Tip="Columns"/>
-                        <TextBox Text="{Binding RepeatPitchX}" Width="60" ToolTip.Tip="Pitch X"/>
-                        <TextBox Text="{Binding RepeatPitchY}" Width="60" ToolTip.Tip="Pitch Y"/>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding GrowCommand}" ToolTip.Tip="Grow — the selection grown by the amount (negative shrinks), onto the layer named or its own" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="ArrowExpandAll" Width="18" Height="18"/>
+                                    <TextBlock Text="Grow" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding GrowAmount}" Width="70" ToolTip.Tip="Grow amount, an expression"/>
+                            <TextBox Text="{Binding GrowOnto}" Width="70" Watermark="onto" ToolTip.Tip="The layer the grown copper goes to; empty is its own"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding RepeatCommand}" ToolTip.Tip="Repeat — copies of the selection in rows and columns at the pitches" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="ViewGridOutline" Width="18" Height="18"/>
+                                    <TextBlock Text="Repeat" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding RepeatRows}" Width="40" ToolTip.Tip="Rows"/>
+                            <TextBox Text="{Binding RepeatColumns}" Width="40" ToolTip.Tip="Columns"/>
+                            <TextBox Text="{Binding RepeatPitchX}" Width="60" ToolTip.Tip="Pitch X"/>
+                            <TextBox Text="{Binding RepeatPitchY}" Width="60" ToolTip.Tip="Pitch Y"/>
+                        </StackPanel>
                         <Button Command="{Binding MakeToolOfSelectionCommand}" ToolTip.Tip="Make tool — the selected MSHAPE becomes a cutter: an operand, never copper" Padding="6,3">
-                            <mi:MaterialIcon Kind="ContentCut" Width="16" Height="16"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="ContentCut" Width="18" Height="18"/>
+                                <TextBlock Text="Make tool" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
                     </WrapPanel>
                     <!-- The operands (brief-pcd-14 R-pcd14-1): the selection, and a layer to add to it. -->
@@ -134,7 +196,10 @@
                         <ComboBox Name="LayerPicker" MinWidth="110" ItemsSource="{Binding LayerNames}"
                                   ToolTip.Tip="A layer to add as an operand"/>
                         <Button Click="OnAddLayer" ToolTip.Tip="Add layer — the layer picked joins the operands" Padding="6,3">
-                            <mi:MaterialIcon Kind="LayersPlus" Width="16" Height="16"/>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="LayersPlus" Width="18" Height="18"/>
+                                <TextBlock Text="Add layer" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Button>
                     </StackPanel>
                     <TextBlock DockPanel.Dock="Bottom" Classes="note" Text="{Binding LayoutNote}"/>
