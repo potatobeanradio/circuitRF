@@ -49,4 +49,16 @@ public sealed class EnvelopeFamiliesTests(ITestOutputHelper output)
         Assert.Equal(own.ErrorPercent, evm, 0.005);
         Assert.Equal(3, ds["Const"].Rank);
     }
+
+    [Fact]
+    public void Gnss_CorrelationSurvivesThePad()
+    {
+        var (ds, own) = Pad("GNSS;Signal=E1;Sats=3@1kHz@100,11@-1.5kHz@2000@-2dB;CN0=48;Record=4ms;Off=0;P=0;Seed=3", "4.5e-3");
+        var cn0 = ds["GnssCN0_dBHz"].RealValues;
+        var phase = ds["GnssCodePhase_chips"].RealValues;
+        output.WriteLine($"C/N0 {cn0[0]:0.###} / {cn0[1]:0.###} dB-Hz (record {own.Gnss![0].Cn0DbHz:0.###} / {own.Gnss[1].Cn0DbHz:0.###}), code phase {phase[0]} / {phase[1]}");
+        Assert.Equal(own.Gnss[0].Cn0DbHz, cn0[0], 0.1);
+        Assert.Equal(own.Gnss[1].Cn0DbHz, cn0[1], 0.1);
+        Assert.Equal([own.Gnss[0].CodePhaseChips, own.Gnss[1].CodePhaseChips], phase);
+    }
 }

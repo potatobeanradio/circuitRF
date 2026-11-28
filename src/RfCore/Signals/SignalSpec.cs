@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -112,6 +112,17 @@ namespace RfCore.Signals
         /// <summary>The raised-cosine transition between OFDM symbols (s).</summary>
         public double? WindowS { get; init; }
 
+        // A GNSS carrier's settings; null = Gnss.Resolve's default (GPS L1 C/A, PRN 1, no noise, 20 ms). Seed draws its data,
+        // carrier phases and noise.
+        public GnssSignal? GnssSignal { get; init; }
+        /// <summary>The satellites in view, comma-separated, each PRN@Doppler@code phase (chips)@power (dB), the last three
+        /// optional: <c>1@1.8kHz@12@0dB,5@-2kHz</c>.</summary>
+        public string? Satellites { get; init; }
+        /// <summary>The reference satellite's C/N0 (dB-Hz); null = no noise.</summary>
+        public double? Cn0DbHz { get; init; }
+        /// <summary>The record (s) of a carrier that states its own (GNSS).</summary>
+        public double? RecordS { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
@@ -124,6 +135,7 @@ namespace RfCore.Signals
             CarrierStandard.Css => $"CSS SF{Css.Resolve(this).Sf} {Fsk.FormatHz(BandwidthHz)}",
             CarrierStandard.Sc => ScLabel(ScQam.Resolve(this)),
             CarrierStandard.Wlan => WlanLabel(Signals.Wlan.Resolve(this)),
+            CarrierStandard.Gnss => GnssLabel(Signals.Gnss.Resolve(this)),
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
 
@@ -140,6 +152,9 @@ namespace RfCore.Signals
         private static string WlanLabel(WlanSpec s)
             => $"Wi-Fi 802.11{Signals.Wlan.StdName(s.Format)} {s.BandwidthHz / 1e6:0} MHz MCS{s.Mcs} " +
                $"({(100 * Signals.Wlan.DutyCycle(s)).ToString("0.#", CultureInfo.InvariantCulture)} % duty)";
+
+        private static string GnssLabel(GnssShape s)
+            => $"{s.Band.Name} {s.Satellites.Length} SV" + (s.Cn0DbHz is double n ? $" {n.ToString("0.#", CultureInfo.InvariantCulture)} dB-Hz" : "");
 
         public static string ModName(QamOrder m) => m switch
         {
@@ -277,7 +292,8 @@ namespace RfCore.Signals
                     "CSS" => CarrierStandard.Css,
                     "SC" => CarrierStandard.Sc,
                     "WLAN" => CarrierStandard.Wlan,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN or FILE)"),
+                    "GNSS" => CarrierStandard.Gnss,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS or FILE)"),
                 },
             };
             bool bwStated = parts.Skip(1).Any(p => p.Split('=')[0].Trim().Equals("BW", StringComparison.OrdinalIgnoreCase));
@@ -325,6 +341,10 @@ namespace RfCore.Signals
                     "GI" => c with { GuardIntervalS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
                     "IDLE" => c with { IdleS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
                     "OVERSAMPLE" => c with { Oversample = Only(c, k, () => WholeField(k, v), CarrierStandard.Wlan) },
+                    "SIGNAL" => c with { GnssSignal = Only(c, k, () => Signals.Gnss.ParseSignal(v), CarrierStandard.Gnss) },
+                    "SATS" => c with { Satellites = Only(c, k, () => v, CarrierStandard.Gnss) },
+                    "CN0" => c with { Cn0DbHz = Only(c, k, () => double.Parse(v.Replace("dBHz", "", StringComparison.OrdinalIgnoreCase), NumberStyles.Float, CultureInfo.InvariantCulture), CarrierStandard.Gnss) },
+                    "RECORD" => c with { RecordS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Gnss) },
                     "WINDOW" => c with { WindowS = Only(c, k, () => ParseSeconds(k, v), CarrierStandard.Wlan) },
                     "SF" => c with { SpreadingFactor = CssField(c, k, v) },
                     "PHASE" when c.Standard == CarrierStandard.Cw => c with { PhaseDeg = Num() },
@@ -348,6 +368,8 @@ namespace RfCore.Signals
             if (c.Standard == CarrierStandard.Sc) c = c with { BandwidthHz = ScQam.BandwidthHz(ScQam.Validate(c)) };
             // a Wi-Fi packet's is its channel's, BW as stated (20 MHz unstated)
             if (c.Standard == CarrierStandard.Wlan) Signals.Wlan.Validate(Signals.Wlan.Resolve(c));
+            // a GNSS carrier's is its code's main lobe
+            if (c.Standard == CarrierStandard.Gnss) c = c with { BandwidthHz = Signals.Gnss.BandwidthHz(Signals.Gnss.Validate(Signals.Gnss.Resolve(c))) };
             return c;
         }
 
@@ -504,7 +526,7 @@ namespace RfCore.Signals
         /// <summary>A frequency field: a number, optionally followed by Hz, kHz, MHz or GHz (exact case: m is milli
         /// everywhere else in circuitRF). The prefix is applied by re-reading the literal with its exponent rather than
         /// by multiplying, which is what lets <c>20MHz</c> and <c>20e6</c> parse to the same double.</summary>
-        private static double ParseHz(string key, string v)
+        internal static double ParseHz(string key, string v)
         {
             string num = v, exp = "";
             foreach (var (unit, e) in FrequencyUnits)
@@ -602,6 +624,13 @@ namespace RfCore.Signals
                 if (c.IdleS is double idle) sb.Append(";Idle=").Append(FormatSeconds(idle, "us"));
                 if (c.Oversample is int os) sb.Append(";Oversample=").Append(os.ToString(inv));
                 if (c.WindowS is double win) sb.Append(";Window=").Append(FormatSeconds(win, "ns"));
+            }
+            if (c.Standard == CarrierStandard.Gnss)
+            {
+                if (c.GnssSignal is { } gs) sb.Append(";Signal=").Append(Signals.Gnss.SignalName(gs));
+                if (c.Satellites is { } sats) sb.Append(";Sats=").Append(sats);
+                if (c.Cn0DbHz is double cn0) sb.Append(";CN0=").Append(cn0.ToString("R", inv));
+                if (c.RecordS is double rs) sb.Append(";Record=").Append(FormatSeconds(rs, "ms"));
             }
             if (c.Standard == CarrierStandard.Cw && c.PhaseDeg is double phase) sb.Append(";Phase=").Append(phase.ToString("R", inv));
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));

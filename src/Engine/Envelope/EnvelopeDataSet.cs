@@ -402,7 +402,7 @@ public static class EnvelopeDataSet
     public const int ConstMaxSamples = 6000;
 
     /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
-    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan }
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss }
 
     private static Meter MeterOf(CarrierStandard s) => s switch
     {
@@ -412,6 +412,7 @@ public static class EnvelopeDataSet
         CarrierStandard.Css => Meter.Css,
         CarrierStandard.Sc => Meter.Sc,
         CarrierStandard.Wlan => Meter.Wlan,
+        CarrierStandard.Gnss => Meter.Gnss,
         _ => Meter.None,
     };
 
@@ -560,6 +561,7 @@ public static class EnvelopeDataSet
         var cfo = Nan(nb * nc); var cfoDrift = Nan(nb * nc); var ser = Nan(nb * nc); var ber = Nan(nb * nc);
         var bitErr = Nan(nb * nc); var bits = Nan(nb * nc); var berLo = Nan(nb * nc); var berHi = Nan(nb * nc); var berEst = Nan(nb * nc);
         var sinr = new Equalized?[nb, nc];
+        var quals = new WaveformQuality?[nb, nc];
         var farFromGauss = new List<string>();
         var eqNotes = new HashSet<string>();
         double[]? dist = quiet is null ? null : Nan(nb * nc), noise = quiet is null ? null : Nan(nb * nc), snr = quiet is null ? null : Nan(nb * nc);
@@ -598,6 +600,7 @@ public static class EnvelopeDataSet
                     (berLo[at], berHi[at]) = ec.BerInterval;
                 }
                 berEst[at] = e.BerEst;
+                quals[b, c] = e.Q;
                 sinr[b, c] = e.Eq;
                 if (e.Eq?.Note is { } en) eqNotes.Add($"{labels[c]}: {en}");
                 if (e.Points is { } ep) points[b, c] = [.. Enumerable.Range(0, kept).Select(i => ep[i * stride])];
@@ -690,6 +693,35 @@ public static class EnvelopeDataSet
         }
         if (meters.Contains(Meter.Css))
             Family("CSSerr_pct", "%", [Meter.Css], "CSSerrDist_pct", "CSSerrNoise_pct");
+        // a record kind's own readout, one value per item it lists (a satellite, a code channel), the items labelled as the
+        // first carrier that has them names them; the rest NaN
+        void PerItem(string name, string unit, string axis, Func<WaveformQuality, (string Label, double Value)[]?> pick)
+        {
+            var rows = new (string Label, double Value)[nb, nc][];
+            int n = 0; string[]? names = null;
+            for (int b = 0; b < nb; b++)
+                for (int c = 0; c < nc; c++)
+                    if (quals[b, c] is { } q && pick(q) is { } v)
+                    {
+                        rows[b, c] = v;
+                        if (v.Length > n) { n = v.Length; names = [.. v.Select(x => x.Label)]; }
+                    }
+            if (n == 0) return;
+            var cube = Nan(nb * nc * n);
+            for (int b = 0; b < nb; b++)
+                for (int c = 0; c < nc; c++)
+                    if (rows[b, c] is { } v)
+                        for (int i = 0; i < v.Length; i++) cube[(b * nc + c) * n + i] = v[i].Value;
+            ds.Add(name, new DataCube([branchAxis, carrierAxis, new Axis(axis, Index(n), "", names!)], cube) { Unit = unit });
+        }
+        if (meters.Contains(Meter.Gnss))
+        {
+            static (string, double)[]? Sv(WaveformQuality q, Func<GnssCorrelation, double> f)
+                => q.Gnss is { } g ? [.. g.Select(x => ($"PRN {x.Prn}", f(x)))] : null;
+            PerItem("GnssCN0_dBHz", "dB-Hz", "satellite", q => Sv(q, x => x.Cn0DbHz));
+            PerItem("GnssCodePhase_chips", "chips", "satellite", q => Sv(q, x => x.CodePhaseChips));
+            PerItem("GnssPeakToFloor_dB", "dB", "satellite", q => Sv(q, x => x.PeakToFloorDb));
+        }
         if (snr is not null)
             ds.Add("SNR_dB", new DataCube([branchAxis, carrierAxis], snr) { Unit = "dB" });
 

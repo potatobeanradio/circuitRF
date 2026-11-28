@@ -1620,6 +1620,7 @@ internal static class Explain
                                          or RfCore.Signals.CarrierStandard.Wlan => "EVM",
                                      RfCore.Signals.CarrierStandard.Fsk => "FSK error",
                                      RfCore.Signals.CarrierStandard.Css => "de-chirped error",
+                                     RfCore.Signals.CarrierStandard.Gnss => "correlation (code phase and C/N0 per PRN)",
                                      _ => null,
                                  }))
                                  .Where(x => x.what is not null)

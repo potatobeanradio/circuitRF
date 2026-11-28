@@ -114,6 +114,43 @@ namespace RfCore.Signals
 
         public static double NativeRateHz(GnssShape s) => s.Band.NativeRateHz;
 
+        /// <summary>A GNSS carrier's shape: each field it states, the default (GPS L1 C/A, PRN 1, no noise, 20 ms) for the rest.</summary>
+        public static GnssShape Resolve(CarrierSpec c)
+            => new(c.GnssSignal ?? GnssSignal.GpsL1Ca, ParseSatellites(c.Satellites) ?? [new GnssSatellite(1)], c.Cn0DbHz,
+                   c.RecordS is double r ? (int)Math.Round(r * 1e3) : DefaultRecordMs, (ulong)c.Seed);
+
+        /// <summary><c>PRN@Doppler@code phase@power</c>, comma-separated; the Doppler a frequency (Hz, kHz), the power in dB.</summary>
+        public static GnssSatellite[]? ParseSatellites(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            var inv = CultureInfo.InvariantCulture;
+            return [.. text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(sv =>
+            {
+                var f = sv.Split('@', StringSplitOptions.TrimEntries);
+                if (f.Length > 4 || !int.TryParse(f[0], NumberStyles.Integer, inv, out int prn))
+                    throw new FormatException($"GNSS carrier: a satellite is PRN@Doppler@code phase@power (got '{sv}')");
+                double Num(int i) => f.Length > i && f[i].Length > 0
+                    ? double.TryParse(f[i].Replace("dB", "", StringComparison.Ordinal), NumberStyles.Float, inv, out double v) ? v
+                      : throw new FormatException($"GNSS carrier: '{f[i]}' in satellite '{sv}' is not a number")
+                    : 0;
+                return new GnssSatellite(prn, f.Length > 1 && f[1].Length > 0 ? SignalSpec.ParseHz("Sats", f[1]) : 0, Num(2), Num(3));
+            })];
+        }
+
+        /// <summary>The signal as a carrier's <c>Signal=</c> names it: L1CA, L5, E1, B1I.</summary>
+        public static string SignalName(GnssSignal s) => s switch
+        {
+            GnssSignal.GpsL1Ca => "L1CA", GnssSignal.GpsL5 => "L5", GnssSignal.GalileoE1 => "E1", _ => "B1I",
+        };
+
+        public static GnssSignal ParseSignal(string v)
+        {
+            string t = v.Trim().Replace("/", "");
+            foreach (var s in Enum.GetValues<GnssSignal>())
+                if (SignalName(s).Equals(t, StringComparison.OrdinalIgnoreCase)) return s;
+            throw new FormatException($"GNSS carrier: Signal must be L1CA, L5, E1 or B1I (got '{v}')");
+        }
+
         /// <summary>The channel bandwidth: the main lobe, null to null — 2 Rc for BPSK, 4 Rc for E1's BOC(1,1) (its
         /// BOC(6,1) eleventh lies outside, at ±6.1 MHz). The preview's span and the ACPR bands follow from it.</summary>
         public static double BandwidthHz(GnssShape s) => (s.Signal == GnssSignal.GalileoE1 ? 4 : 2) * s.Band.ChipRateHz;

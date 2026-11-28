@@ -204,7 +204,7 @@ namespace RfCore.Signals
             var fileRates = signals.SelectMany(s => s.Carriers)
                                    .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk
                                                                  or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
-                                                                 or CarrierStandard.Wlan)
+                                                                 or CarrierStandard.Wlan or CarrierStandard.Gnss)
                                    .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r).ToList();
             if (needHz < LadderBaseHz)
                 foreach (double fs in fileRates)
@@ -247,10 +247,11 @@ namespace RfCore.Signals
             var css = CssOf(spec);
             var sc = ScOf(spec);
             var wlan = WlanOf(spec);
+            var gnss = GnssOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
             double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds
-                            ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? iq?.DurationSeconds
+                            ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? gnss?.RecordSeconds ?? iq?.DurationSeconds
                             ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
@@ -328,6 +329,14 @@ namespace RfCore.Signals
                         // packet's power, and the record's mean is Pavg plus 10 log10 of the duty (the label states it)
                         var shape = wlan!;
                         raw.Add((c, Wlan.Generate(shape), Wlan.SampleRateHz(shape), Wlan.Numerology(shape).OccupiedBwHz));
+                        break;
+                    }
+                    case CarrierStandard.Gnss:
+                    {
+                        // unit mean power, the satellites and the noise together; the noise fills the native band
+                        var shape = gnss!;
+                        double bw = Gnss.BandwidthHz(shape);
+                        raw.Add((c with { BandwidthHz = bw }, Gnss.Generate(shape), Gnss.NativeRateHz(shape), 0.9 * bw));
                         break;
                     }
                     default:
@@ -426,6 +435,14 @@ namespace RfCore.Signals
             return c is null ? null : Wlan.Validate(Wlan.Resolve(c));
         }
 
+        /// <summary>The GNSS carrier (null when there is none): its record is whole frames of its codes, so it is the only
+        /// carrier, and it is not clipped.</summary>
+        public static GnssShape? GnssOf(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Gnss, "a GNSS carrier", "it is far below its noise, which has no peak worth cutting");
+            return c is null ? null : Gnss.Validate(Gnss.Resolve(c));
+        }
+
         private static CarrierSpec? OwnRecordCarrier(SignalSpec spec, CarrierStandard standard, string what, string whyNoClip)
         {
             var c = spec.Carriers.FirstOrDefault(c => c.Standard == standard);
@@ -441,7 +458,7 @@ namespace RfCore.Signals
         /// not the record length the source states.</summary>
         public static bool HasOwnRecord(SignalSpec spec)
             => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null
-               || ScOf(spec) is not null || WlanOf(spec) is not null;
+               || ScOf(spec) is not null || WlanOf(spec) is not null || GnssOf(spec) is not null;
     }
 
     /// <summary>

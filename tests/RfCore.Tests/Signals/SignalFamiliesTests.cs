@@ -3,6 +3,7 @@
 //
 //   I1  Carriers that existed before the families format and cache exactly as they did.
 //   W*  Wi-Fi (WLAN).
+//   G*  GNSS.
 
 using System;
 using System.Linq;
@@ -89,5 +90,35 @@ public class SignalFamiliesTests
         Assert.True(q.ErrorPercent < 0.3, $"{q.ErrorPercent} %");
         Assert.Equal(100 * Math.Pow(10, Wlan.EvmLimitDb(s) / 20), q.LimitPercent, 9);
         Assert.NotNull(q.Points);
+    }
+
+    [Fact]
+    public void G1_Gnss_ParsesRoundTripsLabelsAndRefuses()
+    {
+        var c = RoundTrip("GNSS;Signal=L1CA;Sats=1@1.8kHz@12@0dB,5@-2kHz@300@-3dB;CN0=45;Record=20ms;Off=0;P=0;Seed=1", CarrierStandard.Gnss);
+        Assert.Equal(2.046e6, c.BandwidthHz);
+        Assert.Equal("GPS L1 C/A 2 SV 45 dB-Hz", c.Label);
+        var s = Gnss.Resolve(c);
+        Assert.Equal(new GnssSatellite(5, -2e3, 300, -3), s.Satellites[1]);
+        RoundTrip("GNSS;Off=0;P=0;Seed=1", CarrierStandard.Gnss);
+        Refuses(("GNSS;Sats=40", "PRN must be 1 to 32"), ("GNSS;Signal=L2", "Signal must be"), ("GNSS;Record=15ms", "20 ms frames"),
+                ("LTE;Sats=1", "SATS belongs to a GNSS carrier"));
+    }
+
+    [Fact]
+    public void G2_Gnss_ComposesAtItsRate_CorrelatesEachSatellite()
+    {
+        var c = SignalSpec.ParseCarrier("GNSS;Signal=E1;Sats=3@1kHz@100,11@-1.5kHz@2000@-2dB;CN0=48;Record=4ms;Off=0;P=0;Seed=3");
+        OnlyCarrier(c, clipped: false);
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var rec = sig.Carriers.Single();
+        Assert.Equal(24.552e6, rec.NativeRateHz);
+        Assert.Equal(4e-3, sig.RecordSeconds, 15);
+        Assert.Equal(1.0, rec.Native.Average(v => v.Magnitude * v.Magnitude), 9);
+        var q = Own(sig);
+        Assert.Equal([3, 11], q.Gnss!.Select(g => g.Prn));
+        Assert.Equal(100, q.Gnss[0].CodePhaseChips, 0.1);
+        Assert.Equal(2000, q.Gnss[1].CodePhaseChips, 0.1);
+        Assert.Equal(48, q.Gnss[0].Cn0DbHz, 2.0);
     }
 }

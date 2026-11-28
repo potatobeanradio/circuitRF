@@ -50,7 +50,7 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
@@ -75,6 +75,8 @@ namespace RfCore.Signals
     {
         /// <summary>The family's EVM limit (%), where it states one (Wi-Fi: the MCS's); NaN otherwise.</summary>
         public double LimitPercent { get; init; } = double.NaN;
+        /// <summary>GNSS: each satellite's acquisition, in the order the carrier lists them.</summary>
+        public GnssCorrelation[]? Gnss { get; init; }
     }
 
     public static class SignalQuality
@@ -87,6 +89,7 @@ namespace RfCore.Signals
             CarrierStandard.Css => QualityKind.Css,
             CarrierStandard.Sc => QualityKind.Sc,
             CarrierStandard.Wlan => QualityKind.Wlan,
+            CarrierStandard.Gnss => QualityKind.Gnss,
             _ => null,
         };
 
@@ -313,6 +316,13 @@ namespace RfCore.Signals
                     var e = Wlan.Measure(Wlan.Resolve(spec), r.X);
                     return new WaveformQuality(r.Kind, e.RmsPercent, e.PeakPercent, double.NaN, double.NaN, e.Received, e.Ideal,
                                                null, null, r.DelayS) { LimitPercent = e.LimitPercent };
+                }
+                case QualityKind.Gnss:
+                {
+                    // a receiver's acquisition of each satellite: code phase, peak and C/N0, in place of an EVM
+                    var g = Gnss.Resolve(spec);
+                    return new WaveformQuality(r.Kind, double.NaN, double.NaN, double.NaN, double.NaN, null, null, null, null, r.DelayS)
+                    { Gnss = [.. g.Satellites.Select(sv => Gnss.Correlate(g, r.X, sv.Prn))] };
                 }
                 case QualityKind.Sc:
                 {
