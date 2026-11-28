@@ -341,4 +341,37 @@ public class SignalFamiliesTests
         Assert.All(ramp.Carriers.Single().Native, v => Assert.Equal(1.0, v.Magnitude, 9));
         Assert.True(SignalComposer.HasOwnRecord(ramp.Spec));
     }
+
+    [Fact]
+    public void O1_Ofdm_OptionsAndPresetsParseRoundTripAndRefuse()
+    {
+        var ul = RoundTrip("NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Link=UL;DFTs=1;Pi2BPSK=1;RbStart=10;RbCount=24;Off=0;P=0;Seed=1", CarrierStandard.Nr);
+        Assert.Equal(new OfdmOptions { Uplink = true, TransformPrecoding = true, Pi2Bpsk = true, RbStart = 10, RbCount = 24 }, SignalSpec.OfdmOptionsOf(ul));
+        Assert.EndsWith(" UL DFT-s π/2-BPSK RB 10+24", ul.Label);
+        RoundTrip("LTE;BW=10MHz;Mod=64QAM;TM=E-TM3.1;TDD=TM;CellId=1;Off=0;P=0;Seed=1", CarrierStandard.Lte);
+        Assert.Null(SignalSpec.OfdmOptionsOf(SignalSpec.ParseCarrier("LTE;BW=20MHz;Mod=64QAM;Off=0;P=0;Seed=1")));
+        var dvb = RoundTrip("OFDM;Preset=DVB-T 2K;Symbols=68;Off=0;P=0;Seed=1", CarrierStandard.Ofdm);
+        Assert.InRange(dvb.BandwidthHz, 7.5e6, 7.7e6);
+        RoundTrip("OFDM;Preset=NB-IoT UL;SCS=3.75kHz;NbTones=1;Slots=2;Off=0;P=0;Seed=1", CarrierStandard.Ofdm);
+        Refuses(("LTE;Pi2BPSK=1", "PI2BPSK belongs to an NR or OFDM carrier"), ("OFDM;Preset=ATSC", "unknown preset"),
+                ("CW;TM=E-TM1.1", "TM belongs to an LTE or NR carrier"), ("NR;Link=Side", "is UL or DL"));
+    }
+
+    [Theory]
+    [InlineData("NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Link=UL;DFTs=1;RbStart=10;RbCount=24;Off=0;P=0;Seed=1")]
+    [InlineData("NR;BW=20MHz;SCS=30kHz;Mod=64QAM;TM=NR-FR1-TM3.1;Off=0;P=0;Seed=1")]
+    [InlineData("LTE;BW=10MHz;Mod=64QAM;TDD=DDDSU:10,2;Off=0;P=0;Seed=1")]
+    [InlineData("OFDM;Preset=DVB-T 2K;Symbols=8;Off=0;P=0;Seed=1")]
+    [InlineData("OFDM;Preset=NB-IoT UL;NbTones=12;Off=0;P=0;Seed=1")]
+    public void O2_Ofdm_ComposesThroughItsGrid_AndReadsItsOwnEvm(string text)
+    {
+        var c = SignalSpec.ParseCarrier(text);
+        var sig = SignalComposer.Generate(new SignalSpec { Carriers = [c] });
+        var rec = sig.Carriers.Single();
+        Assert.Equal(1.0, rec.Native.Average(v => v.Magnitude * v.Magnitude), 6);
+        var q = Own(sig);
+        Assert.True(q.ErrorPercent < 0.5, $"{c.Label}: EVM {q.ErrorPercent} %");   // the pilot interpolation and the shaping floor
+        if (c.Standard != CarrierStandard.Ofdm)
+            Assert.True(SignalEvm.Measure(c, rec.Native, sig.RecordSeconds).RmsPercent < 0.5);   // the native-record path the Designer reads
+    }
 }

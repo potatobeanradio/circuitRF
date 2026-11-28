@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Tones, Fmcw }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk, Dbpsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Tones, Fmcw, Ofdm }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -82,6 +82,25 @@ namespace RfCore.Signals
         /// <summary>An FMCW carrier's ramp (s) and whether it is a triangle; its sweep is BandwidthHz, its reset IdleS.</summary>
         public double? RampS { get; init; }
         public bool? Triangle { get; init; }
+
+        // An LTE / NR carrier's options past the full-load downlink (OfdmOptions); null = off, so a plain carrier's JSON,
+        // cache key and record are what they were. An OFDM carrier (another numerology, or NB-IoT) names its preset.
+        public bool? Uplink { get; init; }
+        public bool? TransformPrecoding { get; init; }
+        public bool? Pi2Bpsk { get; init; }
+        public int? RbStart { get; init; }
+        public int? RbCount { get; init; }
+        /// <summary>A 3GPP test model: NR-FR1-TM1.1 .. TM3.3, E-TM1.1 .. E-TM3.3.</summary>
+        public string? TestModel { get; init; }
+        /// <summary>A TDD slot pattern ("DDDSU:10,2"), or "TM" for the test model's own.</summary>
+        public string? Tdd { get; init; }
+        public int? CellId { get; init; }
+        /// <summary>An OFDM carrier's numerology preset (OfdmPresets' names) or "NB-IoT UL".</summary>
+        public string? OfdmPreset { get; init; }
+        /// <summary>NB-IoT: tones, the first tone and slots (its SCS is ScsHz, π/2-BPSK Pi2Bpsk, else π/4-QPSK).</summary>
+        public int? NbTones { get; init; }
+        public int? FirstTone { get; init; }
+        public int? Slots { get; init; }
 
         // An FSK carrier's settings; null = the default Fsk.Resolve applies, for the same reason as the pulse's.
         /// <summary>Bit (chip) rate, b/s; a DBPSK carrier's too.</summary>
@@ -206,8 +225,9 @@ namespace RfCore.Signals
 
         public string Label => Standard switch
         {
-            CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
-            CarrierStandard.Nr => $"NR {BandwidthHz / 1e6:0.#} MHz {ScsHz / 1e3:0} kHz {ModName(Modulation)}",
+            CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}" + OptionsLabel(),
+            CarrierStandard.Nr => $"NR {BandwidthHz / 1e6:0.#} MHz {ScsHz / 1e3:0} kHz {ModName(Modulation)}" + OptionsLabel(),
+            CarrierStandard.Ofdm => OfdmPreset ?? "OFDM",
             CarrierStandard.Cw => PhaseDeg is double ph ? $"CW {ph.ToString("0.##", CultureInfo.InvariantCulture)}°" : "CW",
             CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(SignalSpec.ResolvePulse(this).Width)} / {PulsedCw.FormatTime(SignalSpec.ResolvePulse(this).Pri)}"
                                    + (ChirpHz is double ch ? $" chirp {(ch > 0 ? "up" : "down")} {Fsk.FormatHz(Math.Abs(ch))}" : "")
@@ -227,6 +247,11 @@ namespace RfCore.Signals
             CarrierStandard.Analog => $"{Signals.Analog.Label(Signals.Analog.Resolve(this).Kind)} {Fsk.FormatHz(Signals.Analog.BandwidthHz(Signals.Analog.Validate(Signals.Analog.Resolve(this))))}",
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
+
+        private string OptionsLabel()
+            => (TestModel is { } tm ? $" {tm}" : "") + (Uplink == true ? (TransformPrecoding == true ? " UL DFT-s" : " UL") : "")
+               + (Pi2Bpsk == true ? " π/2-BPSK" : "") + (RbStart is not null || RbCount is not null ? $" RB {RbStart ?? 0}+{(RbCount is int n ? n : "all")}" : "")
+               + (Tdd is { } tdd ? $" TDD {tdd}" : "");
 
         private static string FskLabel(FskShape s)
             => $"{s.Kind} {Fsk.FormatBitRate(s.BitRate)}{(s.Levels > 2 ? $" ({SignalSpec.FormatSymbolRate(s.SymbolRate)})" : "")} ±{Fsk.FormatHz(s.Deviation)}{(s.Bt > 0 ? $" BT {s.Bt.ToString("0.###", CultureInfo.InvariantCulture)}" : "")} "
@@ -397,7 +422,8 @@ namespace RfCore.Signals
                     "ANALOG" => CarrierStandard.Analog,
                     "TONES" => CarrierStandard.Tones,
                     "FMCW" => CarrierStandard.Fmcw,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, TONES, FMCW or FILE)"),
+                    "OFDM" => CarrierStandard.Ofdm,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS, SC, WLAN, GNSS, WCDMA, WLAN11B, OQPSK154, ANALOG, TONES, FMCW, OFDM or FILE)"),
                 },
             };
             bool bwStated = parts.Skip(1).Any(p => p.Split('=')[0].Trim().Equals("BW", StringComparison.OrdinalIgnoreCase));
@@ -442,7 +468,20 @@ namespace RfCore.Signals
                     "PHASES" => c with { RingPhases = ScField(c, k, () => v) },
                     "PREAMBLE" => c with { Preamble = ScField(c, k, () => WholeField(k, v)) },
                     "PILOTBLOCK" => c with { PilotBlock = ScField(c, k, () => v) },
-                    "SYMBOLS" when c.Standard == CarrierStandard.Wlan => c with { Symbols = WholeField(k, v) },
+                    "SYMBOLS" when c.Standard is CarrierStandard.Wlan or CarrierStandard.Ofdm => c with { Symbols = WholeField(k, v) },
+                    "LINK" => c with { Uplink = Lte(c, k, () => v.Trim().ToUpperInvariant() switch
+                        { "UL" => true, "DL" => false, _ => throw new FormatException($"carrier field {k}={v} is UL or DL") }) },
+                    "DFTS" => c with { TransformPrecoding = Lte(c, k, () => Flag(k, v)) },
+                    "PI2BPSK" => c with { Pi2Bpsk = Only(c, k, () => Flag(k, v), CarrierStandard.Nr, CarrierStandard.Ofdm) },
+                    "RBSTART" => c with { RbStart = Lte(c, k, () => WholeField(k, v)) },
+                    "RBCOUNT" => c with { RbCount = Lte(c, k, () => WholeField(k, v)) },
+                    "TM" => c with { TestModel = Lte(c, k, () => v) },
+                    "TDD" => c with { Tdd = Lte(c, k, () => v) },
+                    "CELLID" => c with { CellId = Only(c, k, () => WholeField(k, v), CarrierStandard.Lte, CarrierStandard.Nr, CarrierStandard.Ofdm) },
+                    "PRESET" when c.Standard == CarrierStandard.Ofdm => c with { OfdmPreset = v },
+                    "NBTONES" => c with { NbTones = Only(c, k, () => WholeField(k, v), CarrierStandard.Ofdm) },
+                    "FIRSTTONE" => c with { FirstTone = Only(c, k, () => WholeField(k, v), CarrierStandard.Ofdm) },
+                    "SLOTS" => c with { Slots = Only(c, k, () => WholeField(k, v), CarrierStandard.Ofdm) },
                     "SYMBOLS" => c with { Symbols = ScField(c, k, () => WholeField(k, v)) },
                     "STD" => c with { WlanFormat = Only(c, k, () => Signals.Wlan.ParseStd(v), CarrierStandard.Wlan) },
                     "MCS" => c with { Mcs = Only(c, k, () => WholeField(k, v), CarrierStandard.Wlan) },
@@ -513,6 +552,8 @@ namespace RfCore.Signals
             if (c.Standard == CarrierStandard.Pcw) c = c with { BandwidthHz = PulsedCw.BandwidthHz(PulsedCw.Check(ResolvePulse(c))) };
             // an FMCW carrier's BW is its sweep, as stated (the composer's record carries the occupied band, the sweep over 0.9)
             if (c.Standard == CarrierStandard.Fmcw) ResolveFmcw(c).Check();
+            // an OFDM preset's is its occupied span plus a subcarrier
+            if (c.Standard == CarrierStandard.Ofdm) c = c with { BandwidthHz = OfdmOccupiedHz(OfdmGridOf(c, 1)) };
             // an FSK carrier's is Carson's, from its rate and deviation
             if (c.Standard == CarrierStandard.Fsk) c = c with { BandwidthHz = Fsk.BandwidthHz(Fsk.Validate(c)) };
             // a DBPSK carrier's is its pulse's main lobe, from its rate
@@ -661,6 +702,49 @@ namespace RfCore.Signals
 
         /// <summary>A time field: a number, optionally followed by s, ms, us (µs) or ns, exact case as for
         /// <see cref="ParseHz"/>, and applied the same way, by re-reading the literal with its exponent.</summary>
+        private static T Lte<T>(CarrierSpec c, string key, Func<T> read) => Only(c, key, read, CarrierStandard.Lte, CarrierStandard.Nr);
+
+        /// <summary>An LTE / NR carrier's options, or null when none is set (the full-load downlink, sample for sample).</summary>
+        public static OfdmOptions? OfdmOptionsOf(CarrierSpec c)
+        {
+            if (c.Standard is not (CarrierStandard.Lte or CarrierStandard.Nr)) return null;
+            var o = new OfdmOptions
+            {
+                Uplink = c.Uplink ?? false, TransformPrecoding = c.TransformPrecoding ?? false, Pi2Bpsk = c.Pi2Bpsk ?? false,
+                RbStart = c.RbStart, RbCount = c.RbCount, TestModel = c.TestModel, Tdd = c.Tdd, CellId = c.CellId ?? 1,
+            };
+            return o.IsDefault ? null : o;
+        }
+
+        /// <summary>The grid an OFDM carrier, or an LTE / NR carrier with options, is synthesised from and read against; a
+        /// preset's record is <paramref name="halfMs"/>-independent (its Symbols, 68 unstated), NB-IoT's its Slots (2).</summary>
+        public static OfdmGrid OfdmGridOf(CarrierSpec c, int halfMs)
+        {
+            if (c.Standard != CarrierStandard.Ofdm) return Ofdm3gpp.Grid(c, OfdmOptionsOf(c) ?? new OfdmOptions(), halfMs);
+            string name = c.OfdmPreset ?? throw new FormatException("OFDM carrier: Preset= names its numerology (" + string.Join(", ", OfdmPresetNames) + ")");
+            try
+            {
+                if (name.Equals(NbIotPreset, StringComparison.OrdinalIgnoreCase))
+                    return Ofdm3gpp.NbIotUplink(c.ScsHz == 30e3 ? 15e3 : c.ScsHz, c.NbTones ?? 12, c.FirstTone ?? 0, !(c.Pi2Bpsk ?? false),
+                                                c.Slots ?? 2, c.Seed, c.CellId ?? 0);
+                var p = OfdmPresets.All.FirstOrDefault(p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new FormatException($"OFDM carrier: unknown preset '{name}' ({string.Join(", ", OfdmPresetNames)})");
+                return p.Build(c.Symbols ?? 68, c.Seed);
+            }
+            catch (ArgumentException e) { throw new FormatException($"OFDM carrier: {e.Message}"); }
+        }
+
+        public const string NbIotPreset = "NB-IoT UL";
+        public static string[] OfdmPresetNames => [.. OfdmPresets.All.Select(p => p.Name), NbIotPreset];
+
+        /// <summary>A grid's occupied span: its outermost columns plus one subcarrier.</summary>
+        public static double OfdmOccupiedHz(OfdmGrid g)
+        {
+            double lo = double.MaxValue, hi = double.MinValue;
+            for (int k = 0; k < g.Bins.Length; k++) { double f = g.ColumnHz(k); lo = Math.Min(lo, f); hi = Math.Max(hi, f); }
+            return hi - lo + g.ScsHz;
+        }
+
         /// <summary><paramref name="v"/> as written, once <paramref name="check"/> has read it without refusing.</summary>
         private static string Checked<T>(string v, Func<T> check) { check(); return v; }
 
@@ -836,6 +920,25 @@ namespace RfCore.Signals
                 sb.Append(";BW=").Append(FormatHz(c.BandwidthHz, "MHz"));
                 if (c.Standard == CarrierStandard.Nr) sb.Append(";SCS=").Append(FormatHz(c.ScsHz, "kHz"));
                 sb.Append(";Mod=").Append(CarrierSpec.ModName(c.Modulation));
+                if (c.Uplink is bool ul) sb.Append(";Link=").Append(ul ? "UL" : "DL");
+                if (c.TransformPrecoding is bool dft) sb.Append(";DFTs=").Append(dft ? '1' : '0');
+                if (c.Pi2Bpsk is bool p2) sb.Append(";Pi2BPSK=").Append(p2 ? '1' : '0');
+                if (c.RbStart is int rb0) sb.Append(";RbStart=").Append(rb0.ToString(inv));
+                if (c.RbCount is int nrb) sb.Append(";RbCount=").Append(nrb.ToString(inv));
+                if (c.TestModel is { } tm) sb.Append(";TM=").Append(tm);
+                if (c.Tdd is { } tdd) sb.Append(";TDD=").Append(tdd);
+                if (c.CellId is int cid) sb.Append(";CellId=").Append(cid.ToString(inv));
+            }
+            if (c.Standard == CarrierStandard.Ofdm)
+            {
+                if (c.OfdmPreset is { } op) sb.Append(";Preset=").Append(op);
+                if (c.ScsHz != 30e3) sb.Append(";SCS=").Append(FormatHz(c.ScsHz, "kHz"));        // NB-IoT's 3.75 kHz (15 kHz unstated)
+                if (c.NbTones is int nt) sb.Append(";NbTones=").Append(nt.ToString(inv));
+                if (c.FirstTone is int ft) sb.Append(";FirstTone=").Append(ft.ToString(inv));
+                if (c.Pi2Bpsk is bool p2) sb.Append(";Pi2BPSK=").Append(p2 ? '1' : '0');
+                if (c.Slots is int sl) sb.Append(";Slots=").Append(sl.ToString(inv));
+                if (c.Symbols is int sy) sb.Append(";Symbols=").Append(sy.ToString(inv));
+                if (c.CellId is int cid) sb.Append(";CellId=").Append(cid.ToString(inv));
             }
             if (c.Standard == CarrierStandard.File)
             {

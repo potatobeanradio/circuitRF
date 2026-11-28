@@ -206,7 +206,7 @@ namespace RfCore.Signals
                                                                  or CarrierStandard.Dbpsk or CarrierStandard.Css or CarrierStandard.Sc
                                                                  or CarrierStandard.Wlan or CarrierStandard.Gnss or CarrierStandard.Wcdma
                                                                  or CarrierStandard.Wlan11b or CarrierStandard.Oqpsk154 or CarrierStandard.Analog
-                                                                 or CarrierStandard.Tones)
+                                                                 or CarrierStandard.Tones or CarrierStandard.Ofdm)
                                    .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r).ToList();
             if (needHz < LadderBaseHz)
                 foreach (double fs in fileRates)
@@ -258,7 +258,9 @@ namespace RfCore.Signals
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
             var fmcw = FmcwOf(spec);
+            var ofdm = OfdmOf(spec);
             double record = (pulse is null ? (double?)null : PulsedCw.RecordSeconds(pulse)) ?? (fmcw is null ? (double?)null : fmcw.Period)
+                            ?? (ofdm is null ? (double?)null : ofdm.Length / ofdm.SampleRateHz)
                             ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? sc?.RecordSeconds
                             ?? (wlan is null ? (double?)null : Wlan.RecordSeconds(wlan)) ?? gnss?.RecordSeconds
                             ?? (wcdma is null ? (double?)null : Wcdma.RecordSeconds) ?? w11b?.RecordSeconds ?? o154?.RecordSeconds ?? analog?.RecordSeconds
@@ -279,7 +281,9 @@ namespace RfCore.Signals
                         if (iq is not null && Math.Abs(iq.DurationSeconds / 0.5e-3 - Math.Round(iq.DurationSeconds / 0.5e-3)) > 1e-6)
                             throw new ArgumentException("an imported I/Q file mixed with generated carriers must last a whole number of 0.5 ms slots");
                         var nm = OfdmGenerator.Numerology(c);
-                        var x = OfdmGenerator.Generate(c, halfMs, spec.WindowFraction, spec.ShapingFloorDbc);
+                        // the options (uplink, allocation, test model, TDD) through their grid; none = the full-load downlink.
+                        // A TDD record is unit mean power over the whole record, gated time included, as it mixes with others
+                        var x = OfdmGenerator.Generate(c, halfMs, spec.WindowFraction, spec.ShapingFloorDbc, SignalSpec.OfdmOptionsOf(c));
                         if (spec.ClipPaprDb is double t)
                             OfdmGenerator.Clip(x, nm.SampleRateHz, nm.OccupiedBwHz, t);
                         raw.Add((c, x, nm.SampleRateHz, nm.OccupiedBwHz));
@@ -380,6 +384,16 @@ namespace RfCore.Signals
                         raw.Add((c with { BandwidthHz = Ieee802154.ChannelBandwidthHz }, Ieee802154.Generate(o154!),
                                  Ieee802154.NativeRateHz, 1.2 * Ieee802154.ChipRateHz));
                         break;
+                    case CarrierStandard.Ofdm:
+                    {
+                        // a numerology preset or NB-IoT, synthesised from its grid at unit mean power; Clip applies, as to LTE / NR
+                        var g = ofdm!;
+                        double occ = SignalSpec.OfdmOccupiedHz(g);
+                        var x = g.Synthesize(spec.WindowFraction);
+                        if (spec.ClipPaprDb is double t) OfdmGenerator.Clip(x, g.SampleRateHz, occ, t);
+                        raw.Add((c with { BandwidthHz = occ }, x, g.SampleRateHz, occ));
+                        break;
+                    }
                     case CarrierStandard.Fmcw:
                     {
                         // unit magnitude throughout: Pavg is its power at every instant
@@ -555,6 +569,16 @@ namespace RfCore.Signals
             return Multitone.Validate(SignalSpec.ResolveTones(c));
         }
 
+        /// <summary>The OFDM carrier's grid (null when there is none): its record is its own symbols', so it is the only carrier.</summary>
+        public static OfdmGrid? OfdmOf(SignalSpec spec)
+        {
+            var c = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.Ofdm);
+            if (c is null) return null;
+            if (spec.Carriers.Count > 1)
+                throw new ArgumentException("an OFDM carrier must be the source's only carrier");
+            return SignalSpec.OfdmGridOf(c, 0);
+        }
+
         /// <summary>The FMCW ramp (null when there is none): its record is one period, so it is the only carrier, and its
         /// envelope is constant, so it is not clipped.</summary>
         public static Fmcw? FmcwOf(SignalSpec spec)
@@ -580,7 +604,7 @@ namespace RfCore.Signals
             => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null
                || ScOf(spec) is not null || WlanOf(spec) is not null || GnssOf(spec) is not null
                || WcdmaOf(spec) is not null || Wlan11bOf(spec) is not null || Oqpsk154Of(spec) is not null
-               || AnalogOf(spec) is not null || TonesOf(spec) is not null || FmcwOf(spec) is not null;
+               || AnalogOf(spec) is not null || TonesOf(spec) is not null || FmcwOf(spec) is not null || OfdmOf(spec) is not null;
     }
 
     /// <summary>

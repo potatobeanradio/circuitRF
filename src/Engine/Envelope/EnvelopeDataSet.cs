@@ -404,7 +404,7 @@ public static class EnvelopeDataSet
     public const int ConstMaxSamples = 6000;
 
     /// <summary>How one carrier is measured: OFDM by <see cref="SignalEvm"/>, the others by <see cref="SignalQuality"/>.</summary>
-    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse }
+    private enum Meter { None, Ofdm, Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse, OfdmGrid }
 
     private static Meter MeterOf(CarrierStandard s) => s switch
     {
@@ -556,7 +556,9 @@ public static class EnvelopeDataSet
                                CarrierRead[,] reads, Action<string>? note)
     {
         // a plain pulse, and tones with no notch, are not read here (the pulse cubes and the spectrum are their measures)
-        var meters = carSpecs.Select(c => c.Standard is CarrierStandard.Lte or CarrierStandard.Nr || SignalQuality.Reads(c) ? MeterOf(c.Standard) : Meter.None).ToArray();
+        // an LTE / NR carrier with options is read as one record against its grid, as an OFDM preset is
+        var meters = carSpecs.Select(c => SignalQuality.KindOf(c) == QualityKind.Ofdm ? Meter.OfdmGrid
+                                          : c.Standard is CarrierStandard.Lte or CarrierStandard.Nr || SignalQuality.Reads(c) ? MeterOf(c.Standard) : Meter.None).ToArray();
         if (meters.All(m => m == Meter.None)) return;
         var recs = r.Sources.SelectMany(s => s.Signal.Carriers.Select(c => (rec: c, record: s.Signal.RecordSeconds, hz: s.FcHz + c.OffsetHz))).ToList();
         int nb = branchAxis.Length, nc = recs.Count;
@@ -675,7 +677,7 @@ public static class EnvelopeDataSet
             ds.Add(noiseName, new DataCube([branchAxis, carrierAxis], Only(noise!, kinds)) { Unit = "%" });
         }
 
-        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk, Meter.Sc, Meter.Wlan, Meter.Wcdma, Meter.Wlan11b, Meter.Oqpsk154];
+        Meter[] qam = [Meter.Ofdm, Meter.Dbpsk, Meter.Sc, Meter.Wlan, Meter.Wcdma, Meter.Wlan11b, Meter.Oqpsk154, Meter.OfdmGrid];
         if (meters.Any(qam.Contains))
         {
             Family("EVM_pct", "%", qam, "EVMdist_pct", "EVMnoise_pct");

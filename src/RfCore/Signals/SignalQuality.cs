@@ -50,7 +50,7 @@ using System.Numerics;
 namespace RfCore.Signals
 {
     /// <summary>How a carrier's received quality is measured (<see cref="SignalQuality"/>).</summary>
-    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse }
+    public enum QualityKind { Dbpsk, Fsk, Css, Sc, Wlan, Gnss, Wcdma, Wlan11b, Oqpsk154, Analog, Npr, Pulse, Ofdm }
 
     /// <summary>A received DBPSK, FSK or CSS record on its carrier's grid: <see cref="X"/> the received window, filtered and
     /// aligned, <see cref="S"/> the sent record through the same filter at the same samples, <see cref="At"/> the window
@@ -115,9 +115,14 @@ namespace RfCore.Signals
             _ => null,
         };
 
+        /// <summary>The kind <paramref name="c"/> is measured as: an LTE / NR carrier with options, and an OFDM preset, are read
+        /// as one record against their grid (OfdmEvm); a plain LTE / NR carrier is SignalEvm's (null here).</summary>
+        public static QualityKind? KindOf(CarrierSpec c)
+            => c.Standard == CarrierStandard.Ofdm || SignalSpec.OfdmOptionsOf(c) is not null ? QualityKind.Ofdm : KindOf(c.Standard);
+
         /// <summary>Whether <paramref name="c"/> has a quality to read: a kind, and for tones and noise a notch, for a pulse a
         /// code or a chirp to compress.</summary>
-        public static bool Reads(CarrierSpec c) => KindOf(c.Standard) switch
+        public static bool Reads(CarrierSpec c) => KindOf(c) switch
         {
             null => false,
             QualityKind.Npr => SignalSpec.ResolveTones(c).NotchWidthHz > 0,
@@ -139,7 +144,7 @@ namespace RfCore.Signals
         {
             why = null;
             var c = carrier.Spec;
-            if (KindOf(c.Standard) is not { } kind)
+            if (KindOf(c) is not { } kind)
             {
                 why = c.Standard switch
                 {
@@ -402,6 +407,21 @@ namespace RfCore.Signals
                     // chip EVM at each half-sine's peak; the PHY's limit is 35 %
                     var (rms, pk) = Ieee802154.Evm(Ieee802154.Resolve(spec), r.X);
                     return new WaveformQuality(r.Kind, rms, pk, double.NaN, double.NaN, null, null, null, null, r.DelayS) { LimitPercent = 35 };
+                }
+                case QualityKind.Ofdm:
+                {
+                    // the grid's own demodulation: pilot-aided where it has pilots, one gain on the data where it has none
+                    var g = SignalSpec.OfdmGridOf(spec, (int)Math.Round(m / r.NativeHz / 0.5e-3));
+                    var e = OfdmEvm.Measure(g, r.X);
+                    double peak = 0, refp = 0;
+                    for (int i = 0; i < e.Ideal.Length; i++)
+                    {
+                        peak = Math.Max(peak, (e.Received[i] - e.Ideal[i]).Magnitude);
+                        refp += e.Ideal[i].Real * e.Ideal[i].Real + e.Ideal[i].Imaginary * e.Ideal[i].Imaginary;
+                    }
+                    return new WaveformQuality(r.Kind, e.RmsPercent, 100 * peak / Math.Sqrt(refp / Math.Max(1, e.Ideal.Length)), double.NaN, double.NaN,
+                                               e.Received, e.Ideal, null, null, r.DelayS)
+                    { LimitPercent = spec.Standard == CarrierStandard.Ofdm ? double.NaN : SignalEvm.LimitPercent(spec.Modulation) };
                 }
                 case QualityKind.Pulse:
                 {

@@ -72,6 +72,19 @@ namespace RfCore.Signals
         /// <summary>EVM of an LTE / NR carrier's <paramref name="native"/> record (any scale) against its ideal symbols.</summary>
         public static EvmResult Measure(CarrierSpec c, ReadOnlySpan<Complex> native, double recordSeconds)
         {
+            if (SignalSpec.OfdmOptionsOf(c) is not null)
+            {
+                // with options (uplink, allocation, test model, TDD): against the grid it was synthesised from
+                var e = OfdmEvm.Measure(SignalSpec.OfdmGridOf(c, (int)Math.Round(recordSeconds / 0.5e-3)), native);
+                double peak = 0, refp = 0;
+                for (int i = 0; i < e.Ideal.Length; i++)
+                {
+                    peak = Math.Max(peak, (e.Received[i] - e.Ideal[i]).Magnitude);
+                    refp += e.Ideal[i].Real * e.Ideal[i].Real + e.Ideal[i].Imaginary * e.Ideal[i].Imaginary;
+                }
+                return new EvmResult(e.RmsPercent, 100 * peak / Math.Sqrt(refp / Math.Max(1, e.Ideal.Length)), LimitPercent(c.Modulation),
+                                     e.Received, e.Ideal, e.Points, 1);
+            }
             var nm = OfdmGenerator.Numerology(c);
             int halfMs = (int)Math.Round(recordSeconds / 0.5e-3);
             if (native.Length != nm.SamplesPerHalfMs * halfMs)
@@ -135,7 +148,7 @@ namespace RfCore.Signals
         {
             var c = carrier.Spec;
             why = null;
-            if (c.Standard is not (CarrierStandard.Lte or CarrierStandard.Nr))
+            if (c.Standard is not (CarrierStandard.Lte or CarrierStandard.Nr) || SignalSpec.OfdmOptionsOf(c) is not null)
             {
                 why = c.Standard switch
                 {
@@ -143,6 +156,7 @@ namespace RfCore.Signals
                     CarrierStandard.Pcw => "a pulse has no symbols",
                     CarrierStandard.File => "an imported I/Q file carries no symbol data",
                     CarrierStandard.Tones => "tones and noise carry no symbols; a notch is read as NPR",
+                    CarrierStandard.Lte or CarrierStandard.Nr => "a carrier with options is read as whole records against its grid (SignalQuality)",
                     _ => $"{c.Standard} carries no QAM symbols",
                 };
                 return null;
