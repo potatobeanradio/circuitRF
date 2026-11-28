@@ -101,6 +101,14 @@
             <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
             <Setter Property="BorderThickness" Value="1.5"/>
         </Style>
+        <!-- A card's Advanced expander: its header at a row's height, not Fluent's 48 (as the image-reading panel's). -->
+        <Style Selector="Expander.compact">
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="Expander.compact /template/ ToggleButton">
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Padding" Value="8,0"/>
+        </Style>
         <Style Selector="Button.small">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Padding"  Value="10,4"/>
@@ -579,7 +587,7 @@
                                                 <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                             </ItemsControl>
                                             <StackPanel Grid.Row="6" Grid.ColumnSpan="4">
-                                                <Expander Header="Advanced" FontSize="12" Padding="4" Margin="0,4,0,0" IsVisible="{Binding HasAdvancedFields}">
+                                                <Expander Classes="compact fill" Header="Advanced" FontSize="12" Padding="4" Margin="0,4,0,0" IsVisible="{Binding HasAdvancedFields}">
                                                     <ItemsControl ItemsSource="{Binding AdvancedFields}">
                                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                                     </ItemsControl>
@@ -726,7 +734,7 @@
                                 </Border>
 
                                 <!-- the constellation, square and centred, with its key -->
-                                <StackPanel Grid.Row="2" Width="250" HorizontalAlignment="Center" Margin="0,2">
+                                <StackPanel Grid.Row="2" Width="250" HorizontalAlignment="Center" Margin="0,2" IsVisible="{Binding HasConstellation}">
                                     <ctl:AspectRatioPanel Ratio="1">
                                         <ddc:PlotControl Name="ConstellationPlotControl" Plot="{Binding ConstellationPlot}" Library="{Binding PlotHost.Library}"
                                                          CanDeletePlot="False" CanEditPlotProperties="False"/>

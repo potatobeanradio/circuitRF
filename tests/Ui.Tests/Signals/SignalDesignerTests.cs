@@ -785,6 +785,8 @@ public class SignalDesignerTests : FirstLaunchUserState
         Assert.Contains("Std=ax;BW=80MHz;MCS=11;Oversample=4", RoundTrip(c));
         Assert.True(d.IsSingleCarrier && !d.CanClip && d.HasEvmTab);
         Assert.Equal("Packet power (dBm)", d.PowerLabel);
+        d.ShowPreview(SignalComposer.Generate(new SignalSpec { Carriers = [c.ToSpec()] }));
+        Assert.True(d.HasConstellation);
         var (ds, stats) = Analysed(c);
         Assert.Matches(@"Wi-Fi EVM \d\.\d\d %.* limit .*\(MCS11, -35 dB\)   PASS", stats);
         Assert.True(ds.Contains("Mask"));
@@ -804,6 +806,9 @@ public class SignalDesignerTests : FirstLaunchUserState
         Assert.Equal(("GNSS", "L1CA", SignalDesignerViewModel.GnssPresetSatellites, "45"), (c.Standard, Field(c, "Signal"), Field(c, "Sats"), Field(c, "CN0")));
         RoundTrip(c);
         Assert.Equal("Quality", d.SecondTabHeader);
+        d.ShowPreview(SignalComposer.Generate(new SignalSpec { Carriers = [c.ToSpec()] }));
+        Assert.False(d.HasConstellation);                                     // a per-PRN reading, no points to draw
+        Assert.Contains("PRN 5", d.QualityText);
         var (ds, stats) = Analysed(c);
         Assert.Matches(@"PRN 1 +code phase 12\.\d\d chips.*C/N0 4\d\.\d dB-Hz", stats);
         Assert.Contains("PRN 5", stats);

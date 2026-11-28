@@ -1947,8 +1947,13 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     /// <summary>Most received points drawn on the constellation; the EVM itself uses every one.</summary>
     public const int ConstellationPoints = 6000;
 
+    /// <summary>The selected carrier has points to draw: GNSS, analog and tones-and-noise readings have none, and WCDMA,
+    /// 802.11b and 802.15.4 an EVM without points, so the constellation is hidden for them.</summary>
+    [ObservableProperty] private bool _hasConstellation = true;
+
     private void ShowConstellation(EvmRow? row)
     {
+        HasConstellation = row is null ? _evmSig is null : row.Result.Received.Length > 0;
         var plot = ConstellationPlot;
         var markers = TakeMarkers(plot);
         plot.CustomTitleOn = true;
