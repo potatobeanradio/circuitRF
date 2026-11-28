@@ -4374,6 +4374,12 @@ A port-less annotation holding `name = expression` variable definitions, scoped 
 — global at the test bench top, or local inside a cell. Variables are sweepable. Edit the rows in the
 multi-line text editor by double-clicking the VAR. No fixed parameters.
 
+**Parameters to Variables** on the right-click menu of one or more selected parts (a placed PCell or designed cell, an
+MLIN, any part) makes the variables for you: each parameter holding a plain number becomes a row
+`<Designator>_<Parameter>` (`X1_W`) of one new VAR block placed beside the first part, with the value and unit the part
+had, and the part's parameter then reads that name. Words, choices, files and values that are already expressions are
+left alone; a name already taken gets a numeric suffix. It is one undo step.
+
 ### Measurements (MEAS) {#meas}
 
 {{symbol: meas}}

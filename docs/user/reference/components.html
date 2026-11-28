@@ -8626,6 +8626,11 @@ coherence time against the record and the subcarrier spacing, and the coherence 
 <p>A port-less annotation holding <code>name = expression</code> variable definitions, scoped to where it is placed
 — global at the test bench top, or local inside a cell. Variables are sweepable. Edit the rows in the
 multi-line text editor by double-clicking the VAR. No fixed parameters.</p>
+<p><strong>Parameters to Variables</strong> on the right-click menu of one or more selected parts (a placed PCell or designed cell, an
+MLIN, any part) makes the variables for you: each parameter holding a plain number becomes a row
+<code>&lt;Designator&gt;_&lt;Parameter&gt;</code> (<code>X1_W</code>) of one new VAR block placed beside the first part, with the value and unit the part
+had, and the part's parameter then reads that name. Words, choices, files and values that are already expressions are
+left alone; a name already taken gets a numeric suffix. It is one undo step.</p>
 <h3 id="meas">Measurements (MEAS)</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 24L188 24" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 24L188 126" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M188 126L52 126" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M52 126L52 24" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M86 62.25L154 62.25" /><path fill="none" stroke="#2D14C3" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round" d="M86 87.75L154 87.75" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="99.75, 112.01, 121.01, 131.09" y="172.32">

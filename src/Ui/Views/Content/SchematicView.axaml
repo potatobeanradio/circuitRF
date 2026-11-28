@@ -645,6 +645,14 @@
                                   ToolTip.Tip="Opens the PCell Designer on this part's designed cell"
                                   Click="OnCtxEditInPCellDesigner"/>
 
+                        <!-- Parameters to Variables: the selected parts' plain-number parameters as rows of one new VAR
+                             block. Hidden when no selected part has one. -->
+                        <MenuItem x:Name="CtxParametersToVariables"
+                                  Header="Parameters to Variables"
+                                  IsVisible="False"
+                                  ToolTip.Tip="Moves each plain-number parameter of the selected parts into a new VAR block, as Designator_Parameter, and points the part at it"
+                                  Click="OnCtxParametersToVariables"/>
+
                         <Separator x:Name="CtxSep1"/>
 
                         <MenuItem Header="Rotate 90°"
