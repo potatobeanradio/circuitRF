@@ -198,14 +198,14 @@ public static class OptimizationDiagnostics
     /// <summary>brief-sdl-10 D2 — em= unstated, and an EM part has no circuit model: the run selects direct.</summary>
     public static Diagnostic EmDirectForNoCircuitModel(string parts) => Diagnostic.Create(
         "opt.em.no-circuit-model", DiagnosticSeverity.Info,
-        "{parts} has no circuit model (a 3D-parametric cell with no schematic), so em=correct has nothing to search on: the run " +
-        "uses em=direct, every evaluation an EM solve.", ("parts", parts));
+        "{parts} has no circuit model, so em=correct has nothing to search on: the run uses em=direct, every evaluation an EM " +
+        "solve.", ("parts", parts));
 
     /// <summary>brief-sdl-10 D2 — em=correct or em=off asked for, and an EM part has no circuit model.</summary>
     public static Diagnostic EmModeNeedsCircuitModel(string mode, string parts) => Diagnostic.Create(
         "opt.em.needs-circuit-model", DiagnosticSeverity.Error,
-        "em={mode} needs a circuit model, and {parts} has none (a 3D-parametric cell with no schematic): it can only be simulated " +
-        "by EM. Use em=direct, or give the cell a schematic as its circuit model.", ("mode", mode), ("parts", parts));
+        "em={mode} needs a circuit model, and {parts} has none: it can only be simulated by EM. Use em=direct, or give it a " +
+        "circuit model.", ("mode", mode), ("parts", parts));
 
     public static Diagnostic EmWithCorners(string mode) => Diagnostic.Create(
         "opt.em.corners", DiagnosticSeverity.Error,

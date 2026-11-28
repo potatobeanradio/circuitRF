@@ -793,6 +793,9 @@ public partial class SchematicView : UserControl
         // item reads as a bug.
         CtxPlaceSiteParts.IsVisible = SchematicViewModel.HasSites(comp);
         CtxSynthesizeFilter.IsVisible = Vm?.SynthesizeTarget(id) is not null;
+        CtxEditInPCellDesigner.IsVisible = CircuitRF.Ui.PCellDesigner.PCellDesignerViewModel.DesignedCellOf(comp, Vm?.EditModel.SchematicDirectory) is not null;
+        CtxParametersToVariables.IsVisible = Vm is { } pv && Commands.Schematic.ParametersToVariables.Offers(
+            pv.EditModel, Commands.Schematic.ParametersToVariables.Targets(pv.EditModel, pv.Selection.Ids, id));
 
         bool isMatch = comp?.Symbol == SymbolKind.Match;
         CtxFlattenMatch.IsVisible = isMatch;
@@ -885,6 +888,25 @@ public partial class SchematicView : UserControl
     {
         if (Vm is null || Vm.SynthesizeTarget(SchematicCanvasCtrl.ContextMenuTargetId) is not { } comp) return;
         Views.Filters.LcFilterDesignerWindow.Show(Vm, comp, TopLevel.GetTopLevel(this) as Window);
+    }
+
+    /// <summary>Context menu ▸ Edit in PCell Designer (brief-pcd-6 R-pcd6-1): the designer on the clicked part's designed
+    /// cell, through the workspace, one window per cell folder.</summary>
+    private void OnCtxEditInPCellDesigner(object? sender, RoutedEventArgs e)
+    {
+        var comp = SchematicCanvasCtrl.ContextMenuTargetId is { } id ? Vm?.EditModel.FindComponent(id) : null;
+        if (CircuitRF.Ui.PCellDesigner.PCellDesignerViewModel.DesignedCellOf(comp, Vm?.EditModel.SchematicDirectory) is { } cell)
+            WorkspaceLocator.For(this)?.OpenPCellDesignerOn(cell);
+    }
+
+    /// <summary>Context menu ▸ Parameters to Variables: <see cref="Commands.Schematic.ParametersToVariables"/> on the
+    /// selected parts (or the clicked one), one undo step.</summary>
+    private void OnCtxParametersToVariables(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        var parts = Commands.Schematic.ParametersToVariables.Targets(vm.EditModel, vm.Selection.Ids, SchematicCanvasCtrl.ContextMenuTargetId);
+        if (Commands.Schematic.ParametersToVariables.Command(vm.EditModel, parts) is { } cmd) vm.Execute(cmd);
+        SchematicCanvasCtrl.InvalidateVisual();
     }
 
     /// <summary>

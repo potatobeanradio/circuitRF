@@ -421,6 +421,11 @@ public sealed class PCellWorkerHostTests : IDisposable
 /// against one of them whichever it picked: measured, as a resolver cleared out from under a test
 /// mid-run, showing up as an empty parameter set here and a stale content hash over there. Both names
 /// are kept because both say a true thing about what is being serialised.</para>
+///
+/// <para><b>The PCell Designer tests are in it too.</b> A designed cell resolves as <c>cpcell:&lt;Name&gt;</c> by name,
+/// through whichever registered workspace answers first (and the registry caches that answer by id), and those tests
+/// each make cells of the same names (PadTee) in their own scratch workspaces: overlapping, one test's bench is drawn
+/// from another's cell, or a <c>ClearResolvers</c> here drops a test's registration mid-run.</para>
 /// </summary>
 [CollectionDefinition(Name)]
 public sealed class PCellResolverCollection

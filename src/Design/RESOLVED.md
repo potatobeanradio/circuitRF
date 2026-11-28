@@ -32952,3 +32952,37 @@ such a cell reported "the saved layout's geometry is NOT the one EM verified". F
 compared with the copper `EmEvaluation.Geometry` plans from the saved schematic (both by the layout key), and when they
 agree the answer is that evaluation's 3D key. Gate: `EmThreeDCellTests.Apply_OnA3DView_TheSavedLayoutIsTheVerifiedGeometry`.
 
+
+## PCell Designer (series PCD, 2026-11-27)
+
+A schematic of primitives is now a parameterised cell: `docs/design/pcell-designer.md` holds the rules and each lane's
+decisions. What is worth keeping here, because it was found the hard way:
+
+- **`MSHAPE`'s `Form` and `Model` are written quoted** (`Form="polygon"`, `Model="open"`). The elaborator evaluates every
+  key of a primitive as an expression, so an unquoted word is an unresolved name. The contract's table showed them bare.
+  Every reader must strip the quotes: `PCellDesignCheck` compared `Expression.Trim()` with `none`/`open` and so refused
+  every drawn shape once the quotes landed (fixed in PCD-5's check; its own test had written the word bare, which is why
+  it passed). The planner reaches `MSHAPE` through its own word branch for the same reason.
+- **`NetExtractor` made a cell's Ports into its pins only for EM-capable cells**, so a designed cell imported from a
+  package had no terminals in LVS. It now does so for a cell with a `LayoutGenerator` too.
+- **Copper before the model-cell test** (`EmPartKinds`): a generator cell with `EmCopper` is copper without a cell
+  folder, so its schematic (the circuit model) is never read as its layout.
+- **The EM step floor with no Path A** reads the coarsest database unit of the placed cells' evaluated layouts
+  (`EmEvaluationRecord.DbuPerMicron`), so a placed cell's own parameter (`X1.Lpad`) never steps below two of its units.
+- **Nested planner runs** (a bench placing a designed cell runs the planner inside the planner) hold no gate while a
+  generator runs, and `DesignedPCellResolver.Register` takes its gates in a fixed order. A self-placing cell is refused by a
+  per-thread stack; nested cells are keyed on the technology's content (`cpcell-tech/<hash>`), since a generator is
+  handed a `Technology` and not its file.
+- **Offset placement and existing layouts:** a chain already in a layout does not follow its offset on a re-run
+  (SDL-4: the layout's own placement stands). A designed cell always plans onto an empty layout, so it is never affected.
+- **The old-fixture `.ccell` round trip** uses `examples/Hierarchy/Pad/.ccell`: hand-written fixtures end in a newline the
+  serializer never writes, so they cannot re-serialise byte for byte.
+- **A pad with `Model="open"` gives its length no slope in the circuit model** (S2: its pins are open). `X1.Lpad` changes
+  the copper and not the circuit, so an `em=correct` optimisation over it stops at its start after one solve (the
+  corrected model's optimum is the start; measured on a real Planar run of the PCell Designer example). Use `em=direct`.
+- **`tune X1.Lpad` on a bench simulated by EM of its own layout was refused** as not reaching the copper: Path A took only
+  VAR rows. A placed generator cell's own parameter now reaches the copper there too, and each point's layout draws the
+  placement at that value; `Pcd8AcceptanceTests` step 6 tunes `X1.Lpad` itself.
+- **`check` warned that a `cpcell:` generator "is not built in, and no kit loaded here offers it"**: its generator test did
+  not register `DesignedPCellResolver` for the workspace, as Update Layout does. It now takes a designed cell's generator
+  as offered.

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — PCell Designer</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/pcell-designer.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › PCell Designer</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="pcells.html" title="Previous: PCells"><span class="arrow">‹</span><span class="name">PCells</span></a>
+      <a class="next" href="pdk-integration.html" title="Next: PDK Integration"><span class="name">PDK Integration</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
+
+  <h1>PCell Designer</h1>
+  <p class="lede">A parameterised cell made from circuitRF&#39;s own primitives - its layout a function of its parameters at every value, its schematic its circuit model - exported as a PCell package that any workspace places like a kit&#39;s cell.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What it is</a></li>
+<li><a href="#open">Opening it</a></li>
+<li><a href="#window">The window</a></li>
+<li><a href="#markers">Markers and dimensions</a></li>
+<li><a href="#operations">Operations</a></li>
+<li><a href="#placement">Where each part goes</a></li>
+<li><a href="#mshape">Drawn metal and Stretch by Parameter</a></li>
+<li><a href="#em">Run EM and Optimise</a></li>
+<li><a href="#check">The design check</a></li>
+<li><a href="#package">Export and import: the PCell package</a></li>
+<li><a href="#placed">A designed cell placed in a schematic</a></li>
+<li><a href="#headless">Running it headless</a></li>
+<li><a href="#examples">Examples</a></li>
+</ol>
+</nav>
+<h2 id="what">What it is</h2>
+<p>The PCell Designer makes a <strong>designed cell</strong>: a <a href="pcells.html">PCell</a> built from the parts in the Library (lines, bends,
+tees, coupled lines, vias, footprints, kit and Python PCells) and from drawn copper (<a href="components.html#mshape">MSHAPE</a>).
+Three rules make it a PCell rather than a drawing:</p>
+<ul>
+<li><strong>Its layout is a function of its parameters.</strong> Parts joined by a net are placed pin to pin, as
+<a href="layout-editor.html">Update Layout from Schematic</a> places them. A part that no net joins is placed by an <strong>offset</strong> from
+another part's pin. A drawn shape's corners and pins are expressions. There is no coordinate typed by hand anywhere, so
+the layout is right at every value of every parameter.</li>
+<li><strong>Its schematic is its circuit model.</strong> The cell simulates as any hierarchical cell does, from its own schematic. No
+second model is fitted or stored.</li>
+<li><strong>It places like any PCell.</strong> Once designed, the cell is a Library part with its parameters in the Properties, drag
+handles in the layout, regeneration when a value changes, an identity in <a href="lvs.html">LVS</a> and copper in EM. It goes to
+another workspace as one file, a <strong>PCell package</strong> (<code>.cpcell</code>).</li>
+</ul>
+<figure class="figure">
+<img src="../../images/pcell-designer/designer.png" alt="The PCell Designer on the PadTee cell: the toolbar along the top, the layout at the current values on the left (a 50 ohm line with a bend, a tee, an open stub and a rectangular pad at the stub's end), the parameter table on the right with W, L1, Lstub and Lpad, the circuit response below it, and the cell's netlist text along the bottom." style="width:100%;height:auto">
+<figcaption>The <b>PadTee</b> cell of the <b>PCell Designer</b> example: a 50 Ω line with a bend and a tee, the tee's
+stub ending in a drawn pad whose length is the parameter <code>Lpad</code>.</figcaption>
+</figure>
+<h2 id="open">Opening it</h2>
+<ul>
+<li><strong>Tools ▸ PCell Designer…</strong> opens the designer on the active schematic's cell when that cell is designed. Otherwise it
+makes a new designed cell in the workspace, <code>PCell1</code> (<code>PCell2</code>, … when taken), and opens it. A new cell starts with
+Port 1 and its ground, so the first part you drop has a pin to join. Rename it in the project tree.</li>
+<li><strong>Edit in PCell Designer</strong> on the right-click menu of a placed designed cell, in a schematic or a layout, opens the cell
+it places.</li>
+<li><strong>File ▸ Import ▸ PCell Package…</strong> imports a <code>.cpcell</code> into the workspace (see <a href="#package">below</a>).</li>
+</ul>
+<p>One window is open per cell. Asking for a cell that is already open brings its window forward.</p>
+<p>A designed cell can also come from filter synthesis: the Filter Designer's <strong>Make PCell…</strong> (or <code>circuitrf filter … --realiser R --pcell &lt;name&gt;</code>) makes the selected realisation a designed cell. It holds the part <code>F1</code>, its site parts and two Ports, and each synthesised length, gap and width is a parameter with a ±20 % range. Such a cell keeps its filter specification. The <strong>Filter metrics</strong> panel reads its circuit response, or an EM run, back to the prototype and shows each check with pass or fail, as the Filter Designer does. See <a href="filter-designer.html#make-pcell">Make PCell</a>.</p>
+<p>A designed cell is an ordinary cell folder with a schematic, a symbol and a <code>.ccell</code>. What marks it as designed is a
+<code>PCellDesign</code> entry in its <code>.ccell</code>, which also names its layout generator <code>cpcell:&lt;cell name&gt;</code> and sets <code>EmCopper</code> (see
+<a href="file-formats.html#cpcell">File formats</a>).</p>
+<h2 id="window">The window</h2>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Canvas</strong></td>
+<td>The cell's layout at the values in the <strong>Value</strong> column, drawn as <code>circuitrf render</code> draws a layout. It is redrawn after every change. Each gesture on it changes the schematic, and the canvas shows what the schematic places.</td>
+</tr>
+<tr>
+<td><strong>Parameters</strong></td>
+<td>One row per cell parameter: name, default with its unit, <strong>Minimum</strong>, <strong>Maximum</strong> and description. <strong>+</strong> adds a row and <strong>−</strong> removes one. A parameter is a number: a length, an angle or a count.</td>
+</tr>
+<tr>
+<td><strong>Value</strong></td>
+<td>The value the canvas and the response are drawn at, typed as a default is (<code>400 um</code>, or <code>400</code> in the parameter's unit). It is not saved. Use it to see the cell at the ends of its range.</td>
+</tr>
+<tr>
+<td><strong>Response</strong></td>
+<td>The cell's S-parameters by its circuit model, recomputed a quarter of a second after you stop typing. The sweep is the schematic's first S-parameter analysis, else 1 to 20 GHz.</td>
+</tr>
+<tr>
+<td><strong>Text</strong></td>
+<td>The cell's netlist (<code>.cnl</code>), kept up to date. Edit it and press <strong>Apply</strong>: the text is merged into the schematic by designator. A changed value changes the part, a new designator adds a part, and a removed one removes it. A part whose type changes is refused: give it a new designator instead. When the nets are unchanged the wires stay as drawn; otherwise they are redrawn, and every part you kept keeps its place.</td>
+</tr>
+<tr>
+<td><strong>Save</strong></td>
+<td>Writes the schematic, the <code>.ccell</code> and the cell's own layout. The saved layout is always the one at the parameters' defaults, never at the <strong>Value</strong> column.</td>
+</tr>
+<tr>
+<td><strong>+ Port</strong></td>
+<td>Adds the next port, grounded, on the last free pin. A Port dropped from the Library on a pin does the same there.</td>
+</tr>
+<tr>
+<td><strong>Undo</strong>, <strong>Redo</strong></td>
+<td>Every gesture and every <strong>Apply</strong> is one step.</td>
+</tr>
+</tbody>
+</table>
+<p>Gestures on the canvas, each one undo step:</p>
+<ul>
+<li><strong>Drop a Library part on a pin.</strong> The part is added to the schematic with its pin on that pin's net. A pin on ground
+puts the new pin on ground. On an empty cell the first part joins Port 1.</li>
+<li><strong>Drop a part on a joint</strong> (a pin already joined to another part). The joint becomes a tee (<code>MTEE</code>): the two parts on
+its through pins, the new part on its branch, its widths <code>W1</code>, <code>W2</code> and <code>W3</code> those of the three parts. On a pin of a
+tee the tee becomes a cross (<code>MCROSS</code>). A joint with a part that has no width, such as a port or a pad, is refused
+with a sentence saying so.</li>
+<li><strong>Drop a part anywhere else.</strong> It is placed by an offset from the nearest pin: <code>Dx</code> and <code>Dy</code> are where you dropped it,
+measured from that pin in its own frame and written as numbers in the cell's length unit (that of its first length
+parameter), <code>Angle</code> 0. Rewrite them in parameters afterwards to make the place follow the cell.</li>
+<li><strong>Draw MSHAPE.</strong> Turn on <strong>Draw MSHAPE</strong>, click the corners, and double-click or press Enter to finish (Esc
+cancels). Start on a pin and the shape's pin 1 joins it, as wide as that part's <code>W</code>; start anywhere else and the shape
+is placed by an offset from the nearest pin. The corners are written relative to pin 1 in the cell's length unit,
+ready for <strong>Stretch by Parameter</strong>, and <code>Model</code> is <code>&quot;open&quot;</code>.</li>
+<li><strong>Drag an offset part by its pin</strong> to move its offset (see <a href="#placement">below</a>).</li>
+<li><strong>Drag a corner of an MSHAPE</strong>, or select corners and use <strong>Stretch by Parameter</strong> (see <a href="#mshape">below</a>).</li>
+</ul>
+<h2 id="markers">Markers and dimensions</h2>
+<p><strong>Markers.</strong> The response is a <a href="data-display.html">Data Display</a> plot, and its markers work as they do there: add one
+from the plot's menu, drag it along a trace or step it with the arrow keys, and read its values in its box. Every edit
+recomputes the response, and each marker moves to the new trace of the same name (<code>S21</code>, <code>EM S21</code>) at the same
+frequency. A marker on the EM curve waits while an edit has cleared that curve, and comes back with the next
+<strong>Run EM</strong>.</p>
+<p><strong>Dimensions.</strong> With <strong>Dimensions</strong> on (the toolbar; it is on until you turn it off, and the setting is kept), each
+parameter is drawn on the canvas as a dimension: a line between the two points it sets, in the style of the layout
+editor's rulers, with the measured length and a label such as <code>Lpad = 300 µm</code>. The lines are redrawn with the canvas,
+so changing a <strong>Value</strong> moves them and their labels. They come from what the cell already holds:</p>
+<table>
+<thead>
+<tr>
+<th>Where a parameter is used</th>
+<th>The dimension</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A Stretch by Parameter binding on an <code>MSHAPE</code></td>
+<td>From the corner that stays to the first corner that moves, along the stretch's axis.</td>
+</tr>
+<tr>
+<td>An offset whose <strong>Dx</strong>, <strong>Dy</strong> or <strong>Angle</strong> names a parameter</td>
+<td>From the anchor pin to the part's own pin.</td>
+</tr>
+<tr>
+<td>A part's parameter that names one (<code>TL1.L = L1</code>, <code>W = W</code>)</td>
+<td>The span of that part's own drag handle for the parameter, once per expression.</td>
+</tr>
+</tbody>
+</table>
+<p>When the expression combines terms, the label is the expression and its value (<code>Lstub/2 = 2 mm</code>). The unit is the
+parameter's own.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/dimensions.png" alt="The PCell Designer on the PadTee cell with Dimensions on: rulers over the layout labelled W = 1.1 mm, L1 = 3 mm, Lstub = 4 mm and Lpad = 300 µm." style="width:100%;height:auto">
+<figcaption>The <b>PadTee</b> cell with <b>Dimensions</b> on: each parameter drawn where it acts on the copper.</figcaption>
+</figure>
+<h2 id="operations">Operations</h2>
+<p>Beside placing parts, a designed cell can be shaped by <strong>operations</strong> on their copper: Merge, Subtract, Intersect,
+Exclusive, Grow (or shrink), Repeat, Fillet and Chamfer, the icon buttons under the canvas (each names itself in its tooltip). The
+<strong>Operations</strong> panel lists the cell's history in order. Each step changes
+the copper that the parts draw, and it is applied again at every value, so the cell stays a function of its
+parameters.</p>
+<ul>
+<li><strong>Select operands.</strong> Click a part or a drawn shape on the canvas; Shift-click adds or removes one. The selection is
+listed under the canvas, first selected first. An operand is a part's copper (its designator), a whole layer
+(<strong>Add layer</strong> adds <code>layer:&lt;name&gt;</code>, for example <code>layer:Soldermask Top</code>), or a <strong>tool</strong>.</li>
+<li><strong>Make tool</strong> turns the selected <code>MSHAPE</code> into a cutter (its <code>Role</code> is <code>&quot;tool&quot;</code>): its outline is an operand and is
+never copper.</li>
+<li><strong>Merge</strong>, <strong>Subtract</strong>, <strong>Intersect</strong> and <strong>Exclusive</strong> take two operand sets: the first selected, and the rest
+(Subtract is the first minus the rest). The result replaces the first set on the step's layer, and the second set
+is left as it is.</li>
+<li><strong>Grow</strong> widens the selection by its amount, or narrows it when the amount is negative. Name another layer in
+<strong>onto</strong> and the result goes there instead, which makes a mask opening, a keep-out or a clearance.</li>
+<li><strong>Repeat</strong> copies the selection into rows and columns at the pitches. The copies are copper only, with no pins and
+no circuit model.</li>
+<li><strong>Fillet</strong> rounds the selection's corners by the radius, and <strong>Chamfer</strong> cuts them straight, the size measured along
+each edge (a right angle gets a 45° cut). Outer corners lose copper and inner corners gain it. Where two parts meet in
+line, the joint is not a corner and stays as placed.</li>
+</ul>
+<p>Amounts, counts and pitches are written as any value is: <code>20 um</code>, <code>20um</code>, or an expression such as <code>Lmid/30</code>. One
+that names a parameter is drawn as a dimension.
+Each press adds one step, as one undo step. In the panel, change a step's operands (the first set, then <code>|</code> and the
+rest), amount or pitches and press <strong>Apply</strong>; move it earlier or later with the arrows; tick <strong>Suppressed</strong> to keep it
+in the history without applying it; or delete it. Each change is one undo step, and the canvas, the response and the
+dimensions follow.</p>
+<p>A step that would remove the copper under a part's pin, or would join or separate the ports, is not applied, and its
+row says why. A step that changes copper on a conductor layer makes the cell <strong>EM-only</strong>: it runs by EM and optimises
+with <code>em=direct</code>, and the response line says so, naming the step (<code>no circuit model: op1 (Subtract) changes the copper</code>). Steps on mask, silk or keep-out layers keep the circuit model. Tick <strong>Keep model</strong> on a step to accept the
+circuit model as an approximation. Operations are geometry, so they are not in the netlist text;
+<code>circuitrf pcell ops &lt;cell&gt;</code> lists them, as the MCP <code>pcell</code> tool does with <code>what=ops</code>.</p>
+<p>LVS compares a cell with operations by which ports each piece of its copper joins. Placed in another design, the cell is
+compared as one part, like any PCell.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/operations.png" alt="The PCell Designer on a copy of the PadTee cell with a square tool on the line TL3 and one operation, op1 Subtract TL3 minus SH9, in the Operations panel; the line has a square notch where the tool was, and the response line says the cell has no circuit model." style="width:100%;height:auto">
+<figcaption>A <b>Subtract</b> in the history: a square tool cut out of <code>TL3</code>.</figcaption>
+</figure>
+<h2 id="placement">Where each part goes</h2>
+<p>Parts joined by a net are placed pin to pin, starting from the first chain in the schematic. Report lines under the
+canvas say where each part went and name the <strong>root</strong>, the part the layout starts from.</p>
+<p>A part that no net joins needs to be told where it goes: a pad beside a line, a second line across a gap. It carries an
+<strong>offset placement</strong>, kept with the part in the schematic file (the component's <code>Offset</code>, see
+<a href="file-formats.html#cpcell">File formats</a>). The netlist text does not carry it, because it is placement and not circuit:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Anchor</td>
+<td>The pin it is placed from, as <code>&lt;part&gt;.&lt;pin&gt;</code>: <code>TL1.2</code></td>
+</tr>
+<tr>
+<td>Pin</td>
+<td>Which of this part's pins goes to the offset point</td>
+</tr>
+<tr>
+<td>Dx</td>
+<td>Along the anchor pin's outward direction</td>
+</tr>
+<tr>
+<td>Dy</td>
+<td>90° counter-clockwise from it</td>
+</tr>
+<tr>
+<td>Unit</td>
+<td>The unit of Dx and Dy</td>
+</tr>
+<tr>
+<td>Angle</td>
+<td>The turn, in degrees. 0 means this pin faces the anchor pin, as at a joint</td>
+</tr>
+</tbody>
+</table>
+<p>Dx, Dy and Angle are expressions, so <code>Dx = g</code> makes a gap that follows the parameter <code>g</code>. All three zero is exactly a
+joint. Everything joined to the offset part moves with it. When you drag an offset part on the canvas, the change is
+added to Dx and Dy as a number: <code>g</code> becomes <code>g + 30</code>, and the parameter stays in the expression.</p>
+<p>Select one part and the <strong>Part</strong> panel shows its Dx, Dy and Angle (when it has an offset), its rotation, and
+<strong>Flipped</strong>, the mirror that decides which way a bend turns or which side a tee's branch leaves. <strong>Apply</strong> writes them
+into the schematic as one undo step; after a turn or a flip the wires are redrawn to the part's nets.</p>
+<p>An anchor that does not resolve, an expression that does not evaluate, or two offsets that pull one chain in different
+directions is reported, and that offset is not applied. Nothing is moved to hide it.</p>
+<h2 id="mshape">Drawn metal and Stretch by Parameter</h2>
+<p><a href="components.html#mshape">MSHAPE</a> is copper you draw: a closed outline (<code>Form = &quot;polygon&quot;</code>) or a centreline of width <code>W</code>
+(<code>Form = &quot;path&quot;</code>). Its corners are the rows <code>X[i]</code>, <code>Y[i]</code> and its pins the rows <code>PinX[k]</code>, <code>PinY[k]</code>, <code>PinW[k]</code>,
+<code>PinDir[k]</code>, all in the part's own frame. Each row is an expression like any other value, so a corner can be <code>Lpad</code> or
+<code>W/2</code>.</p>
+<p><code>Model</code> says what a circuit simulation does with it:</p>
+<ul>
+<li><code>Model = &quot;open&quot;</code>: its pins are left open. A pad at a line's end simulates as an open end.</li>
+<li><code>Model = &quot;short&quot;</code>: its pins are one node, an ideal junction. A star pad where several resistors meet simulates as
+their common node.</li>
+<li><code>Model = &quot;none&quot;</code>: it has no circuit model. A cell that holds one can only be simulated by EM: a run by circuit models
+is refused naming the shape, and an optimisation uses <code>em=direct</code>.</li>
+</ul>
+<p>Write the two words quoted, as <code>Form=&quot;polygon&quot;</code> and <code>Model=&quot;open&quot;</code> in the netlist text.</p>
+<p><strong>Stretch by Parameter</strong> ties corners to a parameter. Shift-click the corners that should move, type the parameter and the
+direction (degrees, in the shape's own frame), and press <strong>Stretch by Parameter</strong>. The shape stays as it is at the
+current values, and each selected corner moves by δ along that direction when the parameter grows by δ. The binding is
+kept with the part, so a placed copy of the cell shows a drag handle for that parameter. Pins do not move with a stretch.</p>
+<h2 id="em">Run EM and Optimise</h2>
+<p><strong>Run EM</strong> saves the cell, makes an EM setup for its layout when it has none (a <a href="mom-engine.html">Planar</a> setup, the
+schematic's Ports as its ports), and solves the layout at the current values. The EM response is drawn over the circuit
+response. <strong>Cancel</strong> stops it.</p>
+<p><strong>Optimise</strong> saves the cell and opens its schematic with the <a href="optimization.html">Optimizer</a>. Goals, variables, <code>em=correct</code>
+and <code>em=direct</code> work there as for any <a href="em-cells.html#optimise">cell simulated by EM</a>.</p>
+<h2 id="check">The design check</h2>
+<p><strong>Export…</strong> runs the design check first, and <code>circuitrf pcell check</code> runs it on its own. It reports, among others:</p>
+<table>
+<thead>
+<tr>
+<th>Id</th>
+<th>What it says</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pcell.unjoined</code>, <code>pcell.placement</code></td>
+<td>A part that is neither joined nor offset-placed, or an offset that cannot be made, at the defaults, at a parameter's Minimum or at its Maximum</td>
+</tr>
+<tr>
+<td><code>pcell.choices</code></td>
+<td>A parameter that offers choices. A designed cell's parameters are numbers</td>
+</tr>
+<tr>
+<td><code>pcell.parameter-is-var</code></td>
+<td>A parameter that is also a VAR of the schematic</td>
+</tr>
+<tr>
+<td><code>pcell.range</code></td>
+<td>A Minimum above its Maximum</td>
+</tr>
+<tr>
+<td><code>pcell.no-ports</code>, <code>pcell.port-num</code></td>
+<td>No Port, or Ports not numbered 1, 2, …</td>
+</tr>
+<tr>
+<td><code>pcell.mshape-pins</code>, <code>pcell.mshape-model</code></td>
+<td>A drawn shape with no pin, or a <code>Model</code> other than <code>none</code>, <code>open</code> and <code>short</code></td>
+</tr>
+<tr>
+<td><code>pcell.no-circuit-model</code></td>
+<td>A drawn shape with <code>Model = &quot;none&quot;</code>: the cell is EM only</td>
+</tr>
+</tbody>
+</table>
+<p>An error stops the export. The check plans the cell at each parameter's ends because a layout that holds together at the
+default can still break at a limit: a stub shorter than its tee, or two parts that overlap.</p>
+<h2 id="package">Export and import: the PCell package</h2>
+<p><strong>Export…</strong> writes <code>&lt;cell&gt;.cpcell</code>: the cell folder (its <code>.ccell</code>, its schematic and its symbol) and a small manifest. It
+holds no layout, no EM setup and no results, because the generator draws the layout wherever the cell is placed. The same
+cell exported twice gives the same bytes.</p>
+<p><strong>File ▸ Import ▸ PCell Package…</strong> unpacks it into the workspace as an ordinary cell. Importing the same package again is
+reported as already imported. A different package with the same cell name is refused, and nothing is overwritten. A
+package that names a layer the workspace's technology does not have is refused with the layers it misses.</p>
+<h2 id="placed">A designed cell placed in a schematic</h2>
+<p>Place the cell from the Library like any other cell, and set its parameters on the instance. Then:</p>
+<ul>
+<li><strong>Update Layout from Schematic</strong> draws each placement at its own values. Two placements with different values get
+different copper.</li>
+<li>In the layout, each Stretch by Parameter binding is a <strong>drag handle</strong> on the placed cell, inside the parameter's range.</li>
+<li><strong>Update Schematic from Layout</strong> links a designed cell placed in the layout to a schematic instance, as it links a kit
+part.</li>
+<li><strong>LVS</strong> knows the placed cell by its generator, <code>cpcell:&lt;cell name&gt;</code>, and pairs its pins with the schematic instance's
+pins by port number.</li>
+<li><strong>EM</strong> solves the placed cell's layout as copper (<code>EmCopper</code>), so a bench placing it can be simulated by EM of its own
+layout and <a href="em-cells.html#optimise">optimised</a> with a placement's own value as the variable (<code>tune X1.Lpad</code>): each
+point's layout draws <code>X1</code> at that value.</li>
+</ul>
+<p>A drawn shape with <code>Model = &quot;open&quot;</code> is an open end to the circuit model, so its size has no effect there: in the
+example, <code>X1</code>'s S21 is the same at every <code>Lpad</code>, while <code>Lstub</code> moves it. <code>em=correct</code> corrects the circuit model by EM but
+searches on the circuit model, so it cannot move a variable that only changes such a shape: it stops at the start, saying
+the next point is the geometry it has already solved. Optimise such a variable with <code>em=direct</code>, which searches on EM
+itself. On the example's bench (Planar, 2,700 unknowns, 6-8 GHz at 3 points), <code>em=correct</code> stopped after one solve with
+<code>X1.Lpad</code> at 200 µm; <code>em=direct</code> with the <code>pattern</code> algorithm and a budget of 8 solves moved it to 600 µm in about nine
+minutes, the worst |S11| from −0.22 dB to −0.13 dB.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/bench-layout.png" alt="The Bench layout: two PadTee cells joined by a 50 ohm line between two ports, the first with a 200 micrometre pad, the second with a 400 micrometre pad." style="width:100%;height:auto">
+<figcaption>The example's <b>Bench</b> after <b>Update Layout from Schematic</b>: <code>X1</code> with
+<code>Lpad = 200 um</code> and <code>X2</code> with <code>Lpad = 400 um</code>, each its own copper.</figcaption>
+</figure>
+<h2 id="headless">Running it headless</h2>
+<p><code>circuitrf pcell</code> is the designer with no window. Each noun calls the function the window's command calls, so both write
+the same files (see the <a href="cli.html#pcell">command line</a>):</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf pcell new . PadTee
+<span class="prompt">$ </span>circuitrf pcell check PadTee
+<span class="prompt">$ </span>circuitrf pcell render PadTee -o padtee.svg --set Lpad=400um
+<span class="prompt">$ </span>circuitrf pcell export PadTee -o PadTee.cpcell
+<span class="prompt">$ </span>circuitrf pcell import PadTee.cpcell --into ../other-workspace</code></pre>
+<p>Over MCP it is the <code>pcell</code> tool, with <code>what=new|check|render|export|import</code>.</p>
+<h2 id="examples">Examples</h2>
+<p>The <strong>PCell Designer</strong> example (File ▸ New ▸ Examples) holds <code>PadTee</code>, the cell this page uses, and five showcase
+cells. Each comes with a bench that places it and a Data Display, and its README gives the closed-form estimates and
+the numbers.</p>
+<p><strong>A 3-way Wilkinson divider</strong> (<code>Wilkinson3</code>, 2.45 GHz). A star of three resistors cannot be drawn on one layer with
+every output outside it, so the cell divides in two Wilkinson stages, each with one resistor on its own ring: an
+<a href="components.html#mwpd-unequal">MWPD</a> with <code>K</code> = 1.4142 sends a third to port 2 and two thirds to an equal MWPD, which
+halves them into ports 3 and 4. A phase line of <a href="components.html#mdly">MDLY</a>s on port 2, as long at <code>F</code> as the second
+stage, keeps the outputs in phase. Every line is stated at <code>F</code>, so changing <code>F</code> re-plans both rings and the lines. By
+circuit models:</p>
+<ul>
+<li>S21, S31 and S41 are −5.03, −5.02 and −5.02 dB, within 0.2° of each other in phase;</li>
+<li>the input match is −40 dB and every output's −30 dB or better;</li>
+<li>the isolation between outputs is −39 dB or better.</li>
+</ul>
+<figure class="figure">
+<img src="../../images/pcell-designer/wilkinson3.png" alt="The PCell Designer on the 3-way Wilkinson: two Wilkinson rings in a row, an 0603 across each ring's gap, a phase line rising past the second ring to port 2, and the circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">
+<figcaption><code>Wilkinson3</code> in the designer. The first ring <code>W1</code> divides one third to two thirds, the
+second <code>W2</code> halves the two thirds, and <code>D1</code>-<code>D3</code> carry port 2 past it. The response
+shows the three outputs near −5 dB and the input match at 2.45 GHz.</figcaption>
+</figure>
+<p><strong>A symmetric 3-way divider</strong> (<code>Wilkinson3Sym</code>, 2.45 GHz). A cross feeds three quarter-wave arms of 86.6 Ω: one
+turns up, one down, and the middle one runs on through a serpentine. Resistors only between neighbouring outputs
+cannot match every port, so a third, a 2010 between the outer outputs whose body bridges the middle output line,
+makes the three a delta of 150 Ω. The copper each resistor spans is of fixed size and the rest of every arm is one
+<code>MDLY</code> at <code>F</code>, so every loop closes at any <code>F</code>. By circuit models at 2.45 GHz:</p>
+<ul>
+<li>the three outputs are in phase, at −4.95, −4.79 and −4.95 dB;</li>
+<li>every match is −29.9 dB or better and every isolation −31 dB or better;</li>
+<li>placed at <code>Re = 86.6 Ω</code> with the bridge left off (<code>Rb = 1 GΩ</code>, the second bench), S33 and S42 rise to −15 dB.</li>
+</ul>
+<figure class="figure">
+<img src="../../images/pcell-designer/wilkinson3-sym.png" alt="The PCell Designer on the symmetric 3-way divider: a cross at the input, an arm turning up and one turning down, a serpentine middle arm, two small resistors between neighbouring outputs and a long one bridging the middle output line, and the circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">
+<figcaption><code>Wilkinson3Sym</code> in the designer. <code>R23</code> and <code>R34</code> join neighbouring outputs at
+the arm ends; <code>R24</code> joins ports 2 and 4 across the middle line <code>O3</code>. <code>Lm</code>, the
+serpentine's leg, trims the middle arm.</figcaption>
+</figure>
+<p><strong>A spurline bandstop</strong> (<code>Spurline</code>). A 50 Ω line with an L-shaped slit, drawn as one polygon with <code>Model = &quot;none&quot;</code>,
+so it is simulated by EM only. The slit's far end follows <code>Ls</code> by Stretch by Parameter, so <code>Ls</code> is a drag handle
+wherever the cell is placed. A Planar sweep in 25 MHz steps puts the notch at 5.38 GHz, against a quarter-wave
+estimate of 5.45 GHz. Two <code>em=direct</code> passes on <code>X1.Ls</code>, the second over a narrowed range, found <code>Ls = 9.21 mm</code>, which
+the bench ships with: its notch is at 4.99 GHz.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/spurline.png" alt="The PCell Designer on the spurline: a straight line with a long slit along its axis that turns out through one edge." style="width:100%;height:auto">
+<figcaption><code>Spurline</code>: one drawn polygon between two feed lines. The slit's far end is tied to
+<code>Ls</code>.</figcaption>
+</figure>
+<p><strong>A dual-mode patch bandpass</strong> (<code>DualModePatch</code>). A square patch with one corner cut, fed along two adjacent edges
+across a gap. No net joins the feeds and the patch, so they are placed by offset: the patch from the first feed's end,
+the second feed from the patch's pin. A Planar sweep shows the two modes the cut splits, at 5.10 and 5.35 GHz,
+either side of the unperturbed patch's 5.22 GHz. The feeds couple across a gap at the board's spacing rule, which
+leaves them under-coupled: S21 peaks at −7.3 dB, and <code>em=direct</code> on the gap and the cut gained only 1 dB.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/dual-mode-patch.png" alt="The PCell Designer on the dual-mode patch: a square patch with its top right corner cut, a feed along its left edge and a feed along its bottom edge." style="width:100%;height:auto">
+<figcaption><code>DualModePatch</code>. The patch and the second feed are placed by offset, the gap <code>s</code> from
+the feeds.</figcaption>
+</figure>
+<p><strong>A slotline divider</strong> (<code>Slotline</code>, 5 GHz). A slot is cut in the ground, and three microstrips cross it: the input at
+its middle and two outputs either side, each crossing a quarter-wave microstrip-to-slotline transition. One output
+crosses it the other way round, so the outputs are 180° apart. The ground is drawn copper: one <code>MSHAPE</code> on the ground
+layer, whose outline runs in to the slot along a zero-width cut, since a polygon has no hole. Planar's ground is an
+unbroken plane, so the bench solves in its 3D view, which turns the drawn ground into copper with the slot in it. An
+EMerge solve on its Standard mesh (11 points over 4-6 GHz, 42 s) gives −5.95 and −5.94 dB at 5 GHz, 179-180° apart
+across the band. Most of the loss is the slot radiating.</p>
+<figure class="figure">
+<img src="../../images/pcell-designer/slotline.png" alt="The PCell Designer on the slotline divider: three microstrips crossing a long slot in the drawn ground, the input in the middle and an output at each side." style="width:100%;height:auto">
+<figcaption><code>Slotline</code>. The slot runs across the drawn ground <code>SH1</code>; each microstrip runs on past it
+to an open end.</figcaption>
+</figure>
+
+<nav class="page-nav">
+  <a class="prev" href="pcells.html"><span class="dir">Previous</span><span class="name">PCells</span></a>
+  <a class="next" href="pdk-integration.html"><span class="dir">Next</span><span class="name">PDK Integration</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,369 @@
+<!-- Owner: PCD-6 (brief-pcd-6 §3). The PCell Designer: the cell's layout at the current values on the left (the layout
+     canvas, read-only; the gestures are the window's), the parameter table and the response on the right, the netlist
+     text below. Laid out as the Filter Designer is: panes that resize by their gaps. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.PCellDesigner"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:mi="using:Material.Icons.Avalonia"
+        x:Class="CircuitRF.Ui.Views.PCellDesigner.PCellDesignerWindow"
+        x:DataType="vm:PCellDesignerViewModel"
+        Title="{Binding Title}"
+        Width="1200" Height="820" MinWidth="900" MinHeight="600"
+        CanResize="True">
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="ClipToBounds"    Value="True"/>
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <!-- The set-operation icons: two outlined circles, the result region filled; in the button's own foreground. -->
+        <Style Selector="Panel.seticon Path">
+            <Setter Property="Width"   Value="18"/>
+            <Setter Property="Height"  Value="18"/>
+            <Setter Property="Stretch" Value="None"/>
+        </Style>
+        <Style Selector="Path.setfill">
+            <Setter Property="Fill" Value="{Binding $parent[Button].Foreground}"/>
+        </Style>
+        <Style Selector="Path.setline">
+            <Setter Property="Stroke"          Value="{Binding $parent[Button].Foreground}"/>
+            <Setter Property="StrokeThickness" Value="1.2"/>
+        </Style>
+        <Style Selector="StackPanel.bar > Button">
+            <Setter Property="Margin" Value="0,0,4,0"/>
+        </Style>
+    </Window.Styles>
+
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Classes="bar" Margin="8,6">
+            <Button Content="Save" Command="{Binding SaveCellCommand}"
+                    ToolTip.Tip="Write the schematic, the parameters, and the cell's layout planned at the defaults"/>
+            <Button Content="Undo" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}"/>
+            <Button Content="Redo" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}"/>
+            <Button Content="Run EM" Command="{Binding RunEmCommand}" IsEnabled="{Binding !Busy}"
+                    ToolTip.Tip="Save, then solve the cell's layout at the current values on EM; the result joins the response"/>
+            <Button Content="Cancel" Command="{Binding CancelWorkCommand}" IsEnabled="{Binding Busy}"/>
+            <Button Content="Optimise" Command="{Binding OptimiseCommand}"
+                    ToolTip.Tip="Save, then open the cell's schematic with the Optimizer"/>
+            <Button Content="+ Port" Command="{Binding NewPortCommand}"
+                    ToolTip.Tip="Add the next port, grounded, on the last free pin (or drop a Port from the Library on a pin)"/>
+            <ToggleButton Name="DrawToggle" Content="Draw MSHAPE" Margin="0,0,4,0" IsCheckedChanged="OnDrawToggled"
+                          ToolTip.Tip="Click the corners of a drawn shape; double-click or Enter finishes, Esc cancels. Its pin 1 joins the nearest pin when you start on one"/>
+            <ToggleButton Content="Dimensions" IsChecked="{Binding ShowDimensions}" Margin="0,0,4,0"
+                          ToolTip.Tip="Draw each parameter on the canvas as a dimension labelled with its value"/>
+            <Button Content="Polish" Command="{Binding PolishCommand}" IsVisible="{Binding IsFilterCell}" IsEnabled="{Binding !Busy}"
+                    ToolTip.Tip="Save, then correct the filter's dimensions on its circuit model until it extracts to the synthesised matrix; the defaults become the polished dimensions"/>
+            <Button Name="ExportButton" Content="Export…" Click="OnExport"
+                    ToolTip.Tip="Save, check the design, and write it as a PCell package (.cpcell)"/>
+            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis"
+                       ToolTip.Tip="{Binding Status}"/>
+        </StackPanel>
+
+        <Grid Margin="4,0,4,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" MinWidth="300"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="2*" MinWidth="320"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="3*" MinHeight="200"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*" MinHeight="100"/>
+            </Grid.RowDefinitions>
+
+            <!-- The canvas (R-pcd6-2) -->
+            <Border Classes="pane" Grid.Row="0" Grid.Column="0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                        <TextBlock Name="SelectionText" Classes="note" VerticalAlignment="Center"
+                                   Text="Shift-click MSHAPE vertices to select them."/>
+                        <ComboBox Name="StretchParameter" MinWidth="90" ItemsSource="{Binding Parameters}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PCellParameterRow">
+                                    <TextBlock Text="{Binding Name}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="axis" VerticalAlignment="Center"/>
+                        <TextBox Name="StretchAxis" Text="0" Width="50"/>
+                        <Button Content="Stretch by Parameter" Click="OnStretch"
+                                ToolTip.Tip="The selected vertices follow the parameter along the axis (degrees, the part's own frame)"/>
+                    </StackPanel>
+                    <!-- The operations (brief-pcd-14 R-pcd14-2, -4): each on the selection, one undo step. Icon-and-name buttons,
+                         the operation explained in the tooltip. -->
+                    <WrapPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                        <WrapPanel.Styles>
+                            <Style Selector="WrapPanel > :is(Control)"><Setter Property="Margin" Value="0,0,4,4"/></Style>
+                        </WrapPanel.Styles>
+                        <Button Command="{Binding MergeCommand}" ToolTip.Tip="Merge — the first selected joined with the rest" Padding="6,3">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Union">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Merge" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding SubtractCommand}" ToolTip.Tip="Subtract — the first selected minus the rest" Padding="6,3">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Exclude">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Subtract" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding IntersectCommand}" ToolTip.Tip="Intersect — the first selected inside the rest" Padding="6,3">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Intersect">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Intersect" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding ExclusiveCommand}" ToolTip.Tip="Exclusive — where exactly one of the first and the rest is" Padding="6,3">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Panel Classes="seticon" Width="18" Height="18">
+                                    <Path Classes="setfill"><Path.Data><CombinedGeometry GeometryCombineMode="Xor">
+                                        <CombinedGeometry.Geometry1><EllipseGeometry Center="6.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry1>
+                                        <CombinedGeometry.Geometry2><EllipseGeometry Center="11.5,9" RadiusX="5" RadiusY="5"/></CombinedGeometry.Geometry2>
+                                    </CombinedGeometry></Path.Data></Path>
+                                    <Path Classes="setline" Data="M1.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0 M6.5,9 a5,5 0 1 0 10,0 a5,5 0 1 0 -10,0"/>
+                                </Panel>
+                                <TextBlock Text="Exclusive" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding GrowCommand}" ToolTip.Tip="Grow — the selection grown by the amount (negative shrinks), onto the layer named or its own" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="ArrowExpandAll" Width="18" Height="18"/>
+                                    <TextBlock Text="Grow" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding GrowAmount}" Width="70" ToolTip.Tip="Grow amount, an expression"/>
+                            <TextBox Text="{Binding GrowOnto}" Width="70" Watermark="onto" ToolTip.Tip="The layer the grown copper goes to; empty is its own"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding RepeatCommand}" ToolTip.Tip="Repeat — copies of the selection in rows and columns at the pitches" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="ViewGridOutline" Width="18" Height="18"/>
+                                    <TextBlock Text="Repeat" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding RepeatRows}" Width="40" ToolTip.Tip="Rows"/>
+                            <TextBox Text="{Binding RepeatColumns}" Width="40" ToolTip.Tip="Columns"/>
+                            <TextBox Text="{Binding RepeatPitchX}" Width="60" ToolTip.Tip="Pitch X"/>
+                            <TextBox Text="{Binding RepeatPitchY}" Width="60" ToolTip.Tip="Pitch Y"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding FilletCommand}" ToolTip.Tip="Fillet — the selection's corners rounded by the radius, outer and inner" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="RoundedCorner" Width="18" Height="18"/>
+                                    <TextBlock Text="Fillet" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding FilletRadius}" Width="70" ToolTip.Tip="Fillet radius, an expression"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Command="{Binding ChamferCommand}" ToolTip.Tip="Chamfer — the selection's corners cut straight, the size along each edge" Padding="6,3">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Panel Classes="seticon" Width="18" Height="18">
+                                        <Path Classes="setline" Data="M3,16 L3,3 L11,3 L16,8 L16,16"/>
+                                    </Panel>
+                                    <TextBlock Text="Chamfer" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBox Text="{Binding ChamferSize}" Width="70" ToolTip.Tip="Chamfer size along each edge, an expression"/>
+                        </StackPanel>
+                        <Button Command="{Binding MakeToolOfSelectionCommand}" ToolTip.Tip="Make tool — the selected MSHAPE becomes a cutter: an operand, never copper" Padding="6,3">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="ContentCut" Width="18" Height="18"/>
+                                <TextBlock Text="Make tool" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
+                    <!-- The operands (brief-pcd-14 R-pcd14-1): the selection, and a layer to add to it. -->
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                        <TextBlock Text="Operands:" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SelectionText}" VerticalAlignment="Center" MinWidth="120"/>
+                        <ComboBox Name="LayerPicker" MinWidth="110" ItemsSource="{Binding LayerNames}"
+                                  ToolTip.Tip="A layer to add as an operand"/>
+                        <Button Click="OnAddLayer" ToolTip.Tip="Add layer — the layer picked joins the operands" Padding="6,3">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="LayersPlus" Width="18" Height="18"/>
+                                <TextBlock Text="Add layer" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Bottom" Classes="note" Text="{Binding LayoutNote}"/>
+                    <TextBlock DockPanel.Dock="Top" Classes="note"
+                               Text="Drop a Library part on a pin (a tee on a joint) or anywhere (placed by an offset); drag an offset part by its pin; drag an MSHAPE vertex."/>
+                    <ctl:LayoutCanvas Name="DesignCanvas" ReadOnly="True" ClipToBounds="True"/>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Width="4" Background="Transparent"
+                          ResizeDirection="Columns"/>
+
+            <!-- Parameters (R-pcd6-3) over the response (R-pcd6-5) -->
+            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*,Auto">
+                <Border Classes="pane" Grid.Row="0">
+                    <StackPanel>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="+" Command="{Binding AddParameterCommand}"
+                                    ToolTip.Tip="Add a parameter"/>
+                            <TextBlock Classes="panelhdr" Text="Parameters"/>
+                        </DockPanel>
+                        <Grid ColumnDefinitions="80,70,45,60,60,*,70,24">
+                            <TextBlock Grid.Column="0" Classes="note" Text="Name"/>
+                            <TextBlock Grid.Column="1" Classes="note" Text="Default"/>
+                            <TextBlock Grid.Column="2" Classes="note" Text="Unit"/>
+                            <TextBlock Grid.Column="3" Classes="note" Text="Minimum"/>
+                            <TextBlock Grid.Column="4" Classes="note" Text="Maximum"/>
+                            <TextBlock Grid.Column="5" Classes="note" Text="Description"/>
+                            <TextBlock Grid.Column="6" Classes="note" Text="Value"
+                                       ToolTip.Tip="What the canvas and the response are drawn at; not saved"/>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Parameters}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PCellParameterRow">
+                                    <Grid ColumnDefinitions="80,70,45,60,60,*,70,24">
+                                        <TextBox Grid.Column="0" Text="{Binding Name}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Default}"/>
+                                        <TextBox Grid.Column="2" Text="{Binding Unit}"/>
+                                        <TextBox Grid.Column="3" Text="{Binding Minimum}"/>
+                                        <TextBox Grid.Column="4" Text="{Binding Maximum}"/>
+                                        <TextBox Grid.Column="5" Text="{Binding Description}"/>
+                                        <TextBox Grid.Column="6" Text="{Binding Value}"/>
+                                        <Button Grid.Column="7" Content="−" Click="OnRemoveParameter"
+                                                ToolTip.Tip="Remove this parameter"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+                <!-- The history (brief-pcd-14 R-pcd14-3): one row per operation, edited in place. -->
+                <Border Classes="pane" Grid.Row="1" IsVisible="{Binding HasOperations}">
+                    <StackPanel>
+                        <TextBlock Classes="panelhdr" Text="Operations"/>
+                        <ScrollViewer MaxHeight="200">
+                            <ItemsControl ItemsSource="{Binding Operations}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:PCellOperationRow">
+                                        <StackPanel Margin="0,0,0,6">
+                                            <DockPanel>
+                                                <CheckBox DockPanel.Dock="Left" Content="Suppressed" IsChecked="{Binding Suppressed}" Margin="0,0,10,0" ToolTip.Tip="Kept in the history, not applied"/>
+                                                <Button DockPanel.Dock="Right" Content="✕" Click="OnOperationDelete" ToolTip.Tip="Delete"/>
+                                                <Button DockPanel.Dock="Right" Content="↓" Click="OnOperationDown" ToolTip.Tip="Later"/>
+                                                <Button DockPanel.Dock="Right" Content="↑" Click="OnOperationUp" ToolTip.Tip="Earlier"/>
+                                                <TextBlock Text="{Binding Description}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                            <TextBlock Classes="note" Text="{Binding Refusal}" IsVisible="{Binding Refused}"
+                                                       Foreground="{DynamicResource SystemErrorTextColor}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBox Text="{Binding Operands}" MinWidth="120" ToolTip.Tip="Operands: A, then | and B"/>
+                                                <TextBox Text="{Binding Amount}" Width="70" IsVisible="{Binding IsGrow}" ToolTip.Tip="Amount"/>
+                                                <TextBox Text="{Binding Amount}" Width="70" IsVisible="{Binding IsCorner}" ToolTip.Tip="Radius (Fillet) or size (Chamfer)"/>
+                                                <TextBox Text="{Binding Amount2}" Width="70" IsVisible="{Binding IsGrow}" ToolTip.Tip="Onto layer"/>
+                                                <TextBox Text="{Binding Amount}" Width="40" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Rows"/>
+                                                <TextBox Text="{Binding Amount2}" Width="40" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Columns"/>
+                                                <TextBox Text="{Binding PitchX}" Width="60" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Pitch X"/>
+                                                <TextBox Text="{Binding PitchY}" Width="60" IsVisible="{Binding IsRepeat}" ToolTip.Tip="Pitch Y"/>
+                                                <CheckBox Content="Keep model" IsChecked="{Binding KeepModel}"
+                                                          ToolTip.Tip="Accept the circuit model as an approximation: the step no longer makes the cell EM-only"/>
+                                                <Button Content="Apply" Click="OnOperationApply"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+                <!-- The selected part's placement (PCD-15): what the .csch holds and the text view does not. -->
+                <Border Classes="pane" Grid.Row="2" IsVisible="{Binding PartName, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="panelhdr" Text="{Binding PartName, StringFormat='Part {0}'}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding PartHasOffset}">
+                            <TextBlock Text="Dx" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding PartDx}" Width="80" ToolTip.Tip="Offset along the anchor pin's direction, an expression"/>
+                            <TextBlock Text="Dy" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding PartDy}" Width="80" ToolTip.Tip="Offset 90° counter-clockwise from it, an expression"/>
+                            <TextBlock Text="{Binding PartOffsetUnit}" VerticalAlignment="Center"/>
+                            <TextBlock Text="Angle" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            <TextBox Text="{Binding PartAngle}" Width="50" ToolTip.Tip="Degrees; 0 faces the anchor pin, as at a joint"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Rotation" VerticalAlignment="Center"/>
+                            <ComboBox ItemsSource="{Binding Rotations}" SelectedItem="{Binding PartRotation}" MinWidth="70"/>
+                            <CheckBox Content="Flipped" IsChecked="{Binding PartMirror}" Margin="6,0,0,0"
+                                      ToolTip.Tip="Mirrored in the schematic: which way a bend turns, which side a tee's branch leaves"/>
+                            <Button Content="Apply" Command="{Binding ApplyPartEditCommand}" Margin="6,0,0,0"
+                                    ToolTip.Tip="Write the placement into the schematic, as one undo step"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                <Border Classes="pane" Grid.Row="3">
+                    <Panel>
+                        <ctl:AspectRatioPanel IsVisible="{Binding ResponseNote, Converter={x:Static ObjectConverters.IsNull}}">
+                            <ddc:PlotControl Name="ResponsePlotControl"
+                                             Plot="{Binding Plot}"
+                                             Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                        </ctl:AspectRatioPanel>
+                        <!-- Nothing to plot (no circuit model and no EM run yet): say why, not blank axes. -->
+                        <TextBlock Text="{Binding ResponseNote}" TextWrapping="Wrap" Margin="12"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsVisible="{Binding ResponseNote, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                    </Panel>
+                </Border>
+                <!-- A cell made from filter synthesis: its metrics (brief-pcd-12), from the response or the last EM run. -->
+                <Border Classes="pane" Grid.Row="4" IsVisible="{Binding IsFilterCell}">
+                    <vm:FilterMetricsPanel Metrics="{Binding FilterMetrics}"/>
+                </Border>
+            </Grid>
+
+            <GridSplitter Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Height="4" Background="Transparent"
+                          ResizeDirection="Rows"/>
+
+            <!-- The text view (R-pcd6-4) -->
+            <Border Classes="pane" Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" VerticalAlignment="Top" Margin="6,0,0,0" Content="Apply"
+                            Command="{Binding ApplyEditCommand}"
+                            ToolTip.Tip="Merge the text into the schematic by designator, as one undo step"/>
+                    <TextBox Text="{Binding CnlText}" AcceptsReturn="True" TextWrapping="NoWrap"
+                             FontFamily="{DynamicResource IBMPlexMono}" FontSize="12"/>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

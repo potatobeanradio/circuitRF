@@ -96,6 +96,8 @@ public static class ComponentModelFactory
             "TLIN", "CLIN", "MLIN", "MCLIN", MicrostripMultiLineModel.TypeName, "BCLIN", "MBCLIN", "MBEND", "MCURVE", "MMITER", "MGAP", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             // The radial stub, one sector or a butterfly, on one terminal (MicrostripRadialStub).
             RadialStubTypeName,
+            // Drawn metal (brief-pcd-0 §4.3): its pin count is its PinX[k] rows.
+            MShapeTypeName,
             // The planned passives (docs/design/rf-passives.md): specs in, MTEE, MCURVE and MLIN sections stamped as one block.
             WilkinsonTypeName,
             BranchLineTypeName, RatRaceTypeName,
@@ -280,6 +282,10 @@ public static class ComponentModelFactory
             return CreateMicrostripTeeModel(parameters);
         if (typeName.Equals(RadialStubTypeName, StringComparison.OrdinalIgnoreCase))
             return CreateRadialStubModel(parameters);
+        if (typeName.Equals(MShapeTypeName, StringComparison.OrdinalIgnoreCase))
+            return new MShapeModel(MShapeModel.PinCountOf(parameters.Keys),
+                                   parameters.TryGetValue("Model", out var shapeModel) && shapeModel.Kind == ValueKind.String
+                                   && shapeModel.AsString().Trim().Equals("short", StringComparison.OrdinalIgnoreCase));
         if (typeName.Equals("MCROSS", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripCrossModel(parameters);
         if (typeName.Equals("MTAPER", StringComparison.OrdinalIgnoreCase))
@@ -2991,6 +2997,9 @@ public static class ComponentModelFactory
         => new(GetReal(parameters, "W", 0.0), GetReal(parameters, "S", 0.0),
                GetReal(parameters, "H", DefaultSubstrateHMeters), GetReal(parameters, "Er", DefaultSubstrateEpsR),
                MicrostripInstanceName(parameters, "MGAP"));
+
+    /// <summary>Drawn metal's engine token, its PCell generator id and its LVS kind's name (brief-pcd-0 §4.3).</summary>
+    public const string MShapeTypeName = "MSHAPE";
 
     /// <summary>The radial stub's engine token (one terminal, the shunt node).</summary>
     public const string RadialStubTypeName = "MRADIAL";

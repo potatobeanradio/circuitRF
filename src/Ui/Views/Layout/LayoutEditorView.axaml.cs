@@ -1384,6 +1384,10 @@ public partial class LayoutEditorView : UserControl
         if (Vm is { } selVm && (selVm.SelectedInstanceIndices.Count > 0 || selVm.SelectionHasLinkedPort))
             items = [.. items, new Separator(), .. BuildHandEditItems(selVm)];
 
+        // brief-pcd-6 R-pcd6-1: Edit in PCell Designer, on a selected placement of a designed cell.
+        if (BuildPCellDesignerItem() is { } designer)
+            items = [.. items, new Separator(), designer];
+
         // Trace Impedance — offered only where there is stackup-bound copper under the click; the
         // answer (or the reason there is none) goes to the Messages panel.
         if (BuildTraceImpedanceItem() is { } impedance)
@@ -1439,6 +1443,20 @@ public partial class LayoutEditorView : UserControl
             if (can) resnap.Click += (_, _) => ((LayoutDocument)DataContext!).Hierarchy!.Resnap((LayoutDocument)DataContext!, ids);
             list.Add(resnap);
             return list;
+        }
+
+        MenuItem? BuildPCellDesignerItem()
+        {
+            if (Vm is not { } vm) return null;
+            string? cell = vm.SelectedInstanceIndices.Where(i => i >= 0 && i < vm.Model.Instances.Count)
+                             .Select(i => CircuitRF.Ui.PCellDesigner.PCellDesignerViewModel.DesignedCellOf(
+                                 vm.Model.Instances[i], vm.InstanceBaseDir, vm.Technology))
+                             .FirstOrDefault(c => c is not null);
+            if (cell is null) return null;
+            var mi = new MenuItem { Header = "Edit in PCell Designer" };
+            ToolTip.SetTip(mi, "Opens the PCell Designer on this placement's designed cell.");
+            mi.Click += (_, _) => ResolveWorkspace()?.OpenPCellDesignerOn(cell);
+            return mi;
         }
 
         MenuItem BuildPopOutItem()

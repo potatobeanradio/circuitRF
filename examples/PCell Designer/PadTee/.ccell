@@ -1,0 +1,65 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "W",
+      "DefaultExpression": "1.1",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "line width",
+      "Minimum": 0.0005,
+      "Maximum": 0.002
+    },
+    {
+      "Name": "L1",
+      "DefaultExpression": "3",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "feed length to the bend",
+      "Minimum": 0.001,
+      "Maximum": 0.006
+    },
+    {
+      "Name": "Lstub",
+      "DefaultExpression": "4",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "stub length to the pad",
+      "Minimum": 0.001,
+      "Maximum": 0.008
+    },
+    {
+      "Name": "Lpad",
+      "DefaultExpression": "300",
+      "Unit": "um",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "pad length",
+      "Minimum": 0.0001,
+      "Maximum": 0.0006
+    }
+  ],
+  "PrimarySchematic": "PadTee.csch",
+  "PrimarySymbol": "PadTee.csym",
+  "PrimaryLayout": "PadTee.clay",
+  "IsTestBench": false,
+  "LayoutGenerator": "cpcell:PadTee",
+  "PCellDesign": {},
+  "EmCopper": true,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "P1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "P2",
+      "LayoutPin": "2"
+    }
+  ],
+  "NumPorts": 2
+}

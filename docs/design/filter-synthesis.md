@@ -1,6 +1,6 @@
 # circuitRF — Filter synthesis: from a specification to a placed filter
 
-**Status:** in progress · **Date:** 2026-11-16
+**Status:** in progress · **Date:** 2026-11-28
 
 A filter is asked for by its specification (`FilterSpec`: response, band, order, edges, ripple, stopband, Z0 and any
 transmission zeros) and built by a **realiser**: one family and form that turns the specification into one built-in
@@ -15,7 +15,9 @@ synthesised filter is an ordinary placed part the user can still edit by hand. R
 which it resonates with a companion, +∞ where it has none. Shunt-first, element k is a shunt C for odd k and a series L
 for even k, and a series L of finite Ωk has a C of 1/(gk·Ωk²) across it: a tank, the transmission zero at Ωk.
 Series-first is the dual, with the same numbers: a series L for odd k, and a shunt C with an L of 1/(gk·Ωk²) in series,
-a trap. `LowpassPrototype.GValues` still gives the g-values alone, for the responses that have no companions.
+a trap. `LowpassPrototype.GValues` still gives the g-values alone, for the responses that have no companions. It is
+also the one home of the handbook forms (§6e): `ButterworthG`, and `TableChebyshevG`, the 17.37 recurrence the LC Filter
+Designer and the Match Designer use.
 
 | Response | How |
 |---|---|
@@ -915,6 +917,68 @@ default is 11 points.
 - `Benchmark`: the lumped Butterworth lowpass at 1 GHz on MLAD sites (shunt C, series L, shunt C), at 300 MHz and
   1 GHz. Its ports are G1, G2-G3 and G4, and the raw N-port has five. The closed two-port passes 300 MHz, and at the
   cutoff it is within 1.5 dB of the circuit model: −4.15 dB against −3.43 dB. The run takes about 37 s.
+
+## 6e. Filters on the PCell Designer
+
+**What it does** (brief-pcd-12). A realisation becomes a designed cell (docs/design/pcell-designer.md), so a synthesised
+filter is a PCell like any other: drawn by the planner at its parameters' values, its schematic its circuit model,
+exported as a `.cpcell`. One Design function does it, `PCellFilter.Make` (`src/Design/PCellDesigner/PCellFilter.cs`),
+which the Filter Designer's **Make PCell…** and `circuitrf filter --realiser R --pcell <name>` both call.
+
+- **The cell.** `PCellDesign.Create`, then the Filter Designer's bench without its sweep and substrate
+  (`FilterSynthesisService.Circuit`, which `Cnl` now is plus its analysis line, the same bytes) merged into the new cell by
+  `CellNetlistMerge`: Ports 1 and 2, the part `F1`, a part on each site. The part states no substrate, so it takes the
+  workspace technology's, as every designed cell's parts do.
+- **The parameters** are the realisation's rows that hold one positive number with a length unit (`PCellFilter.Dimensions`):
+  MCRC's W, L1…LN, the gaps, Tap, Sa, Gap, Wc; MCLA's W[k], S[k] and L, named with the brackets dropped. The part's row
+  becomes the parameter's name; the default is the synthesised number in its unit, the range ±`FilterTuning.GeometryRange`
+  (20 %), the band §6a's tune lines already use. Counts, words, MLAD's `Sections` text, frequencies and the site parts'
+  values stay literal: they are not dimensions.
+- **Save** writes what the PCell Designer's Save writes: the parameters, `PCellDesign` (its `Sweep` the bench's 401 points,
+  and its `Filter`, below), `LayoutGenerator`, `EmCopper`, `Terminals`, `NumPorts`, a symbol from the Ports, the `.csch`,
+  and the `.clay` as `DesignedCellLayout.At` at the defaults. Then `PCellDesignCheck.Run`.
+- **The spec is kept** in `CcellPCellDesign.Filter` (`CcellFilter`: response, band, order, edges, ripple, stop, Z0, zeros,
+  realiser), additive and omitted for any other cell. `PCellFilter.Metrics(spec, s, source)` reads any two-port against it
+  through `FilterSynthesisService.Extract`, and `CircuitMetrics` runs the cell's own response (`PCellDesignResponse.Run`)
+  first. `FilterMetricsPanel` (`src/Ui/PCellDesigner/`) shows the result with the Filter Designer's own rows
+  (`FilterMetricRow.SpecRows`, `MatrixRows`, `Note`), which the Designer now builds its tables with too.
+- **Polish** (`PCellFilter.Polish`): the realisation read back from the cell at its defaults (a bound row at its
+  parameter's default, every other row the realiser set as it stands), §6c's `FilterPolish.Run` on it, the polished
+  lengths, gaps and tap written back as the defaults, and the cell saved again. Hairpins and open loops in a row, as
+  `FilterPolish.Refusal` passes.
+
+**One prototype source.** Three Chebyshev recurrences existed: `LowpassPrototype.GValues`, `FilterLadder.ChebyshevG` and
+`MatchSynthesis.RippleG`. The last two were the same text, the handbook's 17.37 for 40/ln 10, so that body moved to
+`LowpassPrototype.TableChebyshevG` and both call it; the Butterworth forms were the same arithmetic too
+(`LowpassPrototype.ButterworthG`). A test holds both against the old bodies, bit for bit, at orders 1 to 40.
+`GValues`' Chebyshev stays its own: it takes 40/ln 10 exactly (§1), squares by `Math.Pow` and forms its angle in another
+order, so one body would have moved the LC Filter Designer's values (by the constant, about 1e-5) or every realiser's (in
+the last bits).
+
+**How it lands** (`Pcd12FilterCellTests`, the Filter Designer's default specification: a 0.1 dB Chebyshev of order 3,
+2.2 to 2.6 GHz, tapped hairpins, on the `microstrip-0508` board):
+- Make PCell gives eight parameters, each ±20 %: W 1.057682 mm, Sa 2.115364 mm, S2 = S3 0.15484 mm, Tap 6.36787 mm,
+  L1 = L3 37.868106 mm, L2 38.13788 mm. `PCellDesignCheck` finds no error and no warning, planning the cell at the
+  defaults and at each of the sixteen bounds; the `.cpcell` is 2657 bytes and names one generator, MCRC. The verb makes
+  the same parameters.
+- The cell's own circuit response is the Filter Designer's bench: the same extraction to 1e-6 of f0 in the centre and
+  0.01 dB in the return loss, check for check. As realised it reads centre 2.3301 GHz, 204.9 MHz wide, worst return loss
+  7.96 dB, Qu 144: 8 of 11 checks fail, as the bench's do.
+- One polish pass on the parameters takes the worst return loss from 7.96 to 14.16 dB, moving S2, S3, the tap and the
+  three lengths (the tap 6.36787 → 7.156678 mm, L2 38.13788 → 38.814244 mm); the cell's response at its new defaults
+  reads the polished figure back.
+
+**Possible enhancements.**
+- **The site parts' values as parameters.** A lumped ladder's L and C are its design; as parameters, an MLAD cell would
+  tune from a bench. They are not dimensions, and their range wants the part's tolerance, not 20 %.
+- **MLAD's sections as parameters.** Its lengths and widths live inside the `Sections` text, which no expression reaches;
+  the part needs indexed rows first.
+- **Calibrate from EM for a designed cell.** `FilterPolish.Run` already takes an EM response; handing it the cell's own Run
+  EM would correct the cell against its layout, at one EM run a pass.
+- **The Filter Designer reopened on a designed filter cell.** The kept spec is enough to open it filled in, with the cell's
+  dimensions as the realisation, so a cell can be resynthesised for another band.
+- **A Polish button in the PCell Designer.** `PCellFilter.Polish` is the function; the designer window, which another lane
+  owns, would place it beside the metrics panel.
 
 ## 7. Possible enhancements
 

@@ -321,4 +321,25 @@ public class LayoutPortOnInstancePinTests : IDisposable
         Assert.Equal(new LayerKey(1, 0), inside!.Value.Layer);
         Assert.Equal(plane, off!.Value.Layer);
     }
+
+    [Fact]
+    public void APlaneInstanceOnAnotherLayer_OverALinesPin_DoesNotAnswerForThePortsLayer()
+    {
+        // The slotline example: the ground (an instance on another layer, drawn last so it is the topmost hit) covers
+        // the line's end. With no top-level shape there, the first instance hit used to answer even without copper on
+        // the port's layer, so the port measured the whole plane.
+        var (top, baseDir) = TopWithTaper();
+        string planeDir = CellFolder.CreateCellFolder(_root, "Plane");
+        var sub = new LayoutView { DbuPerMicron = 1000 };
+        sub.Shapes.Add(new RectShape { Layer = new LayerKey(2, 0), X1 = -10_000_000, Y1 = -20_000_000, X2 = 90_000_000, Y2 = 20_000_000 });
+        LayoutPersistence.SaveToFile(Path.Combine(CellFolder.SubFolderPath(planeDir, ViewType.Layout), "Plane.clay"), sub);
+        var ccell = CellPersistence.LoadFromFile(Path.Combine(planeDir, CellFolder.CcellFileName));
+        ccell.PrimaryLayout = "Plane.clay";
+        CellPersistence.SaveToFile(Path.Combine(planeDir, CellFolder.CcellFileName), ccell);
+        top.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(_root, planeDir), Mag = 1.0 });
+
+        var info = Assert.NotNull(LayoutConductorLookup.LookupFor(top, tech: null, baseDir)(0, 0, new LayerKey(1, 0)));
+        Assert.Equal(new LayerKey(1, 0), info.Layer);
+        Assert.NotNull(info.Pin);
+    }
 }

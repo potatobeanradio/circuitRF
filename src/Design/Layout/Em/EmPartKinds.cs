@@ -51,9 +51,13 @@ public static class EmPartKinds
         if (SchematicLayoutPlanner.HasPCellGenerator(c.Symbol, c.PortCount, out _)) return EmPartKind.Copper;
         if (c.CellRef is { Length: > 0 } cellRef)
         {
-            if (cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase)) return EmPartKind.Part;
+            // brief-pcd-1 R-pcd1-2 — a kit part or a generator cell whose .ccell says EmCopper is metal (a designed cell): its
+            // generator's output is what EM solves, so it is copper without reading its own schematic (D1).
+            if (cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase))
+                return PdkKitRegistry.Find(cellRef, CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(schematicDir))?.Ccell.EmCopper == true
+                    ? EmPartKind.Copper : EmPartKind.Part;
             // A library cell a generator draws (LayoutGenerator) is placed as that generator's cell, as a kit part is.
-            if (DrawnByGenerator(cellRef, schematicDir)) return EmPartKind.Part;
+            if (GeneratorCell(cellRef, schematicDir) is { } generated) return generated.EmCopper ? EmPartKind.Copper : EmPartKind.Part;
             cellDir = LayoutCellDir(cellRef, schematicDir);
             return cellDir is not null ? EmPartKind.Copper : EmPartKind.NoLayout;
         }
@@ -121,11 +125,22 @@ public static class EmPartKinds
     private static readonly Dictionary<string, bool> _models = new(StringComparer.Ordinal);
     private static readonly Lock _gate = new();
 
-    private static bool DrawnByGenerator(string cellRef, string? schematicDir)
+    /// <summary>Whether <paramref name="c"/> places a cell its <c>LayoutGenerator</c> draws: the planner feeds the instance's own
+    /// parameters to the generator, so they are geometry (brief-pcd-1, a designed cell's <c>X1.Lpad</c>).</summary>
+    internal static bool IsGeneratorCellInstance(EditableComponent c, string? schematicDir)
+        => c.CellRef is { Length: > 0 } cellRef && !cellRef.StartsWith("pdk://", StringComparison.OrdinalIgnoreCase)
+           && GeneratorCell(cellRef, schematicDir) is not null;
+
+    /// <summary>The <c>.ccell</c> of the cell <paramref name="cellRef"/> names when it names a <c>LayoutGenerator</c>, else null.</summary>
+    private static CircuitRF.Design.Cells.CcellFile? GeneratorCell(string cellRef, string? schematicDir)
     {
-        if (CircuitRF.Design.VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef) || schematicDir is not { Length: > 0 }) return false;
-        try { return CircuitRF.Design.Cells.CellFolder.LayoutGeneratorOf(CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir)) is not null; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return false; }
+        if (CircuitRF.Design.VendorLibraries.ModelLibrary.VendorModelRefs.IsRef(cellRef) || schematicDir is not { Length: > 0 }) return null;
+        try
+        {
+            return CircuitRF.Design.Cells.CellFolder.ReadCcell(CircuitRF.Design.Workspace.ExternalCellRef.ResolveCellDir(cellRef, schematicDir))
+                is { LayoutGenerator: { Length: > 0 } } ccell ? ccell : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
     }
 
     /// <summary>The cell folder <paramref name="cellRef"/> names when it has a layout view, else null.</summary>

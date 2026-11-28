@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — PCell Designer</title>
+<link rel="icon" href="../../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: examples/PCell Designer/README.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../../index.html"><img class="logo" src="../../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="../index.html">Examples</a>
+  <div class="doc-search" data-crf-search data-root="../../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../../index.html">Docs</a> › <a href="../index.html">Examples</a> › PCell Designer</p>
+  </div>
+
+  <h1>PCell Designer</h1>
+  <p class="lede">Parameterised cells made in the PCell Designer and placed in benches: a tee whose stub ends in a drawn pad, placed twice with a drag handle on each pad, checked by LVS and exported as a PCell package; a 3-way Wilkinson divider whose isolation resistors meet on a drawn star pad; a spurline bandstop drawn as one polygon, its notch moved to 5 GHz by EM; a dual-mode square-patch bandpass placed by offsets; and a microstrip-slotline divider whose slot is cut in a drawn ground, solved in 3D.</p>
+
+<div class="callout note">
+<span class="label">Open this example</span>
+<p><strong>File ▸ New ▸ Examples ▸ PCell Designer</strong> copies this workspace to a folder you choose and opens it on this README. Every example is listed in <a href="../index.html">Example Workspaces</a>.</p>
+</div>
+<p>Parameterised cells made in the <strong>PCell Designer</strong> from the parts in the Library, placed in benches, laid out, checked
+by LVS and simulated: a pad on a tee placed twice (§1-4), and five showcase cells, a 3-way Wilkinson divider (§5), a
+spurline bandstop (§6), a dual-mode patch bandpass (§7), a slotline divider (§8) and a symmetric 3-way divider with a
+resistor delta (§9). The <strong>PCell Designer</strong> reference page describes every control.</p>
+<h2 id="the-cells">The cells</h2>
+<table>
+<thead>
+<tr>
+<th>Cell</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PadTee</strong></td>
+<td>A designed cell: Port 1 – <code>TL1</code> – bend <code>B1</code> – tee <code>T1</code> – <code>TL3</code> – Port 2 on a 50 Ω microstrip line, the tee's branch <code>TL2</code> ending in a drawn pad <code>SH1</code> (MSHAPE), 2 mm wide. Parameters <code>W</code>, <code>L1</code>, <code>Lstub</code> and <code>Lpad</code>, each with a range</td>
+</tr>
+<tr>
+<td><strong>Bench</strong></td>
+<td><code>PadTee</code> placed twice, <code>X1</code> with <code>Lpad = 200 um</code> and <code>X2</code> with <code>Lpad = 400 um</code>, joined by a 50 Ω line between two Ports, swept 1–12 GHz</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3</strong></td>
+<td>A 3-way in-phase divider for 2.45 GHz in two Wilkinson stages: an <code>MWPD</code> with <code>K</code> = 1.4142, an equal <code>MWPD</code> on its port 3 and a phase line on its port 2, every line an <code>MDLY</code> stated at F. Parameters <code>F</code> and <code>Th</code> (the phase line's straight run)</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3Bench</strong></td>
+<td><code>Wilkinson3</code> between four Ports, swept 1.5–3.5 GHz by circuit models</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3Sym</strong></td>
+<td>A symmetric 3-way divider for 2.45 GHz: a cross feeding three quarter-wave arms of 86.6 Ω, the middle one a serpentine, and a delta of resistors across the outputs, two 0603s between neighbours and a 2010 bridging the middle output line. Parameters <code>F</code>, <code>Re</code> (the end resistors), <code>Rb</code> (the bridge) and <code>Lm</code> (the serpentine's leg)</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3SymBench</strong></td>
+<td><code>Wilkinson3Sym</code> between four Ports, swept 1.5–3.5 GHz by circuit models</td>
+</tr>
+<tr>
+<td><strong>Wilkinson3Sym2RBench</strong></td>
+<td>The same, placed at <code>Re = 86.6 Ω</code> and <code>Rb = 1 GΩ</code>, which stands for the bridge left off</td>
+</tr>
+<tr>
+<td><strong>Spurline</strong></td>
+<td>A 50 Ω line with an L-shaped slit, one drawn polygon, EM only (<code>Model=&quot;none&quot;</code>). Parameters <code>Ls</code> (slit length, a drag handle), <code>g</code> (slit gap) and <code>W</code></td>
+</tr>
+<tr>
+<td><strong>SpurlineBench</strong></td>
+<td><code>Spurline</code> between two Ports, placed at <code>Ls = 9.21 mm</code>, swept 4.6–5.6 GHz in 25 MHz steps by Planar EM, with the optimisation that moved its notch to 5 GHz</td>
+</tr>
+<tr>
+<td><strong>DualModePatch</strong></td>
+<td>A square patch with one corner cut, fed along two adjacent edges across a gap, EM only. Parameters <code>a</code>, <code>d</code> (corner cut) and <code>s</code> (gap)</td>
+</tr>
+<tr>
+<td><strong>PatchBench</strong></td>
+<td><code>DualModePatch</code> between two Ports, swept 4.9–5.5 GHz by Planar EM</td>
+</tr>
+<tr>
+<td><strong>Slotline</strong></td>
+<td>An out-of-phase microstrip-slotline divider: a slot in a drawn ground (one <code>MSHAPE</code> on Bottom Copper), crossed by an input and two output microstrips, EM only. Parameters <code>Lsl</code>, <code>Ws</code>, <code>Lss</code> and <code>Lms</code></td>
+</tr>
+<tr>
+<td><strong>SlotlineBench</strong></td>
+<td><code>Slotline</code> between three Ports, solved at 11 points over 4–6 GHz in its 3D view (EMerge, Standard mesh)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-designed-cell">1. The designed cell</h2>
+<p>Open <code>PadTee</code>'s schematic and choose <strong>Tools ▸ PCell Designer…</strong>. The canvas shows its layout at the values in the
+<strong>Value</strong> column. Type <code>600 um</code> as <code>Lpad</code>'s value and the pad grows; change <code>Lstub</code> and the pad moves with the stub's
+end. Nothing in the cell holds a coordinate: the lines are joined pin to pin, and the pad's far edge is tied to <code>Lpad</code>
+by <strong>Stretch by Parameter</strong>. The pad is <code>Model=&quot;open&quot;</code>, so in a circuit simulation it is an open end.</p>
+<h2 id="the-bench">2. The bench</h2>
+<p>Open <code>Bench</code> and press <strong>Simulate</strong>: <code>Bench.cdd</code> shows |S21| and |S11|. Then <strong>Update Layout from Schematic</strong> draws the
+two placements, each at its own <code>Lpad</code>; select one in the layout and drag its <code>Lpad</code> handle. <strong>LVS</strong> compares the layout
+with the schematic and finds no error; its one warning is the ground pour under <code>TL1</code>, which no via stitches.</p>
+<h2 id="export-and-import">3. Export and import</h2>
+<p><strong>Export…</strong> in the designer writes <code>PadTee.cpcell</code>. <strong>File ▸ Import ▸ PCell Package…</strong> in another workspace on the same
+board makes <code>PadTee</code> a cell there, placed exactly as here. From the command line:</p>
+<pre><code>circuitrf pcell check PadTee
+circuitrf pcell render PadTee -o padtee.svg --set Lpad=600um
+circuitrf pcell export PadTee -o PadTee.cpcell
+</code></pre>
+<h2 id="optimising-by-em">4. Optimising by EM</h2>
+<p>With <strong>Create or update EM setup</strong> on, Update Layout from Schematic also writes the bench's Planar setup, and EM solves the
+two placed cells as copper. Set <code>SP1</code> to run by EM and tune <code>X1.Lpad</code>. The pad is open in the circuit model, so <code>Lpad</code>
+moves only the EM response: <code>em=correct</code>, which searches on the corrected circuit model, stops at its start, because an
+open pad gives the circuit model no slope. <code>em=direct</code> (pattern search) moved it from 200 µm to 600 µm, its maximum, in 8
+solves (9 min 19 s, coarse Planar).</p>
+<h2 id="a-3-way-wilkinson-divider">5. A 3-way Wilkinson divider</h2>
+<p><code>Wilkinson3</code> splits 2.45 GHz three ways, in phase. Wilkinson's own N-way divider joins N arm ends to one star of
+resistors, and for three outputs that cannot be drawn on one layer: the input, the star's centre and the board's edge
+are each joined to all three outputs, the three-by-three graph no plane drawing makes without a crossing. So the cell is
+a tree of two-way dividers, each with one resistor across its own ring's gap:</p>
+<ul>
+<li><strong>Stage 1</strong>, <code>W1</code>: an <code>MWPD</code> with <code>K = 1.4142</code> (√2), which sends a third of the power to its port 2 and two thirds to
+its port 3. Its resistor <code>R1</code> is Z0·(K + 1/K) = 106.07 Ω, the value its readout states (107 Ω is the nearest E96
+part).</li>
+<li><strong>Stage 2</strong>, <code>W2</code>: an equal <code>MWPD</code> on stage 1's port 3, behind a 20° spacer <code>DS</code> that takes its ring clear of the
+line beside it. It halves its two thirds into ports 3 and 4. <code>R2</code> is 2·Z0 = 100 Ω.</li>
+<li><strong>The phase line</strong> on stage 1's port 2: two mitred corners <code>D1</code> and <code>D2</code> that rise past <code>W2</code>'s ring and a straight run
+<code>D3</code>, as long at F as the spacer and stage 2 together, so port 2 leaves in phase with ports 3 and 4. The corners'
+rise puts port 2 level with them.</li>
+</ul>
+<p>Both resistors are 0603s on their dividers' sites (<code>Footprint=smt:0603</code>), nothing crosses anything, and the three
+outputs leave the right-hand side, 2, 3, 4 from the top. Every line is an <code>MDLY</code>, a line stated by its electrical length
+at <code>F</code>, so changing <code>F</code> re-plans both rings and every line together, and the outputs stay in phase: within 2.1° at
+2.0 and 3.0 GHz. <code>Th</code> = 49° was found in the designer's live response. <strong>Check</strong> finds no error at the defaults or at
+any parameter's minimum or maximum (<code>F</code> 1.5-3.5 GHz, <code>Th</code> 30-70°), and <strong>LVS</strong> finds none on the cell's own layout.</p>
+<p>Simulate <code>Wilkinson3Bench</code>; <code>Wilkinson3Bench.cdd</code> shows the transmission and the input match, and the isolation. At
+2.45 GHz, by circuit models:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>S21</th>
+<th>S31</th>
+<th>S41</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>magnitude</td>
+<td>−5.03 dB</td>
+<td>−5.02 dB</td>
+<td>−5.02 dB</td>
+</tr>
+<tr>
+<td>phase</td>
+<td>54.7°</td>
+<td>54.9°</td>
+<td>54.9°</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>S11</th>
+<th>S22</th>
+<th>S33, S44</th>
+<th>S32, S42</th>
+<th>S43</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−40.2 dB</td>
+<td>−35.1 dB</td>
+<td>−30.4 dB</td>
+<td>−39.1 dB</td>
+<td>−41.0 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The three outputs are −4.77 dB plus about 0.25 dB of line loss, within 0.01 dB and 0.2° of each other. Every match and every
+isolation stays below −20 dB from 2.25 to 2.85 GHz.</p>
+<h2 id="a-spurline-bandstop">6. A spurline bandstop</h2>
+<p><code>Spurline</code> is a 50 Ω line 16 mm long with an L-shaped slit. A slot <code>g</code> wide runs along the axis and turns out through
+the line's edge at its far end. That leaves a spur <code>(W − g)/2</code> wide and <code>Ls</code> long, joined to the line at one end. The
+spur and the line beside it are a coupled pair, and the line stops where the spur is a quarter wave:</p>
+<p>f0 ≈ c / (4 · Ls · √εav),   εav = (εe + εo) / 2</p>
+<p>The even- and odd-mode permittivities come from the coupled-line equations of Kirschning and Jansen
+(<a href="https://doi.org/10.1109/TMTT.1984.1132616">doi:10.1109/TMTT.1984.1132616</a>). For two 0.45 mm strips 0.2 mm apart on
+this board, εe = 2.84 and εo = 2.41, so εav = 2.62. <code>Ls = 8.5 mm</code> gives f0 ≈ 5.45 GHz, and 5 GHz needs <code>Ls</code> ≈ 9.26 mm.</p>
+<p>The slit's far end follows <code>Ls</code> by <strong>Stretch by Parameter</strong>, so <code>Ls</code> is a drag handle wherever the cell is placed. The
+cell is EM only. The sweep runs 4.6-5.6 GHz in 25 MHz steps, because the notch is only about 50 MHz wide at −20 dB and
+a coarser sweep misses its bottom. With <code>X1.Ls = 8.5 mm</code> (the cell's default) the notch is at <strong>5.38 GHz</strong>, −33.9 dB at
+the nearest point.</p>
+<p>The bench's <strong>Optimize</strong> runs <code>em=direct</code> with pattern search on <code>X1.Ls</code>, pushing S21 below −30 dB at 5 GHz:</p>
+<ul>
+<li>The first pass (12 solves, 14 min) stopped at <code>X1.Ls = 9.31 mm</code>, which puts the notch at 4.93 GHz. Its steps were
+still a quarter of the range when the budget ran out, which is coarse for a notch this sharp.</li>
+<li>A second pass with the range narrowed to 9-9.4 mm met the goal on its first new solve, at 9.2125 mm.</li>
+</ul>
+<p>The bench ships with <code>X1.Ls = 9.21 mm</code> and is laid out at that value. Simulate <code>SpurlineBench</code> (Planar, the setup in
+<code>em/</code>, about 2 minutes); <code>SpurlineBench.cdd</code> shows S21 and S11. On the shipped files the notch is at <strong>4.99 GHz</strong>, where
+S21 is −32.7 dB at 4.975 GHz and −32.3 dB at 5.000 GHz. The closed-form estimate of 9.26 mm is within 0.05 mm of the
+optimised length.</p>
+<h2 id="a-dual-mode-patch-bandpass">7. A dual-mode patch bandpass</h2>
+<p><code>DualModePatch</code> is a square patch <code>a</code> wide whose far corner is cut by <code>d</code>. Two 50 Ω feeds run along two adjacent edges,
+<code>s</code> from them. The feeds and the patch are joined by no net, so they are placed by offset: the patch from the first
+feed's open end, and the second feed from the patch's second pin. Each feed couples to one of the patch's two degenerate
+modes, and the corner cut on the diagonal between them splits the modes and couples them. The unperturbed patch
+resonates at</p>
+<p>f10 ≈ c / (2 (a + 2ΔL) √εeff),   εeff = (εr + 1)/2 + (εr − 1)/2 · (1 + 12h/a)^−½</p>
+<p>where ΔL is the open edge's extension of Hammerstad (<a href="https://doi.org/10.1109/EUMA.1975.332206">doi:10.1109/EUMA.1975.332206</a>).
+With <code>a = 15 mm</code>, εeff = 3.45 and ΔL = 0.24 mm, which gives <strong>5.22 GHz</strong>.</p>
+<p>Simulate <code>PatchBench</code> (Planar); <code>PatchBench.cdd</code> shows S21 and S11. The sweep is 25 points over 4.9-5.5 GHz and takes
+about 3 minutes. It shows the two split modes either side of 5.22 GHz:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>first pole</th>
+<th>second pole</th>
+<th>between them</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Where S11 dips</td>
+<td>5.08-5.10 GHz, −5.4 dB</td>
+<td>5.35 GHz, −3.2 dB</td>
+<td></td>
+</tr>
+<tr>
+<td>S21</td>
+<td>−7.3 dB</td>
+<td>−10.7 dB</td>
+<td>−11.7 dB at 5.25 GHz</td>
+</tr>
+</tbody>
+</table>
+<p>The skirts fall to −17.5 dB at 4.9 GHz and −25 dB at 5.5 GHz.</p>
+<p><strong>The feeds are under-coupled, and no gap fixes it.</strong> The first design (<code>s = 0.2 mm</code>, <code>d = 3.5 mm</code>) peaked at −8.2 and
+−11.2 dB. <code>em=direct</code> (pattern search, 12 Planar solves, 25 min) on <code>s</code> and <code>d</code> asked for S21 above −3 dB over
+5.1-5.3 GHz. It drove <code>s</code> to its minimum, 0.16 mm, which is the board's 0.15 mm copper-spacing rule, and <code>d</code> to
+3.9 mm, the values the cell now ships with. That gained 1 dB and stopped there.</p>
+<p>Why −3 dB is out of reach: at a single pole, S21 = 2Qu / (2Qu + Qe).</p>
+<ul>
+<li>The −7.3 dB peak puts the external Q at about 2.6 times the patch's unloaded Q.</li>
+<li>−3 dB needs about 0.8 times, so the coupling would have to grow by a factor of about 1.8.</li>
+<li>An edge gap at the spacing rule cannot give that.</li>
+<li>The patch's unloaded Q is low because an open patch on a 0.508 mm board is an antenna: much of its energy radiates.</li>
+</ul>
+<p>A usable two-pole passband needs feeds that touch the patch, or an inset feed. Both are a different cell, since the
+patch and its feeds are then joined by a net.</p>
+<h2 id="a-slotline-divider">8. A slotline divider</h2>
+<p><code>Slotline</code> splits 5 GHz into two outputs 180° apart. A slot <code>Ws</code> wide is cut in the ground, and three microstrips on top
+cross it: the input at the slot's middle, and the two outputs <code>Lsl</code> either side of it. Each crossing is a
+microstrip-to-slotline transition:</p>
+<ul>
+<li>the microstrip runs on <code>Lms</code> past the slot to an open end;</li>
+<li>the slot runs on <code>Lss</code> past each output crossing to its shorted end.</li>
+</ul>
+<p>Each is a quarter wave, so the open microstrip end becomes a short at the slot and the shorted slot end becomes an open
+at the microstrip. The slot carries the same voltage both ways from the input, so two outputs that cross it alike are
+in phase. Output 3 crosses it the other way round, with its port on the input's side and its stub on the other, which
+puts the two outputs 180° apart.</p>
+<p>With the quasi-static estimate εs ≈ (εr + 1)/2 = 2.33 for a slot on this thin substrate, λs/4 at 5 GHz is
+c / (4 · 5 GHz · √2.33) ≈ 9.8 mm (<code>Lss</code>). The 50 Ω line's εeff = 2.86 gives λm/4 ≈ 8.9 mm (<code>Lms</code>).</p>
+<p>The ground is one drawn shape on net 0, <code>SH1</code>. A polygon has no hole, so its outline runs in to the slot along a
+zero-width cut below the input crossing, around the slot, and back out the same way. The copper is then one piece with
+the slot inside it, and LVS reads its one pin on that piece. <code>SH1</code> and both output lines are placed by offset from the
+input's crossing: the outputs at <code>Dy = ±Lsl</code>, and output 3 turned by 180°. The bench's ground pour stops at the cell's
+drawn ground, so the slot stays open. Planar cannot solve it, because Planar's ground is an unbroken plane. The bench's EM view is its 3D view
+(<code>3d/SlotlineBench.c3d</code>, made by <strong>New 3D View from Layout</strong>), which turns the drawn ground into copper with the slot cut
+in it, with an EMerge setup.</p>
+<p>Simulate <code>SlotlineBench</code>; <code>SlotlineBench.cdd</code> shows the split and the two outputs' phases. The solve uses EMerge's
+Standard mesh (36,000 tetrahedra, 5.8 GB). It runs an adaptive sweep of 11 points over 4-6 GHz, fitted from 10 full
+solves, in 42 s:</p>
+<table>
+<thead>
+<tr>
+<th>f</th>
+<th>S11</th>
+<th>S21</th>
+<th>S31</th>
+<th>∠S21 − ∠S31</th>
+<th>S32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4.0 GHz</td>
+<td>−13.2 dB</td>
+<td>−7.06 dB</td>
+<td>−7.01 dB</td>
+<td>179°</td>
+<td>−10.4 dB</td>
+</tr>
+<tr>
+<td>4.6 GHz</td>
+<td>−10.4 dB</td>
+<td>−6.23 dB</td>
+<td>−6.19 dB</td>
+<td>180°</td>
+<td>−11.7 dB</td>
+</tr>
+<tr>
+<td>5.0 GHz</td>
+<td>−9.8 dB</td>
+<td>−5.95 dB</td>
+<td>−5.94 dB</td>
+<td>180°</td>
+<td>−11.8 dB</td>
+</tr>
+<tr>
+<td>5.4 GHz</td>
+<td>−10.3 dB</td>
+<td>−5.72 dB</td>
+<td>−5.73 dB</td>
+<td>180°</td>
+<td>−11.3 dB</td>
+</tr>
+<tr>
+<td>6.0 GHz</td>
+<td>−12.3 dB</td>
+<td>−5.43 dB</td>
+<td>−5.44 dB</td>
+<td>180°</td>
+<td>−9.9 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The split is even to 0.05 dB and the outputs are 179-180° apart across the band. The loss is the board's, and it is
+mostly radiation:</p>
+<ul>
+<li>At 5 GHz, |S11|² + |S21|² + |S31|² = 0.61, so 39 % of the input power does not come back out of the ports.</li>
+<li>The dielectric (tanδ = 0.0037) and the copper along the 30-40 mm a wave travels account for about 0.3 dB, or 7 % of
+it.</li>
+<li>The rest, about 32 %, leaves through the slot. A slot in a ground plane is a magnetic dipole, and on a 0.508 mm board
+with εr = 3.66 little of its field is held in the substrate, so it radiates into the open box on both sides of the
+board.</li>
+</ul>
+<p>The outputs are also poorly matched (S22 ≈ −5 dB): a lossless three-port cannot be matched at every port, and this one
+has no isolation network. The transitions are centred above 5 GHz (S21 is still rising at 6 GHz), and longer <code>Lss</code> and
+<code>Lms</code> move the centre down.</p>
+<h2 id="a-symmetric-3-way-divider">9. A symmetric 3-way divider</h2>
+<p><code>Wilkinson3Sym</code> splits 2.45 GHz three ways from a cross <code>X1</code>, mirror-symmetric about the input's axis. One arm turns
+up and back to the right, one turns down, and the middle one runs straight on through a serpentine. Each arm is a
+quarter wave of √3·Z0 = 86.6 Ω, and the outputs leave the right-hand side 3.5 mm apart, 2, 3, 4 from the top.</p>
+<p><strong>Two resistors between neighbours are not enough.</strong> With only <code>R23</code> (ports 2-3) and <code>R34</code> (ports 3-4), two odd
+excitations of the outputs need different values:</p>
+<ul>
+<li>ports 2 and 4 in anti-phase make port 3 a virtual ground, so each outer port sees its end resistor alone, which must
+be Z0;</li>
+<li>port 3 against ports 2 and 4 together puts three times the port voltage across each end resistor, which must then be
+3·Z0.</li>
+</ul>
+<p>The best single value, √3·Z0 = 86.6 Ω, leaves S33 and S42 near −15 dB.</p>
+<p><strong>The bridge.</strong> A third resistor between ports 2 and 4 makes the three a delta, and three resistors of 3·Z0 = 150 Ω
+match and isolate every port at f0. It has to cross the middle output line. <code>R24</code> is a 2010 whose pads sit on the
+branches of the tees <code>T2B</code> and <code>T4B</code>, 5.9 mm apart outside, and whose body spans the middle line <code>O3</code>; nothing else
+crosses. <code>R23</code> and <code>R34</code> are 0603s on the branches of <code>T2</code>, <code>T4</code> and the cross <code>X3</code>, which sit right at the arm ends.
+The bridge is 2.05 mm (about 10° of 50 Ω line) further on, and that offset is what S22 and S42 keep of the mismatch.</p>
+<p><strong>Every loop closes at every F.</strong> Each resistor closes a loop, and a loop in the layout closes only where its lengths
+agree exactly. So everything a resistor spans is copper of fixed size:</p>
+<ul>
+<li>the outer arms' risers <code>V2</code>, <code>V4</code> and bends;</li>
+<li>the serpentine <code>S1</code>-<code>S6</code>, as wide as an outer arm's bend and its run <code>E2</code> together.</li>
+</ul>
+<p>The rest of each arm is one <code>MDLY</code> stated at <code>F</code>, the same for all three: the quarter wave less the fixed copper's
+share, 38° at 2.45 GHz, scaled with <code>F</code> (<code>Theta=(90-38*F/2.45e9)*pi/180</code>, in radians). So a change of <code>F</code> moves no
+joint. <code>Lm</code>, the serpentine's leg, trims the middle arm against the outer two; 0.9 mm was found in the designer's live
+response, where the outputs are in phase and S33 is lowest. Placed at <code>F</code> = 2.0 or 3.0 GHz, the cell is matched to
+−21 dB or better at its own <code>F</code>, every isolation is below −22 dB there, and the outputs are within 0.1°. <strong>Check</strong>
+finds no error at the defaults or at any parameter's minimum or maximum (<code>F</code> 1.5-3.5 GHz, <code>Re</code> 50-200 Ω, <code>Rb</code>
+50 Ω-1 GΩ, <code>Lm</code> 0.6-1.4 mm), and <strong>LVS</strong> finds none on the cell's own layout.</p>
+<p>Simulate <code>Wilkinson3SymBench</code> and <code>Wilkinson3Sym2RBench</code>; each <code>.cdd</code> shows the transmission, the match and, on its own
+plot, the isolation between outputs. <code>Wilkinson3Sym2RBench</code> is the same cell at <code>Re = 86.6 Ω</code> and <code>Rb = 1 GΩ</code>, which
+stands for the bridge left off. At 2.45 GHz, by circuit models, with the two-stage <code>Wilkinson3</code> (§5) for comparison:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>S11</th>
+<th>S21</th>
+<th>S31</th>
+<th>S41</th>
+<th>S22</th>
+<th>S33</th>
+<th>S44</th>
+<th>S32</th>
+<th>S42</th>
+<th>S43</th>
+<th>isolation below −20 dB</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Wilkinson3</code>, two stages</td>
+<td>−40.2</td>
+<td>−5.03 dB, 54.7°</td>
+<td>−5.02 dB, 54.9°</td>
+<td>−5.02 dB, 54.9°</td>
+<td>−35.1</td>
+<td>−30.4</td>
+<td>−30.4</td>
+<td>−39.1</td>
+<td>−39.1</td>
+<td>−41.0</td>
+<td>2.13-2.89 GHz</td>
+</tr>
+<tr>
+<td><code>Wilkinson3Sym</code>, with the bridge</td>
+<td>−31.6</td>
+<td>−4.95 dB, −117.0°</td>
+<td>−4.79 dB, −117.0°</td>
+<td>−4.95 dB, −117.0°</td>
+<td>−29.9</td>
+<td>−38.2</td>
+<td>−29.9</td>
+<td>−38.0</td>
+<td>−31.1</td>
+<td>−38.0</td>
+<td>1.96-2.83 GHz</td>
+</tr>
+<tr>
+<td><code>Wilkinson3Sym</code>, two end resistors</td>
+<td>−31.6</td>
+<td>−4.93 dB, −117.0°</td>
+<td>−4.82 dB, −117.0°</td>
+<td>−4.93 dB, −117.0°</td>
+<td>−21.0</td>
+<td>−14.7</td>
+<td>−21.0</td>
+<td>−21.5</td>
+<td>−15.0</td>
+<td>−21.5</td>
+<td>none</td>
+</tr>
+</tbody>
+</table>
+<p>Matches and isolations are in dB. With the bridge, every isolation is below −31 dB at 2.45 GHz: S42's null is at
+2.31 GHz and S32's at 2.51 GHz. Without it, S42 stays between −12.5 and −15.1 dB across the whole sweep, so no band
+is isolated; S32 and S43 alone pass −20 dB from 2.23 to 2.77 GHz. The middle output takes 0.16 dB more than the outer
+two. The outputs leave in phase in both cases: driven from port 1, the outputs are at nearly one voltage, so the
+resistors carry almost no current.</p>
+<p>No results ship with this example.</p>
+
+</main>
+
+<footer class="doc-footer">
+  <img src="../../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../../index.html">Documentation home</a>
+</footer>
+
+<script src="../../assets/js/search-index.js" defer></script>
+<script src="../../assets/js/docs-search.js" defer></script>
+</body>
+</html>

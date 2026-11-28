@@ -254,7 +254,7 @@ public class LibraryCatalogTests
         // butterfly; MCLINN, N coupled microstrip lines; MCRC, every coupled-resonator filter;
         // MLAD, the ladder of lines, gaps, tapers and stubs; MSPS, the Schiffman phase shifter;
         // MDLY, the delay line, straight, cornered or meandered; MCLA, the coupled array;
-        // and MRPAD, the resistive attenuator and splitter.
+        // MRPAD, the resistive attenuator and splitter; and MSHAPE, drawn metal (brief-pcd-3).
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind).ToList();
         Assert.Contains(SymbolKind.Mlin, kinds);
         Assert.Contains(SymbolKind.MBend, kinds);
@@ -288,8 +288,9 @@ public class LibraryCatalogTests
         Assert.Contains(SymbolKind.Mdly, kinds);
         Assert.Contains(SymbolKind.Mcla, kinds);
         Assert.Contains(SymbolKind.Mrpad, kinds);
+        Assert.Contains(SymbolKind.MShape, kinds);
         Assert.DoesNotContain(SymbolKind.BCLine, kinds);
-        Assert.Equal(32, kinds.Count);
+        Assert.Equal(33, kinds.Count);
     }
 
     [Fact]

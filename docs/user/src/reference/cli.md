@@ -140,7 +140,7 @@ convention behind both.</p>
 | `model new`, `import`, `deembed`, `fit`, `check-charge`, `explain`, `export`, `validate`, `report` | a `.cmc` | The [Model Composer](#model)'s steps — the same functions its window calls | The `.cmc`, its cache, a `.cmodel` or a cell, a report folder — as the noun says |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `chain` | `.cchain` | The same budget the [RF Chain Budget](chain-budget.html) window recomputes on every edit, and its Transfer to Schematic | The cascade to stdout; `-o .npy/.mat/.txt` for the budget as a DataSet; `--to-schematic` writes the test benches (and an array's Steering and Combiners benches) and their displays |
-| `filter` | **nothing** — a specification in flags | The [Filter Designer](filter-designer.html)'s realisers, and one of them | Each realiser and whether it can build the filter, to stdout; with `--realiser`, the test bench as a `.cnl` (`-o`), a `.csch` with `--to-schematic`, and a Planar EM `.em.s2p` with `--em` |
+| `filter` | **nothing** — a specification in flags | The [Filter Designer](filter-designer.html)'s realisers, and one of them | Each realiser and whether it can build the filter, to stdout; with `--realiser`, the test bench as a `.cnl` (`-o`), a `.csch` with `--to-schematic`, a Planar EM `.em.s2p` with `--em`, and a designed cell with `--pcell` |
 | `filter lc` | a specification on the command line | The same ladder the LC Filter Designer draws | The element table to stdout; `-o` a `.cnl` of the ladder |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `snp` | a Touchstone `.sNp` | The same reading and plots the [S-Parameter Viewer](sparameter-viewer.html) shows | What the file states, to stdout; `-o .svg/.pdf/.png` for the four plots, `-o .cdd` for a Data Display of them |
@@ -149,6 +149,7 @@ convention behind both.</p>
 | `impedance` | a `.clay` or a cell folder | The same analysis the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis) runs | The per-trace report to stdout; `-o report.pdf` |
 | `review` | a `.clay`, a cell folder, or a workspace with `--cell` | The [Layout Review](layout-editor.html#layout-review)'s built-in checks | **Nothing** — the findings, grouped per check and layer, to stdout; `-o` writes the review as a PDF |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
+| `pcell new`, `check`, `render`, `export`, `import` | a workspace and a name, a designed cell, or a `.cpcell` | The [PCell Designer](pcell-designer.html)'s commands — the same functions its window calls | A designed cell, a check report, a picture of the cell at values, or a PCell package — as the noun says |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
 | `import part` | a component file or folder | The same code **Import Component** runs | A cell folder holding the land patterns and the symbol |
@@ -1647,7 +1648,7 @@ transferred), **1** on a refusal.
 ## `filter` — a filter from its specification {#filter}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --band &lt;b&gt; --order &lt;n&gt; --f1 &lt;f&gt; [--f2 &lt;f&gt;] [--response butterworth|chebyshev] [--ripple dB] [--stop dB] [--z0 Ω] [--zeros f,f]
-                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; -o &lt;file.cnl&gt; [--to-schematic] [--em]] [--points n]
+                 [--tech &lt;id|.ctech|folder&gt;] [--signal &lt;layer&gt;] [--ground &lt;layer&gt;] [--realiser &lt;name&gt; [-o &lt;file.cnl&gt; [--to-schematic] [--em]] [--pcell &lt;name|path&gt;]] [--points n]
 <span class="prompt">$ </span>circuitrf filter --extract &lt;file.s2p&gt; --band bandpass --order &lt;n&gt; --f1 &lt;f&gt; --f2 &lt;f&gt; [--response …] [--ripple dB] [--z0 Ω] [--zeros f,f]</code></pre>
 
 `filter` is the [Filter Designer](filter-designer.html) with no window. It takes the specification as flags: the band
@@ -1671,6 +1672,13 @@ the layers; the technology's own defaults apply otherwise.
 The bench runs anywhere: `circuitrf sparam` on it gives the realised response. `--to-schematic` also draws it as a `.csch`
 beside it, through the same path as `netlist --to-schematic`. A realiser that cannot build the filter is a
 `filter.realiser.refused` error with its own reason.
+
+**With `--pcell`** it makes the realisation a [designed cell](pcell-designer.html), as the window's
+[Make PCell…](filter-designer.html#make-pcell) does: the part, its site parts and two Ports, each synthesised length, gap and
+width a parameter with a ±20 % range, the specification kept for its metrics. A bare name goes into the `--workspace` root
+(else the current folder), a path into its own folder; either must be in a workspace, else `filter.pcell.no-workspace`.
+`-o` is then optional. It prints the cell and its parameters and forwards the design check's `pcell.*` findings; a
+refusal (a name taken, a bad name) is `filter.pcell.refused`, and a check error exits **1**.
 
 **With `--em`** it also solves the realised part on Planar MoM, as its layout draws it, on a coarse mesh. Ports 1 and 2
 are on the part's pins 1 and 2, and each site gets a port of its own, closed with the site's value. The sweep is
@@ -2130,6 +2138,33 @@ references, layers with no mapping in the target format. stdout carries only the
 per line, so a script can consume them directly:
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o fab/ --to gerber 2&gt; convert.log | zip -j fab.zip -@</code></pre>
+
+## `pcell` — the PCell Designer, headless {#pcell}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf pcell render PadTee -o padtee.svg --set Lpad=400um</code></pre>
+
+`pcell` is the [PCell Designer](pcell-designer.html) with no window. Each noun does what the window's own command does, so the
+two write the same files.
+
+| Command | What it does |
+|---|---|
+| `pcell new <workspace> <name>` | Makes a designed cell: a schematic, a symbol, and a `.ccell` that names its generator `cpcell:<name>`. Prints the paths it made. |
+| `pcell check <cell> [--severity warning\|error]` | Runs the design check. Each finding is printed as `check` prints one, with a summary line. |
+| `pcell render <cell> -o <out.svg\|.pdf\|.png> [--set name=value]...` | Draws the cell's layout at those values. Each value is a number with its unit (`Lpad=400um`). Parameters you leave out stay at their defaults. Every option `render` takes for a layout also works here (`--window`, `--size`, `--layers`, `--theme`, ...). Nothing is written except the picture. |
+| `pcell export <cell> -o <file.cpcell>` | Writes the PCell package. The check runs first, and an error stops the export. |
+| `pcell import <file.cpcell> --into <workspace-or-library-folder>` | Unpacks a package as a cell. Importing the same package again is reported as already imported. A different package with the same name is refused; nothing is overwritten. |
+
+`check`, `render` and `export` take a designed cell only. For any other cell, use `circuitrf render` and
+`circuitrf check`.
+
+Exit codes:
+
+- 0: done.
+- 1: refused, or an argument does not parse. For `check`, 1 also means an error was found, or a warning under
+  `--severity warning`.
+- 130: `render` was cancelled.
+
+In an MCP client this is the `pcell` tool, with `what=new|check|render|export|import`.
 
 ## `new` — a workspace or a cell {#new}
 

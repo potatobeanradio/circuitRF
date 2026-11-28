@@ -2851,7 +2851,9 @@ public static class NetExtractor
     {
         scope.InProgress.Add(cellKey);
         var (subInstances, subPorts, subVars, subMeas) = ExtractModel(res.Schematic, cells, lib, imports, scope, conflicts);
-        if (subPorts.Count == 0 && EmCellOf(res) is not null)
+        // brief-pcd-5: a cell its generator draws (a designed cell, imported with no layout or EM setup) takes its Ports as
+        // its pins too: the generator's pins are numbered by them.
+        if (subPorts.Count == 0 && (EmCellOf(res) is not null || CellFolder.LayoutGeneratorOf(res.CellKey) is not null))
             (subInstances, subPorts) = PortsAsPins(subInstances);
         if (subMeas.Count > 0)
             conflicts.Add($"Cell '{cellName}': MEAS components are ignored inside a cell; measurements attach to the top testbench only.");

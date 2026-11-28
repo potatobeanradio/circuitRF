@@ -256,6 +256,11 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? EmSetupOnUpdateLayout { get; set; }
 
+    // brief-pcd-10 R-pcd10-3: whether the PCell Designer draws its parameters as dimensions on the canvas. Null means ON.
+    [JsonPropertyName("pcell_designer_dimensions")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PCellDesignerDimensions { get; set; }
+
     // R-rf3-7. Whether importing artwork turns a PAINTED pour — a copper fill expressed as thousands
     // of abutting scanline strokes — back into the region it paints. Null means the default, which is
     // ON: the region is the shape the renderer, the mesher, the DRC engine and every writer want, and

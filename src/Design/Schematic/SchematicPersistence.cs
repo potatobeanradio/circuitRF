@@ -62,6 +62,9 @@ public sealed class CschFile
     /// <summary>The provenance block of a schematic created from artwork (R-as6-5); absent otherwise.</summary>
     public ArtworkProvenance? ArtworkSource { get; set; }
 
+    /// <summary>brief-pcd-13 D1: a designed cell's operation history; omitted when it has none.</summary>
+    public List<CircuitRF.Design.PCellDesigner.Operations.PCellOperation>? PCellOperations { get; set; }
+
     /// <summary>The provenance block of a schematic created from a picture (brief-img-2 R-im2-5); absent otherwise.</summary>
     public Imaging.ImageProvenance? ImageSource { get; set; }
 
@@ -211,6 +214,12 @@ public sealed class CschComponent
 
     /// <summary>What a line-type swap set aside, name → [expression, unit] (AS-11); absent when empty.</summary>
     public SortedDictionary<string, string[]>? SwapRemembered { get; set; }
+
+    /// <summary>brief-pcd-0 §4.2: a designed cell's offset placement; absent when null.</summary>
+    public OffsetPlacement? Offset { get; set; }
+
+    /// <summary>brief-pcd-0 §4.3: an MSHAPE's stretch bindings; absent when null or empty.</summary>
+    public List<StretchBinding>? Stretch { get; set; }
 }
 
 public sealed class CschParameter
@@ -643,6 +652,8 @@ public static class SchematicPersistence
             if (c.SwapRemembered.Count > 0)
                 cc.SwapRemembered = new(c.SwapRemembered.ToDictionary(kv => kv.Key, kv => new[] { kv.Value.Expression, kv.Value.Unit }),
                                         StringComparer.Ordinal);
+            cc.Offset = c.Offset;
+            if (c.Stretch is { Count: > 0 } stretch) cc.Stretch = [.. stretch];
             file.Components.Add(cc);
         }
 
@@ -693,6 +704,7 @@ public static class SchematicPersistence
         file.Tuning = CschTuning.From(m.Tuning);
         file.TechRef = string.IsNullOrEmpty(m.TechRef) ? null : m.TechRef;
         file.ArtworkSource = m.ArtworkSource;
+        file.PCellOperations = m.PCellOperations is { Count: > 0 } ops ? ops : null;
         file.ImageSource = m.ImageSource;
         file.SchematicImportSource = m.SchematicImportSource;
 
@@ -744,6 +756,8 @@ public static class SchematicPersistence
             if (cc.SwapRemembered is not null)
                 foreach (var (k, v) in cc.SwapRemembered)
                     if (v is { Length: >= 1 }) c.SwapRemembered[k] = new RememberedParameter(v[0], v.Length >= 2 ? v[1] : "");
+            c.Offset = cc.Offset;
+            if (cc.Stretch is { Count: > 0 } stretch) c.Stretch = stretch;
             m.Components.Add(c);
         }
 
@@ -803,6 +817,7 @@ public static class SchematicPersistence
 
         m.TechRef = string.IsNullOrWhiteSpace(file.TechRef) ? null : file.TechRef;
         m.ArtworkSource = file.ArtworkSource;
+        m.PCellOperations = file.PCellOperations is { Count: > 0 } ops ? ops : null;
         m.ImageSource = file.ImageSource;
         m.SchematicImportSource = file.SchematicImportSource;
 

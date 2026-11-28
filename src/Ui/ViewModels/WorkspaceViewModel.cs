@@ -724,6 +724,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// replaced on every workspace-lifetime reset — see <see cref="ResetPCellGenerators"/>.
     /// </summary>
     private CircuitRF.Design.Layout.PCells.Wire.PCellWorkerResolver? _pcellResolver;
+    /// <summary>brief-pcd-0 §5 seam 12: this workspace's designed cells, registered beside its kit resolver.</summary>
+    private IDisposable? _designedPCells;
 
     /// <summary>This installation's record of which kits' scripts may run. Rebuilt with the resolver so
     /// a decision made in one workspace is visible in the next without a restart.</summary>
@@ -751,6 +753,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // generators are untouched.
         CircuitRF.Design.Layout.PCells.PCellRegistry.RemoveResolver(previous);
         try { previous?.Dispose(); } catch { /* teardown must not fail a workspace switch */ }
+        try { _designedPCells?.Dispose(); } catch { /* as above */ }
+        _designedPCells = null;
 
         _pcellTrust = null;
         KitLayoutGenerators.SetRefresher(_mountedKitRoot, null);
@@ -780,6 +784,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             _pcellResolver = resolver;
             CircuitRF.Design.Layout.PCells.PCellRegistry.AddResolver(resolver);
+            _designedPCells = CircuitRF.Design.PCellDesigner.DesignedPCellResolver.Register(workspaceRootDir!);
 
             // Asked from the MANIFEST SCAN, which reads JSON and starts nothing — so the question is
             // put up front, in a calm moment, without costing the laziness B3 deliberately built.

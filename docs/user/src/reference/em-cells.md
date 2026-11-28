@@ -277,6 +277,13 @@ A 3D-parametric cell with no schematic has no circuit model, so it can only be s
 with `em=` unstated uses `em=direct` and says why, and `em=correct` or `em=off` is refused naming the part. Give the
 cell a schematic as its circuit model and `em=correct` works.
 
+**A generated cell is copper when it says so.** A placed cell drawn by a layout generator (a kit's PCell, a Python
+PCell, a [designed cell](pcell-designer.html)) is a part to EM unless its `.ccell` sets `"EmCopper": true`. Then EM
+solves the layout the generator draws as copper, at the placement's own values, and the cell's schematic stays its
+circuit model. A designed cell sets it from the moment it is made, and so does a kit part whose in-memory `.ccell` says
+so. An optimisation over such a placement's lengths (`X1.Lpad`) never steps below two database units of the coarsest
+placed layout, as a schematic's own lengths never do.
+
 **Each placement at its own values.** When the larger schematic is laid out (**Update Layout from Schematic**), a
 placement whose own values give it different copper is placed as a **variant**: the cell's layout made at that
 placement's values, with your hand edits to the cell in it. Placements with the same values share one variant, and

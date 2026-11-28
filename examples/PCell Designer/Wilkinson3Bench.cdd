@@ -1,0 +1,233 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": "Wilkinson3Bench.npy",
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Response",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 640,
+          "Height": 380,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "3-way Wilkinson: transmission and input match",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Wilkinson3Bench.npy",
+              "Row": 1,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              }
+            },
+            {
+              "SourcePath": "Wilkinson3Bench.npy",
+              "Row": 2,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 3,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 2,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 2,
+                "MarkerType": "Circle"
+              }
+            },
+            {
+              "SourcePath": "Wilkinson3Bench.npy",
+              "Row": 3,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 4,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 9,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 9,
+                "MarkerType": "Circle"
+              }
+            },
+            {
+              "SourcePath": "Wilkinson3Bench.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 1,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 5,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 5,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        },
+        {
+          "Left": 0,
+          "Top": 400,
+          "Width": 640,
+          "Height": 380,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "3-way Wilkinson: isolation between outputs",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "Wilkinson3Bench.npy",
+              "Row": 2,
+              "Col": 1,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 2,
+              "OutputPort": 3,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              }
+            },
+            {
+              "SourcePath": "Wilkinson3Bench.npy",
+              "Row": 3,
+              "Col": 1,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 2,
+              "OutputPort": 4,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 2,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 2,
+                "MarkerType": "Circle"
+              }
+            },
+            {
+              "SourcePath": "Wilkinson3Bench.npy",
+              "Row": 3,
+              "Col": 2,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 3,
+              "OutputPort": 4,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 9,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 9,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0
+}

@@ -98,6 +98,7 @@ visually until you draw one.</p>
       <tr><td><code>.cmodel</code></td><td>Composed FET model — a nonlinear transistor model placed as a <code>ComposedFET</code>: its extrinsic network, its current and charge constituents, the finger count and gate width it was measured at, the temperatures it is valid at, its symbol and where it came from. A ZIP holding a readable <code>model.json</code> and any arrays as <code>.npy</code>. See <a href="cmodel.html">Writing a .cmodel</a>.</td></tr>
       <tr><td><code>.cmc</code></td><td>Model Composer document — the data a model is built from and the conditions it was measured under, from which a <code>.cmodel</code> is exported. JSON text; its data stays in the files it names, with a cache beside it in <code>&lt;name&gt;.cmc-cache/</code>. See <a href="#cmc">The Model Composer document</a>.</td></tr>
       <tr><td><code>.cchain</code></td><td>RF chain budget — a receive chain's system inputs (frequency, bandwidth, input power, source temperature, required SNR, any blockers) and its stages in signal order, each a System block or a composed stage with the part's own parameters as text. JSON. See <a href="chain-budget.html#format">RF Chain Budget</a>.</td></tr>
+      <tr><td><code>.cpcell</code></td><td>PCell package — a <a href="pcell-designer.html">designed cell</a> carried to another workspace: a ZIP holding the cell folder (its <code>.ccell</code>, schematic and symbol) and a manifest. No layout and no results: the cell's generator draws the layout wherever it is placed. See <a href="#cpcell">The PCell package</a>.</td></tr>
       <tr><td><code>.csmith</code></td><td>Smith Chart document — a generator impedance over frequency and an ordered cascade of two-pin elements, plus what the chart is normalized to, the overlays, the markers and the constant-Q setting. Numbers are in base SI. See <a href="smith-chart.html">Smith Chart</a>.</td></tr>
     </tbody>
   </table>
@@ -670,6 +671,89 @@ warning when a schematic sets the geometry outside the range the family was fitt
 again; when one goes missing the cached copy is used, with a warning. A step's arrays are cached there
 too, and a missing one is fitted again. The cache can be deleted at any time. <code>circuitrf check</code> reads a
 <code>.cmc</code> and names the field of anything it refuses.</p>
+<h2 id="cpcell">The PCell package and the designed cell</h2>
+<p>A <a href="pcell-designer.html">designed cell</a> is an ordinary cell folder. Its <code>.ccell</code> carries what makes it a PCell, and its
+schematic carries where each part goes. Every field below is written only when it is set, so a cell without them reads
+and saves exactly as before.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.ccell</code></td>
+<td><code>&quot;PCellDesign&quot;: { &quot;Sweep&quot;: &quot;start=1 stop=20 npts=201 Unit=GHz&quot; }</code></td>
+<td>The designed marker; its presence is the marker. <code>Sweep</code> is the designer's response sweep, in the netlist's spelling, when the schematic has no S-parameter analysis</td>
+</tr>
+<tr>
+<td><code>.ccell</code></td>
+<td><code>&quot;PCellDesign&quot;: { &quot;Filter&quot;: { &quot;Response&quot;: &quot;Chebyshev&quot;, &quot;Band&quot;: &quot;Bandpass&quot;, &quot;Order&quot;: 5, &quot;F1Hz&quot;: 9.5e9, &quot;F2Hz&quot;: 10.5e9, &quot;RippleDb&quot;: 0.1, &quot;StopAttenuationDb&quot;: 40, &quot;Z0&quot;: 50, &quot;Realiser&quot;: &quot;…&quot; } }</code></td>
+<td>The filter specification a cell made by the Filter Designer's <strong>Make PCell…</strong> was realised to, frequencies in Hz, with <code>TransmissionZerosHz</code> when it has zeros. The cell's filter metrics are checked against it. Omitted for any other designed cell</td>
+</tr>
+<tr>
+<td><code>.ccell</code></td>
+<td><code>&quot;LayoutGenerator&quot;: &quot;cpcell:PadTee&quot;</code></td>
+<td>The generator that draws the cell wherever it is placed: its own schematic, planned at the instance's values</td>
+</tr>
+<tr>
+<td><code>.ccell</code></td>
+<td><code>&quot;EmCopper&quot;: true</code></td>
+<td>The generator's layout is metal: EM solves a placed copy as copper (see <a href="em-cells.html#placed">EM cells</a>)</td>
+</tr>
+<tr>
+<td><code>.ccell</code></td>
+<td><code>&quot;Minimum&quot;</code>, <code>&quot;Maximum&quot;</code> on a parameter</td>
+<td>Its range, in base SI (m, degrees). The design check plans the cell at both ends, and a drag handle stops there</td>
+</tr>
+<tr>
+<td><code>.ccell</code></td>
+<td><code>&quot;Terminals&quot;</code></td>
+<td>One per Port: <code>{ &quot;Port&quot;: 1, &quot;Name&quot;: &quot;P1&quot;, &quot;LayoutPin&quot;: &quot;1&quot; }</code>, so LVS pairs each schematic pin with the generator's pin</td>
+</tr>
+<tr>
+<td><code>.csch</code></td>
+<td><code>&quot;Offset&quot;: {&quot;Anchor&quot;:&quot;TL1.2&quot;,&quot;Pin&quot;:1,&quot;Dx&quot;:&quot;g&quot;,&quot;Dy&quot;:&quot;0&quot;,&quot;Unit&quot;:&quot;um&quot;,&quot;Angle&quot;:&quot;0&quot;}</code> on a component</td>
+<td>An offset placement: this part's pin <code>Pin</code> placed from the anchor pin, <code>Dx</code> along its outward direction and <code>Dy</code> 90° counter-clockwise from it, turned by <code>Angle</code> degrees. All zero is a joint</td>
+</tr>
+<tr>
+<td><code>.csch</code></td>
+<td><code>&quot;Stretch&quot;: [{&quot;Parameter&quot;:&quot;Lpad&quot;,&quot;Anchor&quot;:1,&quot;Moving&quot;:[2,3],&quot;AxisDeg&quot;:0}]</code> on an MSHAPE</td>
+<td>A Stretch by Parameter binding: the corners <code>Moving</code> follow <code>Parameter</code> along <code>AxisDeg</code> from corner <code>Anchor</code>. The corners' expressions already say so; the binding is what the drag handle reads</td>
+</tr>
+<tr>
+<td><code>.csch</code></td>
+<td><code>&quot;PCellOperations&quot;: [{&quot;Id&quot;:&quot;op1&quot;,&quot;Kind&quot;:&quot;Subtract&quot;,&quot;A&quot;:[&quot;TL3&quot;],&quot;B&quot;:[&quot;SH9&quot;],&quot;Unit&quot;:&quot;um&quot;}]</code></td>
+<td>The <a href="pcell-designer.html#operations">operation history</a>, applied in order after the parts are placed. <code>Kind</code> is <code>Merge</code>, <code>Subtract</code>, <code>Intersect</code>, <code>Exclusive</code>, <code>Grow</code>, <code>Repeat</code>, <code>Fillet</code> or <code>Chamfer</code>; <code>A</code> and <code>B</code> (the first operands and the rest) name parts by designator, a whole layer as <code>layer:&lt;name&gt;</code>, or a tool (an MSHAPE whose <code>Role</code> is <code>&quot;tool&quot;</code>). Grow adds <code>Amount</code> and <code>Onto</code>; Repeat adds <code>Rows</code>, <code>Columns</code>, <code>PitchX</code> and <code>PitchY</code>; Fillet and Chamfer add <code>Amount</code> (the radius, or the size along each edge). Each is an expression, a length in <code>Unit</code> when it carries none of its own. <code>Suppressed</code> and <code>KeepModel</code> are written only when true. Omitted when the cell has no history</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The package.</strong> <code>&lt;Name&gt;.cpcell</code> is a ZIP, entries sorted by name and every timestamp 1980-01-01, so the same cell
+gives the same bytes:</p>
+<pre><code>PadTee.cpcell
+├── manifest.json
+└── PadTee/
+    ├── .ccell                   PCellDesign, LayoutGenerator, EmCopper, Terminals
+    ├── schematic/PadTee.csch    the definition, and the circuit model
+    └── symbol/PadTee.csym       the Library tile and the schematic symbol
+</code></pre>
+<pre><code class="language-json">{
+  &quot;Format&quot;: &quot;circuitrf.pcell&quot;,
+  &quot;FormatVersion&quot;: 1,
+  &quot;Name&quot;: &quot;PadTee&quot;,
+  &quot;GeneratorId&quot;: &quot;cpcell:PadTee&quot;,
+  &quot;ContentKey&quot;: &quot;sha256:…&quot;,
+  &quot;Generators&quot;: [&quot;MBEND&quot;, &quot;MLIN&quot;, &quot;MSHAPE&quot;, &quot;MTEE&quot;],
+  &quot;Layers&quot;: [],
+  &quot;WrittenBy&quot;: &quot;circuitRF …&quot;
+}
+</code></pre>
+<p><code>ContentKey</code> is a hash of the schematic's bytes, the parameters and the version of every generator the schematic
+places: import compares it to tell &quot;already imported&quot; from &quot;a different cell of the same name&quot;. <code>Layers</code> names every
+layer a part states explicitly; a technology without one of them refuses the import.</p>
 <h2 id="hierarchy">Workspace › Library › Cell</h2>
 <p>The conceptual hierarchy maps to folders of the small files above — never one monolithic blob.</p>
 <h3 id="cell-a-folder-of-views">Cell = a folder of views</h3>

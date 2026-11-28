@@ -58,6 +58,8 @@ public static class InstanceNetContract
         MicrostripTeeModel                                                                    => 3,
         // A radial stub, one sector or a butterfly: its shunt node alone, over the implicit reference.
         MicrostripRadialStubModel                                                             => 1,
+        // Drawn metal: one net per pin, each over the implicit reference.
+        MShapeModel shape                                                                     => shape.PortCount,
         // A planned passive (docs/design/rf-passives.md): its plan's pins, each over the implicit reference.
         MicrostripPlanModel plan                                                              => plan.PortCount,
         // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
@@ -281,6 +283,9 @@ public static class InstanceNetContract
             "its port count and does not include the internal nodes the model asked for. An " +
             "instance may state a smaller ConnectedPinCount to place a five-terminal model as a " +
             "four-pin part.",
+        [ComponentModelFactory.MShapeTypeName] =
+            "One net per pin: PinX[k]=… for k = 1, 2, … names pin k, so the count is the instance's to state. "
+          + "Each is over the implicit reference.",
         ["OpAmp"] =
             "3 nets (in+, in−, out; the output referenced to ground), or 5 with Pins=5, adding the "
           + "supply pins V+ and V−, which carry no current.",

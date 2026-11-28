@@ -388,6 +388,66 @@ internal static class ToolCatalog
           + "never overshoots). Nothing is extrapolated."),
     ];
 
+    /// <summary>What <c>render</c> takes for a drawing's frame, size, layers and look — its rows, and <c>pcell render</c>'s
+    /// (brief-pcd-7), which draws through <c>render</c>'s own layout path.</summary>
+    private static readonly ToolOption[] LayoutPictureOptions =
+    [
+        // The three viewport modes. They are REFUSED together rather than ordered
+        // (R-rnd2-3), so all three are advertised and the verb decides.
+        new("fit", "--fit", OptKind.Flag,
+            "Frame the whole document. The default."),
+        new("window", "--window", OptKind.Str,
+            "An explicit world rectangle, x0,y0,x1,y1. ON A LAYOUT EVERY COORDINATE CARRIES AN SI UNIT, "
+          + "zero included (0um,0um,500um,300um): a bare number is refused, because DBU, um and mm are "
+          + "three plausible pictures. A schematic or a symbol takes bare design units."),
+        new("center", "--center", OptKind.Str,
+            "The centre of the window, x,y. Same unit rule. Needs span."),
+        new("span", "--span", OptKind.Str,
+            "The width of the window; the height follows the output aspect. Same unit rule."),
+        new("margin", "--margin", OptKind.Number,
+            "Fraction of the page left around a fit. 0 to 0.45."),
+
+        new("size", "--size", OptKind.Str,
+            "Output size as WxH. Device pixels for png, points for svg and pdf. Default 1600x1200."),
+        new("scale", "--scale", OptKind.Number,
+            "png only: raster multiplier. Refused on a vector format, and refused together with dpi."),
+        new("dpi", "--dpi", OptKind.Number,
+            "png only: the same multiplier spelled relative to 96 dpi."),
+
+        new("layers", "--layers", OptKind.StrList,
+            "Layout only: draw only these layers. An undefined name is refused — ask explain --layers."),
+        new("hideLayers", "--hide-layers", OptKind.StrList,
+            "Layout only: draw everything but these. Refused together with layers."),
+        new("fitLayers", "--fit-layers", OptKind.StrList,
+            "Layout only: frame the fit on these layers and draw everything. A fit already frames only "
+          + "what is DRAWN, so hiding a layer removes it from the framing too; this narrows the framing "
+          + "without narrowing the picture — an imported board's drill map sits far outside the board "
+          + "and shrinks it to a fraction of the frame. Refused with window or center/span, which state "
+          + "the frame outright."),
+        new("layerColors", "--layer-colors", OptKind.StrMap,
+            "Layout only: how a layer DRAWS, for this render only — {\"Top Copper\": \"#e04030\"}. "
+          + "Nothing is written to the technology. #rgb, #rrggbb or #rrggbbaa; the eight-digit form "
+          + "sets the layer's fill opacity, which is the alpha the renderer paints through. Use it when "
+          + "an import gave several layers near-identical colours and an overlay is unreadable. "
+          + "The layer report in the result carries each layer's colour as drawn."),
+        new("detail", "--detail", OptKind.Str,
+            "full (default: every level-of-detail tier off, what is stored is what is drawn), screen "
+          + "(the tiers as a canvas engages them), or a pixel budget. A vector file is several times "
+          + "larger at full."),
+
+        new("theme", "--theme", OptKind.PathOrName,
+            "A colour theme name, or a .ccolor file. Default: the workspace's own, else the shipped one."),
+        new("variant", "--variant", OptKind.Str, "light or dark. Default light."),
+        new("background", "--background", OptKind.Str, "opaque or transparent. Default opaque."),
+        new("grid", "--grid", OptKind.Flag, "Draw the grid. Off by default, as every export is."),
+        new("noRulers", "--no-rulers", OptKind.Flag,
+            "Leave the rulers out. They are on by default because a ruler is in the document."),
+        new("outlineText", "--outline-text", OptKind.Flag,
+            "svg only: write the text as glyph outlines instead of live text, so a viewer or importer "
+          + "without IBM Plex Sans draws the letters circuitRF drew rather than substituting a font. "
+          + "The text is no longer editable as text. Refused on png and pdf."),
+    ];
+
     private static readonly ToolOption PictureUnderlay = new("underlay", "--underlay", OptKind.Str,
         "on or off: lay the picture, locked at 35 %, under what is written. Default on.");
 
@@ -991,13 +1051,15 @@ internal static class ToolCatalog
                         new("signal",      "--signal",       OptKind.Str,     "The signal layer, by name. Default: the technology's."),
                         new("ground",      "--ground",       OptKind.Str,     "The ground reference layer, by name. Default: the technology's."),
                         new("realiser",    "--realiser",     OptKind.Str,     "Realise with this one (its name, or a part of it that names one). Without it, every realiser is listed with whether it can build the filter, and why not."),
-                        new("output",      "-o",             OptKind.Path,    "With realiser: the .cnl written. Required then."),
+                        new("output",      "-o",             OptKind.Path,    "With realiser: the .cnl written. Required then, unless pcell alone is asked for."),
                         new("toSchematic", "--to-schematic", OptKind.Flag,    "Also draw the .cnl as a .csch beside it."),
                         new("points",      "--points",       OptKind.Integer, "Points of the bench's S-parameter sweep (401)."),
+                        // brief-pcd-12: the realisation as a designed cell, which pcell check, render and export then take.
+                        new("pcell",       "--pcell",        OptKind.Path,    "With realiser: also make the realisation a designed cell (a PCell) of this name, in the folder the path names, in a workspace. Then pcell render or export it."),
                     ],
                     "A filter from its specification: the realisers that can build it, or, with realiser, one realised as a .cnl: "
                   + "the part with its parameters on the technology's substrate, an R, L, C or via on each of its sites, two ports "
-                  + "and an S-parameter sweep across the band, ready for run analysis=sparam."),
+                  + "and an S-parameter sweep across the band, ready for run analysis=sparam; with pcell, also as a designed cell."),
                 // The LC Filter Designer, headless (`filter lc`): a lumped L/C ladder from a specification, every element at
                 // its exact value and at the nearest preferred-series value. A mode of `create`: what it makes is a netlist.
                 new("lcFilter", ["filter", "lc"],
@@ -1323,60 +1385,7 @@ internal static class ToolCatalog
                         new("cell", "--cell", OptKind.Str,
                             "Which cell, when the path is a workspace."),
 
-                        // The three viewport modes. They are REFUSED together rather than ordered
-                        // (R-rnd2-3), so all three are advertised and the verb decides.
-                        new("fit", "--fit", OptKind.Flag,
-                            "Frame the whole document. The default."),
-                        new("window", "--window", OptKind.Str,
-                            "An explicit world rectangle, x0,y0,x1,y1. ON A LAYOUT EVERY COORDINATE CARRIES AN SI UNIT, "
-                          + "zero included (0um,0um,500um,300um): a bare number is refused, because DBU, um and mm are "
-                          + "three plausible pictures. A schematic or a symbol takes bare design units."),
-                        new("center", "--center", OptKind.Str,
-                            "The centre of the window, x,y. Same unit rule. Needs span."),
-                        new("span", "--span", OptKind.Str,
-                            "The width of the window; the height follows the output aspect. Same unit rule."),
-                        new("margin", "--margin", OptKind.Number,
-                            "Fraction of the page left around a fit. 0 to 0.45."),
-
-                        new("size", "--size", OptKind.Str,
-                            "Output size as WxH. Device pixels for png, points for svg and pdf. Default 1600x1200."),
-                        new("scale", "--scale", OptKind.Number,
-                            "png only: raster multiplier. Refused on a vector format, and refused together with dpi."),
-                        new("dpi", "--dpi", OptKind.Number,
-                            "png only: the same multiplier spelled relative to 96 dpi."),
-
-                        new("layers", "--layers", OptKind.StrList,
-                            "Layout only: draw only these layers. An undefined name is refused — ask explain --layers."),
-                        new("hideLayers", "--hide-layers", OptKind.StrList,
-                            "Layout only: draw everything but these. Refused together with layers."),
-                        new("fitLayers", "--fit-layers", OptKind.StrList,
-                            "Layout only: frame the fit on these layers and draw everything. A fit already frames only "
-                          + "what is DRAWN, so hiding a layer removes it from the framing too; this narrows the framing "
-                          + "without narrowing the picture — an imported board's drill map sits far outside the board "
-                          + "and shrinks it to a fraction of the frame. Refused with window or center/span, which state "
-                          + "the frame outright."),
-                        new("layerColors", "--layer-colors", OptKind.StrMap,
-                            "Layout only: how a layer DRAWS, for this render only — {\"Top Copper\": \"#e04030\"}. "
-                          + "Nothing is written to the technology. #rgb, #rrggbb or #rrggbbaa; the eight-digit form "
-                          + "sets the layer's fill opacity, which is the alpha the renderer paints through. Use it when "
-                          + "an import gave several layers near-identical colours and an overlay is unreadable. "
-                          + "The layer report in the result carries each layer's colour as drawn."),
-                        new("detail", "--detail", OptKind.Str,
-                            "full (default: every level-of-detail tier off, what is stored is what is drawn), screen "
-                          + "(the tiers as a canvas engages them), or a pixel budget. A vector file is several times "
-                          + "larger at full."),
-
-                        new("theme", "--theme", OptKind.PathOrName,
-                            "A colour theme name, or a .ccolor file. Default: the workspace's own, else the shipped one."),
-                        new("variant", "--variant", OptKind.Str, "light or dark. Default light."),
-                        new("background", "--background", OptKind.Str, "opaque or transparent. Default opaque."),
-                        new("grid", "--grid", OptKind.Flag, "Draw the grid. Off by default, as every export is."),
-                        new("noRulers", "--no-rulers", OptKind.Flag,
-                            "Leave the rulers out. They are on by default because a ruler is in the document."),
-                        new("outlineText", "--outline-text", OptKind.Flag,
-                            "svg only: write the text as glyph outlines instead of live text, so a viewer or importer "
-                          + "without IBM Plex Sans draws the letters circuitRF drew rather than substituting a font. "
-                          + "The text is no longer editable as text. Refused on png and pdf."),
+                        .. LayoutPictureOptions,
 
                         // The .cdd half (RND-4). Options of the one verb, not a second tool: a data
                         // display is a document kind like the other three.
@@ -2045,6 +2054,50 @@ internal static class ToolCatalog
                         new("pdf",         "--pdf",         OptKind.Path,    "Also write the report's display as a PDF, one page per section."),
                     ],
                     "Write the Model Validation Report folder and its Data Display document."),
+            ]),
+
+        // The PCell Designer, headless (brief-pcd-7 R-pcd7-5): the `pcell` verb's nouns, as `model` carries the Model
+        // Composer's. Every noun calls the src/Design function the window calls.
+        new("pcell",
+            "PCell Designer: a parameterised cell made of circuitRF's primitives, every position a function of its "
+          + "parameters, exported as a PCell package (.cpcell) any workspace places like a kit's PCell. "
+          + "new -> write its schematic (.csch: the parts, the Offset and Stretch fields, the .ccell's Parameters) -> check "
+          + "-> render at values -> export; import puts a package into a workspace; ops lists its operation history. Exit 1: refused, or check found an error.",
+            "what",
+            "What to do.",
+            [
+                new("new", ["pcell", "new"],
+                    [
+                        new("workspace", true, "The workspace (or a library folder in one) the cell is created in."),
+                        new("name",      false, "The cell's name."),
+                    ],
+                    [],
+                    "Create a designed cell: a schematic, a symbol, and a .ccell naming its cpcell: generator."),
+                new("check", ["pcell", "check"],
+                    [new("cell", true, "The designed cell's folder.")],
+                    [new("severity", "--severity", OptKind.Str, "warning or error (default): what makes the exit code 1.")],
+                    "The design check: every part joined or offset-placed, every expression evaluating across each parameter's range, what export needs."),
+                new("render", ["pcell", "render"],
+                    [new("cell", true, "The designed cell's folder.")],
+                    [
+                        new("output", "-o", OptKind.Path, "Required. The picture; its extension picks the format: .svg, .pdf or .png."),
+                        new("set", "--set", OptKind.StrRepeat,
+                            "A parameter or VAR at a value, name=value with its unit (Lpad=200um). The rest stay at their defaults."),
+                        .. LayoutPictureOptions,
+                    ],
+                    "The cell's layout at those values, drawn as render draws a layout; the planner's report comes back as diagnostics."),
+                new("export", ["pcell", "export"],
+                    [new("cell", true, "The designed cell's folder.")],
+                    [new("output", "-o", OptKind.Path, "Required. The .cpcell written.")],
+                    "Write the PCell package. Runs the check first, and an error refuses."),
+                new("import", ["pcell", "import"],
+                    [new("path", true, "The .cpcell.")],
+                    [new("into", "--into", OptKind.Path, "Required. The workspace, or a library folder it references.")],
+                    "Unpack a package as a cell. The same package again is already imported; another with the same name is refused, never overwritten."),
+                new("ops", ["pcell", "ops"],
+                    [new("cell", true, "The designed cell's folder.")],
+                    [],
+                    "List the cell's operation history (merge, subtract, intersect, exclusive, grow, repeat), one line each."),
             ]),
 
         // The seventh, and the only one that names no file. It is also reachable as MCP RESOURCES,

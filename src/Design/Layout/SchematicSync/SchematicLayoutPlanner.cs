@@ -589,7 +589,7 @@ public static partial class SchematicLayoutPlanner
         var chained = connectParts
             ? ConnectChains(extraction, model, physical, newInstances, beside, schematicFacing, target, existingBySchematicId,
                             replacedAt, new HashSet<int>(deleteIndices), schematicDir, targetLayoutBaseDir, technology, lines,
-                            noLayout, resnap, opened)
+                            noLayout, resnap, opened, scope, evaluator)
             : ChainOutcome.None;
         var unplaced = newInstances.Where(n => !beside.ContainsKey(n.Instance) && !chained.Placed.Contains(n.Instance)).ToList();
         var atArtwork = overArtwork ? Bbox.Empty
@@ -668,6 +668,7 @@ public static partial class SchematicLayoutPlanner
             DeletedCount = deleteIndices.Count,
             OrientationLinksRecorded = linksRecorded,
             LayoutKept = layoutKept,
+            Root = chained.Root,
         };
 
         // brief-sdl-3 R-sdl3-1: copper of different nets that overlaps or touches once the plan is applied — read off
@@ -1502,7 +1503,7 @@ public static partial class SchematicLayoutPlanner
         foreach (var dp in defaults)
         {
             if (NonPCellParamNames.Contains(dp.Name)) continue;
-            if (TryResolveSiValue(dp.Expression, dp.Unit, scope, evaluator, out var value, out _))
+            if (TryResolveSiValue(dp.Expression, dp.Unit, scope, evaluator, out var value, out _, dp.Dimension))
                 resolved[dp.Name] = value;
         }
         return resolved;
@@ -1710,6 +1711,8 @@ public static partial class SchematicLayoutPlanner
             var at = fromCell?.Contains(p.Name) == true ? cellScope : scope;
             if (NonPCellParamNames.Contains(p.Name)) continue;
             if (IsInactiveMklopfEntryParam(comp, p.Name)) continue; // R-L5f-3
+            // A word reaches its generator as the word: the netlist quotes it ("Straight"), as a bare word would be a name.
+            string text = Unquote(p.Expression.Trim()).Trim();
 
             // A via's layer choices are conductor NAMES, handed to its generator as text; a dimension
             // left empty follows the technology, which the generator resolves itself; and the two
@@ -1718,7 +1721,7 @@ public static partial class SchematicLayoutPlanner
             {
                 if (ViaSubstrateInjection.LayerParams.Contains(p.Name))
                 {
-                    if (p.Expression.Trim() is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
+                    if (text is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
                     continue;
                 }
                 if (string.IsNullOrWhiteSpace(p.Expression) || p.Name is "IncludeC" or "C") continue;
@@ -1730,7 +1733,7 @@ public static partial class SchematicLayoutPlanner
             {
                 if (p.Name is not ("D" or "FeedW" or "Drill" or "ClearD" or "InnerPadD" or "AntipadD"))
                 {
-                    if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                    if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                     continue;
                 }
                 if (string.IsNullOrWhiteSpace(p.Expression)) continue;
@@ -1746,27 +1749,34 @@ public static partial class SchematicLayoutPlanner
                 || (comp.Symbol, p.Name) is (SymbolKind.Mwpd or SymbolKind.Mblc or SymbolKind.Mrrc or SymbolKind.Mcbl, "Realization")
                     or (SymbolKind.Mwpd, "Arm") or (SymbolKind.Mrpad, "Form"))
             {
-                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                continue;
+            }
+
+            // Drawn metal's Form and Model are words for its generator (brief-pcd-0 §4.3).
+            if (DrawnMetal.Is(comp) && DrawnMetal.IsWord(p.Name))
+            {
+                if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
 
             // A coupled-resonator filter's Shape, Profile, Feed, Form, Arrangement and Coupling are words for its generator.
             if (comp.Symbol == SymbolKind.Mcrc && p.Name is "Shape" or "Profile" or "Feed" or "Form" or "Arrangement" or "Coupling")
             {
-                if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
+                if (text is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
             // A ladder's Sections is its list, text for its generator.
             if (comp.Symbol == SymbolKind.Mlad && p.Name == "Sections")
             {
-                if (p.Expression.Trim() is { Length: > 0 } list) resolved[p.Name] = PCellValue.Text(list);
+                if (text is { Length: > 0 } list) resolved[p.Name] = PCellValue.Text(list);
                 continue;
             }
             // A coupled array's Form and Feed are names and its Ends a pattern of letters: words for its generator, Ends
             // without its spaces, as the netlist writes it, so LVS reads the same word on both sides.
             if (comp.Symbol == SymbolKind.Mcla && p.Name is "Form" or "Feed" or "Ends")
             {
-                if (string.Concat(p.Expression.Where(c => !char.IsWhiteSpace(c))) is { Length: > 0 } word)
+                if (string.Concat(text.Where(c => !char.IsWhiteSpace(c))) is { Length: > 0 } word)
                     resolved[p.Name] = PCellValue.Text(word);
                 continue;
             }
@@ -1775,7 +1785,7 @@ public static partial class SchematicLayoutPlanner
             // hashes to the cell it always did.
             if (comp.Symbol == SymbolKind.Tfr && p.Name == MmicPassiveInjection.FilmParam)
             {
-                if (p.Expression.Trim() is { Length: > 0 } film) resolved[p.Name] = PCellValue.Text(film);
+                if (text is { Length: > 0 } film) resolved[p.Name] = PCellValue.Text(film);
                 continue;
             }
 
@@ -1786,7 +1796,7 @@ public static partial class SchematicLayoutPlanner
             {
                 if (BroadsideSubstrateInjection.LayerParams.Contains(p.Name))
                 {
-                    if (p.Expression.Trim() is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
+                    if (text is { Length: > 0 } layerName) resolved[p.Name] = PCellValue.Text(layerName);
                     continue;
                 }
                 if (p.Name is not ("W" or "O" or "L")) continue;
@@ -1805,7 +1815,7 @@ public static partial class SchematicLayoutPlanner
                 continue;
             }
 
-            if (!TryResolveSiValue(p.Expression, p.Unit, at, evaluator, out var value, out var error))
+            if (!TryResolveSiValue(p.Expression, p.Unit, at, evaluator, out var value, out var error, p.Dimension))
             {
                 resolveWarning = $"parameter '{p.Name}': {error}";
                 return null;
@@ -1863,11 +1873,10 @@ public static partial class SchematicLayoutPlanner
         {
             var si = resolved.Where(kv => kv.Key is "W" or "G" or "E" or "F")
                              .ToDictionary(kv => kv.Key, kv => resolved.Real(kv.Key), StringComparer.Ordinal);
-            // TryResolveSiValue hands an angle stated in degrees back IN DEGREES — the unit PCell generators take
-            // a bend in — while LengthMeters reads E in radians. Passed through as it was, a 90° line at 10 GHz
-            // was drawn 57× too long (designer report, 2026-10-20: a quarter-wave stub came out 252 mm).
-            if (string.Equals(UnitNormalizer.ToEngineUnit(comp.Parameters.FirstOrDefault(p => p.Name == "E")?.Unit),
-                              "deg", StringComparison.Ordinal))
+            // TryResolveSiValue hands an angle back IN DEGREES — the unit PCell generators take a bend in — while
+            // LengthMeters reads E in radians. Passed through as it was, a 90° line at 10 GHz was drawn 57× too long
+            // (designer report, 2026-10-20: a quarter-wave stub came out 252 mm).
+            if (comp.Parameters.FirstOrDefault(p => p.Name == "E") is { } eRow && IsAngle(eRow.Unit, eRow.Dimension))
                 si["E"] *= Math.PI / 180.0;
             if (LineEntryConversion.LengthMeters(comp.Symbol, si, signalOverride, groundOverride, technology) is { } lengthM)
                 resolved["L"] = lengthM;
@@ -2175,8 +2184,14 @@ public static partial class SchematicLayoutPlanner
     /// exact trap (<c>unit.Length &gt; 0 ? unit : null</c>) — this is that same guard, applied here.
     /// R-L5f-4: the real exception message is returned via <paramref name="error"/> rather than
     /// swallowed, so a genuine failure (a blank/malformed expression, an unresolvable variable) is
-    /// diagnosable instead of a uniform "could not be resolved."</summary>
-    internal static bool TryResolveSiValue(string expression, string? unit, Scope scope, Evaluator evaluator, out double value, out string? error)
+    /// diagnosable instead of a uniform "could not be resolved."
+    ///
+    /// <para><b>An angle is known by its <paramref name="dimension"/> as well as by a "deg" unit.</b> The value is SI, radians,
+    /// whatever the row's unit: <c>Theta=Th</c> with <c>Th</c> a parameter in degrees carries no unit of its own and is still
+    /// radians (var-unit-wins), as the circuit model reads it. Keyed on the unit alone, it reached the generator as
+    /// radians read as degrees, a 49° line drawn 0.86° long.</para></summary>
+    internal static bool TryResolveSiValue(string expression, string? unit, Scope scope, Evaluator evaluator, out double value, out string? error,
+                                           UnitDimension dimension = UnitDimension.None)
     {
         string normalized = UnitNormalizer.ToEngineUnit(unit);
         string? engineUnit = normalized.Length > 0 ? normalized : null;
@@ -2202,7 +2217,7 @@ public static partial class SchematicLayoutPlanner
                 error = $"expected a numeric value, got {v.Kind}";
                 return false;
             }
-            value = string.Equals(engineUnit, "deg", StringComparison.Ordinal) ? raw * 180.0 / Math.PI : raw;
+            value = IsAngle(unit, dimension) ? raw * 180.0 / Math.PI : raw;
             error = null;
             return true;
         }
@@ -2213,6 +2228,10 @@ public static partial class SchematicLayoutPlanner
             return false;
         }
     }
+
+    /// <summary>Whether <see cref="TryResolveSiValue"/> hands this row to a generator in degrees.</summary>
+    internal static bool IsAngle(string? unit, UnitDimension dimension)
+        => dimension == UnitDimension.Angle || UnitNormalizer.ToEngineUnit(unit) == "deg";
 
     /// <summary>
     /// A schematic parameter as a generator that declared it a STRING has to receive it.
@@ -2248,14 +2267,17 @@ public static partial class SchematicLayoutPlanner
     /// to the simulator as an expression and fails there, a long way from here. Saying it at the point the
     /// value is used is the difference between a fixable row and a mystery at Run.</para>
     /// </summary>
+    private static string Unquote(string raw) =>
+        raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"' ? raw[1..^1] : raw;
+
     internal static string TextForDeclaredString(
         EditableParameter p, Scope scope, Evaluator evaluator, out string? note)
     {
         note = null;
-        if (TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out double v, out _))
+        if (TryResolveSiValue(p.Expression, p.Unit, scope, evaluator, out double v, out _, p.Dimension))
             return v.ToString("R", CultureInfo.InvariantCulture);
 
-        string raw = p.Expression.Trim();
+        string raw = Unquote(p.Expression.Trim());
         if (LooksLikeASuffixedNumber(raw))
             note = $"\"{raw}\" was passed to the kit's cell as written — circuitRF cannot evaluate it, " +
                    "because the letters after the number are not a unit it knows. The artwork is correct; " +

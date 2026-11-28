@@ -62,6 +62,37 @@ public static partial class EmEvaluation
     /// declared parameters). Never saved: it lives in the in-memory copy the planner reads.</summary>
     public const string ValuesRow = "__EMVALUES";
 
+    /// <summary>brief-pcd-1 — the prefix of a global carrying a generator cell instance's own value through Path A
+    /// (<see cref="InstanceValueName"/>).</summary>
+    internal const string InstanceValuePrefix = "__EMINST__";
+
+    /// <summary>brief-pcd-1 — the global that carries instance <paramref name="instance"/>'s value of
+    /// <paramref name="parameter"/> to Path A's EM instance, or null when either name cannot be part of an identifier.</summary>
+    internal static string? InstanceValueName(string instance, string parameter)
+        => IsWord(instance) && IsWord(parameter) && !instance.Contains("__", StringComparison.Ordinal)
+            ? InstanceValuePrefix + instance + "__" + parameter : null;
+
+    private static bool IsWord(string s) => s.Length > 0 && s.All(ch => char.IsLetterOrDigit(ch) || ch == '_');
+
+    /// <summary>brief-pcd-1 — whether <paramref name="key"/> (<c>X1.Lpad</c>) is a value of a generator cell placed in
+    /// <paramref name="target"/>'s schematic, so it reaches the copper of Path A's layout as a VAR does.</summary>
+    internal static bool IsGeneratorInstanceValue(EmCellTarget target, string key)
+    {
+        int dot = key.IndexOf('.');
+        if (target.ThreeDOnly || dot <= 0 || key.Contains(':')) return false;
+        try
+        {
+            var model = SchematicPersistence.LoadFromFile(target.SchematicPath).model;
+            return model.Components.FirstOrDefault(c => c.InstanceName == key[..dot]) is { } c
+                   && EmPartKinds.IsGeneratorCellInstance(c, Path.GetDirectoryName(target.SchematicPath));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                       or InvalidDataException or ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// A stand-in for the EM solver, for tests (brief-sdl-7 §3's stub provider): given the geometry and the values that
     /// produced it, write the Touchstone to the path it is handed (no extension; the stand-in adds <c>.sNp</c>) and
@@ -131,6 +162,7 @@ public static partial class EmEvaluation
         {
             // Connect parts ON whatever the GUI preference says: EM solves copper, and copper the planner did not join is
             // not the circuit the schematic draws.
+            using var designed = CircuitRF.Design.PCellDesigner.DesignedPCellResolver.Register(target.WorkspaceDir); // brief-pcd-0 §5 seam 12
             plan = SchematicLayoutPlanner.Plan(model, layout, model.SchematicDirectory!, target.WorkspaceDir, layoutDir,
                                                tech.Tech, tech.ResolvedPath, DiskCellResolver.Instance,
                                                targetLayoutPath: target.ClayPath, connectParts: true);
@@ -320,7 +352,7 @@ public static partial class EmEvaluation
     /// default. A value equal to the schematic's own is left alone, so the evaluation at the schematic's values is exactly
     /// the layout Update Layout would make. Only real values reach geometry.
     /// </summary>
-    private static Dictionary<string, Value> Apply(SchematicEditModel model, IReadOnlyDictionary<string, Value> values)
+    internal static Dictionary<string, Value> Apply(SchematicEditModel model, IReadOnlyDictionary<string, Value> values)
     {
         var applied = new Dictionary<string, Value>(StringComparer.Ordinal);
         if (values.Count == 0) return applied;
@@ -339,6 +371,30 @@ public static partial class EmEvaluation
                         .GroupBy(p => p.Name.Trim(), StringComparer.Ordinal)
                         .ToDictionary(gr => gr.Key, gr => gr.ToList(), StringComparer.Ordinal);
         EditableComponent? extra = null;
+
+        // brief-pcd-1 — a generator cell instance's own value, carried as a global (InstanceValueName): written onto the
+        // instance in its parameter's own unit, as a VAR row is below.
+        foreach (var (name, value) in values.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            if (value.Kind != ValueKind.Real || !name.StartsWith(InstanceValuePrefix, StringComparison.Ordinal)) continue;
+            string rest = name[InstanceValuePrefix.Length..];
+            int sep = rest.IndexOf("__", StringComparison.Ordinal);
+            if (sep <= 0 || model.Components.FirstOrDefault(c => c.InstanceName == rest[..sep]) is not { } comp) continue;
+            string param = rest[(sep + 2)..];
+            var row = comp.Parameters.FirstOrDefault(q => q.Name == param);
+            if (row is null) comp.Parameters.Add(row = new EditableParameter { Name = param, Expression = "", Unit = "", ShowOnSchematic = false });
+            double x = value.AsReal();
+            double scale = row.Unit is { Length: > 0 } u && Units.Scale(UnitNormalizer.ToEngineUnit(u)) is { } sc && sc != 0 ? sc : 1.0;
+            try
+            {
+                // A literal reads in the row's unit, a variable in base SI: equal either way is the schematic's own value.
+                var own = evaluator.Eval(row.Expression, scope);
+                if (own.Kind == ValueKind.Real && (Same(own.AsReal() * scale, x) || Same(own.AsReal(), x))) continue;
+            }
+            catch (Exception) { /* not evaluable on its own: apply */ }
+            row.Expression = (x / scale).ToString("R", CultureInfo.InvariantCulture);
+            applied[comp.InstanceName + "." + param] = value;
+        }
 
         foreach (var (name, value) in values.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {

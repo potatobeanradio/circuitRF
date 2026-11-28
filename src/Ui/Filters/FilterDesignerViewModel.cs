@@ -6,6 +6,7 @@ using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Synthesis.Filters;
 using CircuitRF.Core.Systems;
 using CircuitRF.Design.Filters;
+using CircuitRF.Design.PCellDesigner;
 using CircuitRF.Engine;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.DataDisplay.ViewModels;
@@ -26,6 +27,26 @@ public sealed record FilterMetricRow(string Name, string Value, string Target, s
     public bool Fail => Verdict == "fail";
 
     internal static FilterMetricRow Of(FilterCheck c) => new(c.Name, c.Format(c.Value), c.Format(c.Target), c.Pass ? "pass" : "fail");
+
+    /// <summary>The spec's rows of <paramref name="x"/>: centre, bandwidth, ripple, return loss and any zeros, each against the
+    /// spec, then the insertion loss at f0 and the unloaded Q beside <paramref name="boardQu"/> when known. The Filter
+    /// Designer's table and the PCell Designer's <c>FilterMetricsPanel</c> both show these (brief-pcd-12 D8).</summary>
+    public static IReadOnlyList<FilterMetricRow> SpecRows(ExtractedFilter x, double? boardQu) =>
+        [.. x.Checks.Where(c => !c.Name.Contains('(')).Select(Of),
+            new("Insertion loss", string.Create(CultureInfo.InvariantCulture, $"{x.InsertionLossDb:0.00} dB"), "", ""),
+            new("Unloaded Q", string.Create(CultureInfo.InvariantCulture, $"{x.UnloadedQ:0}"),
+                boardQu is { } qu ? string.Create(CultureInfo.InvariantCulture, $"board {qu:0}") : "", "")];
+
+    /// <summary>The matrix's rows of <paramref name="x"/>: each external Q, coupling and resonator frequency against the
+    /// synthesis's.</summary>
+    public static IReadOnlyList<FilterMetricRow> MatrixRows(ExtractedFilter x) => [.. x.Checks.Where(c => c.Name.Contains('(')).Select(Of)];
+
+    /// <summary>"<paramref name="source"/>: every check passes." or how many fail.</summary>
+    public static string Note(string source, ExtractedFilter x)
+    {
+        int fail = x.Checks.Count(c => !c.Pass);
+        return source + (fail == 0 ? ": every check passes." : $": {fail} of {x.Checks.Count} checks fail.");
+    }
 }
 
 /// <summary>
@@ -188,6 +209,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     /// <summary>|S21| and |S11|, ideal and realised.</summary>
     public Plot Plot => _container.PlotVM.Plot;
 
+    /// <summary>The plot's Data Display container, whose marker tools the window wires to the plot.</summary>
+    public PlotContainerViewModel ResponseContainer => _container;
+
+    /// <summary>Markers by trace name, kept across a re-run while their trace is gone, as the PCell Designer keeps them.</summary>
+    private readonly Dictionary<string, List<Marker>> _parkedMarkers = new(StringComparer.Ordinal);
+
     /// <summary>The realisation the plot shows, which Place would put down.</summary>
     public FilterRealisation? Realisation => _realisation;
 
@@ -338,6 +365,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         (_circuit, _emRefusal) = (null, null);
         OnPropertyChanged(nameof(Realisation));
         PlaceCommand.NotifyCanExecuteChanged();
+        MakePCellCommand.NotifyCanExecuteChanged();
         NotifyWork();
         if (_spec is not { } spec)
         {
@@ -413,6 +441,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         Show(outcome.Ideals, outcome.Realised);
         OnPropertyChanged(nameof(Realisation));
         PlaceCommand.NotifyCanExecuteChanged();
+        MakePCellCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>Every listed realiser that says it can build <paramref name="spec"/>, realised one at a time in list order
@@ -514,6 +543,10 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
 
     private void BuildPlot(SNP? ideal, SNP? lossy, SNP? realised, SNP? em)
     {
+        // The traces are rebuilt on every edit: each marker goes to the new trace of the same name, at its own x.
+        foreach (var old in Plot.Traces)
+            if (old.Markers.Count > 0) _parkedMarkers[old.Label ?? ""] = [.. old.Markers];
+            else _parkedMarkers.Remove(old.Label ?? "");
         Plot.Traces.Clear();
         void Add(SNP? snp, int row, int colour, string label)
         {
@@ -522,6 +555,7 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
             var t = new Trace(snp, MatrixType.S, row, 0, DependentVarFormat.Db, false,
                 new TraceProperties { LineColorIndex = index, MarkerColorIndex = index, FillColorIndex = index, Custom = false })
                 { Label = label };
+            if (_parkedMarkers.Remove(label, out var kept)) t.Markers.AddRange(kept);
             t.BuildPath(PlotType.Rect, Plot.FreqUnits);
             Plot.Traces.Add(t);
         }
@@ -595,14 +629,9 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
         var metrics = onEm ? em!.Metrics : _circuit;
         if (metrics?.Filter is { } x)
         {
-            SpecRows = [.. x.Checks.Where(c => !c.Name.Contains('(')).Select(FilterMetricRow.Of),
-                new("Insertion loss", string.Create(CultureInfo.InvariantCulture, $"{x.InsertionLossDb:0.00} dB"), "", ""),
-                new("Unloaded Q", string.Create(CultureInfo.InvariantCulture, $"{x.UnloadedQ:0}"),
-                    _shown.Ideals?.Qu is { } qu ? string.Create(CultureInfo.InvariantCulture, $"board {qu:0}") : "", "")];
-            MatrixRows = [.. x.Checks.Where(c => c.Name.Contains('(')).Select(FilterMetricRow.Of)];
-            int fail = x.Checks.Count(c => !c.Pass);
-            MetricsNote = (onEm ? $"Planar EM, {em!.S.FrequencyCount} points" : "Circuit bench")
-                          + (fail == 0 ? ": every check passes." : $": {fail} of {x.Checks.Count} checks fail.");
+            SpecRows = FilterMetricRow.SpecRows(x, _shown.Ideals?.Qu);
+            MatrixRows = FilterMetricRow.MatrixRows(x);
+            MetricsNote = FilterMetricRow.Note(onEm ? $"Planar EM, {em!.S.FrequencyCount} points" : "Circuit bench", x);
         }
         else
         {
@@ -656,10 +685,12 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(EmTip));
         OnPropertyChanged(nameof(PolishTip));
+        OnPropertyChanged(nameof(MakePCellTip));
         OnPropertyChanged(nameof(CalibrateTip));
         RunEmCommand.NotifyCanExecuteChanged();
         PolishCommand.NotifyCanExecuteChanged();
         CalibrateCommand.NotifyCanExecuteChanged();
+        MakePCellCommand.NotifyCanExecuteChanged();
         CancelWorkCommand.NotifyCanExecuteChanged();
     }
 
@@ -790,4 +821,49 @@ public sealed partial class FilterDesignerViewModel : ObservableObject
                + (refusal is null ? "" : $" Its sites could not be read: {refusal}") + string.Concat(sites.Notes.Select(n => " " + n))
                + (_schematic is null ? $" In {schematic.DocumentName}; Update Layout from Schematic draws its layout." : "");
     }
+
+    // ══ Make PCell (brief-pcd-12 R-pcd12-2) ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>The workspace a designed cell goes into; the window gives the open one. With none, the schematic's.</summary>
+    public Func<string?>? WorkspaceRoot { get; set; }
+
+    /// <summary>Opens the PCell Designer on a cell folder in a workspace root; the window gives it.</summary>
+    public Action<string, string>? OpenDesigner { get; set; }
+
+    private string? MakeRoot => WorkspaceRoot?.Invoke() ?? _schematic?.KitWorkspaceRoot;
+
+    /// <summary>What Make PCell… does, or why it cannot.</summary>
+    public string MakePCellTip => _realisation is null ? "Make PCell turns the selected realisation into a designed cell, once it is realised."
+        : MakeRoot is null ? "Open a workspace first: a designed cell is a cell of one."
+        : "Make the realisation a designed cell (FilterPCell1, 2, …): the part, its site parts and two Ports, each length, gap "
+          + "and width a parameter with a ±20 % range; then open it in the PCell Designer.";
+
+    private bool CanMakePCell() => !Busy && _realisation is not null && _spec is not null && Selected is not null && MakeRoot is not null;
+
+    /// <summary>
+    /// The selected realisation as the designed cell <c>FilterPCell&lt;k&gt;</c> in the workspace (<see cref="PCellFilter.Make"/>,
+    /// what <c>circuitrf filter --pcell</c> calls), on a worker; then the PCell Designer opened on it. The status names its
+    /// parameters and the design check's errors.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanMakePCell))]
+    public void MakePCell()
+    {
+        if (_spec is not { } spec || _realisation is not { } realisation || Selected is not { } row || MakeRoot is not { } root) return;
+        int k = 1;
+        while (Directory.Exists(Path.Combine(root, $"FilterPCell{k}"))) k++;
+        string name = $"FilterPCell{k}";
+        Work = RunWork("Make PCell", async _ =>
+        {
+            var made = await Task.Run(() => PCellFilter.Make(root, name, spec, realisation, row.Name));
+            LastPCell = made.CellDir;
+            if (made.Refusal is { } why) return $"Make PCell: {why}";
+            int errors = made.Findings.Count(f => f.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error);
+            OpenDesigner?.Invoke(made.CellDir!, root);
+            return $"Made {name}: {made.Parameters.Count} parameters ({string.Join(", ", made.Parameters.Select(p => p.Name))}); "
+                   + (errors == 0 ? "the design check passes." : $"the design check finds {errors} error(s): {made.Findings.First(f => f.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error).Render()}");
+        });
+    }
+
+    /// <summary>The cell folder the last Make PCell wrote, or null.</summary>
+    public string? LastPCell { get; private set; }
 }

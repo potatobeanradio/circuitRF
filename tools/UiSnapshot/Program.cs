@@ -37,6 +37,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]
 // UiSnapshot --yield <file.csch> -o <out.png> [--mode sensitivity|montecarlo|yield|corners|centering|doe] [--run]
 //            [--by entry|port|instance] [--select <key>] [--expand <label>] [--exclude <instance>]... [--snp-off] [--sens-display] [--size WxH] [steps]
+// UiSnapshot --pcell-designer <cell folder> -o <out.png> [--size WxH]
 // UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
 //            [--impedance <freq|none>] [--impedance-layer <name>]... [--finding <kind>] [--impedance-panel]
@@ -218,6 +219,7 @@ string? settingsPlugins = null; bool pluginAddressDialog = false, pluginInstallP
 string? analysisBody = null;   // LP-1: lp | lpp; R-hbv-1: hb
 string? phasedArray = null, paBlock = null, paColor = "amplitude", paTab = "beam";   // brief-paa-9
 string? filterDesigner = null; bool fdBusy = false, fdEm = false; double? fdLeft = null, fdBottom = null;
+string? pcellDesigner = null;
 int paDrag = 0;
 double paTo = 30;
 string? pluginImage = null; (double, double)? pluginClick = null;
@@ -351,6 +353,7 @@ for (int i = 0; i < args.Length; i++)
         case "--analysis-body" when i + 1 < args.Length: analysisBody = args[++i]; break;
         case "--phased-array" when i + 1 < args.Length: phasedArray = Path.GetFullPath(args[++i]); break;
         case "--filter-designer" when i + 1 < args.Length: filterDesigner = args[++i].ToLowerInvariant(); break;
+        case "--pcell-designer" when i + 1 < args.Length: pcellDesigner = args[++i]; break;
         case "--fd-busy": fdBusy = true; break;
         case "--fd-em": fdEm = true; break;
         case "--fd-left" when i + 1 < args.Length: fdLeft = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); break;
@@ -672,6 +675,14 @@ if (filterDesigner is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     if (dark && Application.Current is { } fdApp) fdApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
     return FilterDesignerSnapshot.Run(filterDesigner, fdBusy, fdEm, fdLeft, fdBottom, output, sizeGiven ? width : 1100, sizeGiven ? height : 780);
+}
+// brief-pcd-8 — the PCell Designer window on a designed cell (--pcell-designer <cell folder>).
+if (pcellDesigner is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    if (dark && Application.Current is { } pcdApp) pcdApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    return PCellDesignerSnapshot.Run(pcellDesigner, output, sizeGiven ? width : 1200, sizeGiven ? height : 800);
 }
 // brief-paa-9 — the Phased Array tool window on one array of a .cnl bench (--phased-array bench.cnl).
 if (phasedArray is not null && output is not null)

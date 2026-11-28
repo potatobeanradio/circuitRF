@@ -1,0 +1,57 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "F",
+      "DefaultExpression": "2.45",
+      "Unit": "GHz",
+      "Dimension": "Frequency",
+      "ShowOnSchematic": true,
+      "Description": "centre frequency",
+      "Minimum": 1500000000,
+      "Maximum": 3500000000
+    },
+    {
+      "Name": "Th",
+      "DefaultExpression": "49",
+      "Unit": "deg",
+      "Dimension": "Angle",
+      "ShowOnSchematic": true,
+      "Description": "phase line\u0027s straight run at F",
+      "Minimum": 0.523598775598299,
+      "Maximum": 1.22173047639603
+    }
+  ],
+  "PrimarySchematic": "Wilkinson3.csch",
+  "PrimarySymbol": "Wilkinson3.csym",
+  "PrimaryLayout": "Wilkinson3.clay",
+  "IsTestBench": false,
+  "LayoutGenerator": "cpcell:Wilkinson3",
+  "PCellDesign": {
+    "Sweep": "start=1.5 stop=3.5 npts=81 Unit=GHz"
+  },
+  "EmCopper": true,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "P1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "P2",
+      "LayoutPin": "2"
+    },
+    {
+      "Port": 3,
+      "Name": "P3",
+      "LayoutPin": "3"
+    },
+    {
+      "Port": 4,
+      "Name": "P4",
+      "LayoutPin": "4"
+    }
+  ],
+  "NumPorts": 4
+}

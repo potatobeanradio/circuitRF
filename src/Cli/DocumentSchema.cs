@@ -1492,6 +1492,8 @@ internal static class DocumentSchema
         return v switch
         {
             null            => "null",
+            // An id drawn fresh by each constructed instance has no fixed default to print.
+            Guid or string when Guid.TryParse(v.ToString(), out _) => "(a new id)",
             string s        => s.Length == 0 ? "\"\"" : "\"" + s + "\"",
             bool b          => b ? "true" : "false",
             Enum e          => e.ToString(),

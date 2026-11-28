@@ -288,6 +288,9 @@ return JsonRun.Finish(exit);
     "filter" => a => a.Length > 0 && a[0].Equals("lc", StringComparison.OrdinalIgnoreCase)
                          ? CircuitRF.Cli.LcFilterVerb.Run(a[1..])
                          : CircuitRF.Cli.FilterVerb.Run(a),
+    // The PCell Designer, headless (brief-pcd-7): ONE verb with nouns. It owns no designing — every noun calls the
+    // src/Design/PCellDesigner function the window's command calls, and `render` draws through `render`'s own layout path.
+    "pcell"  => CircuitRF.Cli.PCellVerb.Run,
     // A plugin with no display (brief-plg-5): ONE verb with nouns. It owns no plugin logic — the run is
     // src/Design/Plugins' PluginHeadless, the process host and the placement the panel calls.
     "plugin" => CircuitRF.Cli.Plugin.Run,
@@ -3203,6 +3206,7 @@ static int PrintHelp()
     Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
     Console.WriteLine("  chain  <path.cchain> [-o budget.npy] [--to-schematic [dir]]  (the RF Chain Budget, stage by stage)");
     Console.WriteLine("  filter --band b --order n --f1 f [--f2 f] [--realiser r -o x.cnl]  (filter synthesis: the realisers, or one realised)");
+    Console.WriteLine("  filter --band b --order n --f1 f --realiser r --pcell <name>  (one realised as a designed cell, for pcell)");
     Console.WriteLine("  filter --extract <file.s2p> --band bandpass --order n --f1 f --f2 f  (a two-port's filter metrics against the spec)");
     Console.WriteLine("  snp    <file.sNp>    (the S-Parameter Viewer: what the file states, and its Smith, dB and phase plots)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");
@@ -3214,6 +3218,8 @@ static int PrintHelp()
     Console.WriteLine("  import part <file>     (a footprint and its symbol, as a cell)");
     Console.WriteLine("  import schematic <file> (a .kicad_sch, EDIF or binary .DSN design, as a new cell)");
     Console.WriteLine("  export part <cell> --library <dir>  (a cell as a model in a model library)");
+    Console.WriteLine("  pcell   new|check|render|export|import|ops <cell>  (the PCell Designer: a designed cell, its check,");
+    Console.WriteLine("                          its layout at values, its .cpcell package)");
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");
     Console.WriteLine("  explain <path>         (what did circuitRF resolve it to, and by which walk)");
     Console.WriteLine("  history checkpoint|list|restore|commit|versions|clone|pins|pin|unpin|fetch|send <workspace>");
@@ -3357,6 +3363,19 @@ static int PrintHelp()
     Console.WriteLine("  --codepage N            an EDIF or binary .DSN file's text encoding. Default 1252");
     Console.WriteLine("  --list                  report the pages, the parts and the port candidates; write nothing");
     Console.WriteLine("                          Exit 1 when the connectivity check is not matched (the cell is written).");
+    Console.WriteLine();
+    Console.WriteLine("pcell options:");
+    Console.WriteLine("  pcell new <workspace-or-dir> <name>   a designed cell: schematic, symbol, and its");
+    Console.WriteLine("                          .ccell naming the cpcell: generator");
+    Console.WriteLine("  pcell check <cell> [--severity warning|error]   the design check; exit as check");
+    Console.WriteLine("  pcell render <cell> -o <out.svg|.pdf|.png> [--set name=value]...");
+    Console.WriteLine("                          the layout at those values (each a number with its unit,");
+    Console.WriteLine("                          Lpad=200um; the rest stay at their defaults), with every");
+    Console.WriteLine("                          render option a .clay takes");
+    Console.WriteLine("  pcell export <cell> -o <file.cpcell>   the PCell package; runs the check first");
+    Console.WriteLine("  pcell import <file.cpcell> --into <workspace-or-library-folder>");
+    Console.WriteLine("  pcell ops <cell>        the cell's operation history (merge, subtract, grow, repeat ...),");
+    Console.WriteLine("                          one line each, as the designer's history panel lists it");
     Console.WriteLine();
     Console.WriteLine("check options:");
     Console.WriteLine("  <path>                  a workspace, a cell folder, or one .csch .csym");

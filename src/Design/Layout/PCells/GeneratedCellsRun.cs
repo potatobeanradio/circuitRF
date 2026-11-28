@@ -35,6 +35,8 @@ public sealed class GeneratedCellsRun : IDisposable
     private readonly Func<string?, Technology?> _resolveTech;
     private readonly List<string> _overlayKeys = [];
     private readonly Dictionary<string, PCellWorkerResolver> _kitResolvers = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>brief-pcd-0 §5 seam 12: the designed-cell registration held per workspace root for this run.</summary>
+    private readonly Dictionary<string, IDisposable> _designedCells = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _visitedCells = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _settled = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<UnbuildableGeneratedCell> _unbuildable = [];
@@ -234,7 +236,8 @@ public sealed class GeneratedCellsRun : IDisposable
 
     private string Reason(string generatorId, Exception ex)
     {
-        if (!PCellRegistry.IsBuiltIn(generatorId) && _kitsNotAllowed.Count > 0)
+        if (!PCellRegistry.IsBuiltIn(generatorId) && _kitsNotAllowed.Count > 0
+            && CircuitRF.Design.PCellDesigner.DesignedPCellResolver.CellDirOf(generatorId) is null)   // a designed cell needs no kit
             return $"its generator is not built in, and {Plural(_kitsNotAllowed.Count, "kit")} that could draw it " +
                    $"{(_kitsNotAllowed.Count == 1 ? "has" : "have")} not been allowed to run here: " +
                    string.Join(", ", _kitsNotAllowed.Select(k => $"'{k.Directory}'")) + ".";
@@ -282,6 +285,7 @@ public sealed class GeneratedCellsRun : IDisposable
     private void EnsureKitResolver(string workspaceRoot)
     {
         if (_kitResolvers.ContainsKey(workspaceRoot)) return;
+        _designedCells.TryAdd(workspaceRoot, CircuitRF.Design.PCellDesigner.DesignedPCellResolver.Register(workspaceRoot));
 
         var given = _options.Trust ?? (_ => PCellTrustDecision.Unknown);
         PCellTrustDecision trust(string dir)
@@ -352,6 +356,10 @@ public sealed class GeneratedCellsRun : IDisposable
             try { resolver.Dispose(); } catch { /* teardown must not fail the run that is ending */ }
         }
         _kitResolvers.Clear();
+
+        foreach (var designed in _designedCells.Values)
+            try { designed.Dispose(); } catch { /* teardown must not fail the run that is ending */ }
+        _designedCells.Clear();
     }
 }
 

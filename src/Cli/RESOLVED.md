@@ -3801,3 +3801,12 @@ A summary table reads the document's SELECTED source, so `CddSources.Describe` a
 "reads 'run.npy', which is not in …" for a display whose selection is `Loadpull.npy` and which names `run.npy` nowhere.
 It now reports the file the sentinel stands for (`SelectedDataSource`), and the sentinel only when nothing is selected.
 `render`'s binding is unchanged: it does need the selected source for those columns.
+
+## `pcell` — the PCell Designer, headless (2026-11-27)
+
+One verb with five nouns (`new`, `check`, `render`, `export`, `import`), each calling the function the PCell Designer's
+window calls; `Pcd7PCellVerbTests` compares the process against the in-process call byte for byte and scans `PCellVerb.cs`
+for logic. A designed cell at values exists only in memory, so `render` reaches its own layout path through
+`Render.RunLayout(args, documentPath, view)` instead of writing a temporary `.clay` into the user's cell folder or copying
+the renderer. `ServeProtocolAdapterTests` gained `pcell` and two rows it had been missing (`create/lcFilter`,
+`create/layout`). Exit codes: 0 done, 1 refused or a finding at the threshold, 130 render cancelled.

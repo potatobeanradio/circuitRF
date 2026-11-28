@@ -860,6 +860,9 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
                 string key = Path.GetFileNameWithoutExtension(selected);
                 if (!selected.EndsWith(".npy", StringComparison.OrdinalIgnoreCase) || !runKeys.Contains(key))
                     continue;   // an EM result or a file no schematic writes: a display opened by hand
+                if (doc.RootElement.TryGetProperty("SourceAliases", out var aliases)
+                    && aliases.EnumerateObject().Count(a => runKeys.Contains(Path.GetFileNameWithoutExtension(a.Name))) > 1)
+                    continue;   // it reads several runs (Loadpull's Linked Plots): no one run opens it
                 if (!string.Equals(Path.GetFullPath(cdd), ResultsWriter.AuthoredDisplayPath(example.Directory, key),
                                    StringComparison.Ordinal))
                     wrong.Add($"{example.Folder}/{Path.GetFileName(cdd)} reads {selected}; name it '{key}.cdd'");

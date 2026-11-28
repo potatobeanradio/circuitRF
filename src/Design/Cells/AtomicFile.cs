@@ -11,7 +11,7 @@ public static class AtomicFile
 {
     public static void WriteAllText(string path, string contents)
     {
-        var tmp = path + ".tmp";
+        var tmp = TempFor(path);
         try
         {
             File.WriteAllText(tmp, contents);
@@ -33,7 +33,7 @@ public static class AtomicFile
     /// partial edit, where a text round trip could re-encode what was not changed (HZN-1).</summary>
     public static void WriteAllBytes(string path, byte[] contents)
     {
-        var tmp = path + ".tmp";
+        var tmp = TempFor(path);
         try
         {
             File.WriteAllBytes(tmp, contents);
@@ -45,6 +45,11 @@ public static class AtomicFile
             throw;
         }
     }
+
+    /// <summary>A temp name of this write's own, beside <paramref name="path"/>. Two writers of one file at once (the PCell
+    /// Designer's canvas and its Save generating the same cell) each move their own temp over it; a shared name let one
+    /// move the other's away, its move then failed, and the part whose cell it was went missing from the layout.</summary>
+    private static string TempFor(string path) => $"{path}.crf-tmp-{Guid.NewGuid().ToString("N")[..8]}";
 
     internal const int MoveAttempts = 5;
     private const int FirstRetryMs = 50;

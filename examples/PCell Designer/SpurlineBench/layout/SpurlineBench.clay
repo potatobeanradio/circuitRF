@@ -1,0 +1,124 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"X1": {
+			"Ls": 0.009210000000000001,
+			"g": 0.0002,
+			"W": 0.0011
+		}
+	},
+	"GeneratedPlacements": {
+		"P1": {
+			"X": 0,
+			"Y": 0,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 22000000,
+			"Y": 0,
+			"RotationDeg": 180,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"X1": {
+			"X": 11000000,
+			"Y": -550000,
+			"RotationDeg": 90,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"cpcell-Spurline_4ac39fd944ca": {
+			"GeneratorId": "cpcell:Spurline",
+			"Parameters": {
+				"Ls": 0.009210000000000001,
+				"g": 0.0002,
+				"W": 0.0011
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": 0,
+			"Text": "1",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 22000000,
+			"Y": 0,
+			"Text": "2",
+			"Height": 550000,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R180",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				24540000, 3090000,
+				-2540000, 3090000,
+				-2540000, -3090000,
+				24540000, -3090000
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/cpcell-Spurline_4ac39fd944ca",
+			"X": 11000000,
+			"Y": -550000,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "X1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		}
+	]
+}

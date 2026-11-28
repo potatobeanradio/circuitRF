@@ -97,6 +97,10 @@ The plot shows |S21| and |S11| in dB:
 - **realised**: the selected realisation's test bench, run by the engine. That is the part with each site filled, on the
   substrate, between two ports of Z0. The bench has the board's loss.
 
+Markers work as on any [Data Display](data-display.html) plot (add one from the plot's menu, drag it or step it with
+the arrow keys, read it in its box), and each one stays on its trace, at its own frequency, when an edit recomputes
+the response.
+
 Above the plot, a line reads the loss out. It gives the unloaded Q, the loss the ideal at that Q has at the centre
 frequency, and the realised part's own loss there, with how much of it is dissipated rather than reflected. For example,
 the five-pole hairpin's 3 dB or so at 2.4 GHz is nearly all dissipation, close to what the ideal at Qu loses, and not a
@@ -153,6 +157,26 @@ schematic only: **Update Layout from Schematic** then draws the filter's layout.
 Schematic</b>: five hairpins, fed by taps on the outer two.</figcaption>
 </figure>
 
+## Make PCell {#make-pcell}
+
+**Make PCell…** turns the selected realisation into a [designed cell](pcell-designer.html): a cell of the open workspace,
+named `FilterPCell1` (`FilterPCell2`, … when taken; rename it in the project tree), which then opens in the PCell Designer.
+The cell holds the realised part (`F1`), a part on each of its sites, and two Ports, as the bench has them. The board is
+the workspace technology's, so the part states no substrate of its own.
+
+Each synthesis dimension becomes one of the cell's parameters, named as the part's row: the strip width `W`, the resonator
+lengths `L1`, `L2`, …, the gaps `S2`, `S3`, …, the tap `Tap`, the arm spacing `Sa` (and `Gap`, `Wc`, or an MCLA's `W1`,
+`S1`, …, whatever the realiser sets). The part's row holds the parameter's name, so the parameter drives the copper. Each
+default is the synthesised value; each range is ±20 % of it, the band the optimizer hand-off tunes over. Counts, names,
+a ladder's `Sections` text and the site parts' values stay as written.
+
+The cell keeps the filter's specification, so its metrics can be read back from its own circuit response or from an EM
+result, against the same checks as above. Every edit, Run EM and Optimise then work on it as on any designed cell, and
+**Export…** writes it as a PCell package. A hairpin or open-loop cell can also be polished on its parameters: the polished
+lengths, gaps and tap become its new defaults.
+
+From the command line, `--pcell <name>` does the same (see below).
+
 ## Running it headless {#headless}
 
 `circuitrf filter` does the same thing with no window. Without `--realiser`, it lists the realisers and whether each can
@@ -160,6 +184,12 @@ build the filter. With one, it writes the test bench as a `.cnl` (see the [comma
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf filter --band bandpass --order 3 --f1 2.2GHz --f2 2.6GHz --tech pcb-2layer_RO4350B_20mil_1oz
 <span class="prompt">$ </span>circuitrf filter --band bandpass --order 3 --f1 2.2GHz --f2 2.6GHz --tech pcb-2layer_RO4350B_20mil_1oz --realiser MCRC -o bpf.cnl --to-schematic
-<span class="prompt">$ </span>circuitrf sparam bpf.cnl</code></pre>
+<span class="prompt">$ </span>circuitrf sparam bpf.cnl
+<span class="prompt">$ </span>circuitrf --workspace myws filter --band bandpass --order 3 --f1 2.2GHz --f2 2.6GHz --realiser "tapped feed" --pcell HairpinBpf</code></pre>
+
+`--pcell` makes the realisation a designed cell, as [Make PCell](#make-pcell) does: a bare name goes into the
+`--workspace` root (else the current folder), a path into its own folder, which must be in a workspace. It prints the cell
+and its parameters, forwards the design check's findings, and exits 1 on a check error. With no `--tech`, the realiser
+designs on that workspace's board.
 
 Over MCP it is the `create` tool's `filter` mode, with the same arguments.

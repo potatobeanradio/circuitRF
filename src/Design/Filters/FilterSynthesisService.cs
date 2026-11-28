@@ -86,6 +86,13 @@ public static class FilterSynthesisService
     /// </summary>
     public static string Cnl(FilterSpec spec, FilterRealisation realisation, string realiser, MicrostripSubstrate? substrate,
         Technology? technology, int points, List<string> notes)
+        => Circuit(spec, realisation, realiser, substrate, technology, notes) + Analysis(spec, points);
+
+    /// <summary><see cref="Cnl"/> without its sweep: the two ports, the part and its site parts. With no
+    /// <paramref name="substrate"/> nothing states one, so the parts take their technology's, as a designed cell's do
+    /// (brief-pcd-12 D3).</summary>
+    public static string Circuit(FilterSpec spec, FilterRealisation realisation, string realiser, MicrostripSubstrate? substrate,
+        Technology? technology, List<string> notes)
     {
         var part = Part(realisation, "F1");
         string Net(string pin) => pin switch { "1" => "p1", "2" => "p2", _ => pin.ToLowerInvariant() };
@@ -120,7 +127,7 @@ public static class FilterSynthesisService
             string land = footprint ?? FootprintDefaults.For(rlc, technology) ?? "";
             b.AppendLine($"{role}:{role}{k} {a} {c} {role}={F(site.Value)}" + (land.Length > 0 ? $" Footprint={land}" : ""));
         }
-        return b.Append(Analysis(spec, points)).ToString();
+        return b.ToString();
     }
 
     /// <summary>

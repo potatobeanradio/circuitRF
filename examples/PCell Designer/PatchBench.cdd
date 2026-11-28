@@ -1,0 +1,84 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": "PatchBench.npy",
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Response",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 640,
+          "Height": 380,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Dual-mode patch bandpass by Planar EM",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "PatchBench.npy",
+              "Row": 1,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              }
+            },
+            {
+              "SourcePath": "PatchBench.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 1,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 9,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 9,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0
+}

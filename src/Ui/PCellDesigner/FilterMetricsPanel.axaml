@@ -1,0 +1,51 @@
+<!-- Owner: PCD-12 (brief-pcd-12 R-pcd12-3). A designed filter cell's metrics, as the Filter Designer shows its own: whose
+     response it is and how many checks fail, then the spec's rows and the matrix's rows side by side, each value against
+     its target with pass or fail. Self-contained: it takes one value, Metrics, and keeps its own DataContext on its root,
+     so the host's binding of Metrics is untouched. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:pcd="using:CircuitRF.Ui.PCellDesigner"
+             xmlns:vm="using:CircuitRF.Ui.Filters"
+             x:Class="CircuitRF.Ui.PCellDesigner.FilterMetricsPanel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.note">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.fail">
+            <Setter Property="Foreground" Value="{DynamicResource SystemErrorTextColor}"/>
+        </Style>
+    </UserControl.Styles>
+    <StackPanel x:Name="Root" x:DataType="pcd:FilterMetricsView" Spacing="4">
+        <TextBlock Text="Filter metrics" FontWeight="SemiBold"/>
+        <TextBlock Classes="note" Text="{Binding Note}"/>
+        <ScrollViewer MaxHeight="150" HorizontalScrollBarVisibility="Disabled">
+            <Grid ColumnDefinitions="*,16,*">
+                <ItemsControl ItemsSource="{Binding SpecRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FilterMetricRow">
+                            <Grid ColumnDefinitions="100,90,90,*">
+                                <TextBlock Classes="note" Text="{Binding Name}"/>
+                                <TextBlock Classes="note" Grid.Column="1" Text="{Binding Value}"/>
+                                <TextBlock Classes="note" Grid.Column="2" Text="{Binding Target}"/>
+                                <TextBlock Classes="note" Grid.Column="3" Text="{Binding Verdict}" Classes.fail="{Binding Fail}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ItemsControl Grid.Column="2" ItemsSource="{Binding MatrixRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FilterMetricRow">
+                            <Grid ColumnDefinitions="60,90,90,*">
+                                <TextBlock Classes="note" Text="{Binding Name}"/>
+                                <TextBlock Classes="note" Grid.Column="1" Text="{Binding Value}"/>
+                                <TextBlock Classes="note" Grid.Column="2" Text="{Binding Target}"/>
+                                <TextBlock Classes="note" Grid.Column="3" Text="{Binding Verdict}" Classes.fail="{Binding Fail}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </ScrollViewer>
+    </StackPanel>
+</UserControl>

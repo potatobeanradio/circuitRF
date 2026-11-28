@@ -13,6 +13,7 @@
 using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices.External;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Layout.SchematicSync;
 using CircuitRF.Design.Schematic;
 
@@ -133,22 +134,37 @@ public static class EmModelSwitch
     }
 
     /// <summary>
-    /// brief-sdl-10 D2 — the instances of EM cells that have no circuit model (a 3D-parametric cell with no schematic, whose
-    /// definition has ports and nothing in it), as <c>X1</c> or <c>cell:X1</c>. Such a part is simulated by EM only:
-    /// <c>em=correct</c> has nothing to search on, and a run by circuit models would leave it open.
+    /// brief-sdl-10 D2 — the instances that have no circuit model, as <c>X1</c> or <c>cell:X1</c>: an EM cell with none (a
+    /// 3D-parametric cell with no schematic, whose definition has ports and nothing in it), and drawn metal (MSHAPE, PCD-3)
+    /// whose <c>Model</c> is neither <c>open</c> nor <c>short</c>. Such a part is simulated by EM only: <c>em=correct</c> has nothing to search on,
+    /// and a run by circuit models would leave it open.
     /// </summary>
     public static IReadOnlyList<string> WithoutCircuitModel(TestBench tb, Library lib)
     {
-        bool Empty(Instance i) => NamesEmCell(i) && lib.Find(i.Reference) is { Instances.Count: 0 };
+        bool Empty(Instance i) => (NamesEmCell(i) && lib.Find(i.Reference) is { Instances.Count: 0 }) || DrawnWithoutModel(i);
         return tb.Instances.Where(Empty).Select(i => i.InstanceName)
             .Concat(lib.Cells.SelectMany(c => c.Instances.Where(Empty).Select(i => $"{c.Name}:{i.InstanceName}")))
+            .Concat(PCellDesigner.Operations.PCellOperations.WithoutCircuitModelIn(tb, lib))   // brief-pcd-13 R-pcd13-4
             .ToList();
     }
 
+    /// <summary>An MSHAPE whose <c>Model</c> is absent or anything but <c>open</c> or <c>short</c>, quoted or not
+    /// (brief-pcd-0 §4.3).</summary>
+    private static bool DrawnWithoutModel(Instance i) =>
+        i.Reference.Equals(DrawnMetal.GeneratorId, StringComparison.OrdinalIgnoreCase)
+        && !IsTool(i)   // brief-pcd-13 D2: a tool is a cutter, not a part of the circuit
+        && i.Overrides.LastOrDefault(o => o.Name.Equals(DrawnMetal.Model, StringComparison.OrdinalIgnoreCase))
+               ?.Expression.Trim().Trim('"').Trim().ToLowerInvariant() is not (DrawnMetal.ModelOpen or DrawnMetal.ModelShort);
+
+    private static bool IsTool(Instance i) =>
+        i.Overrides.LastOrDefault(o => o.Name.Equals(DrawnMetal.Role, StringComparison.OrdinalIgnoreCase))
+            ?.Expression.Trim().Trim('"').Trim().Equals(DrawnMetal.RoleTool, StringComparison.OrdinalIgnoreCase) == true;
+
     /// <summary>The refusal of a run by circuit models of <paramref name="names"/> (<see cref="WithoutCircuitModel"/>).</summary>
     public static string NoCircuitModelSentence(IReadOnlyList<string> names) =>
-        $"{string.Join(", ", names)} {(names.Count == 1 ? "has" : "have")} no circuit model (a 3D-parametric cell with no " +
-        "schematic), so it cannot be run by circuit models; it is simulated by EM only.";
+        $"{string.Join(", ", names)} {(names.Count == 1 ? "has" : "have")} no circuit model, so " +
+        $"{(names.Count == 1 ? "it" : "they")} cannot be run by circuit models and {(names.Count == 1 ? "is" : "are")} " +
+        "simulated by EM only. Run it with em=direct, or give it a circuit model.";
 
     /// <summary><c>--em off</c>: every instance back on its circuit model, whatever it states.</summary>
     public static (TestBench Tb, Library Lib) CircuitOnly(TestBench tb, Library lib)
@@ -258,6 +274,16 @@ public static class EmModelSwitch
             }
             notes.AddRange(closed.Notes);
         }
+
+        // brief-pcd-1 — a generator cell's own values (X1.Lpad) are its geometry. Path A's EM instance is handed the globals
+        // only, so each is carried as one, named for its instance (EmEvaluation.InstanceValueName), and Apply writes it back
+        // onto the instance.
+        if (!target.ThreeDOnly)
+            foreach (var c in model.Components.Where(c => c.InstanceName.Length > 0 && EmPartKinds.IsGeneratorCellInstance(c, schematicDir)))
+                if (tb.Instances.FirstOrDefault(i => i.InstanceName == c.InstanceName) is { } placed)
+                    foreach (var o in placed.Overrides)
+                        if (EmEvaluation.InstanceValueName(placed.InstanceName, o.Name) is { } carried)
+                            bench.GlobalVariables.Add(new Variable(carried, o.Expression, o.Unit));
 
         bench.Instances.Add(new Instance("EM_" + ResultsNameOf(target.CellName), PathAReference, terminals,
         [

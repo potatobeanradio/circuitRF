@@ -299,7 +299,7 @@ public static class NetlistSchematic
         if (exact is not { PlaceOnly: true })
         {
             var grounds = PlaceGrounds(model, placed);
-            if (exact is null or { AutoRoute: true }) Wire(model, placed, grounds, notes);
+            if (exact is null or { AutoRoute: true }) Wire(model, placed, grounds, notes, exact?.QuietNets);
             else WireExact(model, placed, grounds, exact, notes);
         }
         PlaceDirectives(model, tb);
@@ -830,7 +830,7 @@ public static class NetlistSchematic
         // the symbol has no other way to know how many pins to draw.
         if (ComponentTypeRegistry.PortCountParameter(kind) is { } countParam
             && kind is not (SymbolKind.Switch or SymbolKind.SwitchD or SymbolKind.WBond or SymbolKind.PhasedArray or SymbolKind.Mlad
-                            or SymbolKind.Mcla or SymbolKind.PropagationChannel)
+                            or SymbolKind.Mcla or SymbolKind.PropagationChannel or SymbolKind.MShape)
             && !comp.Parameters.Any(p => p.Name == countParam))
         {
             int n = kind is SymbolKind.Sdd or SymbolKind.ZPort ? nets.Count / 2
@@ -1543,7 +1543,10 @@ public static class NetlistSchematic
     //  Wires and labels
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static void Wire(SchematicEditModel model, List<Item> placed, List<Item> grounds, List<string> notes)
+    /// <param name="quiet">Nets left unlabelled when their wires reach every pin (<see cref="ExactPlacement.QuietNets"/>;
+    /// brief-pcd-4 D5). Null labels every net, as before.</param>
+    private static void Wire(SchematicEditModel model, List<Item> placed, List<Item> grounds, List<string> notes,
+                             IReadOnlySet<string>? quiet = null)
     {
         var all = placed.Concat(grounds).ToList();
 
@@ -1603,6 +1606,7 @@ public static class NetlistSchematic
         foreach (var net in signalNets)
         {
             if (unroutedNets.Contains(net)) continue;   // already labelled at its terminals
+            if (quiet?.Contains(net) == true) continue;   // routed whole: the wires carry it, unnamed
             if (LabelPoint(net, wiresOf, segs, keepCells) is { } at)
             {
                 var label = new EditableNetLabel { Name = net };

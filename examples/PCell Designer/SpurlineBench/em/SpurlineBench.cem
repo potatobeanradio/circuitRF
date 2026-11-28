@@ -1,0 +1,60 @@
+{
+  "FormatVersion": 1,
+  "Name": "SpurlineBench",
+  "LayoutRef": "SpurlineBench/layout/SpurlineBench.clay",
+  "Frequency": {
+    "StartExpr": "4.6",
+    "StopExpr": "5.6",
+    "StepExpr": "",
+    "NumPoints": 41,
+    "Mode": "PointCount",
+    "Kind": "Linear",
+    "StartUnit": "GHz",
+    "StopUnit": "GHz",
+    "StepUnit": "Hz"
+  },
+  "Port1Z0Real": 50,
+  "Port1Z0Imag": 0,
+  "Port2Z0Real": 50,
+  "Port2Z0Imag": 0,
+  "PortZ0s": [
+    50,
+    0,
+    50,
+    0
+  ],
+  "SchematicPortZ0s": [
+    {
+      "Port": 1,
+      "Real": 50,
+      "Imag": 0
+    },
+    {
+      "Port": 2,
+      "Real": 50,
+      "Imag": 0
+    }
+  ],
+  "Mesh": {
+    "MinCellsAcrossWidth": 6,
+    "EdgeCells": 3,
+    "EdgeFractionOfWidth": 0.03,
+    "EdgeGrowthRatio": 1.7,
+    "TruncationHeights": 20,
+    "TruncationTailCells": 12
+  },
+  "DispersionCorrection": true,
+  "ConductorThicknessCorrection": true,
+  "AnalysisKind": "Planar",
+  "Palace": {
+    "Quality": "Draft",
+    "SaveFieldsGHz": []
+  },
+  "OpenEms": {
+    "SaveFieldsGHz": []
+  },
+  "EMerge": {
+    "Quality": "Draft",
+    "SaveFieldsGHz": []
+  }
+}

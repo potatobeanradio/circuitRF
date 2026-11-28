@@ -1,0 +1,55 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [
+    {
+      "Name": "a",
+      "DefaultExpression": "15",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "patch side",
+      "Minimum": 0.012,
+      "Maximum": 0.018
+    },
+    {
+      "Name": "d",
+      "DefaultExpression": "3.9",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "corner cut",
+      "Minimum": 0.0005,
+      "Maximum": 0.005
+    },
+    {
+      "Name": "s",
+      "DefaultExpression": "0.16",
+      "Unit": "mm",
+      "Dimension": "Length",
+      "ShowOnSchematic": true,
+      "Description": "feed gap",
+      "Minimum": 0.00016,
+      "Maximum": 0.001
+    }
+  ],
+  "PrimarySchematic": "DualModePatch.csch",
+  "PrimarySymbol": "DualModePatch.csym",
+  "PrimaryLayout": "DualModePatch.clay",
+  "IsTestBench": false,
+  "LayoutGenerator": "cpcell:DualModePatch",
+  "PCellDesign": {},
+  "EmCopper": true,
+  "Terminals": [
+    {
+      "Port": 1,
+      "Name": "P1",
+      "LayoutPin": "1"
+    },
+    {
+      "Port": 2,
+      "Name": "P2",
+      "LayoutPin": "2"
+    }
+  ],
+  "NumPorts": 2
+}

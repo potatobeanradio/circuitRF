@@ -1241,3 +1241,19 @@ change is far smaller (0.03 %), because R mostly turns the current's phase. Noth
 The series inductance quoted for the EM setup is Im(−1/Y12)/ω at 2 GHz from the setup's `.s2p`: 228.48 pH on the previous
 geometry against the recorded 228.47, so the definition is the recorded one. The four Output Wires figures on the Thermal page
 are SVG now (`docs/user/assets/fixed/README.md`).
+
+## PCell Designer (2026-11-27)
+
+`PadTee` and its bench are written by `Pcd8ExampleAuthoring` (run with `CRF_AUTHOR_PCD8=1`), through the designer's own
+view model, so the files are what a user's Apply, parameter table, Stretch by Parameter and Save write.
+
+- **The tee turns its stub away from the feed.** In the first version the stub ran beside `TL1`, 2.16 mm (4.25 substrate
+  heights) from port 1, and the bench's Planar solve was refused: a calibrated port's feed needs 5 heights of clear
+  copper over the 60 mil the calibration standard reproduces. `T1`'s pin 1 is now on `TL3`'s side.
+- **The cell's symbol is the one Save writes** from the Ports. Before Save wrote one, the authoring had to.
+- **The authoring replaces only `PadTee/` and `Bench/`**, built in a scratch workspace: its first version rebuilt the
+  whole folder and would have deleted anything else in the example.
+- **LVS on the bench reports one warning**, the unstitched ground pour under `TL1`; no error.
+- **The real Planar runs:** `em=correct` stops after one solve, because the open pad gives `Lpad` no slope in the circuit
+  model; `em=direct` (pattern, 8 solves, about nine minutes) moves `X1.Lpad` from 200 µm to its 600 µm Maximum:
+  `docs/design/pcell-designer.md` §5.

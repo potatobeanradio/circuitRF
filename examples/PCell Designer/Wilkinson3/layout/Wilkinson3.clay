@@ -1,0 +1,451 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 0,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"W1": {
+			"Z0": 50,
+			"F": 2450000000,
+			"K": 1.4142,
+			"Gap": 0.0024
+		},
+		"R1": {},
+		"DS": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 20,
+			"Style": "Straight"
+		},
+		"W2": {
+			"Z0": 50,
+			"F": 2450000000,
+			"K": 1,
+			"Gap": 0.0024
+		},
+		"R2": {},
+		"D1": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 36,
+			"Style": "Corner",
+			"Corner": "Miter",
+			"Side": 1
+		},
+		"D2": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 36,
+			"Style": "Corner",
+			"Corner": "Miter",
+			"Side": -1
+		},
+		"D3": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 49,
+			"Style": "Straight"
+		}
+	},
+	"GeneratedPlacements": {
+		"D1": {
+			"X": 30882354,
+			"Y": 1552801,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"D2": {
+			"X": 34801810,
+			"Y": 5472257,
+			"RotationDeg": 90,
+			"Mirror": false
+		},
+		"D3": {
+			"X": 38721266,
+			"Y": 9391713,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"DS": {
+			"X": 30863748,
+			"Y": -1935493,
+			"RotationDeg": 0,
+			"Mirror": false
+		},
+		"P1": {
+			"X": 0,
+			"Y": -514380,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"Text": "1"
+		},
+		"P2": {
+			"X": 48547974,
+			"Y": 9391713,
+			"RotationDeg": 180,
+			"Mirror": false,
+			"Text": "2"
+		},
+		"P3": {
+			"X": 48444762,
+			"Y": -206657,
+			"RotationDeg": 180,
+			"Mirror": false,
+			"Text": "3"
+		},
+		"P4": {
+			"X": 48444762,
+			"Y": -3664329,
+			"RotationDeg": 180,
+			"Mirror": false,
+			"Text": "4"
+		},
+		"R1": {
+			"X": 12484018,
+			"Y": -35568,
+			"RotationDeg": 270,
+			"Mirror": false
+		},
+		"R2": {
+			"X": 47113016,
+			"Y": -1935493,
+			"RotationDeg": 270,
+			"Mirror": false
+		},
+		"W1": {
+			"X": 0,
+			"Y": -514380,
+			"RotationDeg": 0,
+			"Mirror": false,
+			"ChainAnchor": true
+		},
+		"W2": {
+			"X": 34874650,
+			"Y": -1935493,
+			"RotationDeg": 0,
+			"Mirror": false
+		}
+	},
+	"PCellSnapshots": {
+		"MWPD_2aa22ece0c70": {
+			"GeneratorId": "MWPD",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2450000000,
+				"K": 1.4142,
+				"Gap": 0.0024
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"smt-0603@N_3c3a332a83a4": {
+			"GeneratorId": "smt:0603@N",
+			"Parameters": {},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"MDLY_30910d0289b2": {
+			"GeneratorId": "MDLY",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 20,
+				"Style": "Straight"
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"MWPD_3654bfacf413": {
+			"GeneratorId": "MWPD",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2450000000,
+				"K": 1,
+				"Gap": 0.0024
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"MDLY_7e40895903f8": {
+			"GeneratorId": "MDLY",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 36,
+				"Style": "Corner",
+				"Corner": "Miter",
+				"Side": 1
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"MDLY_966dd3a97450": {
+			"GeneratorId": "MDLY",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 36,
+				"Style": "Corner",
+				"Corner": "Miter",
+				"Side": -1
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		},
+		"MDLY_21a875f5fed4": {
+			"GeneratorId": "MDLY",
+			"Parameters": {
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 49,
+				"Style": "Straight"
+			},
+			"TechIdentity": "tech/microstrip-0508.ctech"
+		}
+	},
+	"Shapes": [
+		{
+			"$type": "Label",
+			"X": 0,
+			"Y": -514380,
+			"Text": "1",
+			"Height": 528836,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P1",
+			"PortDirection": "R0",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 48547974,
+			"Y": 9391713,
+			"Text": "2",
+			"Height": 528836,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P2",
+			"PortDirection": "R180",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 48444762,
+			"Y": -206657,
+			"Text": "3",
+			"Height": 528836,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P3",
+			"PortDirection": "R180",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Label",
+			"X": 48444762,
+			"Y": -3664329,
+			"Text": "4",
+			"Height": 528836,
+			"Rotation": "R0",
+			"IsPort": true,
+			"SchematicId": "P4",
+			"PortDirection": "R180",
+			"PortLayer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Style": "Regular",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				51087974, 12460549,
+				-2540000, 12460549,
+				-2540000, -12460549,
+				51087974, -12460549
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/MWPD_2aa22ece0c70",
+			"X": 0,
+			"Y": -514380,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "W1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0603@N_3c3a332a83a4",
+			"X": 12484018,
+			"Y": -35568,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MDLY_30910d0289b2",
+			"X": 30863748,
+			"Y": -1935493,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "DS",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MWPD_3654bfacf413",
+			"X": 34874650,
+			"Y": -1935493,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "W2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0603@N_3c3a332a83a4",
+			"X": 47113016,
+			"Y": -1935493,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R2",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MDLY_7e40895903f8",
+			"X": 30882354,
+			"Y": 1552801,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "D1",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MDLY_966dd3a97450",
+			"X": 34801810,
+			"Y": 5472257,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "D2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MDLY_21a875f5fed4",
+			"X": 38721266,
+			"Y": 9391713,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "D3",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		}
+	]
+}

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Text;
 using CircuitRF.Core.Matching;
+using CircuitRF.Core.Synthesis.Filters;
 
 namespace CircuitRF.Core.Systems;
 
@@ -251,44 +252,15 @@ public static partial class FilterLadder
         };
     }
 
-    /// <summary><c>g_k = 2 sin((2k−1)π / 2n)</c>, unit terminations.</summary>
-    public static double[] ButterworthG(int n)
-    {
-        var g = new double[n + 2];
-        g[0] = 1.0;
-        for (int k = 1; k <= n; k++)
-            g[k] = 2.0 * Math.Sin((2.0 * k - 1.0) * Math.PI / (2.0 * n));
-        g[n + 1] = 1.0;
-        return g;
-    }
+    /// <summary><c>g_k = 2 sin((2k−1)π / 2n)</c>, unit terminations (<see cref="LowpassPrototype.ButterworthG"/>).</summary>
+    public static double[] ButterworthG(int n) => LowpassPrototype.ButterworthG(n);
 
     /// <summary>
-    /// Equal-ripple doubly-terminated Chebyshev g-values (same recurrence as
-    /// <see cref="MatchSynthesis.RippleG"/>, without that method's match-order ceiling).
+    /// Equal-ripple doubly-terminated Chebyshev g-values as the handbook tables print them, 40/ln 10 rounded to 17.37
+    /// (<see cref="LowpassPrototype.TableChebyshevG"/>, the one body <see cref="MatchSynthesis.RippleG"/> shares), with no
+    /// order ceiling. This designer's numbers are that constant's, so it is kept, not the exact one.
     /// </summary>
-    public static double[] ChebyshevG(int n, double rippleDb)
-    {
-        double lar = rippleDb > 0 ? rippleDb : 0.1;
-        double bb = Math.Log(1.0 / Math.Tanh(lar / 17.37));
-        double gamma = Math.Sinh(bb / (2 * n));
-        double th = Math.PI / (2 * n);
-
-        var a = new double[n + 1];
-        var b = new double[n + 1];
-        for (int k = 1; k <= n; k++)
-        {
-            a[k] = Math.Sin((2 * k - 1) * th);
-            b[k] = gamma * gamma + Math.Sin(k * Math.PI / n) * Math.Sin(k * Math.PI / n);
-        }
-
-        var g = new double[n + 2];
-        g[0] = 1.0;
-        g[1] = 2.0 * a[1] / gamma;
-        for (int k = 2; k <= n; k++) g[k] = 4.0 * a[k - 1] * a[k] / (b[k - 1] * g[k - 1]);
-        double coth = 1.0 / Math.Tanh(bb / 4.0);
-        g[n + 1] = n % 2 == 0 ? coth * coth : 1.0;
-        return g;
-    }
+    public static double[] ChebyshevG(int n, double rippleDb) => LowpassPrototype.TableChebyshevG(n, rippleDb);
 
     /// <summary>
     /// The g-vector <c>[g0=1, g1..gn, gLoad]</c> of an all-pole prototype, or null when the

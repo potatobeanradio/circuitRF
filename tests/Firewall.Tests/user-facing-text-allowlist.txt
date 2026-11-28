@@ -1963,3 +1963,11 @@ src/Design/Filters/FilterSynthesisService.cs|'{realisation.PartType}' is not a p
 src/Design/Em3d/Em3dWallCalibration.cs|Wall port {number} is not among the structure's ports.
 src/Design/Em3d/Em3dWallCalibration.cs|Wall standard {index} has no answer; it is solved before the structure.
 src/Design/Em3d/Em3dWallCalibration.cs|Wall standard {index} was not solved at {Ghz(f)} GHz.
+# ── PCell Designer, Stretch by Parameter ────────────────────────────────────────────
+# DrawnMetal.Stretch's argument guards: its one caller, the designer's Stretch gesture, picks the vertices from the drawn
+# shape and the anchor from those not moving, so no user reaches these. Its user-facing refusals are coded
+# (PCellDesignerDiagnostics).
+src/Design/Layout/PCells/DrawnMetal.cs|{shape.InstanceName} is not drawn metal (MSHAPE).
+src/Design/Layout/PCells/DrawnMetal.cs|Stretch moves no vertex.
+src/Design/Layout/PCells/DrawnMetal.cs|Vertex {binding.Anchor} is the anchor and cannot also move.
+src/Design/Layout/PCells/DrawnMetal.cs|{shape.InstanceName} has no {name}.
