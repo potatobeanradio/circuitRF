@@ -47,7 +47,7 @@
       "Parameters": [
         {
           "Name": "Ls",
-          "Expression": "8.5",
+          "Expression": "9.21",
           "Unit": "mm",
           "ShowOnSchematic": true,
           "Dimension": "Length"

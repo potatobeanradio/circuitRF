@@ -14,7 +14,7 @@ page describes every control.
 | **Wilkinson3** | A 3-way Wilkinson divider for 2.45 GHz: three 86.6 Ω arms from a cross, three 50 Ω isolation resistors to a drawn star pad (`MSHAPE`, `Model="short"`). Parameters `La`, `Wa`, `Sp` (pad size) and `Riso` |
 | **Wilkinson3Bench** | `Wilkinson3` between four Ports, swept 1.5–3.5 GHz by circuit models |
 | **Spurline** | A 50 Ω line with an L-shaped slit, one drawn polygon, EM only (`Model="none"`). Parameters `Ls` (slit length, a drag handle), `g` (slit gap) and `W` |
-| **SpurlineBench** | `Spurline` between two Ports, swept 4.6–5.6 GHz in 25 MHz steps by Planar EM, with the optimisation that moves its notch to 5 GHz |
+| **SpurlineBench** | `Spurline` between two Ports, placed at `Ls = 9.21 mm`, swept 4.6–5.6 GHz in 25 MHz steps by Planar EM, with the optimisation that moved its notch to 5 GHz |
 | **DualModePatch** | A square patch with one corner cut, fed along two adjacent edges across a gap, EM only. Parameters `a`, `d` (corner cut) and `s` (gap) |
 | **PatchBench** | `DualModePatch` between two Ports, swept 4.9–5.5 GHz by Planar EM |
 | **Slotline** | An out-of-phase microstrip-slotline divider: a slot in a drawn ground (one `MSHAPE` on Bottom Copper), crossed by an input and two output microstrips, EM only. Parameters `Lsl`, `Ws`, `Lss` and `Lms` |
@@ -88,18 +88,19 @@ The even- and odd-mode permittivities come from the coupled-line equations of Ki
 this board, εe = 2.84 and εo = 2.41, so εav = 2.62. `Ls = 8.5 mm` gives f0 ≈ 5.45 GHz, and 5 GHz needs `Ls` ≈ 9.26 mm.
 
 The slit's far end follows `Ls` by **Stretch by Parameter**, so `Ls` is a drag handle wherever the cell is placed. The
-cell is EM only. Simulate `SpurlineBench` (Planar, the setup in `em/`); `SpurlineBench.cdd` shows S21 and S11. The
-sweep runs 4.6-5.6 GHz in 25 MHz steps, because the notch is only about 50 MHz wide at −20 dB and a coarser sweep
-misses its bottom. On the setup's own planar mesh (41 points, about 2 minutes), the notch is at **5.38 GHz**, with S21
-at −33.9 dB at the nearest point.
+cell is EM only. The sweep runs 4.6-5.6 GHz in 25 MHz steps, because the notch is only about 50 MHz wide at −20 dB and
+a coarser sweep misses its bottom. With `X1.Ls = 8.5 mm` (the cell's default) the notch is at **5.38 GHz**, −33.9 dB at
+the nearest point.
 
 The bench's **Optimize** runs `em=direct` with pattern search on `X1.Ls`, pushing S21 below −30 dB at 5 GHz:
 - The first pass (12 solves, 14 min) stopped at `X1.Ls = 9.31 mm`, which puts the notch at 4.93 GHz. Its steps were
   still a quarter of the range when the budget ran out, which is coarse for a notch this sharp.
-- A second pass with the range narrowed to 9-9.4 mm met the goal on its first new solve, at `X1.Ls = 9.21 mm`.
+- A second pass with the range narrowed to 9-9.4 mm met the goal on its first new solve, at 9.2125 mm.
 
-The fine sweep then puts the notch at **4.98 GHz**, −33 dB at the nearest point. The closed-form estimate of 9.26 mm is
-within 0.05 mm of that.
+The bench ships with `X1.Ls = 9.21 mm` and is laid out at that value. Simulate `SpurlineBench` (Planar, the setup in
+`em/`, about 2 minutes); `SpurlineBench.cdd` shows S21 and S11. On the shipped files the notch is at **4.99 GHz**, where
+S21 is −32.7 dB at 4.975 GHz and −32.3 dB at 5.000 GHz. The closed-form estimate of 9.26 mm is within 0.05 mm of the
+optimised length.
 
 ## 7. A dual-mode patch bandpass
 

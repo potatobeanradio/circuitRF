@@ -314,8 +314,8 @@ star pad <code>SH1</code>. The response shows the three outputs near −4.8 dB a
 **A spurline bandstop** (`Spurline`). A 50 Ω line with an L-shaped slit, drawn as one polygon with `Model = "none"`,
 so it is simulated by EM only. The slit's far end follows `Ls` by Stretch by Parameter, so `Ls` is a drag handle
 wherever the cell is placed. A Planar sweep in 25 MHz steps puts the notch at 5.38 GHz, against a quarter-wave
-estimate of 5.45 GHz. Two `em=direct` passes on `X1.Ls`, the second over a narrowed range, moved it to 4.98 GHz at
-`Ls = 9.21 mm`.
+estimate of 5.45 GHz. Two `em=direct` passes on `X1.Ls`, the second over a narrowed range, found `Ls = 9.21 mm`, which
+the bench ships with: its notch is at 4.99 GHz.
 
 <figure class="figure">
 <img src="../../images/pcell-designer/spurline.png" alt="The PCell Designer on the spurline: a straight line with a long slit along its axis that turns out through one edge." style="width:100%;height:auto">

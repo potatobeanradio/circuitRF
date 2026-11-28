@@ -194,14 +194,14 @@ internal static class Pcd9Cells
         Port:P4  n4  0  Num=4  Z=50 Ohm
         """, new FrequencySpec("1.5", "3.5", 41, SweepKind.Linear, "GHz", "GHz"), byEm: false);
 
-    /// <summary>The spurline's bench also carries the optimisation that moves its notch to 5 GHz: X1.Ls tuned by EM itself
-    /// (em=direct, pattern search), S21 at 5 GHz pushed below −30 dB. The sweep's 25 MHz steps resolve the notch, which is
-    /// about 50 MHz wide at −20 dB.</summary>
+    /// <summary>The spurline's bench places X1 at the optimised Ls = 9.21 mm (the cell's own default, 8.5 mm, notches at
+    /// 5.38 GHz) and carries the optimisation that found it: X1.Ls tuned by EM itself (em=direct, pattern search), S21 at
+    /// 5 GHz pushed below −30 dB. The sweep's 25 MHz steps resolve the notch, which is about 50 MHz wide at −20 dB.</summary>
     public static string SpurlineBench(string ws, string cell) => Bench(ws, cell, "SpurlineBench", """
         Port:P1  n1  0  Num=1  Z=50 Ohm
-        Spurline:X1  n1  n2  Ls=8.5 mm
+        Spurline:X1  n1  n2  Ls=9.21 mm
         Port:P2  n2  0  Num=2  Z=50 Ohm
-        """, new FrequencySpec("4.6", "5.6", 41, SweepKind.Linear, "GHz", "GHz"), byEm: true, x1: [("Ls", "8.5", "mm")],
+        """, new FrequencySpec("4.6", "5.6", 41, SweepKind.Linear, "GHz", "GHz"), byEm: true, x1: [("Ls", "9.21", "mm")],
         tuning: new TuningSetup
         {
             Variables = [new TunableEntry { Key = "X1.Ls", Opt = true, Min = "7 mm", Max = "11 mm", Scale = TuneScale.Lin }],

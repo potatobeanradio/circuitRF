@@ -6,7 +6,7 @@
 	"AngleMode": "AnyAngle",
 	"SchematicPCellSnapshots": {
 		"X1": {
-			"Ls": 0.0085,
+			"Ls": 0.009210000000000001,
 			"g": 0.0002,
 			"W": 0.0011
 		}
@@ -34,10 +34,10 @@
 		}
 	},
 	"PCellSnapshots": {
-		"cpcell-Spurline_09d034509827": {
+		"cpcell-Spurline_4ac39fd944ca": {
 			"GeneratorId": "cpcell:Spurline",
 			"Parameters": {
-				"Ls": 0.0085,
+				"Ls": 0.009210000000000001,
 				"g": 0.0002,
 				"W": 0.0011
 			},
@@ -102,7 +102,7 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/cpcell-Spurline_09d034509827",
+			"CellRef": "../../.generated-cells/cpcell-Spurline_4ac39fd944ca",
 			"X": 11000000,
 			"Y": -550000,
 			"Rot": "R90",
