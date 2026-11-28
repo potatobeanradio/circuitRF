@@ -11,7 +11,7 @@ page describes every control.
 |---|---|
 | **PadTee** | A designed cell: Port 1 – `TL1` – bend `B1` – tee `T1` – `TL3` – Port 2 on a 50 Ω microstrip line, the tee's branch `TL2` ending in a drawn pad `SH1` (MSHAPE), 2 mm wide. Parameters `W`, `L1`, `Lstub` and `Lpad`, each with a range |
 | **Bench** | `PadTee` placed twice, `X1` with `Lpad = 200 um` and `X2` with `Lpad = 400 um`, joined by a 50 Ω line between two Ports, swept 1–12 GHz |
-| **Wilkinson3** | A 3-way Wilkinson divider for 2.45 GHz: three 86.6 Ω arms from a cross, three 50 Ω isolation resistors to a drawn star pad (`MSHAPE`, `Model="short"`). Parameters `La`, `Wa`, `Sp` (pad size) and `Riso` |
+| **Wilkinson3** | A 3-way in-phase divider for 2.45 GHz in two Wilkinson stages: an `MWPD` with `K` = 1.4142, an equal `MWPD` on its port 3 and a phase line on its port 2, every line an `MDLY` stated at F. Parameters `F` and `Th` (the phase line's straight run) |
 | **Wilkinson3Bench** | `Wilkinson3` between four Ports, swept 1.5–3.5 GHz by circuit models |
 | **Spurline** | A 50 Ω line with an L-shaped slit, one drawn polygon, EM only (`Model="none"`). Parameters `Ls` (slit length, a drag handle), `g` (slit gap) and `W` |
 | **SpurlineBench** | `Spurline` between two Ports, placed at `Ls = 9.21 mm`, swept 4.6–5.6 GHz in 25 MHz steps by Planar EM, with the optimisation that moved its notch to 5 GHz |
@@ -54,26 +54,40 @@ solves (9 min 19 s, coarse Planar).
 
 ## 5. A 3-way Wilkinson divider
 
-`Wilkinson3` splits 2.45 GHz three ways. Its input feeds a cross `X1`: the middle arm `AM` runs straight to the tee
-`T2`, and the outer arms fold once (`B1`, `B3`) and run beside it to `T1` and `T3`. Each arm is a quarter wave of
-√3·Z0 = 86.6 Ω (`Wa = 0.36 mm`). Each tee's branch carries a 50 Ω resistor to the star pad `SH1`, a drawn pad whose
-`Model="short"` makes its three pins one node. A star of three resistors cannot be planar with all three outputs
-outside it, so `R3` is a 1206 whose body bridges the middle arm.
+`Wilkinson3` splits 2.45 GHz three ways, in phase. Wilkinson's own N-way divider joins N arm ends to one star of
+resistors, and for three outputs that cannot be drawn on one layer: the input, the star's centre and the board's edge
+are each joined to all three outputs, the three-by-three graph no plane drawing makes without a crossing. So the cell is
+a tree of two-way dividers, each with one resistor across its own ring's gap:
 
-Nothing is stretched, and the cell's two loops close by expression. The outer tees sit 6.2 mm off the axis and 6.2 mm
-short of `T2`, which is the fold. The lines to the resistors are lengths in `Sp`, and the pad's pins are written where
-`R1`, `R2` and `R3` end. A 0.3 mm line `LQ2` keeps `R2`'s pad off the bend `BR2`. **Check** finds no error at any
-parameter's minimum or maximum, and **LVS** finds none on the cell's own layout.
+- **Stage 1**, `W1`: an `MWPD` with `K = 1.4142` (√2), which sends a third of the power to its port 2 and two thirds to
+  its port 3. Its resistor `R1` is Z0·(K + 1/K) = 106.07 Ω, the value its readout states (107 Ω is the nearest E96
+  part).
+- **Stage 2**, `W2`: an equal `MWPD` on stage 1's port 3, behind a 20° spacer `DS` that takes its ring clear of the
+  line beside it. It halves its two thirds into ports 3 and 4. `R2` is 2·Z0 = 100 Ω.
+- **The phase line** on stage 1's port 2: two mitred corners `D1` and `D2` that rise past `W2`'s ring and a straight run
+  `D3`, as long at F as the spacer and stage 2 together, so port 2 leaves in phase with ports 3 and 4. The corners'
+  rise puts port 2 level with them.
 
-`La = 19.5 mm` was found in the designer's live response: it is a little over λg/4 (18.8 mm), because the cross and the
-tees take part of the junction. Simulate `Wilkinson3Bench`; `Wilkinson3Bench.cdd` shows the transmission and the input
-match, and the isolation. At 2.45 GHz:
+Both resistors are 0603s on their dividers' sites (`Footprint=smt:0603`), nothing crosses anything, and the three
+outputs leave the right-hand side, 2, 3, 4 from the top. Every line is an `MDLY`, a line stated by its electrical length
+at `F`, so changing `F` re-plans both rings and every line together, and the outputs stay in phase: within 2.1° at
+2.0 and 3.0 GHz. `Th` = 49° was found in the designer's live response. **Check** finds no error at the defaults or at
+any parameter's minimum or maximum (`F` 1.5-3.5 GHz, `Th` 30-70°), and **LVS** finds none on the cell's own layout.
 
-| S21 | S31 | S41 | S11 | S32 | S42 | S43 | S22, S33, S44 |
-|---|---|---|---|---|---|---|---|
-| −4.81 dB | −4.95 dB | −5.01 dB | −32.1 dB | −30.0 dB | −47.4 dB | −34.7 dB | −45.0, −24.6, −25.4 dB |
+Simulate `Wilkinson3Bench`; `Wilkinson3Bench.cdd` shows the transmission and the input match, and the isolation. At
+2.45 GHz, by circuit models:
 
-The three outputs are −4.77 dB plus the board's loss, within 0.2 dB of each other.
+| | S21 | S31 | S41 |
+|---|---|---|---|
+| magnitude | −5.03 dB | −5.02 dB | −5.02 dB |
+| phase | 54.7° | 54.9° | 54.9° |
+
+| S11 | S22 | S33, S44 | S32, S42 | S43 |
+|---|---|---|---|---|
+| −40.2 dB | −35.1 dB | −30.4 dB | −39.1 dB | −41.0 dB |
+
+The three outputs are −4.77 dB plus about 0.25 dB of line loss, within 0.01 dB and 0.2° of each other. Every match and every
+isolation stays below −20 dB from 2.25 to 2.85 GHz.
 
 ## 6. A spurline bandstop
 

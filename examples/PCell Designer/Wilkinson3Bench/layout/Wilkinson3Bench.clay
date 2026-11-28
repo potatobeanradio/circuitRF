@@ -6,56 +6,52 @@
 	"AngleMode": "AnyAngle",
 	"SchematicPCellSnapshots": {
 		"X1": {
-			"La": 0.0195,
-			"Wa": 0.00035999999999999997,
-			"Sp": 0.001,
-			"Riso": 50
+			"F": 2450000000,
+			"Th": 49
 		}
 	},
 	"GeneratedPlacements": {
 		"P1": {
-			"X": 6750000,
-			"Y": 13950000,
+			"X": 9406169,
+			"Y": 24273987,
 			"RotationDeg": 270,
 			"Mirror": false,
 			"Text": "1"
 		},
 		"P2": {
-			"X": 12950000,
-			"Y": -7750000,
+			"X": 19312262,
+			"Y": -24273987,
 			"RotationDeg": 90,
 			"Mirror": false,
 			"Text": "2"
 		},
 		"P3": {
-			"X": 6750000,
-			"Y": -13950000,
+			"X": 9713892,
+			"Y": -24170775,
 			"RotationDeg": 90,
 			"Mirror": false,
 			"Text": "3"
 		},
 		"P4": {
-			"X": 550000,
-			"Y": -7750000,
+			"X": 6256220,
+			"Y": -24170775,
 			"RotationDeg": 90,
 			"Mirror": false,
 			"Text": "4"
 		},
 		"X1": {
-			"X": 0,
-			"Y": 0,
-			"RotationDeg": 0,
+			"X": 9920549,
+			"Y": 24273987,
+			"RotationDeg": 270,
 			"Mirror": false
 		}
 	},
 	"PCellSnapshots": {
-		"cpcell-Wilkinson3_f3735316f42a": {
+		"cpcell-Wilkinson3_aa7c776a18eb": {
 			"GeneratorId": "cpcell:Wilkinson3",
 			"Parameters": {
-				"La": 0.0195,
-				"Wa": 0.00035999999999999997,
-				"Sp": 0.001,
-				"Riso": 50
+				"F": 2450000000,
+				"Th": 49
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		}
@@ -63,10 +59,10 @@
 	"Shapes": [
 		{
 			"$type": "Label",
-			"X": 6750000,
-			"Y": 13950000,
+			"X": 9406169,
+			"Y": 24273987,
 			"Text": "1",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P1",
@@ -83,10 +79,10 @@
 		},
 		{
 			"$type": "Label",
-			"X": 12950000,
-			"Y": -7750000,
+			"X": 19312262,
+			"Y": -24273987,
 			"Text": "2",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P2",
@@ -103,10 +99,10 @@
 		},
 		{
 			"$type": "Label",
-			"X": 6750000,
-			"Y": -13950000,
+			"X": 9713892,
+			"Y": -24170775,
 			"Text": "3",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P3",
@@ -123,10 +119,10 @@
 		},
 		{
 			"$type": "Label",
-			"X": 550000,
-			"Y": -7750000,
+			"X": 6256220,
+			"Y": -24170775,
 			"Text": "4",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P4",
@@ -144,10 +140,10 @@
 		{
 			"$type": "Poly",
 			"Xy": [
-				16040000, 16490000,
-				-2540000, 16490000,
-				-2540000, -16490000,
-				16040000, -16490000
+				22381098, 26813987,
+				-2540000, 26813987,
+				-2540000, -26813987,
+				22381098, -26813987
 			],
 			"Layer": {
 				"Layer": 2,
@@ -158,10 +154,10 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/cpcell-Wilkinson3_f3735316f42a",
-			"X": 0,
-			"Y": 0,
-			"Rot": "R0",
+			"CellRef": "../../.generated-cells/cpcell-Wilkinson3_aa7c776a18eb",
+			"X": 9920549,
+			"Y": 24273987,
+			"Rot": "R270",
 			"MirrorX": false,
 			"Mag": 1,
 			"Rows": 1,
@@ -172,7 +168,7 @@
 			"OrientationLink": {
 				"SchematicDeg": 0,
 				"SchematicMirror": false,
-				"LayoutDeg": 0,
+				"LayoutDeg": 270,
 				"LayoutMirror": false
 			}
 		}

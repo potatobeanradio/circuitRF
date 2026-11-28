@@ -62,7 +62,7 @@ page describes every control.</p>
 </tr>
 <tr>
 <td><strong>Wilkinson3</strong></td>
-<td>A 3-way Wilkinson divider for 2.45 GHz: three 86.6 Ω arms from a cross, three 50 Ω isolation resistors to a drawn star pad (<code>MSHAPE</code>, <code>Model=&quot;short&quot;</code>). Parameters <code>La</code>, <code>Wa</code>, <code>Sp</code> (pad size) and <code>Riso</code></td>
+<td>A 3-way in-phase divider for 2.45 GHz in two Wilkinson stages: an <code>MWPD</code> with <code>K</code> = 1.4142, an equal <code>MWPD</code> on its port 3 and a phase line on its port 2, every line an <code>MDLY</code> stated at F. Parameters <code>F</code> and <code>Th</code> (the phase line's straight run)</td>
 </tr>
 <tr>
 <td><strong>Wilkinson3Bench</strong></td>
@@ -117,45 +117,73 @@ moves only the EM response: <code>em=correct</code>, which searches on the corre
 open pad gives the circuit model no slope. <code>em=direct</code> (pattern search) moved it from 200 µm to 600 µm, its maximum, in 8
 solves (9 min 19 s, coarse Planar).</p>
 <h2 id="a-3-way-wilkinson-divider">5. A 3-way Wilkinson divider</h2>
-<p><code>Wilkinson3</code> splits 2.45 GHz three ways. Its input feeds a cross <code>X1</code>: the middle arm <code>AM</code> runs straight to the tee
-<code>T2</code>, and the outer arms fold once (<code>B1</code>, <code>B3</code>) and run beside it to <code>T1</code> and <code>T3</code>. Each arm is a quarter wave of
-√3·Z0 = 86.6 Ω (<code>Wa = 0.36 mm</code>). Each tee's branch carries a 50 Ω resistor to the star pad <code>SH1</code>, a drawn pad whose
-<code>Model=&quot;short&quot;</code> makes its three pins one node. A star of three resistors cannot be planar with all three outputs
-outside it, so <code>R3</code> is a 1206 whose body bridges the middle arm.</p>
-<p>Nothing is stretched, and the cell's two loops close by expression. The outer tees sit 6.2 mm off the axis and 6.2 mm
-short of <code>T2</code>, which is the fold. The lines to the resistors are lengths in <code>Sp</code>, and the pad's pins are written where
-<code>R1</code>, <code>R2</code> and <code>R3</code> end. A 0.3 mm line <code>LQ2</code> keeps <code>R2</code>'s pad off the bend <code>BR2</code>. <strong>Check</strong> finds no error at any
-parameter's minimum or maximum, and <strong>LVS</strong> finds none on the cell's own layout.</p>
-<p><code>La = 19.5 mm</code> was found in the designer's live response: it is a little over λg/4 (18.8 mm), because the cross and the
-tees take part of the junction. Simulate <code>Wilkinson3Bench</code>; <code>Wilkinson3Bench.cdd</code> shows the transmission and the input
-match, and the isolation. At 2.45 GHz:</p>
+<p><code>Wilkinson3</code> splits 2.45 GHz three ways, in phase. Wilkinson's own N-way divider joins N arm ends to one star of
+resistors, and for three outputs that cannot be drawn on one layer: the input, the star's centre and the board's edge
+are each joined to all three outputs, the three-by-three graph no plane drawing makes without a crossing. So the cell is
+a tree of two-way dividers, each with one resistor across its own ring's gap:</p>
+<ul>
+<li><strong>Stage 1</strong>, <code>W1</code>: an <code>MWPD</code> with <code>K = 1.4142</code> (√2), which sends a third of the power to its port 2 and two thirds to
+its port 3. Its resistor <code>R1</code> is Z0·(K + 1/K) = 106.07 Ω, the value its readout states (107 Ω is the nearest E96
+part).</li>
+<li><strong>Stage 2</strong>, <code>W2</code>: an equal <code>MWPD</code> on stage 1's port 3, behind a 20° spacer <code>DS</code> that takes its ring clear of the
+line beside it. It halves its two thirds into ports 3 and 4. <code>R2</code> is 2·Z0 = 100 Ω.</li>
+<li><strong>The phase line</strong> on stage 1's port 2: two mitred corners <code>D1</code> and <code>D2</code> that rise past <code>W2</code>'s ring and a straight run
+<code>D3</code>, as long at F as the spacer and stage 2 together, so port 2 leaves in phase with ports 3 and 4. The corners'
+rise puts port 2 level with them.</li>
+</ul>
+<p>Both resistors are 0603s on their dividers' sites (<code>Footprint=smt:0603</code>), nothing crosses anything, and the three
+outputs leave the right-hand side, 2, 3, 4 from the top. Every line is an <code>MDLY</code>, a line stated by its electrical length
+at <code>F</code>, so changing <code>F</code> re-plans both rings and every line together, and the outputs stay in phase: within 2.1° at
+2.0 and 3.0 GHz. <code>Th</code> = 49° was found in the designer's live response. <strong>Check</strong> finds no error at the defaults or at
+any parameter's minimum or maximum (<code>F</code> 1.5-3.5 GHz, <code>Th</code> 30-70°), and <strong>LVS</strong> finds none on the cell's own layout.</p>
+<p>Simulate <code>Wilkinson3Bench</code>; <code>Wilkinson3Bench.cdd</code> shows the transmission and the input match, and the isolation. At
+2.45 GHz, by circuit models:</p>
 <table>
 <thead>
 <tr>
+<th></th>
 <th>S21</th>
 <th>S31</th>
 <th>S41</th>
-<th>S11</th>
-<th>S32</th>
-<th>S42</th>
-<th>S43</th>
-<th>S22, S33, S44</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>−4.81 dB</td>
-<td>−4.95 dB</td>
-<td>−5.01 dB</td>
-<td>−32.1 dB</td>
-<td>−30.0 dB</td>
-<td>−47.4 dB</td>
-<td>−34.7 dB</td>
-<td>−45.0, −24.6, −25.4 dB</td>
+<td>magnitude</td>
+<td>−5.03 dB</td>
+<td>−5.02 dB</td>
+<td>−5.02 dB</td>
+</tr>
+<tr>
+<td>phase</td>
+<td>54.7°</td>
+<td>54.9°</td>
+<td>54.9°</td>
 </tr>
 </tbody>
 </table>
-<p>The three outputs are −4.77 dB plus the board's loss, within 0.2 dB of each other.</p>
+<table>
+<thead>
+<tr>
+<th>S11</th>
+<th>S22</th>
+<th>S33, S44</th>
+<th>S32, S42</th>
+<th>S43</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>−40.2 dB</td>
+<td>−35.1 dB</td>
+<td>−30.4 dB</td>
+<td>−39.1 dB</td>
+<td>−41.0 dB</td>
+</tr>
+</tbody>
+</table>
+<p>The three outputs are −4.77 dB plus about 0.25 dB of line loss, within 0.01 dB and 0.2° of each other. Every match and every
+isolation stays below −20 dB from 2.25 to 2.85 GHz.</p>
 <h2 id="a-spurline-bandstop">6. A spurline bandstop</h2>
 <p><code>Spurline</code> is a 50 Ω line 16 mm long with an L-shaped slit. A slot <code>g</code> wide runs along the axis and turns out through
 the line's edge at its far end. That leaves a spur <code>(W − g)/2</code> wide and <code>Ls</code> long, joined to the line at one end. The

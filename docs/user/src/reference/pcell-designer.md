@@ -304,19 +304,21 @@ The **PCell Designer** example (File ▸ New ▸ Examples) holds `PadTee`, the c
 cells. Each comes with a bench that places it and a Data Display, and its README gives the closed-form estimates and
 the numbers.
 
-**A 3-way Wilkinson divider** (`Wilkinson3`, 2.45 GHz). Three quarter-wave arms of 86.6 Ω leave a cross, and three
-50 Ω resistors join their ends at a drawn star pad with `Model = "short"`. A star of three resistors cannot be planar
-with every output outside it, so one resistor is a 1206 whose body bridges the middle arm. Nothing is stretched. The
-cell's two loops close because the pad's pins and the lines to the resistors are expressions of the parameters, and
-the check plans the cell at every parameter's ends. By circuit models:
-- S21, S31 and S41 are −4.81, −4.95 and −5.01 dB;
-- the input match is −32 dB;
-- the isolation between outputs is −30 dB or better.
+**A 3-way Wilkinson divider** (`Wilkinson3`, 2.45 GHz). A star of three resistors cannot be drawn on one layer with
+every output outside it, so the cell divides in two Wilkinson stages, each with one resistor on its own ring: an
+[MWPD](components.html#mwpd-unequal) with `K` = 1.4142 sends a third to port 2 and two thirds to an equal MWPD, which
+halves them into ports 3 and 4. A phase line of [MDLY](components.html#mdly)s on port 2, as long at `F` as the second
+stage, keeps the outputs in phase. Every line is stated at `F`, so changing `F` re-plans both rings and the lines. By
+circuit models:
+- S21, S31 and S41 are −5.03, −5.02 and −5.02 dB, within 0.2° of each other in phase;
+- the input match is −40 dB and every output's −30 dB or better;
+- the isolation between outputs is −39 dB or better.
 
 <figure class="figure">
-<img src="../../images/pcell-designer/wilkinson3.png" alt="The PCell Designer on the 3-way Wilkinson: the cross, three arms, three resistors meeting on a drawn star pad, and its circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">
-<figcaption><code>Wilkinson3</code> in the designer. The resistor <code>R3</code> bridges the middle arm to reach the
-star pad <code>SH1</code>. The response shows the three outputs near −4.8 dB and the input match at 2.45 GHz.</figcaption>
+<img src="../../images/pcell-designer/wilkinson3.png" alt="The PCell Designer on the 3-way Wilkinson: two Wilkinson rings in a row, an 0603 across each ring's gap, a phase line rising past the second ring to port 2, and the circuit response from 1.5 to 3.5 GHz." style="width:100%;height:auto">
+<figcaption><code>Wilkinson3</code> in the designer. The first ring <code>W1</code> divides one third to two thirds, the
+second <code>W2</code> halves the two thirds, and <code>D1</code>-<code>D3</code> carry port 2 past it. The response
+shows the three outputs near −5 dB and the input match at 2.45 GHz.</figcaption>
 </figure>
 
 **A spurline bandstop** (`Spurline`). A 50 Ω line with an L-shaped slit, drawn as one polygon with `Model = "none"`,

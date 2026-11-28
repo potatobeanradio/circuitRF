@@ -2,44 +2,24 @@
   "FormatVersion": 1,
   "Parameters": [
     {
-      "Name": "La",
-      "DefaultExpression": "19.5",
-      "Unit": "mm",
-      "Dimension": "Length",
+      "Name": "F",
+      "DefaultExpression": "2.45",
+      "Unit": "GHz",
+      "Dimension": "Frequency",
       "ShowOnSchematic": true,
-      "Description": "arm length",
-      "Minimum": 0.016,
-      "Maximum": 0.022
+      "Description": "centre frequency",
+      "Minimum": 1500000000,
+      "Maximum": 3500000000
     },
     {
-      "Name": "Wa",
-      "DefaultExpression": "0.36",
-      "Unit": "mm",
-      "Dimension": "Length",
+      "Name": "Th",
+      "DefaultExpression": "49",
+      "Unit": "deg",
+      "Dimension": "Angle",
       "ShowOnSchematic": true,
-      "Description": "arm width, 86.6 \u03A9",
-      "Minimum": 0.0003,
-      "Maximum": 0.0007
-    },
-    {
-      "Name": "Sp",
-      "DefaultExpression": "1",
-      "Unit": "mm",
-      "Dimension": "Length",
-      "ShowOnSchematic": true,
-      "Description": "star pad size",
-      "Minimum": 0.0006,
-      "Maximum": 0.0012
-    },
-    {
-      "Name": "Riso",
-      "DefaultExpression": "50",
-      "Unit": "Ohm",
-      "Dimension": "Resistance",
-      "ShowOnSchematic": true,
-      "Description": "isolation resistor",
-      "Minimum": 20,
-      "Maximum": 100
+      "Description": "phase line\u0027s straight run at F",
+      "Minimum": 0.523598775598299,
+      "Maximum": 1.22173047639603
     }
   ],
   "PrimarySchematic": "Wilkinson3.csch",

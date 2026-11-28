@@ -41,8 +41,8 @@ public sealed class Pcd9ShowcaseTests : IDisposable
         return path;
     }
 
-    /// <summary>The 3-way Wilkinson at 2.45 GHz: S21 = S31 = S41 ≈ −4.77 dB (within the board's loss), the input matched,
-    /// every pair of outputs isolated.</summary>
+    /// <summary>The 3-way Wilkinson at 2.45 GHz, two MWPD stages: S21 = S31 = S41 ≈ −4.77 dB (within the board's loss) and
+    /// in phase, every port matched, every pair of outputs isolated.</summary>
     [Fact]
     public void Wilkinson3_SplitsInThreeAt2_45GHz_Matched_Isolated()
     {
@@ -52,8 +52,10 @@ public sealed class Pcd9ShowcaseTests : IDisposable
         var snp = DataSetBuilder.ToSnp(r.Results.Single(a => a.Name == "SP1").Data);
         int k = Array.FindIndex(snp.Frequencies, f => Math.Abs(f - 2.45e9) < 1e6);
         double Db(int i, int j) => 20 * Math.Log10(snp.Matrices[k][i - 1, j - 1].Magnitude);
+        double Deg(int i, int j) => snp.Matrices[k][i - 1, j - 1].Phase * 180 / Math.PI;
         foreach (int i in new[] { 2, 3, 4 }) Assert.InRange(Db(i, 1), -5.2, -4.77);
-        Assert.True(Db(1, 1) < -20, $"S11 = {Db(1, 1):F1} dB");
+        foreach (int i in new[] { 3, 4 }) Assert.InRange(Math.IEEERemainder(Deg(i, 1) - Deg(2, 1), 360), -3, 3);
+        foreach (int i in new[] { 1, 2, 3, 4 }) Assert.True(Db(i, i) < -20, $"S{i}{i} = {Db(i, i):F1} dB");
         foreach (var (i, j) in new[] { (3, 2), (4, 2), (4, 3) }) Assert.True(Db(i, j) < -20, $"S{i}{j} = {Db(i, j):F1} dB");
     }
 

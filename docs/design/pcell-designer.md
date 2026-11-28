@@ -143,8 +143,9 @@ output at the instance's values, whose circuit model is its own schematic, and w
 - The design check found joined parts by coincident pins. A footprint's pin is at its pad's centre, so a footprint
   looked unjoined. The check now also counts the pad's outer-edge joint (`PadJoint`), which is where the planner joins
   it.
-- A planar 3-way Wilkinson with a star of resistors cannot keep all three outputs outside the star (K2,3). One resistor
-  is a 1206 whose body bridges the middle arm.
+- A planar 3-way Wilkinson with a star of resistors cannot keep all three outputs outside the star (K3,3: the input, the
+  star's centre and the board's edge each join every output). The first `Wilkinson3` made one resistor a 1206 whose
+  body bridged the middle arm; PCD-15 rebuilt it as two MWPD stages (below).
 - A slotted ground is drawn copper: one `MSHAPE` on the ground layer, on net 0. A polygon has no hole, so the outline
   runs in to the slot along a zero-width cut and back out. Two shapes (the ground less the slot, plus the block below
   it) were the first try: LVS reads each `MSHAPE` pin as its own copper piece, so net 0 came apart into four pieces
@@ -196,6 +197,15 @@ output at the instance's values, whose circuit model is its own schematic, and w
   angle gets a 45° cut of leg `d`); the offset that undoes it takes a mitre, which leaves those corners as made. The
   whole layer is smoothed and only A's share of the change is kept, so a joint between two parts in line stays
   square. They pass the pin and port checks, suppress and keep-model like any step; no new `.csch` field.
+- **`Wilkinson3` rebuilt as two Wilkinson stages.** The star of three resistors could not be drawn on one layer, so a
+  resistor body bridged a line, and every closing joint was a hand-written expression. The cell is now an MWPD with
+  `K` = 1.4142 (a third to port 2, R1 = Z0·(K + 1/K) = 106.07 Ω), an equal MWPD on its port 3 behind a 20° spacer
+  (R2 = 100 Ω), and on port 2 a phase line of three MDLYs (two mitred corners and a straight run `Th`) as long at F as
+  the spacer and the second stage. It is planar, has two resistors, each on its own ring's site, and every line is
+  stated at `F`, so `F` re-plans the rings and the lines together (S1). Two things found on the way: a part's
+  angle written as a cell parameter needs its unit in the text (`Theta=Th deg`), or the generator reads the radians as
+  degrees; and an MDLY's `Style` is written as a word (`Style=Straight`): quoted, it was not recognised, and the run fell
+  back to a meander too short for its turns, drawn with no pins.
 - **A cell inside a cell.** A designed cell placed in another, its parameter an expression of the outer cell's
   (`Lmid = 2*a`), regenerates with `a` (`Pcd15NestedCellTests`). It passed as the shared code stood; nothing was
   changed for it.

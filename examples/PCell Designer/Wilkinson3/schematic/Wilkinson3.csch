@@ -6,610 +6,296 @@
   "AuthorGridDivisor": 20,
   "Components": [
     {
-      "InstanceName": "TLIN",
-      "Symbol": "Mlin",
+      "InstanceName": "W1",
+      "Symbol": "Mwpd",
       "X": 800,
-      "Y": 1300,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "1.1",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "3",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "X1",
-      "Symbol": "MCross",
-      "X": 0,
-      "Y": 1900,
+      "Y": 1500,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "W1",
-          "Expression": "Wa",
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "F",
+          "Expression": "F",
           "Unit": "",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "Frequency"
         },
         {
-          "Name": "W2",
-          "Expression": "1.1",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "W3",
-          "Expression": "Wa",
+          "Name": "K",
+          "Expression": "1.4142",
           "Unit": "",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "None"
         },
         {
-          "Name": "W4",
-          "Expression": "Wa",
+          "Name": "Footprint",
+          "Expression": "smt:0603",
           "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L1",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L2",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L3",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L4",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ]
     },
     {
-      "InstanceName": "AM",
-      "Symbol": "Mlin",
-      "X": 0,
-      "Y": 3700,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "Wa",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "La",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "A1V",
-      "Symbol": "Mlin",
-      "X": 200,
-      "Y": 4900,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "Wa",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "5.6e-3-Wa/2",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "B1",
-      "Symbol": "MBend",
-      "X": 400,
-      "Y": 5900,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "Wa",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "Angle",
-          "Expression": "90",
-          "Unit": "deg",
-          "ShowOnSchematic": true,
-          "Dimension": "Angle"
-        }
-      ]
-    },
-    {
-      "InstanceName": "A1H",
-      "Symbol": "Mlin",
-      "X": 400,
-      "Y": 7300,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "Wa",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "La-5.6e-3-Wa/2",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "A3V",
-      "Symbol": "Mlin",
-      "X": 1000,
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
+      "X": 2800,
       "Y": 2500,
-      "Rotation": "R90",
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "W",
-          "Expression": "Wa",
-          "Unit": "",
+          "Name": "R",
+          "Expression": "106.07",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "Resistance"
         },
         {
-          "Name": "L",
-          "Expression": "5.6e-3-Wa/2",
+          "Name": "Footprint",
+          "Expression": "smt:0603",
           "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ],
       "LabelOffsets": [
         [
           260,
-          -361
+          -325
         ]
       ]
     },
     {
-      "InstanceName": "B3",
-      "Symbol": "MBend",
+      "InstanceName": "DS",
+      "Symbol": "Mdly",
       "X": 1200,
-      "Y": 3500,
-      "Rotation": "R0",
-      "MirrorX": true,
+      "Y": 3100,
+      "Rotation": "R90",
+      "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "W",
-          "Expression": "Wa",
-          "Unit": "",
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "Resistance"
         },
         {
-          "Name": "Angle",
-          "Expression": "90",
+          "Name": "F",
+          "Expression": "F",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Theta",
+          "Expression": "20",
           "Unit": "deg",
           "ShowOnSchematic": true,
           "Dimension": "Angle"
+        },
+        {
+          "Name": "Style",
+          "Expression": "Straight",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
         }
+      ],
+      "LabelOffsets": [
+        [
+          310,
+          -433
+        ]
       ]
     },
     {
-      "InstanceName": "A3H",
-      "Symbol": "Mlin",
-      "X": 1600,
-      "Y": 4900,
-      "Rotation": "R90",
+      "InstanceName": "W2",
+      "Symbol": "Mwpd",
+      "X": 0,
+      "Y": 3900,
+      "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "W",
-          "Expression": "Wa",
-          "Unit": "",
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "Resistance"
         },
         {
-          "Name": "L",
-          "Expression": "La-5.6e-3-Wa/2",
+          "Name": "F",
+          "Expression": "F",
           "Unit": "",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "K",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "smt:0603",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R2",
+      "Symbol": "Resistor",
+      "X": 0,
+      "Y": 5500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "100",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        },
+        {
+          "Name": "Footprint",
+          "Expression": "smt:0603",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ],
       "LabelOffsets": [
         [
           260,
-          -361
+          -325
         ]
       ]
     },
     {
-      "InstanceName": "T1",
-      "Symbol": "MTee",
-      "X": -400,
-      "Y": 7700,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W1",
-          "Expression": "Wa",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "W2",
-          "Expression": "1.1",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "W3",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L1",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L2",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L3",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ]
-    },
-    {
-      "InstanceName": "T2",
-      "Symbol": "MTee",
-      "X": -800,
-      "Y": 4100,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W1",
-          "Expression": "1.1",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "W2",
-          "Expression": "Wa",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "W3",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L1",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L2",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L3",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ]
-    },
-    {
-      "InstanceName": "T3",
-      "Symbol": "MTee",
-      "X": 1600,
-      "Y": 5900,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W1",
-          "Expression": "1.1",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "W2",
-          "Expression": "Wa",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "W3",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L1",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L2",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L3",
-          "Expression": "0.6",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ]
-    },
-    {
-      "InstanceName": "O1",
-      "Symbol": "Mlin",
-      "X": -200,
-      "Y": 9100,
+      "InstanceName": "D1",
+      "Symbol": "Mdly",
+      "X": 1200,
+      "Y": 4300,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "W",
-          "Expression": "1.1",
-          "Unit": "mm",
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "Resistance"
         },
         {
-          "Name": "L",
-          "Expression": "3",
-          "Unit": "mm",
+          "Name": "F",
+          "Expression": "F",
+          "Unit": "",
           "ShowOnSchematic": true,
-          "Dimension": "Length"
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Theta",
+          "Expression": "36",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "Style",
+          "Expression": "Corner",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Corner",
+          "Expression": "Miter",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Side",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ],
       "LabelOffsets": [
         [
-          260,
-          -361
+          310,
+          -433
         ]
       ]
     },
     {
-      "InstanceName": "O2",
-      "Symbol": "Mlin",
-      "X": -1000,
+      "InstanceName": "D2",
+      "Symbol": "Mdly",
+      "X": 1200,
       "Y": 5500,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "W",
-          "Expression": "1.1",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "3",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "O3",
-      "Symbol": "Mlin",
-      "X": 1400,
-      "Y": 8500,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "1.1",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "3",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "LR1",
-      "Symbol": "Mlin",
-      "X": -400,
-      "Y": 10300,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "1.4e-3-Sp",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "R1",
-      "Symbol": "Resistor",
-      "X": -400,
-      "Y": 11500,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "R",
-          "Expression": "Riso",
-          "Unit": "",
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         },
         {
-          "Name": "Footprint",
-          "Expression": "smt:0603",
+          "Name": "F",
+          "Expression": "F",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Theta",
+          "Expression": "36",
+          "Unit": "deg",
+          "ShowOnSchematic": true,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "Style",
+          "Expression": "Corner",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Corner",
+          "Expression": "Miter",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Side",
+          "Expression": "-1",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
@@ -617,357 +303,44 @@
       ],
       "LabelOffsets": [
         [
-          260,
-          -325
+          310,
+          -433
         ]
       ]
     },
     {
-      "InstanceName": "LR2",
-      "Symbol": "Mlin",
-      "X": -1200,
+      "InstanceName": "D3",
+      "Symbol": "Mdly",
+      "X": 1200,
       "Y": 6700,
       "Rotation": "R90",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
-          "Name": "W",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "0.8e-3\u002BSp/2",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "BR2",
-      "Symbol": "MBend",
-      "X": -1400,
-      "Y": 8900,
-      "Rotation": "R0",
-      "MirrorX": true,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "Angle",
-          "Expression": "90",
-          "Unit": "deg",
-          "ShowOnSchematic": true,
-          "Dimension": "Angle"
-        }
-      ]
-    },
-    {
-      "InstanceName": "LQ2",
-      "Symbol": "Mlin",
-      "X": -1400,
-      "Y": 10300,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "0.3",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "R2",
-      "Symbol": "Resistor",
-      "X": -1400,
-      "Y": 11500,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "R",
-          "Expression": "Riso",
-          "Unit": "",
+          "Name": "Z0",
+          "Expression": "50",
+          "Unit": "Ohm",
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
         },
         {
-          "Name": "Footprint",
-          "Expression": "smt:0603",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -325
-        ]
-      ]
-    },
-    {
-      "InstanceName": "LR3",
-      "Symbol": "Mlin",
-      "X": 2000,
-      "Y": 7300,
-      "Rotation": "R90",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "W",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "L",
-          "Expression": "3.35",
-          "Unit": "mm",
-          "ShowOnSchematic": true,
-          "Dimension": "Length"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -361
-        ]
-      ]
-    },
-    {
-      "InstanceName": "R3",
-      "Symbol": "Resistor",
-      "X": 2000,
-      "Y": 9700,
-      "Rotation": "R0",
-      "MirrorX": false,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "R",
-          "Expression": "Riso",
+          "Name": "F",
+          "Expression": "F",
           "Unit": "",
           "ShowOnSchematic": true,
-          "Dimension": "Resistance"
+          "Dimension": "Frequency"
         },
         {
-          "Name": "Footprint",
-          "Expression": "smt:1206",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        }
-      ],
-      "LabelOffsets": [
-        [
-          260,
-          -325
-        ]
-      ]
-    },
-    {
-      "InstanceName": "SH1",
-      "Symbol": "MShape",
-      "X": 900,
-      "Y": 12200,
-      "Rotation": "R0",
-      "MirrorX": true,
-      "Disable": "None",
-      "Parameters": [
-        {
-          "Name": "Form",
-          "Expression": "\u0022polygon\u0022",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "W",
-          "Expression": "0",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "X[1]",
-          "Expression": "-3.1e-3-Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "Y[1]",
-          "Expression": "-Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "X[2]",
-          "Expression": "0",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "Y[2]",
-          "Expression": "-Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "X[3]",
-          "Expression": "0",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "Y[3]",
-          "Expression": "Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "X[4]",
-          "Expression": "-3.1e-3-Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "Y[4]",
-          "Expression": "Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "PinX[1]",
-          "Expression": "-3.1e-3",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "PinY[1]",
-          "Expression": "-Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "PinW[1]",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": false,
-          "Dimension": "Length"
-        },
-        {
-          "Name": "PinDir[1]",
-          "Expression": "270",
+          "Name": "Theta",
+          "Expression": "Th",
           "Unit": "deg",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "Angle"
         },
         {
-          "Name": "PinX[2]",
-          "Expression": "0",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "PinY[2]",
-          "Expression": "0",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "PinW[2]",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "PinDir[2]",
-          "Expression": "0",
-          "Unit": "deg",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "PinX[3]",
-          "Expression": "-3.1e-3",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "PinY[3]",
-          "Expression": "Sp/2",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "PinW[3]",
-          "Expression": "0.8",
-          "Unit": "mm",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "PinDir[3]",
-          "Expression": "90",
-          "Unit": "deg",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "Model",
-          "Expression": "\u0022short\u0022",
+          "Name": "Style",
+          "Expression": "Straight",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -975,8 +348,8 @@
       ],
       "LabelOffsets": [
         [
-          380,
-          -425
+          310,
+          -433
         ]
       ]
     },
@@ -1014,8 +387,8 @@
     {
       "InstanceName": "P2",
       "Symbol": "Term",
-      "X": -200,
-      "Y": 13300,
+      "X": 1200,
+      "Y": 7900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1045,8 +418,8 @@
     {
       "InstanceName": "P3",
       "Symbol": "Term",
-      "X": -1800,
-      "Y": 7900,
+      "X": 0,
+      "Y": 6700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1076,8 +449,8 @@
     {
       "InstanceName": "P4",
       "Symbol": "Term",
-      "X": 1400,
-      "Y": 10900,
+      "X": 400,
+      "Y": 9100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1119,8 +492,8 @@
     {
       "InstanceName": "GND2",
       "Symbol": "Ground",
-      "X": -200,
-      "Y": 13500,
+      "X": 1200,
+      "Y": 8100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1131,8 +504,8 @@
     {
       "InstanceName": "GND3",
       "Symbol": "Ground",
-      "X": -1800,
-      "Y": 8100,
+      "X": 0,
+      "Y": 6900,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1143,8 +516,8 @@
     {
       "InstanceName": "GND4",
       "Symbol": "Ground",
-      "X": 1400,
-      "Y": 11100,
+      "X": 400,
+      "Y": 9300,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -1157,255 +530,83 @@
     {
       "Points": [
         [
-          200,
-          5100
-        ],
-        [
-          200,
-          5700
-        ],
-        [
-          0,
-          5700
-        ],
-        [
-          0,
-          5900
-        ],
-        [
-          200,
-          5900
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          1000,
-          2700
-        ],
-        [
-          1000,
-          3300
-        ],
-        [
-          1600,
-          3300
-        ],
-        [
-          1600,
-          3500
-        ],
-        [
-          1400,
-          3500
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          400,
-          7500
-        ],
-        [
-          400,
-          7700
-        ],
-        [
-          0,
-          7700
-        ],
-        [
-          0,
-          7500
-        ],
-        [
-          -800,
-          7500
-        ],
-        [
-          -800,
-          7700
-        ],
-        [
-          -600,
-          7700
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          0,
-          3900
-        ],
-        [
-          0,
-          4100
-        ],
-        [
-          -600,
-          4100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          1600,
-          5100
-        ],
-        [
-          1600,
-          5700
-        ],
-        [
-          2000,
-          5700
-        ],
-        [
-          2000,
-          5900
-        ],
-        [
-          1800,
-          5900
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          800,
+          1200,
           1100
         ],
         [
-          800,
-          600
+          1200,
+          900
         ],
         [
-          500,
-          600
+          2000,
+          900
         ],
         [
-          500,
-          -200
+          2000,
+          3900
         ],
         [
-          800,
-          -200
+          1200,
+          3900
         ],
         [
-          800,
-          0
+          1200,
+          4100
         ]
       ]
     },
     {
       "Points": [
         [
-          200,
+          1200,
           1900
         ],
         [
-          400,
-          1900
-        ],
-        [
-          400,
-          4500
-        ],
-        [
-          200,
-          4500
-        ],
-        [
-          200,
-          4700
+          1200,
+          2900
         ]
       ]
     },
     {
       "Points": [
         [
-          -200,
-          1900
+          1200,
+          3300
         ],
         [
-          -400,
-          1900
-        ],
-        [
-          -400,
-          1500
+          1200,
+          3500
         ],
         [
           600,
-          1500
+          3500
         ],
         [
           600,
-          2100
+          3300
         ],
         [
-          1000,
-          2100
+          -600,
+          3300
         ],
         [
-          1000,
-          2300
+          -600,
+          3900
+        ],
+        [
+          -400,
+          3900
         ]
       ]
     },
     {
       "Points": [
         [
-          800,
-          1500
+          1200,
+          4500
         ],
         [
-          800,
-          1700
-        ],
-        [
-          400,
-          1700
-        ],
-        [
-          400,
-          1400
-        ],
-        [
-          0,
-          1400
-        ],
-        [
-          0,
-          1700
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -1000,
-          4100
-        ],
-        [
-          -1200,
-          4100
-        ],
-        [
-          -1200,
-          5100
-        ],
-        [
-          -1000,
-          5100
-        ],
-        [
-          -1000,
+          1200,
           5300
         ]
       ]
@@ -1413,71 +614,47 @@
     {
       "Points": [
         [
-          1400,
-          5900
-        ],
-        [
           1200,
-          5900
-        ],
-        [
-          1200,
-          7300
-        ],
-        [
-          1400,
-          7300
-        ],
-        [
-          1400,
-          8300
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -200,
-          9300
-        ],
-        [
-          -200,
-          9900
-        ],
-        [
-          -600,
-          9900
-        ],
-        [
-          -600,
-          12900
-        ],
-        [
-          -200,
-          12900
-        ],
-        [
-          -200,
-          13100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -1000,
           5700
         ],
         [
-          -1000,
-          6300
+          1200,
+          6500
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
         ],
         [
-          -1800,
-          6300
+          800,
+          -200
         ],
         [
-          -1800,
+          200,
+          -200
+        ],
+        [
+          200,
+          1500
+        ],
+        [
+          400,
+          1500
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          6900
+        ],
+        [
+          1200,
           7700
         ]
       ]
@@ -1485,353 +662,203 @@
     {
       "Points": [
         [
-          1400,
+          400,
+          3500
+        ],
+        [
+          400,
+          3200
+        ],
+        [
+          700,
+          3200
+        ],
+        [
+          700,
+          6300
+        ],
+        [
+          0,
+          6300
+        ],
+        [
+          0,
+          6500
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          4300
+        ],
+        [
+          400,
+          5500
+        ],
+        [
+          600,
+          5500
+        ],
+        [
+          600,
           8700
         ],
         [
-          1400,
-          10700
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -400,
-          10500
-        ],
-        [
-          -400,
-          11300
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -1400,
-          10500
-        ],
-        [
-          -1400,
-          11300
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          2000,
-          7500
-        ],
-        [
-          2000,
-          9500
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -1400,
-          11700
-        ],
-        [
-          -1400,
-          11900
-        ],
-        [
-          500,
-          11900
-        ],
-        [
-          500,
-          11700
-        ],
-        [
-          1500,
-          11700
-        ],
-        [
-          1500,
-          12200
-        ],
-        [
-          1100,
-          12200
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -1200,
-          6900
-        ],
-        [
-          -1200,
+          400,
           8700
         ],
         [
-          -1000,
-          8700
-        ],
-        [
-          -1000,
+          400,
           8900
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          1300
         ],
         [
-          -1200,
-          8900
+          2800,
+          1300
+        ],
+        [
+          2800,
+          2300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1200,
+          1700
+        ],
+        [
+          2600,
+          1700
+        ],
+        [
+          2600,
+          2900
+        ],
+        [
+          2800,
+          2900
+        ],
+        [
+          2800,
+          2700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          3700
+        ],
+        [
+          600,
+          3700
+        ],
+        [
+          600,
+          5100
+        ],
+        [
+          0,
+          5100
+        ],
+        [
+          0,
+          5300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          4100
+        ],
+        [
+          800,
+          4100
+        ],
+        [
+          800,
+          5900
+        ],
+        [
+          0,
+          5900
+        ],
+        [
+          0,
+          5700
         ]
       ]
     }
   ],
   "NetLabels": [
     {
-      "X": 400,
-      "Y": 7100,
-      "Name": "c1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 400,
-      "Y": 6100,
-      "Name": "c1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1600,
-      "Y": 4700,
-      "Name": "c3",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1200,
-      "Y": 3700,
-      "Name": "c3",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 0,
-      "Y": 3500,
-      "Name": "nm",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 0,
-      "Y": 2100,
-      "Name": "nm",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -200,
-      "Y": 8900,
-      "Name": "o1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -200,
-      "Y": 7700,
-      "Name": "o1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -400,
-      "Y": 10100,
-      "Name": "r1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -400,
-      "Y": 7900,
-      "Name": "r1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -1200,
-      "Y": 6500,
-      "Name": "r2",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -800,
-      "Y": 4300,
-      "Name": "r2",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 2000,
-      "Y": 7100,
-      "Name": "r3",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1600,
-      "Y": 6100,
-      "Name": "r3",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1100,
-      "Y": 12000,
-      "Name": "s1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -400,
-      "Y": 11700,
-      "Name": "s1",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1100,
-      "Y": 12400,
-      "Name": "s3",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 2000,
-      "Y": 9900,
-      "Name": "s3",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -1400,
-      "Y": 10100,
-      "Name": "v2",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -1400,
-      "Y": 9100,
-      "Name": "v2",
-      "SegmentIndex": 0,
-      "AlongT": 0,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 700,
+      "X": 200,
       "Y": 600,
       "Name": "n1",
       "OwnerWireIndex": 5,
-      "SegmentIndex": 1,
-      "AlongT": 0.3333333333333333,
+      "SegmentIndex": 2,
+      "AlongT": 0.47058823529411764,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 200,
-      "Y": 1400,
-      "Name": "nx",
-      "OwnerWireIndex": 8,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 400,
-      "Y": 3200,
-      "Name": "na",
-      "OwnerWireIndex": 6,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 100,
-      "Y": 1500,
-      "Name": "nc",
-      "OwnerWireIndex": 7,
+      "X": 2000,
+      "Y": 2400,
+      "Name": "b2",
+      "OwnerWireIndex": 0,
       "SegmentIndex": 2,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": -300,
-      "Y": 4100,
-      "Name": "e2",
-      "OwnerWireIndex": 3,
-      "SegmentIndex": 1,
+      "X": 1200,
+      "Y": 2400,
+      "Name": "b3",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 100,
-      "Y": 5700,
-      "Name": "b1",
-      "OwnerWireIndex": 0,
-      "SegmentIndex": 1,
+      "X": 1900,
+      "Y": 1300,
+      "Name": "r2",
+      "OwnerWireIndex": 9,
+      "SegmentIndex": 0,
+      "AlongT": 0.4375,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1900,
+      "Y": 1700,
+      "Name": "r3",
+      "OwnerWireIndex": 10,
+      "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": -400,
-      "Y": 7500,
-      "Name": "e1",
+      "X": 0,
+      "Y": 3300,
+      "Name": "c1",
       "OwnerWireIndex": 2,
       "SegmentIndex": 3,
       "AlongT": 0.5,
@@ -1839,30 +866,10 @@
       "OffsetY": 0
     },
     {
-      "X": 1300,
-      "Y": 3300,
-      "Name": "b3",
-      "OwnerWireIndex": 1,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1800,
-      "Y": 5700,
-      "Name": "e3",
-      "OwnerWireIndex": 4,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -1100,
-      "Y": 4100,
-      "Name": "o2",
-      "OwnerWireIndex": 9,
+      "X": 1200,
+      "Y": 4900,
+      "Name": "d1",
+      "OwnerWireIndex": 3,
       "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
@@ -1870,18 +877,48 @@
     },
     {
       "X": 1200,
-      "Y": 6600,
-      "Name": "o3",
-      "OwnerWireIndex": 10,
-      "SegmentIndex": 1,
+      "Y": 6100,
+      "Name": "d2",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": -600,
-      "Y": 11400,
+      "X": 1200,
+      "Y": 7300,
       "Name": "p2",
+      "OwnerWireIndex": 6,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 700,
+      "Y": 4700,
+      "Name": "p3",
+      "OwnerWireIndex": 7,
+      "SegmentIndex": 2,
+      "AlongT": 0.4838709677419355,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 600,
+      "Y": 7100,
+      "Name": "p4",
+      "OwnerWireIndex": 8,
+      "SegmentIndex": 2,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 300,
+      "Y": 5100,
+      "Name": "s2",
       "OwnerWireIndex": 11,
       "SegmentIndex": 2,
       "AlongT": 0.5,
@@ -1889,71 +926,11 @@
       "OffsetY": 0
     },
     {
-      "X": -1400,
-      "Y": 6300,
-      "Name": "p3",
+      "X": 800,
+      "Y": 5000,
+      "Name": "s3",
       "OwnerWireIndex": 12,
       "SegmentIndex": 1,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 1400,
-      "Y": 9700,
-      "Name": "p4",
-      "OwnerWireIndex": 13,
-      "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -400,
-      "Y": 10900,
-      "Name": "q1",
-      "OwnerWireIndex": 14,
-      "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -1200,
-      "Y": 7800,
-      "Name": "u2",
-      "OwnerWireIndex": 18,
-      "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -1400,
-      "Y": 10900,
-      "Name": "q2",
-      "OwnerWireIndex": 15,
-      "SegmentIndex": 0,
-      "AlongT": 0.5,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": -500,
-      "Y": 11900,
-      "Name": "s2",
-      "OwnerWireIndex": 17,
-      "SegmentIndex": 1,
-      "AlongT": 0.47368421052631576,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 2000,
-      "Y": 8500,
-      "Name": "q3",
-      "OwnerWireIndex": 16,
-      "SegmentIndex": 0,
       "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0

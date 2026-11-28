@@ -22,55 +22,36 @@ internal sealed record Pcd9Spec(
 
 internal static class Pcd9Cells
 {
-    // ══ 1. Wilkinson3: a 3-way Wilkinson divider at 2.45 GHz ══════════════════════════════════════════════════════════
+    // ══ 1. Wilkinson3: a 3-way in-phase divider at 2.45 GHz, two Wilkinson stages ════════════════════════════════════
     //
-    // The input feeds a cross X1; its middle arm AM runs straight to the tee T2, the outer arms fold once (B1, B3) and run
-    // beside it to T1 and T3, 12.4 mm apart. Each tee's branch carries an isolation resistor to the star pad SH1, a drawn
-    // pad with Model="short" (one node). A star of three resistors cannot be planar with all three outputs outside it, so
-    // R3 is a 1206 whose body bridges the middle arm. Every closing joint of the two loops lands by expression: the outer
-    // tees sit 6.2 mm off the axis and 6.2 mm short of T2 (the fold), and the pad's pins are where R1, R2 and R3 end.
-    // Lengths in metres where a term mixes units; the outer arms' fold keeps their centreline length La. LQ2 keeps R2's pad
-    // off the bend BR2: a pad on the bend's own pin reads to LVS as one copper piece across the bend's two nets.
+    // An N-way Wilkinson's resistor star is not planar for three outputs (K3,3), so the cell is a tree of two MWPDs, each
+    // with one resistor across its own ring's gap. W1 (K = 1.4142) sends a third to its port 2 and two thirds to its port
+    // 3; R1 is Z0·(K + 1/K) = 106.07 Ω. W2 (K = 1) halves its port 3's share between ports 3 and 4; R2 is 2·Z0. A 20° spacer
+    // DS takes W2's ring clear of W1's port 2, whose phase line D1-D2-D3 rises past the ring (two mitred corners) and runs
+    // on beside it, as long at F as DS and W2 together, so all three outputs leave in phase. Every line is an MDLY, stated
+    // at F, so a change of F re-plans the rings and the lines together. D1 and D2's rise puts port 2 level with ports 3
+    // and 4; Th, the straight run, was found in the designer's live response. Nothing is stretched or placed by offset.
     public static readonly Pcd9Spec Wilkinson = new(
         "Wilkinson3",
         """
-        MLIN:TLIN  n1  nx  W=1.1 mm  L=3 mm
-        MCROSS:X1  na  nx  nc  nm  W1=Wa  W2=1.1 mm  W3=Wa  W4=Wa  L1=0.6 mm  L2=0.6 mm  L3=0.6 mm  L4=0.6 mm
-        MLIN:AM  nm  e2  W=Wa  L=La
-        MLIN:A1V  na  b1  W=Wa  L=5.6e-3-Wa/2
-        MBEND:B1  b1  c1  W=Wa  Angle=90 deg
-        MLIN:A1H  c1  e1  W=Wa  L=La-5.6e-3-Wa/2
-        MLIN:A3V  nc  b3  W=Wa  L=5.6e-3-Wa/2
-        MBEND:B3  b3  c3  W=Wa  Angle=90 deg
-        MLIN:A3H  c3  e3  W=Wa  L=La-5.6e-3-Wa/2
-        MTEE:T1  e1  o1  r1  W1=Wa  W2=1.1 mm  W3=0.8 mm  L1=0.6 mm  L2=0.6 mm  L3=0.6 mm
-        MTEE:T2  o2  e2  r2  W1=1.1 mm  W2=Wa  W3=0.8 mm  L1=0.6 mm  L2=0.6 mm  L3=0.6 mm
-        MTEE:T3  o3  e3  r3  W1=1.1 mm  W2=Wa  W3=0.8 mm  L1=0.6 mm  L2=0.6 mm  L3=0.6 mm
-        MLIN:O1  o1  p2  W=1.1 mm  L=3 mm
-        MLIN:O2  o2  p3  W=1.1 mm  L=3 mm
-        MLIN:O3  o3  p4  W=1.1 mm  L=3 mm
-        MLIN:LR1  r1  q1  W=0.8 mm  L=1.4e-3-Sp
-        R:R1  q1  s1  R=Riso  Footprint=smt:0603
-        MLIN:LR2  r2  u2  W=0.8 mm  L=0.8e-3+Sp/2
-        MBEND:BR2  u2  v2  W=0.8 mm  Angle=90 deg
-        MLIN:LQ2  v2  q2  W=0.8 mm  L=0.3 mm
-        R:R2  q2  s2  R=Riso  Footprint=smt:0603
-        MLIN:LR3  r3  q3  W=0.8 mm  L=3.35 mm
-        R:R3  q3  s3  R=Riso  Footprint=smt:1206
-        MSHAPE:SH1  s1  s2  s3  Form="polygon"  W=0  X[1]=-3.1e-3-Sp/2  Y[1]=-Sp/2  X[2]=0  Y[2]=-Sp/2  X[3]=0  Y[3]=Sp/2  X[4]=-3.1e-3-Sp/2  Y[4]=Sp/2  PinX[1]=-3.1e-3  PinY[1]=-Sp/2  PinW[1]=0.8 mm  PinDir[1]=270 deg  PinX[2]=0  PinY[2]=0  PinW[2]=0.8 mm  PinDir[2]=0 deg  PinX[3]=-3.1e-3  PinY[3]=Sp/2  PinW[3]=0.8 mm  PinDir[3]=90 deg  Model="short"
+        MWPD:W1  n1  b2  b3  r2  r3  Z0=50 Ohm  F=F  K=1.4142  Footprint=smt:0603
+        R:R1  r2  r3  R=106.07 Ohm  Footprint=smt:0603
+        MDLY:DS  b3  c1  Z0=50 Ohm  F=F  Theta=20 deg  Style=Straight
+        MWPD:W2  c1  p3  p4  s2  s3  Z0=50 Ohm  F=F  K=1  Footprint=smt:0603
+        R:R2  s2  s3  R=100 Ohm  Footprint=smt:0603
+        MDLY:D1  b2  d1  Z0=50 Ohm  F=F  Theta=36 deg  Style=Corner  Corner=Miter  Side=1
+        MDLY:D2  d1  d2  Z0=50 Ohm  F=F  Theta=36 deg  Style=Corner  Corner=Miter  Side=-1
+        MDLY:D3  d2  p2  Z0=50 Ohm  F=F  Theta=Th deg  Style=Straight
         Port:P1  n1  0  Num=1  Z=50 Ohm
         Port:P2  p2  0  Num=2  Z=50 Ohm
         Port:P3  p3  0  Num=3  Z=50 Ohm
         Port:P4  p4  0  Num=4  Z=50 Ohm
         """,
         [
-            ("La",   "19.5",  "mm",  "16",   "22",  "arm length"),
-            ("Wa",   "0.36",  "mm",  "0.3",  "0.7", "arm width, 86.6 Ω"),
-            ("Sp",   "1",     "mm",  "0.6",  "1.2", "star pad size"),
-            ("Riso", "50",    "Ohm", "20",   "100", "isolation resistor"),
+            ("F",  "2.45", "GHz", "1.5", "3.5", "centre frequency"),
+            ("Th", "49",   "deg", "30",  "70",  "phase line's straight run at F"),
         ],
         [], [],
-        Mirrored: ["B3", "BR2", "SH1"],
         Sweep: "start=1.5 stop=3.5 npts=81 Unit=GHz");
 
     // ══ 2. Spurline: a spurline bandstop, one drawn polygon ═══════════════════════════════════════════════════════════
@@ -234,7 +215,7 @@ internal static class Pcd9Cells
             vm.AddParameter();
             var row = vm.Parameters[^1];
             (row.Name, row.Unit, row.Default, row.Minimum, row.Maximum, row.Description) = (p.Name, p.Unit, p.Default, p.Min, p.Max, p.Description);
-            row.Dimension = p.Unit switch { "deg" => UnitDimension.Angle, "Ohm" => UnitDimension.Resistance, "" => UnitDimension.None, _ => UnitDimension.Length };
+            row.Dimension = p.Unit switch { "deg" => UnitDimension.Angle, "GHz" => UnitDimension.Frequency, "Ohm" => UnitDimension.Resistance, "" => UnitDimension.None, _ => UnitDimension.Length };
         }
         vm.CnlText = spec.Text;
         Assert.True(vm.ApplyText(), vm.Status);

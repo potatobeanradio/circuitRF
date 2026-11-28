@@ -5,392 +5,136 @@
 	"SnapDbu": 0,
 	"AngleMode": "AnyAngle",
 	"SchematicPCellSnapshots": {
-		"TLIN": {
-			"W": 0.0011,
-			"L": 0.003
-		},
-		"X1": {
-			"W1": 0.00035999999999999997,
-			"W2": 0.0011,
-			"W3": 0.00035999999999999997,
-			"W4": 0.00035999999999999997,
-			"L1": 0.0006,
-			"L2": 0.0006,
-			"L3": 0.0006,
-			"L4": 0.0006
-		},
-		"AM": {
-			"W": 0.00035999999999999997,
-			"L": 0.0195
-		},
-		"A1V": {
-			"W": 0.00035999999999999997,
-			"L": 0.00542
-		},
-		"B1": {
-			"W": 0.00035999999999999997,
-			"Angle": 90
-		},
-		"A1H": {
-			"W": 0.00035999999999999997,
-			"L": 0.01372
-		},
-		"A3V": {
-			"W": 0.00035999999999999997,
-			"L": 0.00542
-		},
-		"B3": {
-			"W": 0.00035999999999999997,
-			"Angle": 90
-		},
-		"A3H": {
-			"W": 0.00035999999999999997,
-			"L": 0.01372
-		},
-		"T1": {
-			"W1": 0.00035999999999999997,
-			"W2": 0.0011,
-			"W3": 0.0008,
-			"L1": 0.0006,
-			"L2": 0.0006,
-			"L3": 0.0006
-		},
-		"T2": {
-			"W1": 0.0011,
-			"W2": 0.00035999999999999997,
-			"W3": 0.0008,
-			"L1": 0.0006,
-			"L2": 0.0006,
-			"L3": 0.0006
-		},
-		"T3": {
-			"W1": 0.0011,
-			"W2": 0.00035999999999999997,
-			"W3": 0.0008,
-			"L1": 0.0006,
-			"L2": 0.0006,
-			"L3": 0.0006
-		},
-		"O1": {
-			"W": 0.0011,
-			"L": 0.003
-		},
-		"O2": {
-			"W": 0.0011,
-			"L": 0.003
-		},
-		"O3": {
-			"W": 0.0011,
-			"L": 0.003
-		},
-		"LR1": {
-			"W": 0.0008,
-			"L": 0.00039999999999999996
+		"W1": {
+			"Z0": 50,
+			"F": 2450000000,
+			"K": 1.4142,
+			"Gap": 0.0024
 		},
 		"R1": {},
-		"LR2": {
-			"W": 0.0008,
-			"L": 0.0013
+		"DS": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 20,
+			"Style": "Straight"
 		},
-		"BR2": {
-			"W": 0.0008,
-			"Angle": 90
-		},
-		"LQ2": {
-			"W": 0.0008,
-			"L": 0.0003
+		"W2": {
+			"Z0": 50,
+			"F": 2450000000,
+			"K": 1,
+			"Gap": 0.0024
 		},
 		"R2": {},
-		"LR3": {
-			"W": 0.0008,
-			"L": 0.00335
+		"D1": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 36,
+			"Style": "Corner",
+			"Corner": "Miter",
+			"Side": 1
 		},
-		"R3": {},
-		"SH1": {
-			"Form": "polygon",
-			"W": 0,
-			"X[1]": -0.0036,
-			"Y[1]": -0.0005,
-			"X[2]": 0,
-			"Y[2]": -0.0005,
-			"X[3]": 0,
-			"Y[3]": 0.0005,
-			"X[4]": -0.0036,
-			"Y[4]": 0.0005,
-			"PinX[1]": -0.0031,
-			"PinY[1]": -0.0005,
-			"PinW[1]": 0.0008,
-			"PinDir[1]": 270,
-			"PinX[2]": 0,
-			"PinY[2]": 0,
-			"PinW[2]": 0.0008,
-			"PinDir[2]": 0,
-			"PinX[3]": -0.0031,
-			"PinY[3]": 0.0005,
-			"PinW[3]": 0.0008,
-			"PinDir[3]": 90,
-			"Model": "short"
+		"D2": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 36,
+			"Style": "Corner",
+			"Corner": "Miter",
+			"Side": -1
+		},
+		"D3": {
+			"Z0": 50,
+			"F": 2450000000,
+			"Theta": 49,
+			"Style": "Straight"
 		}
 	},
 	"GeneratedPlacements": {
-		"A1H": {
-			"X": 12950000,
-			"Y": 10170000,
-			"RotationDeg": 270,
-			"Mirror": false
-		},
-		"A1V": {
-			"X": 7350000,
-			"Y": 10350000,
+		"D1": {
+			"X": 30882354,
+			"Y": 1552801,
 			"RotationDeg": 0,
 			"Mirror": false
 		},
-		"A3H": {
-			"X": 550000,
-			"Y": 10170000,
-			"RotationDeg": 270,
-			"Mirror": false
-		},
-		"A3V": {
-			"X": 6150000,
-			"Y": 10350000,
-			"RotationDeg": 180,
-			"Mirror": false
-		},
-		"AM": {
-			"X": 6750000,
-			"Y": 9750000,
-			"RotationDeg": 270,
-			"Mirror": false
-		},
-		"B1": {
-			"X": 12770000,
-			"Y": 10350000,
-			"RotationDeg": 180,
-			"Mirror": true
-		},
-		"B3": {
-			"X": 730000,
-			"Y": 10350000,
-			"RotationDeg": 180,
-			"Mirror": false
-		},
-		"BR2": {
-			"X": 8650000,
-			"Y": -10350000,
-			"RotationDeg": 0,
-			"Mirror": false
-		},
-		"LQ2": {
-			"X": 9050000,
-			"Y": -9950000,
+		"D2": {
+			"X": 34801810,
+			"Y": 5472257,
 			"RotationDeg": 90,
 			"Mirror": false
 		},
-		"LR1": {
-			"X": 12350000,
-			"Y": -4150000,
-			"RotationDeg": 180,
-			"Mirror": false
-		},
-		"LR2": {
-			"X": 7350000,
-			"Y": -10350000,
+		"D3": {
+			"X": 38721266,
+			"Y": 9391713,
 			"RotationDeg": 0,
 			"Mirror": false
 		},
-		"LR3": {
-			"X": 1150000,
-			"Y": -4150000,
+		"DS": {
+			"X": 30863748,
+			"Y": -1935493,
 			"RotationDeg": 0,
-			"Mirror": false
-		},
-		"O1": {
-			"X": 12950000,
-			"Y": -4750000,
-			"RotationDeg": 270,
-			"Mirror": false
-		},
-		"O2": {
-			"X": 6750000,
-			"Y": -10950000,
-			"RotationDeg": 270,
-			"Mirror": false
-		},
-		"O3": {
-			"X": 550000,
-			"Y": -4750000,
-			"RotationDeg": 270,
 			"Mirror": false
 		},
 		"P1": {
-			"X": 6750000,
-			"Y": 13950000,
-			"RotationDeg": 270,
+			"X": 0,
+			"Y": -514380,
+			"RotationDeg": 0,
 			"Mirror": false,
 			"Text": "1"
 		},
 		"P2": {
-			"X": 12950000,
-			"Y": -7750000,
-			"RotationDeg": 90,
+			"X": 48547974,
+			"Y": 9391713,
+			"RotationDeg": 180,
 			"Mirror": false,
 			"Text": "2"
 		},
 		"P3": {
-			"X": 6750000,
-			"Y": -13950000,
-			"RotationDeg": 90,
+			"X": 48444762,
+			"Y": -206657,
+			"RotationDeg": 180,
 			"Mirror": false,
 			"Text": "3"
 		},
 		"P4": {
-			"X": 550000,
-			"Y": -7750000,
-			"RotationDeg": 90,
+			"X": 48444762,
+			"Y": -3664329,
+			"RotationDeg": 180,
 			"Mirror": false,
 			"Text": "4"
 		},
 		"R1": {
-			"X": 10750000,
-			"Y": -4150000,
-			"RotationDeg": 180,
+			"X": 12484018,
+			"Y": -35568,
+			"RotationDeg": 270,
 			"Mirror": false
 		},
 		"R2": {
-			"X": 9050000,
-			"Y": -8450000,
-			"RotationDeg": 90,
+			"X": 47113016,
+			"Y": -1935493,
+			"RotationDeg": 270,
 			"Mirror": false
 		},
-		"R3": {
-			"X": 6525000,
-			"Y": -4150000,
+		"W1": {
+			"X": 0,
+			"Y": -514380,
 			"RotationDeg": 0,
-			"Mirror": false
-		},
-		"SH1": {
-			"X": 9050000,
-			"Y": -7250000,
-			"RotationDeg": 90,
-			"Mirror": true
-		},
-		"T1": {
-			"X": 12950000,
-			"Y": -3550000,
-			"RotationDeg": 270,
-			"Mirror": false
-		},
-		"T2": {
-			"X": 6750000,
-			"Y": -10950000,
-			"RotationDeg": 90,
-			"Mirror": false
-		},
-		"T3": {
-			"X": 550000,
-			"Y": -4750000,
-			"RotationDeg": 90,
-			"Mirror": false
-		},
-		"TLIN": {
-			"X": 6750000,
-			"Y": 13950000,
-			"RotationDeg": 270,
 			"Mirror": false,
 			"ChainAnchor": true
 		},
-		"X1": {
-			"X": 6750000,
-			"Y": 10350000,
+		"W2": {
+			"X": 34874650,
+			"Y": -1935493,
 			"RotationDeg": 0,
 			"Mirror": false
 		}
 	},
 	"PCellSnapshots": {
-		"MLIN_925d3a9e90f1": {
-			"GeneratorId": "MLIN",
+		"MWPD_2aa22ece0c70": {
+			"GeneratorId": "MWPD",
 			"Parameters": {
-				"W": 0.0011,
-				"L": 0.003
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MCROSS_0d88e8c1c8cb": {
-			"GeneratorId": "MCROSS",
-			"Parameters": {
-				"W1": 0.00035999999999999997,
-				"W2": 0.0011,
-				"W3": 0.00035999999999999997,
-				"W4": 0.00035999999999999997,
-				"L1": 0.0006,
-				"L2": 0.0006,
-				"L3": 0.0006,
-				"L4": 0.0006
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MLIN_a9229bd0d598": {
-			"GeneratorId": "MLIN",
-			"Parameters": {
-				"W": 0.00035999999999999997,
-				"L": 0.0195
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MLIN_17d07d7b741e": {
-			"GeneratorId": "MLIN",
-			"Parameters": {
-				"W": 0.00035999999999999997,
-				"L": 0.00542
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MBEND_6edc18fbfd4d": {
-			"GeneratorId": "MBEND",
-			"Parameters": {
-				"W": 0.00035999999999999997,
-				"Angle": 90
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MLIN_95eb4b8b4705": {
-			"GeneratorId": "MLIN",
-			"Parameters": {
-				"W": 0.00035999999999999997,
-				"L": 0.01372
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MTEE_46cdb55f1063": {
-			"GeneratorId": "MTEE",
-			"Parameters": {
-				"W1": 0.00035999999999999997,
-				"W2": 0.0011,
-				"W3": 0.0008,
-				"L1": 0.0006,
-				"L2": 0.0006,
-				"L3": 0.0006
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MTEE_8e36dbcb186f": {
-			"GeneratorId": "MTEE",
-			"Parameters": {
-				"W1": 0.0011,
-				"W2": 0.00035999999999999997,
-				"W3": 0.0008,
-				"L1": 0.0006,
-				"L2": 0.0006,
-				"L3": 0.0006
-			},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MLIN_0ed9d008017a": {
-			"GeneratorId": "MLIN",
-			"Parameters": {
-				"W": 0.0008,
-				"L": 0.00039999999999999996
+				"Z0": 50,
+				"F": 2450000000,
+				"K": 1.4142,
+				"Gap": 0.0024
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
@@ -399,69 +143,57 @@
 			"Parameters": {},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
-		"MLIN_53270c6128c7": {
-			"GeneratorId": "MLIN",
+		"MDLY_30910d0289b2": {
+			"GeneratorId": "MDLY",
 			"Parameters": {
-				"W": 0.0008,
-				"L": 0.0013
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 20,
+				"Style": "Straight"
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
-		"MBEND_c62ba9744a77": {
-			"GeneratorId": "MBEND",
+		"MWPD_3654bfacf413": {
+			"GeneratorId": "MWPD",
 			"Parameters": {
-				"W": 0.0008,
-				"Angle": 90
+				"Z0": 50,
+				"F": 2450000000,
+				"K": 1,
+				"Gap": 0.0024
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
-		"MLIN_e370ba294b1f": {
-			"GeneratorId": "MLIN",
+		"MDLY_7e40895903f8": {
+			"GeneratorId": "MDLY",
 			"Parameters": {
-				"W": 0.0008,
-				"L": 0.0003
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 36,
+				"Style": "Corner",
+				"Corner": "Miter",
+				"Side": 1
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
-		"MLIN_2265d7da7126": {
-			"GeneratorId": "MLIN",
+		"MDLY_966dd3a97450": {
+			"GeneratorId": "MDLY",
 			"Parameters": {
-				"W": 0.0008,
-				"L": 0.00335
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 36,
+				"Style": "Corner",
+				"Corner": "Miter",
+				"Side": -1
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		},
-		"smt-1206@N_feaceb988bb3": {
-			"GeneratorId": "smt:1206@N",
-			"Parameters": {},
-			"TechIdentity": "tech/microstrip-0508.ctech"
-		},
-		"MSHAPE_f1835718bed9": {
-			"GeneratorId": "MSHAPE",
+		"MDLY_21a875f5fed4": {
+			"GeneratorId": "MDLY",
 			"Parameters": {
-				"Form": "polygon",
-				"W": 0,
-				"X[1]": -0.0036,
-				"Y[1]": -0.0005,
-				"X[2]": 0,
-				"Y[2]": -0.0005,
-				"X[3]": 0,
-				"Y[3]": 0.0005,
-				"X[4]": -0.0036,
-				"Y[4]": 0.0005,
-				"PinX[1]": -0.0031,
-				"PinY[1]": -0.0005,
-				"PinW[1]": 0.0008,
-				"PinDir[1]": 270,
-				"PinX[2]": 0,
-				"PinY[2]": 0,
-				"PinW[2]": 0.0008,
-				"PinDir[2]": 0,
-				"PinX[3]": -0.0031,
-				"PinY[3]": 0.0005,
-				"PinW[3]": 0.0008,
-				"PinDir[3]": 90,
-				"Model": "short"
+				"Z0": 50,
+				"F": 2450000000,
+				"Theta": 49,
+				"Style": "Straight"
 			},
 			"TechIdentity": "tech/microstrip-0508.ctech"
 		}
@@ -469,14 +201,14 @@
 	"Shapes": [
 		{
 			"$type": "Label",
-			"X": 6750000,
-			"Y": 13950000,
+			"X": 0,
+			"Y": -514380,
 			"Text": "1",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P1",
-			"PortDirection": "R270",
+			"PortDirection": "R0",
 			"PortLayer": {
 				"Layer": 1,
 				"Datatype": 0
@@ -489,14 +221,14 @@
 		},
 		{
 			"$type": "Label",
-			"X": 12950000,
-			"Y": -7750000,
+			"X": 48547974,
+			"Y": 9391713,
 			"Text": "2",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P2",
-			"PortDirection": "R90",
+			"PortDirection": "R180",
 			"PortLayer": {
 				"Layer": 1,
 				"Datatype": 0
@@ -509,14 +241,14 @@
 		},
 		{
 			"$type": "Label",
-			"X": 6750000,
-			"Y": -13950000,
+			"X": 48444762,
+			"Y": -206657,
 			"Text": "3",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P3",
-			"PortDirection": "R90",
+			"PortDirection": "R180",
 			"PortLayer": {
 				"Layer": 1,
 				"Datatype": 0
@@ -529,14 +261,14 @@
 		},
 		{
 			"$type": "Label",
-			"X": 550000,
-			"Y": -7750000,
+			"X": 48444762,
+			"Y": -3664329,
 			"Text": "4",
-			"Height": 550000,
+			"Height": 528836,
 			"Rotation": "R0",
 			"IsPort": true,
 			"SchematicId": "P4",
-			"PortDirection": "R90",
+			"PortDirection": "R180",
 			"PortLayer": {
 				"Layer": 1,
 				"Datatype": 0
@@ -550,10 +282,10 @@
 		{
 			"$type": "Poly",
 			"Xy": [
-				16040000, 16490000,
-				-2540000, 16490000,
-				-2540000, -16490000,
-				16040000, -16490000
+				51087974, 12460549,
+				-2540000, 12460549,
+				-2540000, -12460549,
+				51087974, -12460549
 			],
 			"Layer": {
 				"Layer": 2,
@@ -564,28 +296,9 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/MLIN_925d3a9e90f1",
-			"X": 6750000,
-			"Y": 13950000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "TLIN",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MCROSS_0d88e8c1c8cb",
-			"X": 6750000,
-			"Y": 10350000,
+			"CellRef": "../../.generated-cells/MWPD_2aa22ece0c70",
+			"X": 0,
+			"Y": -514380,
 			"Rot": "R0",
 			"MirrorX": false,
 			"Mag": 1,
@@ -593,285 +306,19 @@
 			"Cols": 1,
 			"PitchX": 0,
 			"PitchY": 0,
-			"SchematicId": "X1",
+			"SchematicId": "W1",
 			"OrientationLink": {
 				"SchematicDeg": 0,
 				"SchematicMirror": false,
 				"LayoutDeg": 0,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_a9229bd0d598",
-			"X": 6750000,
-			"Y": 9750000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "AM",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_17d07d7b741e",
-			"X": 7350000,
-			"Y": 10350000,
-			"Rot": "R0",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "A1V",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 0,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MBEND_6edc18fbfd4d",
-			"X": 12770000,
-			"Y": 10350000,
-			"Rot": "R180",
-			"MirrorX": true,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "B1",
-			"OrientationLink": {
-				"SchematicDeg": 0,
-				"SchematicMirror": false,
-				"LayoutDeg": 180,
-				"LayoutMirror": true
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_95eb4b8b4705",
-			"X": 12950000,
-			"Y": 10170000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "A1H",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_17d07d7b741e",
-			"X": 6150000,
-			"Y": 10350000,
-			"Rot": "R180",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "A3V",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 180,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MBEND_6edc18fbfd4d",
-			"X": 730000,
-			"Y": 10350000,
-			"Rot": "R180",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "B3",
-			"OrientationLink": {
-				"SchematicDeg": 0,
-				"SchematicMirror": true,
-				"LayoutDeg": 180,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_95eb4b8b4705",
-			"X": 550000,
-			"Y": 10170000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "A3H",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MTEE_46cdb55f1063",
-			"X": 12950000,
-			"Y": -3550000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "T1",
-			"OrientationLink": {
-				"SchematicDeg": 0,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MTEE_8e36dbcb186f",
-			"X": 6750000,
-			"Y": -10950000,
-			"Rot": "R90",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "T2",
-			"OrientationLink": {
-				"SchematicDeg": 0,
-				"SchematicMirror": false,
-				"LayoutDeg": 90,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MTEE_8e36dbcb186f",
-			"X": 550000,
-			"Y": -4750000,
-			"Rot": "R90",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "T3",
-			"OrientationLink": {
-				"SchematicDeg": 0,
-				"SchematicMirror": false,
-				"LayoutDeg": 90,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_925d3a9e90f1",
-			"X": 12950000,
-			"Y": -4750000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "O1",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_925d3a9e90f1",
-			"X": 6750000,
-			"Y": -10950000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "O2",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_925d3a9e90f1",
-			"X": 550000,
-			"Y": -4750000,
-			"Rot": "R270",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "O3",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 270,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_0ed9d008017a",
-			"X": 12350000,
-			"Y": -4150000,
-			"Rot": "R180",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "LR1",
-			"OrientationLink": {
-				"SchematicDeg": 90,
-				"SchematicMirror": false,
-				"LayoutDeg": 180,
 				"LayoutMirror": false
 			}
 		},
 		{
 			"CellRef": "../../.generated-cells/smt-0603@N_3c3a332a83a4",
-			"X": 10750000,
-			"Y": -4150000,
-			"Rot": "R180",
+			"X": 12484018,
+			"Y": -35568,
+			"Rot": "R270",
 			"MirrorX": false,
 			"Mag": 1,
 			"Rows": 1,
@@ -882,14 +329,14 @@
 			"OrientationLink": {
 				"SchematicDeg": 0,
 				"SchematicMirror": false,
-				"LayoutDeg": 180,
+				"LayoutDeg": 270,
 				"LayoutMirror": false
 			}
 		},
 		{
-			"CellRef": "../../.generated-cells/MLIN_53270c6128c7",
-			"X": 7350000,
-			"Y": -10350000,
+			"CellRef": "../../.generated-cells/MDLY_30910d0289b2",
+			"X": 30863748,
+			"Y": -1935493,
 			"Rot": "R0",
 			"MirrorX": false,
 			"Mag": 1,
@@ -897,7 +344,7 @@
 			"Cols": 1,
 			"PitchX": 0,
 			"PitchY": 0,
-			"SchematicId": "LR2",
+			"SchematicId": "DS",
 			"OrientationLink": {
 				"SchematicDeg": 90,
 				"SchematicMirror": false,
@@ -906,9 +353,9 @@
 			}
 		},
 		{
-			"CellRef": "../../.generated-cells/MBEND_c62ba9744a77",
-			"X": 8650000,
-			"Y": -10350000,
+			"CellRef": "../../.generated-cells/MWPD_3654bfacf413",
+			"X": 34874650,
+			"Y": -1935493,
 			"Rot": "R0",
 			"MirrorX": false,
 			"Mag": 1,
@@ -916,38 +363,19 @@
 			"Cols": 1,
 			"PitchX": 0,
 			"PitchY": 0,
-			"SchematicId": "BR2",
+			"SchematicId": "W2",
 			"OrientationLink": {
 				"SchematicDeg": 0,
-				"SchematicMirror": true,
-				"LayoutDeg": 0,
-				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MLIN_e370ba294b1f",
-			"X": 9050000,
-			"Y": -9950000,
-			"Rot": "R90",
-			"MirrorX": false,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "LQ2",
-			"OrientationLink": {
-				"SchematicDeg": 90,
 				"SchematicMirror": false,
-				"LayoutDeg": 90,
+				"LayoutDeg": 0,
 				"LayoutMirror": false
 			}
 		},
 		{
 			"CellRef": "../../.generated-cells/smt-0603@N_3c3a332a83a4",
-			"X": 9050000,
-			"Y": -8450000,
-			"Rot": "R90",
+			"X": 47113016,
+			"Y": -1935493,
+			"Rot": "R270",
 			"MirrorX": false,
 			"Mag": 1,
 			"Rows": 1,
@@ -958,14 +386,14 @@
 			"OrientationLink": {
 				"SchematicDeg": 0,
 				"SchematicMirror": false,
-				"LayoutDeg": 90,
+				"LayoutDeg": 270,
 				"LayoutMirror": false
 			}
 		},
 		{
-			"CellRef": "../../.generated-cells/MLIN_2265d7da7126",
-			"X": 1150000,
-			"Y": -4150000,
+			"CellRef": "../../.generated-cells/MDLY_7e40895903f8",
+			"X": 30882354,
+			"Y": 1552801,
 			"Rot": "R0",
 			"MirrorX": false,
 			"Mag": 1,
@@ -973,7 +401,7 @@
 			"Cols": 1,
 			"PitchX": 0,
 			"PitchY": 0,
-			"SchematicId": "LR3",
+			"SchematicId": "D1",
 			"OrientationLink": {
 				"SchematicDeg": 90,
 				"SchematicMirror": false,
@@ -982,9 +410,28 @@
 			}
 		},
 		{
-			"CellRef": "../../.generated-cells/smt-1206@N_feaceb988bb3",
-			"X": 6525000,
-			"Y": -4150000,
+			"CellRef": "../../.generated-cells/MDLY_966dd3a97450",
+			"X": 34801810,
+			"Y": 5472257,
+			"Rot": "R90",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "D2",
+			"OrientationLink": {
+				"SchematicDeg": 90,
+				"SchematicMirror": false,
+				"LayoutDeg": 90,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/MDLY_21a875f5fed4",
+			"X": 38721266,
+			"Y": 9391713,
 			"Rot": "R0",
 			"MirrorX": false,
 			"Mag": 1,
@@ -992,31 +439,12 @@
 			"Cols": 1,
 			"PitchX": 0,
 			"PitchY": 0,
-			"SchematicId": "R3",
+			"SchematicId": "D3",
 			"OrientationLink": {
-				"SchematicDeg": 0,
+				"SchematicDeg": 90,
 				"SchematicMirror": false,
 				"LayoutDeg": 0,
 				"LayoutMirror": false
-			}
-		},
-		{
-			"CellRef": "../../.generated-cells/MSHAPE_f1835718bed9",
-			"X": 9050000,
-			"Y": -7250000,
-			"Rot": "R90",
-			"MirrorX": true,
-			"Mag": 1,
-			"Rows": 1,
-			"Cols": 1,
-			"PitchX": 0,
-			"PitchY": 0,
-			"SchematicId": "SH1",
-			"OrientationLink": {
-				"SchematicDeg": 0,
-				"SchematicMirror": true,
-				"LayoutDeg": 90,
-				"LayoutMirror": true
 			}
 		}
 	]
